@@ -21,10 +21,10 @@ of pruning heuristics.
 We tested the Tesseract decoder for:
 
 -   Surface codes
--   Color codes
+-   Superdense Color codes
 -   Bivariate-bicycle codes
 -   Transversal CNOT protocols for surface codes
--   
+   
 ## Features
 
 
@@ -77,36 +77,6 @@ Example with Advanced Options:
   --shot-range-begin 582 \
   --shot-range-end 583
 ```
-## Command-Line Arguments
-#### Required Arguments:
-- ```--circuit <path>```: Path to the Stim circuit file.
-- ```--dem <path>```: Path to the detector error model file.
-  
-#### Optional Arguments:
-- ```--no-merge-errors```: Disables merging of identical error mechanisms.
-- ```--num-det-orders <N>```: Number of random manifold orientations to use for detector ordering.
-- ```--det-order-seed <N>```: Random seed for detector ordering.
-- ```--sample-num-shots <N>```: Number of shots to sample from the circuit.
-- ```--max-errors <N>```: Maximum number of errors to sample before stopping.
-- ```--sample-seed <N>```: Seed used when sampling shots.
-- ```--shot-range-begin <N>```: Start index for shot range processing.
-- ```--shot-range-end <N>```: End index for shot range processing.
-- ```--in <path>```: Input file containing detection events.
-- ```--in-format <format>```: Format of the input file (01, b8, etc.).
-- ```--in-includes-appended-observables```: If present, assumes that the observable flips are appended to the end of each shot.
-- ```--obs_in <path>```: Input file containing observable flips.
-- ```--obs-in-format <format>```: Format of the observable flips input file.
-- ```--out <path>```: Output file for observable flip predictions.
-- ```--out-format <format>```: Format for output file.
-- ```--dem-out <path>```: Output file for estimated error frequencies.
-- ```--stats-out <path>```: Output file for statistics and metadata.
-- ```--threads <N>```: Number of threads for parallel decoding.
-- ```--beam <N>```: Beam size for truncation. INF_DET_BEAM (default) means no truncation.
-- ```--beam-climbing```: Enables beam-climbing heuristic.
-- ```--at-most-two-errors-per-detector```: Use heuristic limitation of at most 2 errors per detector.
-- ```--pqlimit <N>```: Maximum size of the priority queue.
-- ```--verbose```: Increases output verbosity.
-- ```--print-stats```: Prints decoding statistics during execution.
 
 ### Example Usage
 
