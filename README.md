@@ -18,6 +18,123 @@ exponential-time algorithm that always identifies the most likely error and use
 heuristics to make it faster. The decoder uses [A*
 search](https://en.wikipedia.org/wiki/A*_search_algorithm) along with a variety
 of pruning heuristics.
+We tested the Tesseract decoder for:
+
+-   Surface codes
+-   Color codes
+-   Bivariate-bicycle codes
+-   Transversal CNOT protocols for surface codes
+-   
+## Features
+
+
+-   **A\* search:** deploys A* search while running a semi Dijkstra algorithm with early stop for high performance.
+-   **Stim and DEM Support:** Processes Stim circuit files and Detector Error Model (DEM) files for comprehensive error decoding.
+-   **Parallel Decoding:** Utilizes multi-threading to accelerate the decoding process, making it suitable for large-scale simulations.
+-   **Efficient Beam Search:** Implements a beam search algorithm to minimize decoding cost and enhance efficiency.
+-   **Sampling and Shot Range Processing:** Supports sampling shots from circuits and processing specific ranges of shots for flexible experiment setups.
+-   **Detailed Statistics:** Provides comprehensive statistics output, including shot counts, error counts, and processing times.
+- **Heuristics**: Includes heuristics such as beam climbing and at most two errors per detector to improve performance.
+
+## Installation
+
+Tesseract relies on the following external libraries:
+
+-   [argparse](https://github.com/p-ranav/argparse): For command-line argument parsing.
+-   [nlohmann/json](https://github.com/nlohmann/json): For JSON handling (used for statistics output).
+-   [Stim](https://github.com/quantumlib/stim): For quantum circuit simulation and error model handling.
+
+### Build Instructions
+
+Tesseract uses Bazel as its build system. To build the decoder:
+
+```bash
+bazel build tesseract:all
+```
+Usage
+Running the Decoder
+The tesseract_main.cc file provides the main entry point for the Tesseract decoder. It can decode error events from Stim circuits, DEM files, and pre-existing detection event files.
+
+Basic Usage:
+
+ ```bash 
+./tesseract --circuit <circuit_file> --out <output_file>
+```
+Example with Advanced Options:
+
+ ```bash 
+./tesseract \
+  --pqlimit 1000000 \
+  --at-most-two-errors-per-detector \
+  --det-order-seed 232852747 \
+  --circuit circuit_file.stim \
+  --sample-seed 232856747 \
+  --sample-num-shots 10000 \
+  --threads 32 \
+  --print-stats \
+  --beam 23 \
+  --num-det-orders 1 \
+  --shot-range-begin 582 \
+  --shot-range-end 583
+```
+## Command-Line Arguments
+#### Required Arguments:
+- ```--circuit <path>```: Path to the Stim circuit file.
+- ```--dem <path>```: Path to the detector error model file.
+  
+#### Optional Arguments:
+- ```--no-merge-errors```: Disables merging of identical error mechanisms.
+- ```--num-det-orders <N>```: Number of random manifold orientations to use for detector ordering.
+- ```--det-order-seed <N>```: Random seed for detector ordering.
+- ```--sample-num-shots <N>```: Number of shots to sample from the circuit.
+- ```--max-errors <N>```: Maximum number of errors to sample before stopping.
+- ```--sample-seed <N>```: Seed used when sampling shots.
+- ```--shot-range-begin <N>```: Start index for shot range processing.
+- ```--shot-range-end <N>```: End index for shot range processing.
+- ```--in <path>```: Input file containing detection events.
+- ```--in-format <format>```: Format of the input file (01, b8, etc.).
+- ```--in-includes-appended-observables```: If present, assumes that the observable flips are appended to the end of each shot.
+- ```--obs_in <path>```: Input file containing observable flips.
+- ```--obs-in-format <format>```: Format of the observable flips input file.
+- ```--out <path>```: Output file for observable flip predictions.
+- ```--out-format <format>```: Format for output file.
+- ```--dem-out <path>```: Output file for estimated error frequencies.
+- ```--stats-out <path>```: Output file for statistics and metadata.
+- ```--threads <N>```: Number of threads for parallel decoding.
+- ```--beam <N>```: Beam size for truncation. INF_DET_BEAM (default) means no truncation.
+- ```--beam-climbing```: Enables beam-climbing heuristic.
+- ```--at-most-two-errors-per-detector```: Use heuristic limitation of at most 2 errors per detector.
+- ```--pqlimit <N>```: Maximum size of the priority queue.
+- ```--verbose```: Increases output verbosity.
+- ```--print-stats```: Prints decoding statistics during execution.
+
+### Example Usage
+
+Sampling Shots from a Circuit
+```bash 
+./tesseract --circuit surface_code.stim --sample-num-shots 1000 --out sampled_results.txt
+```
+Using a Detection Event File
+```bash 
+./tesseract --in events.01 --in-format 01 --dem surface_code.dem --out decoded.txt
+```
+Using a Detection Event File and Observable Flips
+```bash 
+./tesseract --in events.01 --in-format 01 --obs_in obs.01 --obs-in-format 01 --dem surface_code.dem --out decoded.txt
+```
+
+### Performance Optimization
+* Parallelism: Increase ```--threads``` to leverage multi-core processors for faster decoding.
+* Beam Search: Use ```--beam``` to control the trade-off between accuracy and speed. Smaller beam sizes result in faster decoding but potentially lower accuracy.
+* Beam Climbing: Enable ```--beam-climbing``` for enhanced cost-based decoding.
+* At most two errors per detector: Enable ```--at-most-two-errors-per-detector``` to improve performance.
+* Priority Queue Limit: Use ```--pqlimit``` to limit the size of the priority queue.
+
+### Output Formats
+* Observable flips output: Predictions of logical errors.
+* DEM usage frequency output: If ```--dem-out``` is specified, outputs estimated error frequencies.
+* Statistics output: Includes number of shots, errors, low confidence shots, and processing time.
+  
 
 <!-- ## Installation -->
 
