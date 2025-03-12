@@ -1,0 +1,50 @@
+# Summary: coding style configuration for editors that read .editorconfig.
+#
+# EditorConfig defines a file format for specifying some common coding style
+# parameters. Many editors recognize .editorconfig files automatically, and
+# there exist plugins for other editors. See https://spec.editorconfig.org/.
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+insert_final_newline = true
+spelling_language = en-US
+trim_trailing_whitespace = true
+
+[*.BUILD,*.bzl,*.bazel]
+# Google doesn't have a style guideline for Bazel files. Most people use 4.
+indent_size = 4
+
+[*.cc,*.h]
+# This matches Google style guidelines.
+indent_size = 2
+
+[*.py]
+indent_size = 4
+# This deviates from the Google style guidelines, which stipulate 80.
+max_line_length = 100
+
+[*.sh]
+# Both of the following values diverge from Google's shell script style.
+indent_size = 4
+max_line_length = 100
+
+# The following is used by shfmt. This brings it closer to Google's style.
+binary_next_line = true
+shell_variant = bash
+space_redirects = true
+switch_case_indent = true
+
+# If this repository has a "third_party" directory, ignore it entirely.
+# Note: shfmt also respects this if you run it with --appply-ignore.
+[third_party/**]
+ignore = true
+
+[*.yml,*.yaml]
+# Google doesn't have style guidelines for YAML, so we're on our own.
+indent_size = 2
+max_line_length = 100
