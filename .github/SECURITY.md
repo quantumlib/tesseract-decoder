@@ -1,20 +1,24 @@
 # Reporting security issues
 
-The Tesseract Decoder developers and community take security bugs in Tesseract
-Decoder seriously. We appreciate your efforts to responsibly disclose your
-findings, and will make every effort to acknowledge your contributions.
+This project's developers and community are committed to addressing security
+bugs promptly and effectively. We appreciate your efforts to disclose your
+findings responsibly, and will make every effort to acknowledge your
+contributions.
 
 Please **do not** use GitHub issues to report security vulnerabilities; GitHub
 issues are public, and doing so could allow someone to exploit the information
-before the problem can be addressed. Instead, please use the GitHub ["Report a
-Vulnerability"](https://github.com/quantumlib/qualtran/security/advisories/new)
-interface from the _Security_ tab of the Tesseract Decoder repository on GitHub.
+before the problem can be addressed. Instead, please use the *Report a
+vulnerability* interface from the _Security_ tab at the top of this GitHub
+repository page.
+
+<div align="center">
+<img width="75%" src="./report-vulnerability-button.png">
+</div>
 
 Please report security issues in third-party modules to the person or team
-maintaining the module rather than the Tesseract Decoder project stewards,
-unless you believe that some action needs to be taken with Tesseract Decoder in
-order to guard against the effects of a security vulnerability in a third-party
-module.
+maintaining the module rather than this project's stewards, unless you believe
+that some action needs to be taken specifically with this project in order to
+guard against the effects of a security vulnerability in third-party software.
 
 ## Responses to security reports
 
@@ -28,4 +32,4 @@ announcement, and may ask for additional information or guidance.
 Please contact the project stewards at Google Quantum AI via email at
 quantum-oss-maintainers@google.com if you have questions or other concerns. If
 for any reason you are uncomfortable reaching out to the project stewards,
-please email opensource@google.com.
+please email opensource@google.com instead.
