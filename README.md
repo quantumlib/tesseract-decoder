@@ -140,4 +140,8 @@ For any questions or concerns not addressed here, please email <quantum-oss-main
 
 ## Disclaimer
 
-Tesseract Decoder is not an official Google product. Copyright 2025 Google LLC.
+Tesseract Decoder is not an officially supported Google product. This project is not eligible for
+the [Google Open Source Software Vulnerability Rewards
+Program](https://bughunters.google.com/open-source-security). 
+
+Copyright 2025 Google LLC.
