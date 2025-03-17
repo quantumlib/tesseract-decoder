@@ -1,25 +1,33 @@
+<div align="center">
+
 # Tesseract Decoder
 
-A Search-Based Decoder for Quantum Error Correction
+A Search-Based Decoder for Quantum Error Correction.
 
 [![Licensed under the Apache 2.0 open-source license](https://img.shields.io/badge/License-Apache%202.0-3c60b1.svg?logo=opensourceinitiative\&logoColor=white\&style=flat-square)](https://github.com/quantumlib/tesseract-decoder/blob/main/LICENSE)
+![C++](https://img.shields.io/badge/C++-20-fcbc2c?style=flat-square&logo=C%2B%2B&logoColor=white)
 
-## Overview
+[Installation](#installation) &ndash;
+[Quick start](#quick-start) &ndash;
+[Documentation](#documentation) &ndash;
+[Help](#help) &ndash;
+[Citation](#citation) &ndash;
+[Contact](#contact)
+
+</div>
 
 Tesseract is a Most Likely Error decoder designed for Low Density Parity Check (LDPC) quantum
-error-correcting codes. It employs the A\* search algorithm to efficiently navigate the
-exponentially large graph of possible error subsets, identifying the most likely error configuration
-consistent with the observed syndrome. Tesseract leverages several pruning heuristics and manifold
-orientation techniques to achieve significant speed improvements over traditional integer
-programming-based decoders, while maintaining comparable accuracy at moderate physical error rates.
+error-correcting codes. It applies pruning heuristics and manifold orientation techniques during a
+search over the error subsets to identify the most likely error configuration consistent with the
+observed syndrome. Tesseract archives significant speed improvements over traditional integer
+programming-based decoders while maintaining comparable accuracy at moderate physical error rates.
 
 We tested the Tesseract decoder for:
 
 *   Surface codes
 *   Color codes
 *   Bivariate-bicycle codes
-*   Transversal CNOT protocols for surface codes Stim circuits for these protocols are stored in
-    `testdata/`.
+*   Transversal CNOT protocols for surface codes
 
 ## Features
 
@@ -142,6 +150,13 @@ For any questions or concerns not addressed here, please email <quantum-oss-main
 
 Tesseract Decoder is not an officially supported Google product. This project is not eligible for
 the [Google Open Source Software Vulnerability Rewards
-Program](https://bughunters.google.com/open-source-security). 
+Program](https://bughunters.google.com/open-source-security).
 
 Copyright 2025 Google LLC.
+
+<div align="center">
+  <a href="https://quantumai.google">
+    <img width="15%" alt="Google Quantum AI"
+         src="./docs/images/quantum-ai-vertical.svg">
+  </a>
+</div>
