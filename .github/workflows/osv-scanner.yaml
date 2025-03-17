@@ -1,0 +1,88 @@
+# Zero-config modular workflow to run Open Source Vulnerabilities code scans.
+#
+# The OSV scanner is a dependency vulnerability scanner that identifies known
+# vulnerabilities in a project's dependencies. It supports C/C++, Python, Java,
+# JavaScript, and others. The findings are reported in the repo's code-scanning
+# results page, https://github.com/quantumlib/REPO/security/code-scanning/.
+#
+# The OSV project provides a GA workflow that you can reference as a step with
+# "uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml".
+# Unfortunately, that workflow inexplicably doesn't use the latest version of
+# the scanner and reporter workflows, and also does other things like hard-code
+# the value of the osv-scanner "--gh-annotations" option to "false". Using the
+# separate scanner & reporter actions allows us to adjust the options and use
+# Dependabot to update the workflow versions as new ones are introduced.
+#
+# For more examples and options, including how to ignore specific
+# vulnerabilities, see https://google.github.io/osv-scanner/github-action/.
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+name: OSV code scan
+run-name: Run OSV vulnerability scanner ${{inputs.reason}}
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - main
+      - master
+
+  # Support merge queues.
+  merge_group:
+    types:
+      - checks_requested
+
+  # Allow manual invocation.
+  workflow_dispatch:
+
+  # Allow calling from nightly.yaml.
+  workflow_call:
+    inputs:
+      reason:
+        type: string
+
+# Declare default permissions as read only.
+permissions: read-all
+
+jobs:
+  osv-scan:
+    name: Run OSV scanner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      # Needed to upload the results to code-scanning dashboard.
+      security-events: write
+      # Read commit contents
+      contents: read
+      actions: read
+    steps:
+      - name: Check out a copy of the git repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Run OSV scanner on the repository files
+        # yamllint disable rule:line-length
+        uses: google/osv-scanner-action/osv-scanner-action@f8115f2f28022984d4e8070d2f0f85abcf6f3458 # v1.9.2
+        continue-on-error: true
+        with:
+          scan-args: |-
+            --format=json
+            --output=osv-results.json
+            --recursive
+            ./
+
+      - name: Run OSV reporter on the results of the scan
+        # yamllint disable rule:line-length
+        uses: google/osv-scanner-action/osv-reporter-action@f8115f2f28022984d4e8070d2f0f85abcf6f3458 # v1.9.2
+        with:
+          scan-args: |-
+            --output=osv-results.sarif
+            --new=osv-results.json
+            --gh-annotations=true
+            --fail-on-vuln=true
+
+      - name: Upload to the repository's code-scanning results dashboard
+        uses: github/codeql-action/upload-sarif@dd746615b3b9d728a6a37ca2045b68ca76d4841a # v3.28.8
+        with:
+          sarif_file: osv-results.sarif
