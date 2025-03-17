@@ -1,24 +1,24 @@
-# Summary: common editor configurations.                 -*- fill-column: 80 -*-
+# Common editor configurations for this project.         -*- fill-column: 80 -*-
 #
 # EditorConfig defines a file format for specifying some common coding style
-# parameters. Many IDEs and editors read .editorconfig files, either natively or
-# via plugins. A few formatters also read .editorconfig; shfmt and Prettier are
-# two examples (as of early 2025).
+# parameters. Many IDEs and editors read .editorconfig files, either natively
+# or via plugins. A few formatters also read .editorconfig; shfmt and Prettier
+# are two examples (as of early 2025).
 #
-# We mostly follow Google's style (https://google.github.io/styleguide/) with
-# very few deviations.
+# We mostly follow Google's style guides (https://google.github.io/styleguide/)
+# with very few deviations.
 #
 # Miscellaneous notes:
 #
 # - The EditorConfig property `max_line_length` is not set here because its
-#   intended behavior is poorly specified. (See the comments at
-#   https://github.com/editorconfig/editorconfig/issues/387) It *would* have
+#   intended behavior is poorly specified. (See the discussion in the comments
+#   at https://github.com/editorconfig/editorconfig/issues/387) It *would* have
 #   been desirable to define a project convention for the line width here, but
-#   we must instead use editor-specific configuration files to to do that.
+#   we must instead use editor-specific configuration files to do that.
 #
 # - With one known exception (shfmt), `.editorconfig` files are not read by
-#   linters or formatters that we use, which means a project needs separate
-#   config files for those tools.
+#   linters or formatters, which means the project needs separate config files
+#   for those tools.
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 root = true
