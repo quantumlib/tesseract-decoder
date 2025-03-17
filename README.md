@@ -160,11 +160,12 @@ cite the following:
 ```latex
 @misc{beni2025tesseractdecoder,
     title={Tesseract: A Search-Based Decoder for Quantum Error Correction},
-    author={Laleh Aghababaie Beni and Oscar Higgott and Noah Shutty},
+    author = {Aghababaie Beni, Laleh and Higgott, Oscar and Shutty, Noah},
     year={2025},
     eprint={2503.10988},
     archivePrefix={arXiv},
     primaryClass={quant-ph},
+    doi = {10.48550/arXiv.2503.10988},
     url={https://arxiv.org/abs/2503.10988},
 }
 ```
