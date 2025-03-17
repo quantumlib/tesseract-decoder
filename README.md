@@ -8,8 +8,7 @@ A Search-Based Decoder for Quantum Error Correction.
 ![C++](https://img.shields.io/badge/C++-20-fcbc2c?style=flat-square&logo=C%2B%2B&logoColor=white)
 
 [Installation](#installation) &ndash;
-[Quick start](#quick-start) &ndash;
-[Documentation](#documentation) &ndash;
+[Usage](#usage) &ndash;
 [Help](#help) &ndash;
 [Citation](#citation) &ndash;
 [Contact](#contact)
@@ -34,7 +33,7 @@ We tested the Tesseract decoder for:
 *   **A\* search:** deploys [A\* search](https://en.wikipedia.org/wiki/A*_search_algorithm) while
     running a [Dijkstra algorithm](https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm) with early
     stop for high performance.
-*  **Stim and DEM Support:** processes [Stim](https://github.com/quantumlib/stim) circuit files and
+*   **Stim and DEM Support:** processes [Stim](https://github.com/quantumlib/stim) circuit files and
     [Detector Error Model
     (DEM)](https://github.com/quantumlib/Stim/blob/main/doc/file_format_dem_detector_error_model.md)
     files with arbitrary error models.
@@ -120,7 +119,6 @@ Using a Detection Event File and Observable Flips:
 Tesseract supports reading and writing from all of Stim's standard [output
 formats](https://github.com/quantumlib/Stim/blob/main/doc/result_formats.md).
 
-
 ### Performance Optimization
 
 Here are some tips for improving performance:
@@ -140,7 +138,36 @@ Here are some tips for improving performance:
 *   *DEM usage frequency output*: if `--dem-out` is specified, outputs estimated error frequencies.
 *   *Statistics output*: includes number of shots, errors, low confidence shots, and processing time.
 
-<!-- ## Citing Tesseract Decoder<a name="how-to-cite-tesseract"> -->
+## Help
+
+*   Do you have a feature request or want to report a bug? [Open an issue on
+    GitHub] to report it!
+*   Do you have a code contribution? Read our [contribution guidelines], then
+    open a [pull request]!
+
+[Open an issue on GitHub]: https://github.com/quantumlib/tesseract-decoder/issues/new/choose
+[contribution guidelines]: https://github.com/quantumlib/tesseract-decoder/blob/main/CONTRIBUTING.md
+[pull request]: https://help.github.com/articles/about-pull-requests
+
+We are committed to providing a friendly, safe, and welcoming environment for
+all. Please read and respect our [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Citation
+
+When publishing articles or otherwise writing about Tesseract Decoder, please
+cite the following:
+
+```latex
+@misc{beni2025tesseractdecoder,
+    title={Tesseract: A Search-Based Decoder for Quantum Error Correction},
+    author={Laleh Aghababaie Beni and Oscar Higgott and Noah Shutty},
+    year={2025},
+    eprint={2503.10988},
+    archivePrefix={arXiv},
+    primaryClass={quant-ph},
+    url={https://arxiv.org/abs/2503.10988},
+}
+```
 
 ## Contact
 
