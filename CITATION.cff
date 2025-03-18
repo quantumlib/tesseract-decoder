@@ -1,0 +1,71 @@
+# Citation information for this repository.                         -*- yaml -*-
+#
+# CITATION.cff files provide human- & machine-readable citation information for
+# software and datasets. GitHub, Zenodo, and the Zotero browser plugin all use
+# CFF files automatically if provided. https://citation-file-format.github.io/.
+#
+# Tools exist to generate CITATION.cff files from other formats such as BibTeX.
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+cff-version: 1.2.0
+message: If you use this software, please cite it using this metadata.
+
+# CITATION.cff files describe how to cite software or datasets, with the goal of
+# making software and data be citable in their own right. However, sometimes
+# projects want citations to go to a paper instead. 'Preferred-citation' serves
+# to communicate that. The distinction matters in different situations. If this
+# field is present, GitHub uses the value for the "cite this repository" button
+# and ignores the rest of this file; conversely, the Zenodo-GitHub integration
+# ignores this field when creating an entry for a new software release (because
+# the Zenodo entry is specifically about the software in this repository).
+preferred-citation:
+  type: generic
+  authors:
+    - family-names: Aghababaie Beni
+      given-names: Laleh
+    - family-names: Higgott
+      given-names: Oscar
+    - family-names: Shutty
+      given-names: Noah
+  title: 'Tesseract: A Search-Based Decoder for Quantum Error Correction'
+  year: 2025
+  date-published: 2025-01-01
+  doi: 10.48550/arXiv.2503.10988
+  url: https://arxiv.org/abs/2503.10988
+
+# The remaining metadata in this file describes the current software release.
+
+title: Tesseract Decoder
+authors:
+  - family-names: Aghababaie Beni
+    given-names: Laleh
+  - family-names: Higgott
+    given-names: Oscar
+  - family-names: Shutty
+    given-names: Noah
+abstract: A Search-Based Decoder for Quantum Error Correction.
+date-released: 2025-03-12
+url: https://github.com/quantumlib/tesseract-decoder
+repository-code: https://github.com/quantumlib/tesseract-decoder
+license: Apache-2.0
+type: software
+identifiers:
+  - description: Publication about Tesseract Decoder
+    value: 10.48550/arXiv.2503.10988
+    type: doi
+keywords:
+  - A*
+  - a-star
+  - algorithms
+  - C++
+  - color code
+  - QEC
+  - QEC code
+  - quantum
+  - quantum computing
+  - quantum error correction
+  - research
+  - science
+  - software
+  - surface code
+  - syndrome-decoding
