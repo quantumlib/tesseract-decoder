@@ -48,7 +48,7 @@ We tested the Tesseract decoder for:
 *   **Heuristics**: includes flexible heuristic options: `--beam`, `--det-penalty`,
     `--beam-climbing`, `--no-revisit-dets`, `--at-most-two-errors-per-detector` and `--pqlimit` to
     improve performance while maintaining a low logical error rate. To learn more about these
-    options, use `./bazel-bin/tesseract/tesseract --help`
+    options, use `./bazel-bin/src/tesseract --help`
 
 ## Installation
 
@@ -64,7 +64,7 @@ Tesseract relies on the following external libraries:
 Tesseract uses [Bazel](https://bazel.build/) as its build system. To build the decoder:
 
 ```bash
-bazel build tesseract:all
+bazel build src:all
 ```
 
 ## Usage
