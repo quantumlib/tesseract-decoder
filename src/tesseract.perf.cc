@@ -81,6 +81,7 @@ void benchmark_tesseract(std::string circuit_path, size_t num_shots) {
   config.det_beam = 20;
   config.pqlimit = 10'000'000;
   TesseractDecoder decoder(config);
+  std::cout << "\tTesseract:";
   benchmark_decoder(decoder, circuit, num_shots);
 }
 
@@ -101,18 +102,30 @@ void benchmark_simplex(std::string circuit_path, size_t num_shots) {
   SimplexConfig config{dem};
   config.parallelize = true;
   SimplexDecoder decoder(config);
+  std::cout << "\tSimplex:";
   benchmark_decoder(decoder, circuit, num_shots);
 }
 
 int main() {
-  for (std::string circuit_fname : get_files_recursive("../testdata")) {
-    if (circuit_fname.find("d=11") != std::string::npos) {
+  for (std::string circuit_fname : get_files_recursive("testdata")) {
+    if (circuit_fname.find("d=11") != std::string::npos or
+        circuit_fname.find("d=13") != std::string::npos or
+        circuit_fname.find("d=15") != std::string::npos or
+        circuit_fname.find("d=17") != std::string::npos or
+        circuit_fname.find("d=19") != std::string::npos or
+        circuit_fname.find("d=21") != std::string::npos) {
+      continue;
+    }
+    if (circuit_fname.find("colorcodes") == std::string::npos and
+        circuit_fname.find("surfacecodes") == std::string::npos) {
       continue;
     }
     if (circuit_fname.find("uniform") != std::string::npos) {
       continue;
     }
-    if (circuit_fname.find("p=0.003") != std::string::npos) {
+    if (circuit_fname.find("p=0.0005") == std::string::npos and
+        circuit_fname.find("p=0.001") == std::string::npos and
+        circuit_fname.find("p=0.002") == std::string::npos) {
       continue;
     }
     std::cout << "Benchmark on " << circuit_fname << std::endl;
