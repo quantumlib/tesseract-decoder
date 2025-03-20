@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <chrono>
 #include "tesseract.h"
-
-#include "common/benchmark/benchmark.h"
 #include "simplex.h"
 #include "stim.h"
 #include "utils.h"
@@ -27,12 +26,12 @@ void benchmark_decoder(Decoder& decoder, stim::Circuit& circuit, size_t num_shot
   std::vector<stim::SparseShot> shots;
   sample_shots(test_data_seed, circuit, num_shots, shots);
 
-  // Try to ensure compiler does not optimize out the decoding
+  // Use volatile to try to ensure compiler does not optimize out the decoding
   volatile size_t total_num_errors_used = 0;
   size_t num_low_confidence = 0;
   size_t num_errors = 0;
   size_t num_decoded = 0;
-  benchmark_go([&]() {
+  auto benchmark_func = [&]() {
     for (size_t shot = 0; shot < num_shots; ++shot) {
       decoder.decode_to_errors(shots[shot].hits);
       common::ObservablesMask obs = decoder.mask_from_errors(decoder.predicted_errors_buffer);
@@ -41,10 +40,16 @@ void benchmark_decoder(Decoder& decoder, stim::Circuit& circuit, size_t num_shot
       total_num_errors_used += decoder.predicted_errors_buffer.size();
       ++num_decoded;
     }
-  })
-      .goal_micros(num_shots)
-      .show_rate("shots", (double)(num_decoded));
-  std::cout << num_decoded << " shots " << num_low_confidence << " low confidence " << num_errors
+  };
+  
+  double num_milliseconds = 0.0;
+  auto start_time = std::chrono::steady_clock::now();
+  do {
+      benchmark_func();
+      auto end_time = std::chrono::steady_clock::now();
+      num_milliseconds = std::chrono::duration<double, std::milli>(end_time - start_time).count();
+  } while (num_milliseconds < 1000.0);
+  std::cout << (num_milliseconds/num_decoded) << " milliseconds per shot "<< num_decoded << " shots " << num_low_confidence << " low confidence " << num_errors
             << " errors "
             << " total_num_errors_used = " << total_num_errors_used << std::endl;
 }
@@ -84,7 +89,7 @@ void benchmark_simplex(std::string circuit_path, size_t num_shots) {
   benchmark_decoder(decoder, circuit, num_shots);
 }
 
-BENCHMARK(TesseractDecoder) {
+int main() {
   for (std::string circuit_fname : get_files_recursive("tesseract/testdata")) {
     if (circuit_fname.find("d=11") != std::string::npos) {
       continue;
@@ -97,21 +102,7 @@ BENCHMARK(TesseractDecoder) {
     }
     std::cout << "Benchmark on " << circuit_fname << std::endl;
     benchmark_tesseract(circuit_fname, 20);
-  }
-}
-
-BENCHMARK(SimplexDecoder) {
-  for (std::string circuit_fname : get_files_recursive("tesseract/testdata")) {
-    if (circuit_fname.find("d=11") != std::string::npos) {
-      continue;
-    }
-    if (circuit_fname.find("uniform") != std::string::npos) {
-      continue;
-    }
-    if (circuit_fname.find("p=0.003") != std::string::npos) {
-      continue;
-    }
-    std::cout << "Benchmark on " << circuit_fname << std::endl;
     benchmark_simplex(circuit_fname, 20);
   }
+  return 0;
 }

@@ -496,6 +496,7 @@ int main(int argc, char* argv[]) {
     out << est_dem << '\n';
   }
 
+  bool print_final_stats = true;
   if (!args.stats_out_fname.empty()) {
     nlohmann::json stats_json = {
         {"circuit_path", args.circuit_path},
@@ -509,20 +510,18 @@ int main(int argc, char* argv[]) {
 
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;
+      print_final_stats = false;
     } else {
-      std::cout << "num_shots = " << shot;
-      if (has_obs) {
-        std::cout << " num_errors = " << num_errors;
-      }
-      std::cout << std::endl;
       std::ofstream out(args.stats_out_fname, std::ofstream::out);
       out << stats_json << std::endl;
     }
-  } else {
+  }
+  if (print_final_stats) {
     std::cout << "num_shots = " << shot;
     if (has_obs) {
       std::cout << " num_errors = " << num_errors;
     }
+    std::cout << " total_time_seconds = " << total_time_seconds;
     std::cout << std::endl;
   }
 }

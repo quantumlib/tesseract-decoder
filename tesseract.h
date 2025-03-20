@@ -30,11 +30,12 @@ struct TesseractConfig {
   stim::DetectorErrorModel dem;
   int det_beam = INF_DET_BEAM;
   bool beam_climbing = false;
-  bool detcost_prefer_clean = false;
+  bool no_revisit_dets = false;
   bool at_most_two_errors_per_detector = false;
   bool verbose;
   size_t pqlimit = std::numeric_limits<size_t>::max();
   std::vector<std::vector<size_t>> det_orders;
+  double det_penalty = 0;
 };
 
 class Node {
@@ -96,7 +97,8 @@ struct TesseractDecoder {
   double get_detcost(
       size_t d, const std::vector<bool>& blocked_errs, const std::vector<size_t>& det_counts,
       const std::vector<bool>& dets) const;
-  Node to_node(const QNode& qnode, const std::vector<bool>& shot_dets, size_t det_order) const;
+  void to_node(
+      const QNode& qnode, const std::vector<bool>& shot_dets, size_t det_order, Node& node) const;
 };
 
 #endif  // TESSERACT_DECODER_H

@@ -62,8 +62,9 @@ struct Args {
 
   // Parameters that limit the algorithm's runtime at a potential accuracy or completion cost.
   size_t det_beam;
+  double det_penalty = 0;
   bool beam_climbing = false;
-  bool detcost_prefer_clean = false;
+  bool no_revisit_dets = false;
   bool at_most_two_errors_per_detector = false;
   size_t pqlimit;
 
@@ -281,8 +282,9 @@ struct Args {
       // TODO: ensure the fclose happens after all predictions are written to the writer.
     }
     config.det_beam = det_beam;
+    config.det_penalty = det_penalty;
     config.beam_climbing = beam_climbing;
-    config.detcost_prefer_clean = detcost_prefer_clean;
+    config.no_revisit_dets = no_revisit_dets;
     config.at_most_two_errors_per_detector = at_most_two_errors_per_detector;
     config.pqlimit = pqlimit;
     config.verbose = verbose;
@@ -301,7 +303,7 @@ int main(int argc, char* argv[]) {
   program.add_argument("--num-det-orders")
       .help("Number of ways to orient the manifold when reordering the detectors")
       .metavar("N")
-      .default_value(size_t(10))
+      .default_value(size_t(1))
       .store_into(args.num_det_orders);
   program.add_argument("--det-order-seed")
       .help("Seed used when initializing the random detector traversal orderings.")
@@ -399,14 +401,19 @@ int main(int argc, char* argv[]) {
       .metavar("N")
       .default_value(INF_DET_BEAM)
       .store_into(args.det_beam);
+  program.add_argument("--det-penalty")
+      .help("Penalty cost to add per activated detector in the residual syndrome.")
+      .metavar("D")
+      .default_value(0.0)
+      .store_into(args.det_penalty);
   program.add_argument("--beam-climbing")
       .help("Use beam-climbing heuristic")
       .flag()
       .store_into(args.beam_climbing);
-  program.add_argument("--detcost-prefer-clean")
-      .help("Use prefer-clean heuristic in detcost computation")
+  program.add_argument("--no-revisit-dets")
+      .help("Use no-revisit-dets heuristic")
       .flag()
-      .store_into(args.detcost_prefer_clean);
+      .store_into(args.no_revisit_dets);
   program.add_argument("--at-most-two-errors-per-detector")
       .help("Use heuristic limitation of at most 2 errors per detector")
       .flag()
@@ -479,7 +486,7 @@ int main(int argc, char* argv[]) {
         finished[shot] = true;
       }
       // Add the error counts to the total
-      for (size_t ei = 0; ei < config.dem.count_errors(); ++ei) {
+      for (size_t ei = 0; ei < error_use_totals.size(); ++ei) {
         error_use_totals[ei] += error_use[ei];
       }
       --num_worker_threads_active;
@@ -550,16 +557,18 @@ int main(int argc, char* argv[]) {
     out << est_dem << '\n';
   }
 
+  bool print_final_stats = true;
   if (!args.stats_out_fname.empty()) {
     nlohmann::json stats_json = {
         {"circuit_path", args.circuit_path},
         {"dem_path", args.dem_path},
         {"max_errors", args.max_errors},
         {"sample_seed", args.sample_seed},
-        {"detcost_prefer_clean", args.detcost_prefer_clean},
         {"at_most_two_errors_per_detector", args.at_most_two_errors_per_detector},
         {"det_beam", args.det_beam},
+        {"det_penalty", args.det_penalty},
         {"beam_climbing", args.beam_climbing},
+        {"no_revisit_dets", args.no_revisit_dets},
         {"pqlimit", args.pqlimit},
         {"num_det_orders", args.num_det_orders},
         {"det_order_seed", args.det_order_seed},
@@ -567,24 +576,24 @@ int main(int argc, char* argv[]) {
         {"num_errors", num_errors},
         {"num_low_confidence", num_low_confidence},
         {"num_shots", shot},
+        {"num_threads", args.num_threads},
         {"sample_num_shots", args.sample_num_shots}};
 
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;
+      print_final_stats = false;
     } else {
-      std::cout << "num_shots = " << shot;
-      if (has_obs) {
-        std::cout << " num_errors = " << num_errors;
-      }
-      std::cout << std::endl;
       std::ofstream out(args.stats_out_fname, std::ofstream::out);
       out << stats_json << std::endl;
     }
-  } else {
+  }
+  if (print_final_stats) {
     std::cout << "num_shots = " << shot;
+    std::cout << " num_low_confidence = " << num_low_confidence;
     if (has_obs) {
       std::cout << " num_errors = " << num_errors;
     }
+    std::cout << " total_time_seconds = " << total_time_seconds;
     std::cout << std::endl;
   }
 }

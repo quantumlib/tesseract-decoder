@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//common/benchmark:benchmark.bzl", "cc_benchmark")
+# load("@benchmark//:benchmark.bzl", "cc_benchmark")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -106,7 +106,6 @@ cc_test(
         ":libutils",
         "@gtest",
         "@gtest//:gtest_main",
-        "@rapidjson",
         "@stim//:stim_lib",
     ],
 )
@@ -124,7 +123,7 @@ cc_test(
 
 PERF_FILES = glob(["**/*.perf.*"])
 
-cc_benchmark(
+cc_binary(
     name = "tesseract_perf",
     srcs = PERF_FILES,
     copts = OPT_COPTS,
