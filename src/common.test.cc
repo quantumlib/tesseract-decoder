@@ -15,7 +15,6 @@
 #include "common.h"
 
 #include "gtest/gtest.h"
-
 #include "stim.h"
 
 TEST(common, ErrorsStructFromDemInstruction) {

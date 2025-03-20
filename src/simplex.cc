@@ -23,7 +23,8 @@ constexpr size_t T_COORD = 2;
 
 SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
   std::vector<double> detector_t_coords(config.dem.count_detectors());
-  for (const stim::DemInstruction& instruction : config.dem.flattened().instructions) {
+  for (const stim::DemInstruction& instruction :
+       config.dem.flattened().instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_SHIFT_DETECTORS:
         assert(false && "unreachable");
@@ -36,13 +37,15 @@ SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
         break;
       }
       case stim::DemInstructionType::DEM_DETECTOR:
-        detector_t_coords[instruction.target_data[0].val()] = instruction.arg_data[T_COORD];
+        detector_t_coords[instruction.target_data[0].val()] =
+            instruction.arg_data[T_COORD];
         break;
       default:
         assert(false && "unreachable");
     }
   }
-  std::map<double, std::vector<size_t>> start_time_to_errors_map, end_time_to_errors_map;
+  std::map<double, std::vector<size_t>> start_time_to_errors_map,
+      end_time_to_errors_map;
   std::set<double> times;
   for (size_t ei = 0; ei < errors.size(); ++ei) {
     double min_error_time = std::numeric_limits<double>::max();
@@ -72,7 +75,8 @@ SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
 void SimplexDecoder::init_ilp() {
   model = std::make_unique<HighsModel>();
 
-  // There is one variable for each error and one slack variable for each detector
+  // There is one variable for each error and one slack variable for each
+  // detector
   size_t num_vars = errors.size() + num_detectors;
 
   // Set up objective function: minimize total likelihood cost
@@ -87,8 +91,9 @@ void SimplexDecoder::init_ilp() {
   // Set up variable bounds
   model->lp_.col_lower_.resize(num_vars, 0.0);
   model->lp_.col_upper_.resize(num_vars, 1.0);  // Error variables are binary
-  // Slack variables are arbitrary integers. But for numerical stability, we constrain them to be in
-  // the range -num_errors, num_errors, which is a safe upper bound on how big they need to get.
+  // Slack variables are arbitrary integers. But for numerical stability, we
+  // constrain them to be in the range -num_errors, num_errors, which is a safe
+  // upper bound on how big they need to get.
   for (size_t d = errors.size(); d < num_vars; ++d) {
     model->lp_.col_lower_[d] = -double(errors.size());
     model->lp_.col_upper_[d] = double(errors.size());
@@ -166,8 +171,8 @@ void SimplexDecoder::decode_to_errors(const std::vector<size_t>& detections) {
         model->lp_.col_cost_[ei] = errors[ei].likelihood_cost;
       }
     };
-    // Set the errors in the first window_length time slices to have their true cost, and constrain
-    // the detectors to match the shot detections.
+    // Set the errors in the first window_length time slices to have their true
+    // cost, and constrain the detectors to match the shot detections.
     size_t t1 = 0;
     for (t1 = 0; (t1 + config.window_slide_length < config.window_length) &&
                  (t1 < start_time_to_errors.size());
@@ -180,7 +185,8 @@ void SimplexDecoder::decode_to_errors(const std::vector<size_t>& detections) {
     bool solution_empty = true;
 
     while (t1 < start_time_to_errors.size() or solution_empty) {
-      for (size_t step = 0; step < config.window_slide_length && t1 < start_time_to_errors.size();
+      for (size_t step = 0; step < config.window_slide_length &&
+                            t1 < start_time_to_errors.size();
            ++step) {
         add_costs_for_time(t1);
         ++t1;
@@ -192,8 +198,8 @@ void SimplexDecoder::decode_to_errors(const std::vector<size_t>& detections) {
       // Pass the model to HiGHS
       *return_status = highs->passModel(*model);
       if (*return_status != HighsStatus::kOk) {
-        std::cerr << "Error: passModel failed with status: " << highsStatusToString(*return_status)
-                  << std::endl;
+        std::cerr << "Error: passModel failed with status: "
+                  << highsStatusToString(*return_status) << std::endl;
       }
       assert(*return_status == HighsStatus::kOk);
 
@@ -210,30 +216,35 @@ void SimplexDecoder::decode_to_errors(const std::vector<size_t>& detections) {
       // Solve the model
       *return_status = highs->run();
       if (*return_status != HighsStatus::kOk) {
-        std::cerr << "Error: run failed with status: " << highsStatusToString(*return_status)
-                  << std::endl;
+        std::cerr << "Error: run failed with status: "
+                  << highsStatusToString(*return_status) << std::endl;
         // Write out the model in mps format for debugging
-        HighsStatus write_return_status = writeModelAsMps(
-            highs->getOptions(), "bad_shot.mps", *model,
-            /*free_format=*/true);
-        std::cerr << "Write return had status: " << highsStatusToString(write_return_status)
-                  << std::endl;
-        assert(
-            write_return_status == HighsStatus::kOk or
-            write_return_status == HighsStatus::kWarning);
+        HighsStatus write_return_status =
+            writeModelAsMps(highs->getOptions(), "bad_shot.mps", *model,
+                            /*free_format=*/true);
+        std::cerr << "Write return had status: "
+                  << highsStatusToString(write_return_status) << std::endl;
+        assert(write_return_status == HighsStatus::kOk or
+               write_return_status == HighsStatus::kWarning);
       }
       assert(*return_status == HighsStatus::kOk);
 
       if (config.verbose) {
         // Get the solution information
         const HighsInfo& info = highs->getInfo();
-        std::cout << "Simplex iteration count: " << info.simplex_iteration_count << std::endl;
-        std::cout << "Objective function value: " << info.objective_function_value << std::endl;
+        std::cout << "Simplex iteration count: " << info.simplex_iteration_count
+                  << std::endl;
+        std::cout << "Objective function value: "
+                  << info.objective_function_value << std::endl;
         std::cout << "Primal  solution status: "
-                  << highs->solutionStatusToString(info.primal_solution_status) << std::endl;
+                  << highs->solutionStatusToString(info.primal_solution_status)
+                  << std::endl;
         std::cout << "Dual    solution status: "
-                  << highs->solutionStatusToString(info.dual_solution_status) << std::endl;
-        std::cout << "Basis: " << highs->basisValidityToString(info.basis_validity) << std::endl;
+                  << highs->solutionStatusToString(info.dual_solution_status)
+                  << std::endl;
+        std::cout << "Basis: "
+                  << highs->basisValidityToString(info.basis_validity)
+                  << std::endl;
       }
 
       // Get the model status
@@ -249,9 +260,11 @@ void SimplexDecoder::decode_to_errors(const std::vector<size_t>& detections) {
       assert(!solution.hasUndefined());
       solution_empty = false;
 
-      for (size_t step = 0; step < config.window_slide_length && t0 < end_time_to_errors.size();
+      for (size_t step = 0;
+           step < config.window_slide_length && t0 < end_time_to_errors.size();
            ++step) {
-        // Freeze all errors at time slice t0 to their current values, and increment t0
+        // Freeze all errors at time slice t0 to their current values, and
+        // increment t0
         for (size_t ei : end_time_to_errors.at(t0++)) {
           model->lp_.col_lower_[ei] = solution.col_value.at(ei);
           model->lp_.col_upper_[ei] = solution.col_value.at(ei);
@@ -277,13 +290,19 @@ void SimplexDecoder::decode_to_errors(const std::vector<size_t>& detections) {
     if (config.verbose) {
       // Get the solution information
       const HighsInfo& info = highs->getInfo();
-      std::cout << "Simplex iteration count: " << info.simplex_iteration_count << std::endl;
-      std::cout << "Objective function value: " << info.objective_function_value << std::endl;
+      std::cout << "Simplex iteration count: " << info.simplex_iteration_count
+                << std::endl;
+      std::cout << "Objective function value: " << info.objective_function_value
+                << std::endl;
       std::cout << "Primal  solution status: "
-                << highs->solutionStatusToString(info.primal_solution_status) << std::endl;
+                << highs->solutionStatusToString(info.primal_solution_status)
+                << std::endl;
       std::cout << "Dual    solution status: "
-                << highs->solutionStatusToString(info.dual_solution_status) << std::endl;
-      std::cout << "Basis: " << highs->basisValidityToString(info.basis_validity) << std::endl;
+                << highs->solutionStatusToString(info.dual_solution_status)
+                << std::endl;
+      std::cout << "Basis: "
+                << highs->basisValidityToString(info.basis_validity)
+                << std::endl;
     }
 
     // Get the model status
@@ -305,7 +324,8 @@ void SimplexDecoder::decode_to_errors(const std::vector<size_t>& detections) {
   }
 }
 
-double SimplexDecoder::cost_from_errors(const std::vector<size_t>& predicted_errors) {
+double SimplexDecoder::cost_from_errors(
+    const std::vector<size_t>& predicted_errors) {
   double total_cost = 0;
   // Iterate over all errors and add to the mask
   for (size_t ei : predicted_errors_buffer) {
@@ -324,13 +344,15 @@ common::ObservablesMask SimplexDecoder::mask_from_errors(
   return mask;
 }
 
-common::ObservablesMask SimplexDecoder::decode(const std::vector<size_t>& detections) {
+common::ObservablesMask SimplexDecoder::decode(
+    const std::vector<size_t>& detections) {
   decode_to_errors(detections);
   return mask_from_errors(predicted_errors_buffer);
 }
 
 void SimplexDecoder::decode_shots(
-    std::vector<stim::SparseShot>& shots, std::vector<common::ObservablesMask>& obs_predicted) {
+    std::vector<stim::SparseShot>& shots,
+    std::vector<common::ObservablesMask>& obs_predicted) {
   obs_predicted.resize(shots.size());
   for (size_t i = 0; i < shots.size(); ++i) {
     obs_predicted[i] = decode(shots[i].hits);

@@ -17,14 +17,14 @@
 #include <vector>
 
 #include "gtest/gtest.h"
-
 #include "simplex.h"
 #include "stim.h"
 #include "utils.h"
 
 constexpr uint64_t test_data_seed = 752024;
 
-bool simplex_test_compare(stim::DetectorErrorModel& dem, std::vector<stim::SparseShot>& shots) {
+bool simplex_test_compare(stim::DetectorErrorModel& dem,
+                          std::vector<stim::SparseShot>& shots) {
   TesseractConfig tesseract_config{dem};
   TesseractDecoder tesseract_decoder(tesseract_config);
 
@@ -33,19 +33,21 @@ bool simplex_test_compare(stim::DetectorErrorModel& dem, std::vector<stim::Spars
 
   for (size_t shot = 0; shot < shots.size(); shot++) {
     tesseract_decoder.decode_to_errors(shots[shot].hits);
-    double tesseract_cost =
-        tesseract_decoder.cost_from_errors(tesseract_decoder.predicted_errors_buffer);
+    double tesseract_cost = tesseract_decoder.cost_from_errors(
+        tesseract_decoder.predicted_errors_buffer);
 
     if (tesseract_decoder.low_confidence_flag) {
-      // Simplex c++ does not yet support undecodable shots -- i.e. detection event configurations
-      // with no error solution.
+      // Simplex c++ does not yet support undecodable shots -- i.e. detection
+      // event configurations with no error solution.
       std::cout << "not decoding shot " << shot
-                << " with simplex because Tesseract found no solution" << std::endl;
+                << " with simplex because Tesseract found no solution"
+                << std::endl;
       continue;
     }
 
     simplex_decoder.decode_to_errors(shots[shot].hits);
-    double simplex_cost = simplex_decoder.cost_from_errors(simplex_decoder.predicted_errors_buffer);
+    double simplex_cost = simplex_decoder.cost_from_errors(
+        simplex_decoder.predicted_errors_buffer);
 
     // If there is a mismatch in weights, print diagnostic information
     if (std::abs(tesseract_cost - simplex_cost) > EPSILON) {
@@ -56,7 +58,8 @@ bool simplex_test_compare(stim::DetectorErrorModel& dem, std::vector<stim::Spars
       std::cout << std::endl;
       std::cout << "Error: For shot " << shot
                 << " tesseract got solution with cost:" << tesseract_cost
-                << " simplex got solution with cost: " << simplex_cost << std::endl;
+                << " simplex got solution with cost: " << simplex_cost
+                << std::endl;
       std::cout << "tesseract used errors ";
       for (size_t ei : tesseract_decoder.predicted_errors_buffer) {
         std::cout << ei << ", ";
@@ -81,19 +84,23 @@ TEST(tesseract, Tesseract_simplex_test) {
       for (const size_t num_rounds : {2, 5, 10}) {
         const size_t num_shots = 1000 / num_rounds / distance;
         std::cout << "p_err = " << p_err << " distance = " << distance
-                  << " num_rounds = " << num_rounds << " num_shots = " << num_shots << std::endl;
-        stim::CircuitGenParameters params(
-            num_rounds, /*distance=*/distance, /*task=*/"rotated_memory_x");
+                  << " num_rounds = " << num_rounds
+                  << " num_shots = " << num_shots << std::endl;
+        stim::CircuitGenParameters params(num_rounds, /*distance=*/distance,
+                                          /*task=*/"rotated_memory_x");
         params.after_clifford_depolarization = p_err;
         params.before_round_data_depolarization = p_err;
         params.before_measure_flip_probability = p_err;
         params.after_reset_flip_probability = p_err;
-        stim::Circuit circuit = stim::generate_surface_code_circuit(params).circuit;
-        stim::DetectorErrorModel dem = stim::ErrorAnalyzer::circuit_to_detector_error_model(
-            circuit, /*decompose_errors=*/false, /*fold_loops=*/true,
-            /*allow_gauge_detectors=*/true,
-            /*approximate_disjoint_errors_threshold=*/1, /*ignore_decomposition_failures=*/false,
-            /*block_decomposition_from_introducing_remnant_edges=*/false);
+        stim::Circuit circuit =
+            stim::generate_surface_code_circuit(params).circuit;
+        stim::DetectorErrorModel dem =
+            stim::ErrorAnalyzer::circuit_to_detector_error_model(
+                circuit, /*decompose_errors=*/false, /*fold_loops=*/true,
+                /*allow_gauge_detectors=*/true,
+                /*approximate_disjoint_errors_threshold=*/1,
+                /*ignore_decomposition_failures=*/false,
+                /*block_decomposition_from_introducing_remnant_edges=*/false);
         for (bool merge_errors : {true, false}) {
           stim::DetectorErrorModel new_dem = dem;
           if (merge_errors) {
@@ -110,8 +117,7 @@ TEST(tesseract, Tesseract_simplex_test) {
 
 // Same test as above but with automation using the simplex decoder
 TEST(tesseract, Tesseract_simplex_DEM_exhaustive_test) {
-  for (stim::DetectorErrorModel dem :
-       {stim::DetectorErrorModel(R"DEM(
+  for (stim::DetectorErrorModel dem : {stim::DetectorErrorModel(R"DEM(
           error(0.1) D0 D1 L0
           error(0.1) D1 D2
           error(0.1) D2 D3
@@ -121,7 +127,7 @@ TEST(tesseract, Tesseract_simplex_DEM_exhaustive_test) {
           detector(2, 0, 0) D2
           detector(3, 0, 0) D3
         )DEM"),
-        stim::DetectorErrorModel(R"DEM(
+                                       stim::DetectorErrorModel(R"DEM(
           error(0.011) D0
           error(0.02) D1 D2
           error(0.033) D1 D2 D3
@@ -136,7 +142,7 @@ TEST(tesseract, Tesseract_simplex_DEM_exhaustive_test) {
           detector(4, 0, 0) D4
           detector(5, 0, 0) D5
         )DEM"),
-        stim::DetectorErrorModel(R"DEM(
+                                       stim::DetectorErrorModel(R"DEM(
           error(0.02) D0
           error(0.02) D1
           error(0.02) D1 D0
@@ -151,7 +157,7 @@ TEST(tesseract, Tesseract_simplex_DEM_exhaustive_test) {
           detector(0, 0, 1) D2
           detector(0, 0, 1) D3
         )DEM"),
-        stim::DetectorErrorModel(R"DEM(
+                                       stim::DetectorErrorModel(R"DEM(
           error(0.02) D0
           error(0.02) D1
           error(0.02) D1 D0
@@ -174,7 +180,8 @@ TEST(tesseract, Tesseract_simplex_DEM_exhaustive_test) {
     ASSERT_LE(num_detectors, 64);
     // Try all possible dets sets on num_detectors detectors
     std::vector<stim::SparseShot> shots;
-    for (uint64_t bitstring = 0; bitstring < (1ULL << num_detectors); ++bitstring) {
+    for (uint64_t bitstring = 0; bitstring < (1ULL << num_detectors);
+         ++bitstring) {
       stim::SparseShot shot;
       for (size_t d = 0; d < num_detectors; ++d) {
         if (bitstring & (1 << (num_detectors - d - 1))) {

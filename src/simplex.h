@@ -46,27 +46,28 @@ struct SimplexDecoder {
   std::unique_ptr<Highs> highs;
   std::unique_ptr<HighsStatus> return_status;
 
-  // For consistency with Tesseract, we provide a low confidence flag on Simplex decoder which is
-  // always set to false
+  // For consistency with Tesseract, we provide a low confidence flag on Simplex
+  // decoder which is always set to false
   const bool low_confidence_flag = false;
 
   SimplexDecoder(SimplexConfig config);
 
   void init_ilp();
 
-  // Clears the predicted_errors_buffer and fills it with the decoded errors for these detection
-  // events.
+  // Clears the predicted_errors_buffer and fills it with the decoded errors for
+  // these detection events.
   void decode_to_errors(const std::vector<size_t>& detections);
-  // Returns the bitwise XOR of all the observables bitmasks of all errors in the predicted errors
-  // buffer.
-  common::ObservablesMask mask_from_errors(const std::vector<size_t>& predicted_errors);
-  // Returns the sum of the likelihood costs (minus-log-likelihood-ratios) of all errors in the
-  // predicted errors buffer.
+  // Returns the bitwise XOR of all the observables bitmasks of all errors in
+  // the predicted errors buffer.
+  common::ObservablesMask mask_from_errors(
+      const std::vector<size_t>& predicted_errors);
+  // Returns the sum of the likelihood costs (minus-log-likelihood-ratios) of
+  // all errors in the predicted errors buffer.
   double cost_from_errors(const std::vector<size_t>& predicted_errors);
   common::ObservablesMask decode(const std::vector<size_t>& detections);
 
-  void decode_shots(
-      std::vector<stim::SparseShot>& shots, std::vector<common::ObservablesMask>& obs_predicted);
+  void decode_shots(std::vector<stim::SparseShot>& shots,
+                    std::vector<common::ObservablesMask>& obs_predicted);
 
   ~SimplexDecoder();
 };
