@@ -62,9 +62,9 @@
   // Google style exempts some constructs from the line-length limit:
   // https://google.github.io/styleguide/docguide/style.html#exceptions
   "line-length": {
-    "line_length": 100,
-    "code_block_line_length": 100,
-    "heading_line_length": 100,
+    "line_length": 80,
+    "code_block_line_length": 80,
+    "heading_line_length": 80,
     "code_blocks": false,
     "headings": false,
     "tables": false
