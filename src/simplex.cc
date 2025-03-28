@@ -148,7 +148,7 @@ void SimplexDecoder::init_ilp() {
   highs->setOptionValue("output_flag", config.verbose);
 }
 
-void SimplexDecoder::decode_to_errors(const std::vector<size_t>& detections) {
+void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
   predicted_errors_buffer.clear();
   // Adjust the constraints for the detection events
   for (size_t d : detections) {
@@ -345,7 +345,7 @@ common::ObservablesMask SimplexDecoder::mask_from_errors(
 }
 
 common::ObservablesMask SimplexDecoder::decode(
-    const std::vector<size_t>& detections) {
+    const std::vector<uint64_t>& detections) {
   decode_to_errors(detections);
   return mask_from_errors(predicted_errors_buffer);
 }
@@ -355,8 +355,7 @@ void SimplexDecoder::decode_shots(
     std::vector<common::ObservablesMask>& obs_predicted) {
   obs_predicted.resize(shots.size());
   for (size_t i = 0; i < shots.size(); ++i) {
-    obs_predicted[i] = decode(std::vector<size_t>(shots[i].hits.begin(), shots[i].hits.end()));
-
+    obs_predicted[i] = decode(shots[i].hits);
   }
 }
 

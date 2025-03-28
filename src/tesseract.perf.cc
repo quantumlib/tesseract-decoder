@@ -36,7 +36,7 @@ void benchmark_decoder(Decoder& decoder, stim::Circuit& circuit,
   size_t num_decoded = 0;
   auto benchmark_func = [&]() {
     for (size_t shot = 0; shot < num_shots; ++shot) {
-      decoder.decode_to_errors(std::vector<size_t>(shots[shot].hits.begin(), shots[shot].hits.end()));
+      decoder.decode_to_errors(shots[shot].hits);
       common::ObservablesMask obs =
           decoder.mask_from_errors(decoder.predicted_errors_buffer);
       num_errors += (!decoder.low_confidence_flag and
