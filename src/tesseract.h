@@ -64,11 +64,11 @@ struct TesseractDecoder {
 
   // Clears the predicted_errors_buffer and fills it with the decoded errors for
   // these detection events.
-  void decode_to_errors(const std::vector<size_t>& detections);
+  void decode_to_errors(const std::vector<uint64_t>& detections);
 
   // Clears the predicted_errors_buffer and fills it with the decoded errors for
   // these detection events, using a specified detector ordering index.
-  void decode_to_errors(const std::vector<size_t>& detections,
+  void decode_to_errors(const std::vector<uint64_t>& detections,
                         size_t det_order);
   // Returns the bitwise XOR of all the observables bitmasks of all errors in
   // the predicted errors buffer.
@@ -77,7 +77,7 @@ struct TesseractDecoder {
   // Returns the sum of the likelihood costs (minus-log-likelihood-ratios) of
   // all errors in the predicted errors buffer.
   double cost_from_errors(const std::vector<size_t>& predicted_errors);
-  common::ObservablesMask decode(const std::vector<size_t>& detections);
+  common::ObservablesMask decode(const std::vector<uint64_t>& detections);
 
   void decode_shots(std::vector<stim::SparseShot>& shots,
                     std::vector<common::ObservablesMask>& obs_predicted);

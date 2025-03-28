@@ -99,7 +99,7 @@ struct VectorBoolHash {
   }
 };
 
-void TesseractDecoder::decode_to_errors(const std::vector<size_t>& detections) {
+void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
   std::vector<size_t> best_errors;
   double best_cost = std::numeric_limits<double>::max();
   assert(config.det_orders.size());
@@ -192,7 +192,7 @@ void TesseractDecoder::to_node(const QNode& qnode,
   }
 }
 
-void TesseractDecoder::decode_to_errors(const std::vector<size_t>& detections,
+void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
                                         size_t det_order) {
   size_t det_beam = config.det_beam;
   predicted_errors_buffer.clear();
@@ -454,7 +454,7 @@ common::ObservablesMask TesseractDecoder::mask_from_errors(
 }
 
 common::ObservablesMask TesseractDecoder::decode(
-    const std::vector<size_t>& detections) {
+    const std::vector<uint64_t>& detections) {
   decode_to_errors(detections);
   return mask_from_errors(predicted_errors_buffer);
 }
