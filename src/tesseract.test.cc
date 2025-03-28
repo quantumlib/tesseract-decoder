@@ -32,7 +32,7 @@ bool simplex_test_compare(stim::DetectorErrorModel& dem,
   SimplexDecoder simplex_decoder(simplex_config);
 
   for (size_t shot = 0; shot < shots.size(); shot++) {
-    tesseract_decoder.decode_to_errors(shots[shot].hits);
+    tesseract_decoder.decode_to_errors(std::vector<size_t>(shots[shot].hits.begin(), shots[shot].hits.end()));
     double tesseract_cost = tesseract_decoder.cost_from_errors(
         tesseract_decoder.predicted_errors_buffer);
 
@@ -45,7 +45,7 @@ bool simplex_test_compare(stim::DetectorErrorModel& dem,
       continue;
     }
 
-    simplex_decoder.decode_to_errors(shots[shot].hits);
+    simplex_decoder.decode_to_errors(std::vector<size_t>(shots[shot].hits.begin(), shots[shot].hits.end()));
     double simplex_cost = simplex_decoder.cost_from_errors(
         simplex_decoder.predicted_errors_buffer);
 

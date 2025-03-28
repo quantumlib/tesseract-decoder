@@ -464,6 +464,6 @@ void TesseractDecoder::decode_shots(
     std::vector<common::ObservablesMask>& obs_predicted) {
   obs_predicted.resize(shots.size());
   for (size_t i = 0; i < shots.size(); ++i) {
-    obs_predicted[i] = decode(shots[i].hits);
+    obs_predicted[i] = decode(std::vector<size_t>(shots[i].hits.begin(), shots[i].hits.end()));
   }
 }

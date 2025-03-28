@@ -520,7 +520,7 @@ int main(int argc, char* argv[]) {
           for (size_t shot; !worker_threads_please_terminate and
                             ((shot = next_unclaimed_shot++) < shots.size());) {
             auto start_time = std::chrono::high_resolution_clock::now();
-            decoder.decode_to_errors(shots[shot].hits);
+            decoder.decode_to_errors(std::vector<size_t>(shots[shot].hits.begin(), shots[shot].hits.end()));
             auto stop_time = std::chrono::high_resolution_clock::now();
             decoding_time_seconds[shot] =
                 std::chrono::duration_cast<std::chrono::microseconds>(
