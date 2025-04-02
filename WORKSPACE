@@ -59,3 +59,9 @@ git_repository(
     remote = "https://github.com/nlohmann/json.git",
     shallow_since = "1701207391 +0100",
 )
+
+http_archive(
+    name = "platforms",
+    urls = ["https://github.com/bazelbuild/platforms/archive/refs/tags/0.0.6.zip"],
+    strip_prefix = "platforms-0.0.6",
+)

@@ -27,10 +27,12 @@ OPT_COPTS = select({
         "-fno-fast-math",
         "-flto",
         "-march=native",
-        "-mmacosx-version-min=10.15"
     ],
     ":debug": ["-Og"],
-}) + ["-std=c++20"]
+}) + ["-std=c++20"] + select({
+    "@platforms//os:macos": ["-mmacosx-version-min=10.15"],
+    "//conditions:default": [],
+})
 
 OPT_LINKOPTS = select({
     "//conditions:default": [
