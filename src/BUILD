@@ -29,7 +29,10 @@ OPT_COPTS = select({
         "-march=native",
     ],
     ":debug": ["-Og"],
-}) + ["-std=c++20"] + select({
+}) + select({
+        "@platforms//os:windows": ["/std:c++20"],
+        "//conditions:default": ["-std=c++20"],
+}) + select({
     "@platforms//os:macos": ["-mmacosx-version-min=10.15"],
     "//conditions:default": [],
 })
