@@ -9,6 +9,7 @@ A Search-Based Decoder for Quantum Error Correction.
 
 [Installation](#installation) &ndash;
 [Usage](#usage) &ndash;
+[Paper](https://arxiv.org/pdf/2503.10988) &ndash;
 [Help](#help) &ndash;
 [Citation](#citation) &ndash;
 [Contact](#contact)
