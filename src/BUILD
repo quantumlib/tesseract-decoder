@@ -105,7 +105,8 @@ cc_test(
     name = "tesseract_tests",
     timeout = "eternal",
     srcs = ["tesseract.test.cc"],
-    tags = ["exclusive"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
     deps = [
         ":libsimplex",
         ":libtesseract",

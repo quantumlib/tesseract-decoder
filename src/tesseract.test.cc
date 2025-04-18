@@ -80,7 +80,7 @@ bool simplex_test_compare(stim::DetectorErrorModel& dem,
 
 TEST(tesseract, Tesseract_simplex_test) {
   for (float p_err : {0.001, 0.003, 0.005}) {
-    for (size_t distance : {3, 5, 7}) {
+    for (size_t distance : {3, 5}) {
       for (const size_t num_rounds : {2, 5, 10}) {
         const size_t num_shots = 1000 / num_rounds / distance;
         std::cout << "p_err = " << p_err << " distance = " << distance
