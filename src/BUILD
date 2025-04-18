@@ -27,10 +27,15 @@ OPT_COPTS = select({
         "-fno-fast-math",
         "-flto",
         "-march=native",
-        "-mmacosx-version-min=10.15"
     ],
     ":debug": ["-Og"],
-}) + ["-std=c++20"]
+}) + select({
+        "@platforms//os:windows": ["/std:c++20"],
+        "//conditions:default": ["-std=c++20"],
+}) + select({
+    "@platforms//os:macos": ["-mmacosx-version-min=10.15"],
+    "//conditions:default": [],
+})
 
 OPT_LINKOPTS = select({
     "//conditions:default": [
@@ -100,7 +105,8 @@ cc_test(
     name = "tesseract_tests",
     timeout = "eternal",
     srcs = ["tesseract.test.cc"],
-    tags = ["exclusive"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
     deps = [
         ":libsimplex",
         ":libtesseract",
