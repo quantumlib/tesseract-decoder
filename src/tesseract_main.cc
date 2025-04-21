@@ -54,6 +54,10 @@ struct Args {
   // this file.
   std::string dem_out_fname = "";
 
+  // If confidences out is present, a set of log-likelihood ratios will be
+  // computed and output to this file in .csv format.
+  std::string confidences_out = "";
+
   // If stats_out_fname is present, basic statistics and metadata will be
   // written to this file.
   std::string stats_out_fname = "";
@@ -433,6 +437,11 @@ int main(int argc, char* argv[]) {
       .metavar("filename")
       .default_value(std::string(""))
       .store_into(args.dem_out_fname);
+  program.add_argument("--confidences-out")
+      .help("File to write log-likelihood ratios to")
+      .metavar("filename")
+      .default_value(std::string(""))
+      .store_into(args.confidences_out);
   program.add_argument("--stats-out")
       .help("File to write high-level statistics and metadata to")
       .metavar("filename")
