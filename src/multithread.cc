@@ -15,8 +15,11 @@
 #include "multithread.h"
 
 void multithread::decode_multithreaded(const size_t& num_threads,
+                          const bool& print_stats,
+                          const size_t& max_errors,
                           TesseractConfig& config,
                           std::vector<stim::SparseShot>& shots,
+                          std::unique_ptr<stim::MeasureRecordWriter>& writer,
                           std::atomic<size_t>& next_unclaimed_shot,
                           std::vector<std::atomic<bool>>& finished,
                           std::vector<common::ObservablesMask>& obs_predicted,
@@ -27,7 +30,10 @@ void multithread::decode_multithreaded(const size_t& num_threads,
                           std::vector<std::atomic<size_t>>& error_use_totals,
                           const bool& has_obs,
                           std::atomic<bool>& worker_threads_please_terminate,
-                          std::atomic<size_t>& num_worker_threads_active) {
+                          std::atomic<size_t>& num_worker_threads_active,
+                          size_t& num_errors,
+                          size_t& num_low_confidence,
+                          double& total_time_seconds) {
   for (size_t t = 0; t < num_threads; ++t) {
     // After this value returns to 0, we know that no further shots will
     // transition to finished.
@@ -70,5 +76,52 @@ void multithread::decode_multithreaded(const size_t& num_threads,
           }
           --num_worker_threads_active;
         }));
+  }
+
+  size_t num_observables = config.dem.count_observables();
+  size_t shot = 0;
+  for (; shot < shots.size(); ++shot) {
+    while (num_worker_threads_active and !finished[shot]) {
+      // We break once the number of active worker threads is 0, at which point
+      // there will be no further changes to finished[shot].
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    // There can be no further changes to finished[shot]. If it is true, we
+    // process it and go to the next shot. If it is false, we break now as it
+    // will never be decoded and no subsequent shots will be decoded.
+    if (!finished[shot]) {
+      assert(num_worker_threads_active == 0);
+      // This and subsequent shots will never become decoded.
+      break;
+    }
+
+    if (writer) {
+      writer->write_bits((uint8_t*)&obs_predicted[shot], num_observables);
+      writer->write_end();
+    }
+
+    if (low_confidence[shot]) {
+      ++num_low_confidence;
+    } else if (obs_predicted[shot] != shots[shot].obs_mask_as_u64()) {
+      ++num_errors;
+    }
+
+    total_time_seconds += decoding_time_seconds[shot];
+
+    if (print_stats) {
+      std::cout << "num_shots = " << (shot + 1)
+                << " num_low_confidence = " << num_low_confidence
+                << " num_errors = " << num_errors
+                << " total_time_seconds = " << total_time_seconds << std::endl;
+      std::cout << "cost = " << cost_predicted[shot] << std::endl;
+      std::cout.flush();
+    }
+
+    if (num_errors >= max_errors) {
+      worker_threads_please_terminate = true;
+    }
+  }
+  for (size_t t = 0; t < num_threads; ++t) {
+    decoder_threads[t].join();
   }
 }

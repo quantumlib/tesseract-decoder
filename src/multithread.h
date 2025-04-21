@@ -25,8 +25,11 @@ namespace multithread {
 
 // Decodes using tesseract with multiple threads parallelizing over shots.
 void decode_multithreaded(const size_t& num_threads,
+                          const bool& print_stats,
+                          const size_t& max_errors,
                           TesseractConfig& config,
                           std::vector<stim::SparseShot>& shots,
+                          std::unique_ptr<stim::MeasureRecordWriter>& writer,
                           std::atomic<size_t>& next_unclaimed_shot,
                           std::vector<std::atomic<bool>>& finished,
                           std::vector<common::ObservablesMask>& obs_predicted,
@@ -37,7 +40,10 @@ void decode_multithreaded(const size_t& num_threads,
                           std::vector<std::atomic<size_t>>& error_use_totals,
                           const bool& has_obs,
                           std::atomic<bool>& worker_threads_please_terminate,
-                          std::atomic<size_t>& num_worker_threads_active);
+                          std::atomic<size_t>& num_worker_threads_active,
+                          size_t& num_errors,
+                          size_t& num_low_confidence,
+                          double& total_time_seconds);
 
 } // namespace multithread
 

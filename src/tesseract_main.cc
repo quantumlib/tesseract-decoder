@@ -516,9 +516,15 @@ int main(int argc, char* argv[]) {
   bool has_obs = args.has_observables();
   std::atomic<bool> worker_threads_please_terminate = false;
   std::atomic<size_t> num_worker_threads_active;
+  size_t num_errors = 0;
+  size_t num_low_confidence = 0;
+  double total_time_seconds = 0;
   multithread::decode_multithreaded(args.num_threads,
+                       args.print_stats,
+                       args.max_errors,
                        config,
                        shots,
+                       writer,
                        next_unclaimed_shot,
                        finished,
                        obs_predicted,
@@ -529,61 +535,15 @@ int main(int argc, char* argv[]) {
                        error_use_totals,
                        has_obs,
                        worker_threads_please_terminate,
-                       num_worker_threads_active);
-  size_t num_errors = 0;
-  size_t num_low_confidence = 0;
-  double total_time_seconds = 0;
-  size_t num_observables = config.dem.count_observables();
-  size_t shot = 0;
-  for (; shot < shots.size(); ++shot) {
-    while (num_worker_threads_active and !finished[shot]) {
-      // We break once the number of active worker threads is 0, at which point
-      // there will be no further changes to finished[shot].
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-    // There can be no further changes to finished[shot]. If it is true, we
-    // process it and go to the next shot. If it is false, we break now as it
-    // will never be decoded and no subsequent shots will be decoded.
-    if (!finished[shot]) {
-      assert(num_worker_threads_active == 0);
-      // This and subsequent shots will never become decoded.
-      break;
-    }
-
-    if (writer) {
-      writer->write_bits((uint8_t*)&obs_predicted[shot], num_observables);
-      writer->write_end();
-    }
-
-    if (low_confidence[shot]) {
-      ++num_low_confidence;
-    } else if (obs_predicted[shot] != shots[shot].obs_mask_as_u64()) {
-      ++num_errors;
-    }
-
-    total_time_seconds += decoding_time_seconds[shot];
-
-    if (args.print_stats) {
-      std::cout << "num_shots = " << (shot + 1)
-                << " num_low_confidence = " << num_low_confidence
-                << " num_errors = " << num_errors
-                << " total_time_seconds = " << total_time_seconds << std::endl;
-      std::cout << "cost = " << cost_predicted[shot] << std::endl;
-      std::cout.flush();
-    }
-
-    if (num_errors >= args.max_errors) {
-      worker_threads_please_terminate = true;
-    }
-  }
-  for (size_t t = 0; t < args.num_threads; ++t) {
-    decoder_threads[t].join();
-  }
+                       num_worker_threads_active,
+                       num_errors,
+                       num_low_confidence,
+                       total_time_seconds);
 
   if (!args.dem_out_fname.empty()) {
     std::vector<size_t> counts(error_use_totals.begin(),
                                error_use_totals.end());
-    size_t num_usage_dem_shots = shot;
+    size_t num_usage_dem_shots = shots.size();
     if (has_obs) {
       // When we know the obs, we only count non-error shots.
       num_usage_dem_shots -= num_errors;
@@ -615,7 +575,7 @@ int main(int argc, char* argv[]) {
                                  {"total_time_seconds", total_time_seconds},
                                  {"num_errors", num_errors},
                                  {"num_low_confidence", num_low_confidence},
-                                 {"num_shots", shot},
+                                 {"num_shots", shots.size()},
                                  {"num_threads", args.num_threads},
                                  {"sample_num_shots", args.sample_num_shots}};
 
@@ -628,7 +588,7 @@ int main(int argc, char* argv[]) {
     }
   }
   if (print_final_stats) {
-    std::cout << "num_shots = " << shot;
+    std::cout << "num_shots = " << shots.size();
     std::cout << " num_low_confidence = " << num_low_confidence;
     if (has_obs) {
       std::cout << " num_errors = " << num_errors;
