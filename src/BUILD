@@ -30,8 +30,8 @@ OPT_COPTS = select({
     ],
     ":debug": ["-Og"],
 }) + select({
-        "@platforms//os:windows": ["/std:c++20"],
-        "//conditions:default": ["-std=c++20"],
+    "@platforms//os:windows": ["/std:c++20"],
+    "//conditions:default": ["-std=c++20"],
 }) + select({
     "@platforms//os:macos": ["-mmacosx-version-min=10.15"],
     "//conditions:default": [],
@@ -79,8 +79,14 @@ cc_library(
 
 cc_library(
     name = "libtesseract",
-    srcs = ["tesseract.cc"],
-    hdrs = ["tesseract.h"],
+    srcs = [
+        "multithread.cc",
+        "tesseract.cc",
+    ],
+    hdrs = [
+        "multithread.h",
+        "tesseract.h",
+    ],
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
     deps = [
