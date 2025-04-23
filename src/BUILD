@@ -80,10 +80,12 @@ cc_library(
 cc_library(
     name = "libtesseract",
     srcs = [
+        "confidences_decoder.cc",
         "multithread.cc",
         "tesseract.cc",
     ],
     hdrs = [
+        "confidences_decoder.h",
         "multithread.h",
         "tesseract.h",
     ],
