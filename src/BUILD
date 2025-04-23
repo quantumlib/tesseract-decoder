@@ -92,7 +92,6 @@ cc_library(
     linkopts = OPT_LINKOPTS,
     deps = [
         ":libutils",
-        s,
     ],
 )
 
