@@ -19,13 +19,17 @@
 #include <thread>
 
 #include "common.h"
-#include "simplex.h"
 #include "stim.h"
+#include "tesseract.h"
 
 struct Args {
   std::string circuit_path;
   std::string dem_path;
   bool no_merge_errors = false;
+
+  // Manifold orientation options
+  uint64_t det_order_seed;
+  size_t num_det_orders = 10;
 
   // Sampling options
   size_t sample_num_shots = 0;
@@ -54,21 +58,18 @@ struct Args {
   // written to this file.
   std::string stats_out_fname = "";
 
-  // The most effective way of parallelizing simplex decoder is over shots,
-  // confining each ILP solver to a single thread.
+  // The most effective way of parallelizing is over shots, confining each ILP
+  // solver to a single thread.
   size_t num_threads = 1;
-  // The ILP solver we use (HiGHS) can exploit some parallelism while decoding a
-  // single shot, but this is much less effective than just bulk parallelism
-  // over shots. It is bad to combine ILP parallelism with bulk parallelization
-  // over shots because it causes many threads to be spawned which overloads the
-  // machine.
-  bool enable_ilp_solver_parallelism = false;
 
-  // A window length of 0 means to not use any windowing. A nonzero window
-  // length activates sliding ILP window decoding. If a nonzero window length is
-  // provided, then a nonzero window slide length must be provided as well.
-  size_t window_length = 0;
-  size_t window_slide_length = 0;
+  // Parameters that limit the algorithm's runtime at a potential accuracy or
+  // completion cost.
+  size_t det_beam;
+  double det_penalty = 0;
+  bool beam_climbing = false;
+  bool no_revisit_dets = false;
+  bool at_most_two_errors_per_detector = false;
+  size_t pqlimit;
 
   bool verbose = false;
   bool print_stats = false;
@@ -126,21 +127,15 @@ struct Args {
             "Provided shot range must have end >= begin.");
       }
     }
-    if ((window_length != 0) != (window_slide_length != 0)) {
-      throw std::invalid_argument(
-          "a window length > 0 is provided if and only if a window slide "
-          "length > 0 is provided.");
-    }
-    if (window_slide_length > window_length) {
-      throw std::invalid_argument(
-          "Must have window_slide_length <= window_length");
-    }
     if (sample_num_shots > 0 and circuit_path.empty()) {
       throw std::invalid_argument("Cannot sample shots without a circuit.");
     }
+    if (beam_climbing and det_beam == INF_DET_BEAM) {
+      throw std::invalid_argument("Beam climbing requires a finite beam");
+    }
   }
 
-  void extract(SimplexConfig& config, std::vector<stim::SparseShot>& shots,
+  void extract(TesseractConfig& config, std::vector<stim::SparseShot>& shots,
                std::unique_ptr<stim::MeasureRecordWriter>& writer) {
     // Get a circuit, if available
     stim::Circuit circuit;
@@ -174,6 +169,45 @@ struct Args {
 
     if (!no_merge_errors) {
       config.dem = common::merge_identical_errors(config.dem);
+    }
+
+    // Sample orientations of the error model to use for the det priority
+    {
+      config.det_orders.resize(num_det_orders);
+      std::mt19937_64 rng(det_order_seed);
+      std::normal_distribution<double> dist(/*mean=*/0, /*stddev=*/1);
+
+      std::vector<std::vector<double>> detector_coords =
+          get_detector_coords(config.dem);
+
+      std::vector<double> inner_products(config.dem.count_detectors());
+
+      for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
+        // Sample a direction
+        std::vector<double> orientation_vector;
+        for (size_t i = 0; i < detector_coords.at(0).size(); ++i) {
+          orientation_vector.push_back(dist(rng));
+        }
+
+        for (size_t i = 0; i < detector_coords.size(); ++i) {
+          inner_products[i] = 0;
+          for (size_t j = 0; j < orientation_vector.size(); ++j) {
+            inner_products[i] += detector_coords[i][j] * orientation_vector[j];
+          }
+        }
+        std::vector<size_t> perm(config.dem.count_detectors());
+        std::iota(perm.begin(), perm.end(), 0);
+        std::sort(perm.begin(), perm.end(),
+                  [&](const size_t& i, const size_t& j) {
+                    return inner_products[i] > inner_products[j];
+                  });
+        // Invert the permutation
+        std::vector<size_t> inv_perm(config.dem.count_detectors());
+        for (size_t i = 0; i < perm.size(); ++i) {
+          inv_perm[perm[i]] = i;
+        }
+        config.det_orders[det_order] = inv_perm;
+      }
     }
 
     if (sample_num_shots > 0) {
@@ -271,10 +305,12 @@ struct Args {
       // TODO: ensure the fclose happens after all predictions are written to
       // the writer.
     }
-
-    config.parallelize = enable_ilp_solver_parallelism;
-    config.window_length = window_length;
-    config.window_slide_length = window_slide_length;
+    config.det_beam = det_beam;
+    config.det_penalty = det_penalty;
+    config.beam_climbing = beam_climbing;
+    config.no_revisit_dets = no_revisit_dets;
+    config.at_most_two_errors_per_detector = at_most_two_errors_per_detector;
+    config.pqlimit = pqlimit;
     config.verbose = verbose;
   }
 };
@@ -292,6 +328,19 @@ int main(int argc, char* argv[]) {
   program.add_argument("--no-merge-errors")
       .help("If provided, will not merge identical error mechanisms.")
       .store_into(args.no_merge_errors);
+  program.add_argument("--num-det-orders")
+      .help(
+          "Number of ways to orient the manifold when reordering the detectors")
+      .metavar("N")
+      .default_value(size_t(1))
+      .store_into(args.num_det_orders);
+  program.add_argument("--det-order-seed")
+      .help(
+          "Seed used when initializing the random detector traversal "
+          "orderings.")
+      .metavar("N")
+      .default_value(static_cast<uint64_t>(std::random_device()()))
+      .store_into(args.det_order_seed);
   program.add_argument("--sample-num-shots")
       .help(
           "If provided, will sample the requested number of shots from the "
@@ -394,30 +443,35 @@ int main(int argc, char* argv[]) {
       .metavar("N")
       .default_value(size_t(std::thread::hardware_concurrency()))
       .store_into(args.num_threads);
-  program.add_argument("--parallelize-ilp")
-      .help(
-          "Enable sub-shot parallelism with the ILP solver. Not recommended "
-          "unless --threads=1")
-      .default_value(bool(false))
-      .store_into(args.enable_ilp_solver_parallelism)
-      .flag();
-  program.add_argument("--window-length")
-      .help(
-          "Length of sliding time window to use for sliding ILP window "
-          "decoding (default = 0 = do "
-          "not use windowing).")
+  program.add_argument("--beam")
+      .help("Beam to use for truncation (default = infinity)")
       .metavar("N")
-      .default_value(size_t(0))
-      .store_into(args.window_length);
-  program.add_argument("--window-slide-length")
+      .default_value(INF_DET_BEAM)
+      .store_into(args.det_beam);
+  program.add_argument("--det-penalty")
       .help(
-          "Length of the slide for each slide of the sliding time window for "
-          "sliding ILP window "
-          "decoding (default = 0 = do "
-          "not use windowing).")
+          "Penalty cost to add per activated detector in the residual "
+          "syndrome.")
+      .metavar("D")
+      .default_value(0.0)
+      .store_into(args.det_penalty);
+  program.add_argument("--beam-climbing")
+      .help("Use beam-climbing heuristic")
+      .flag()
+      .store_into(args.beam_climbing);
+  program.add_argument("--no-revisit-dets")
+      .help("Use no-revisit-dets heuristic")
+      .flag()
+      .store_into(args.no_revisit_dets);
+  program.add_argument("--at-most-two-errors-per-detector")
+      .help("Use heuristic limitation of at most 2 errors per detector")
+      .flag()
+      .store_into(args.at_most_two_errors_per_detector);
+  program.add_argument("--pqlimit")
+      .help("Maximum size of the priority queue (default = infinity)")
       .metavar("N")
-      .default_value(size_t(0))
-      .store_into(args.window_slide_length);
+      .default_value(std::numeric_limits<size_t>::max())
+      .store_into(args.pqlimit);
   program.add_argument("--verbose")
       .help("Increases output verbosity")
       .flag()
@@ -437,7 +491,7 @@ int main(int argc, char* argv[]) {
     return EXIT_FAILURE;
   }
   args.validate();
-  SimplexConfig config;
+  TesseractConfig config;
   std::vector<stim::SparseShot> shots;
   std::unique_ptr<stim::MeasureRecordWriter> writer;
   args.extract(config, shots, writer);
@@ -446,6 +500,7 @@ int main(int argc, char* argv[]) {
   std::vector<common::ObservablesMask> obs_predicted(shots.size());
   std::vector<double> cost_predicted(shots.size());
   std::vector<double> decoding_time_seconds(shots.size());
+  std::vector<std::atomic<bool>> low_confidence(shots.size());
   std::vector<std::thread> decoder_threads;
   std::vector<std::atomic<size_t>> error_use_totals(config.dem.count_errors());
   bool has_obs = args.has_observables();
@@ -457,9 +512,10 @@ int main(int argc, char* argv[]) {
     ++num_worker_threads_active;
     decoder_threads.push_back(std::thread(
         [&config, &next_unclaimed_shot, &shots, &obs_predicted, &cost_predicted,
-         &decoding_time_seconds, &finished, &error_use_totals, &has_obs,
-         &worker_threads_please_terminate, &num_worker_threads_active]() {
-          SimplexDecoder decoder(config);
+         &decoding_time_seconds, &low_confidence, &finished, &error_use_totals,
+         &has_obs, &worker_threads_please_terminate,
+         &num_worker_threads_active]() {
+          TesseractDecoder decoder(config);
           std::vector<size_t> error_use(config.dem.count_errors());
           for (size_t shot; !worker_threads_please_terminate and
                             ((shot = next_unclaimed_shot++) < shots.size());) {
@@ -473,6 +529,7 @@ int main(int argc, char* argv[]) {
                 1e6;
             obs_predicted[shot] =
                 decoder.mask_from_errors(decoder.predicted_errors_buffer);
+            low_confidence[shot] = decoder.low_confidence_flag;
             cost_predicted[shot] =
                 decoder.cost_from_errors(decoder.predicted_errors_buffer);
             if (!has_obs or
@@ -486,13 +543,14 @@ int main(int argc, char* argv[]) {
             finished[shot] = true;
           }
           // Add the error counts to the total
-          for (size_t ei = 0; ei < config.dem.count_errors(); ++ei) {
+          for (size_t ei = 0; ei < error_use_totals.size(); ++ei) {
             error_use_totals[ei] += error_use[ei];
           }
           --num_worker_threads_active;
         }));
   }
   size_t num_errors = 0;
+  size_t num_low_confidence = 0;
   double total_time_seconds = 0;
   size_t num_observables = config.dem.count_observables();
   size_t shot = 0;
@@ -516,12 +574,17 @@ int main(int argc, char* argv[]) {
       writer->write_end();
     }
 
-    if (obs_predicted[shot] != shots[shot].obs_mask_as_u64()) ++num_errors;
+    if (low_confidence[shot]) {
+      ++num_low_confidence;
+    } else if (obs_predicted[shot] != shots[shot].obs_mask_as_u64()) {
+      ++num_errors;
+    }
 
     total_time_seconds += decoding_time_seconds[shot];
 
     if (args.print_stats) {
       std::cout << "num_shots = " << (shot + 1)
+                << " num_low_confidence = " << num_low_confidence
                 << " num_errors = " << num_errors
                 << " total_time_seconds = " << total_time_seconds << std::endl;
       std::cout << "cost = " << cost_predicted[shot] << std::endl;
@@ -559,9 +622,20 @@ int main(int argc, char* argv[]) {
                                  {"dem_path", args.dem_path},
                                  {"max_errors", args.max_errors},
                                  {"sample_seed", args.sample_seed},
+                                 {"at_most_two_errors_per_detector",
+                                  args.at_most_two_errors_per_detector},
+                                 {"det_beam", args.det_beam},
+                                 {"det_penalty", args.det_penalty},
+                                 {"beam_climbing", args.beam_climbing},
+                                 {"no_revisit_dets", args.no_revisit_dets},
+                                 {"pqlimit", args.pqlimit},
+                                 {"num_det_orders", args.num_det_orders},
+                                 {"det_order_seed", args.det_order_seed},
                                  {"total_time_seconds", total_time_seconds},
                                  {"num_errors", num_errors},
+                                 {"num_low_confidence", num_low_confidence},
                                  {"num_shots", shot},
+                                 {"num_threads", args.num_threads},
                                  {"sample_num_shots", args.sample_num_shots}};
 
     if (args.stats_out_fname == "-") {
@@ -574,6 +648,7 @@ int main(int argc, char* argv[]) {
   }
   if (print_final_stats) {
     std::cout << "num_shots = " << shot;
+    std::cout << " num_low_confidence = " << num_low_confidence;
     if (has_obs) {
       std::cout << " num_errors = " << num_errors;
     }
