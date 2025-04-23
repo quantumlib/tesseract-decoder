@@ -15,7 +15,6 @@
 #ifndef CONFIDENCES_DECODER_H
 #define CONFIDENCES_DECODER_H
 
-#include "multithread.h"
 #include "stim.h"
 
 namespace confidences_decoder {
