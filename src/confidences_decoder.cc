@@ -14,7 +14,7 @@
 
 #include "confidences_decoder.h"
 
-using confidences_decoder::ConfidencesDecoder;
+namespace confidences_decoder {
 
 // Helper function that returns the given DEM with one of the observables
 // transformed into a detector.
@@ -49,41 +49,4 @@ stim::DetectorErrorModel fix_obs(const stim::DetectorErrorModel& dem,
     return result;
 }
 
-template <typename InnerDecoder>
-ConfidencesDecoder<InnerDecoder>::ConfidencesDecoder(const stim::DetectorErrorModel& dem) {
-  for (size_t obs_idx = 0; obs_idx < dem.count_observables(); obs_idx++) {
-    obs_fixed_decoders.emplace_back(fix_obs(dem, obs_idx));
-  }
-  num_detectors = dem.count_detectors();
-}
-
-template <typename InnerDecoder>
-std::vector<std::vector<double>> ConfidencesDecoder<InnerDecoder>::decode_to_confidences(
-      const std::vector<stim::SparseShot>& shots) {
-
-  std::vector<std::vector<double>> results;
-  results.reserve(shots.size());
-  size_t num_obs = obs_fixed_decoders.size();
-  for (const auto& shot: shots) {
-    std::vector<double> weight_diffs;
-    weight_diffs.reserve(num_obs);
-
-    stim::SparseShot shot_with_obs_flip = shot;
-    shot_with_obs_flip.hits.emplace_back(num_detectors);
-
-    for (size_t obs_idx = 0; obs_idx < num_obs; obs_idx++) {
-
-      // Decode without and with the observable detector activated.
-      double weight_no_flip = obs_fixed_decoders[obs_idx].decode_to_weight(shot);
-      double weight_flip = obs_fixed_decoders[obs_idx].decode_to_weight(shot_with_obs_flip);
-
-      // Weights are assumed to be negative LLRs. Return the weight difference
-      // with flipping (obs mask 1) as positive.
-      double diff = weight_flip - weight_no_flip;
-      weight_diffs.emplace_back(diff);
-    }
-    results.emplace_back(weight_diffs);
-  }
-
-  return results;
-}
+} // namespace confidences_decoder
