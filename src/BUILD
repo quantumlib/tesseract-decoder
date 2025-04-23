@@ -80,19 +80,19 @@ cc_library(
 cc_library(
     name = "libtesseract",
     srcs = [
-        "confidences_decoder.cc",
         "tesseract.cc",
-        "tesseract_inner_decoder.cc"
+        "tesseract_inner_decoder.cc",
     ],
     hdrs = [
         "confidences_decoder.h",
         "tesseract.h",
-        "tesseract_inner_decoder.h"
+        "tesseract_inner_decoder.h",
     ],
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
     deps = [
         ":libutils",
+        s,
     ],
 )
 

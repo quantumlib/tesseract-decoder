@@ -53,7 +53,7 @@ struct ConfidencesDecoder {
 
 
 template <typename InnerDecoder>
-ConfidencesDecoder<InnerDecoder>::ConfidencesDecoder(const stim::DetectorErrorModel& dem) {
+inline ConfidencesDecoder<InnerDecoder>::ConfidencesDecoder(const stim::DetectorErrorModel& dem) {
   for (size_t obs_idx = 0; obs_idx < dem.count_observables(); obs_idx++) {
     obs_fixed_decoders.emplace_back(fix_obs(dem, obs_idx));
   }
@@ -61,7 +61,7 @@ ConfidencesDecoder<InnerDecoder>::ConfidencesDecoder(const stim::DetectorErrorMo
 }
 
 template <typename InnerDecoder>
-std::vector<std::vector<double>> ConfidencesDecoder<InnerDecoder>::decode_to_confidences(
+inline std::vector<std::vector<double>> ConfidencesDecoder<InnerDecoder>::decode_to_confidences(
       const std::vector<stim::SparseShot>& shots) {
 
   std::vector<std::vector<double>> results;
@@ -86,6 +86,39 @@ std::vector<std::vector<double>> ConfidencesDecoder<InnerDecoder>::decode_to_con
     results.emplace_back(weight_diffs);
   }
   return results;
+}
+
+// Helper function that returns the given DEM with one of the observables
+// transformed into a detector.
+inline stim::DetectorErrorModel fix_obs(const stim::DetectorErrorModel& dem,
+                                    uint64_t obs_idx) {
+
+  if (obs_idx >= dem.count_observables()) {
+    throw std::runtime_error("Observable ID must correspond to a valid "
+                                 "observable index in the DEM.");
+  }
+
+  stim::DetectorErrorModel result;
+  uint64_t num_detectors = dem.count_detectors();
+    for (stim::DemInstruction inst : dem.instructions) {
+      if (inst.type != stim::DemInstructionType::DEM_ERROR) {
+        result.append_dem_instruction(inst);
+      } else {
+        // Save data related to instruction and copy over while replacing
+        // specific observable with a detector.
+        std::vector<stim::DemTarget> target_data;
+        for (auto tar: inst.target_data) {
+          target_data.emplace_back(tar);
+        }
+        for (auto& tar: target_data) {
+          if (tar.is_observable_id() && tar.val() == obs_idx) {
+            tar.data = num_detectors;
+          }
+        }
+        result.append_error_instruction(inst.arg_data[0], target_data, inst.tag);
+      }
+    }
+    return result;
 }
 
 } // namespace confidences_decoder
