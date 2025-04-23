@@ -18,7 +18,7 @@ using confidences_decoder::ConfidencesDecoder;
 
 // Helper function that returns the given DEM with one of the observables
 // transformed into a detector.
-stim::DetectorErrorModel fix_obs(stim::DetectorErrorModel dem,
+stim::DetectorErrorModel fix_obs(const stim::DetectorErrorModel& dem,
                                     uint64_t obs_idx) {
 
   if (obs_idx >= dem.count_observables()) {
@@ -50,7 +50,7 @@ stim::DetectorErrorModel fix_obs(stim::DetectorErrorModel dem,
 }
 
 template <typename InnerDecoder>
-ConfidencesDecoder<InnerDecoder>::ConfidencesDecoder(stim::DetectorErrorModel& dem) {
+ConfidencesDecoder<InnerDecoder>::ConfidencesDecoder(const stim::DetectorErrorModel& dem) {
   for (size_t obs_idx = 0; obs_idx < dem.count_observables(); obs_idx++) {
     obs_fixed_decoders.emplace_back(fix_obs(dem, obs_idx));
   }
@@ -59,7 +59,7 @@ ConfidencesDecoder<InnerDecoder>::ConfidencesDecoder(stim::DetectorErrorModel& d
 
 template <typename InnerDecoder>
 std::vector<std::vector<double>> ConfidencesDecoder<InnerDecoder>::decode_to_confidences(
-      std::vector<stim::SparseShot>& shots) {
+      const std::vector<stim::SparseShot>& shots) {
 
   std::vector<std::vector<double>> results;
   results.reserve(shots.size());

@@ -83,11 +83,13 @@ cc_library(
         "confidences_decoder.cc",
         "multithread.cc",
         "tesseract.cc",
+        "tesseract_inner_decoder.cc"
     ],
     hdrs = [
         "confidences_decoder.h",
         "multithread.h",
         "tesseract.h",
+        "tesseract_inner_decoder.h"
     ],
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
@@ -130,6 +132,17 @@ cc_test(
     srcs = ["common.test.cc"],
     deps = [
         ":libcommon",
+        "@gtest",
+        "@gtest//:gtest_main",
+        "@stim//:stim_lib",
+    ],
+)
+
+cc_test(
+    name = "confidences_decoder_tests",
+    srcs = ["confidences_decoder.test.cc"],
+    deps = [
+        ":libtesseract",
         "@gtest",
         "@gtest//:gtest_main",
         "@stim//:stim_lib",

@@ -28,7 +28,7 @@ namespace confidences_decoder {
 template <typename InnerDecoder>
 struct ConfidencesDecoder {
 
-  ConfidencesDecoder(stim::DetectorErrorModel& dem);
+  ConfidencesDecoder(const stim::DetectorErrorModel& dem);
 
   // Inner decoders where the ith decoder treats the ith observable to
   // as the final detector.
@@ -45,7 +45,7 @@ struct ConfidencesDecoder {
   // inner vector runs over logical observables. To convert to a probability
   // of flip p, we would compute p = 1 / (1 + exp(weight_difference)).
   std::vector<std::vector<double>> decode_to_confidences(
-      std::vector<stim::SparseShot>& shots);
+      const std::vector<stim::SparseShot>& shots);
 };
 
 } // namespace confidences_decoder
