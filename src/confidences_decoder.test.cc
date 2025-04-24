@@ -18,13 +18,6 @@
 #include "gtest/gtest.h"
 #include "stim.h"
 
-static stim::simd_bits<64> obs_mask(uint64_t v) {
-    stim::simd_bits<64> result(64);
-    result.ptr_simd[0] = v;
-    return result;
-}
-
-
 TEST(confidences_decoder, ConfidenceExamples) {
  // Test a few confidences
   stim::DetectorErrorModel dem("error(0.1) D0 L0\n"
