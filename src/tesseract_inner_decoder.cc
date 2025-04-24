@@ -20,6 +20,7 @@
 TesseractConfig tesseract_config_from_dem(const stim::DetectorErrorModel& dem) {
   TesseractConfig config;
   config.dem = common::merge_identical_errors(dem);
+  config.verbose = false;
   return config;
 }
 
