@@ -19,8 +19,10 @@
 #include <thread>
 
 #include "common.h"
+#include "confidences_decoder.h"
 #include "stim.h"
 #include "tesseract.h"
+#include "tesseract_inner_decoder.h"
 
 struct Args {
   std::string circuit_path;
@@ -53,6 +55,10 @@ struct Args {
   // If dem_out is present, a usage-frequency dem will be computed and output to
   // this file.
   std::string dem_out_fname = "";
+
+  // If confidences out is present, a set of weight differences will be
+  // printed.
+  std::string confidences_out = "";
 
   // If stats_out_fname is present, basic statistics and metadata will be
   // written to this file.
@@ -387,14 +393,14 @@ int main(int argc, char* argv[]) {
       .store_into(args.in_fname);
   std::string in_formats = "";
   bool first = true;
-  for (const auto& [key, value] : stim::format_name_to_enum_map()) {
+  for (const auto& [key, value]: stim::format_name_to_enum_map()) {
     if (!first) in_formats += "/";
     first = false;
     in_formats += key;
   }
   program.add_argument("--in-format", "--in_format")
       .help("Format of the file to read detection events from (" + in_formats +
-            ")")
+          ")")
       .metavar(in_formats)
       .default_value(std::string(""))
       .store_into(args.in_format);
@@ -424,7 +430,7 @@ int main(int argc, char* argv[]) {
       .store_into(args.out_fname);
   program.add_argument("--out-format")
       .help("Format of the file to write observable flip predictions to (" +
-            in_formats + ")")
+          in_formats + ")")
       .metavar(in_formats)
       .default_value(std::string(""))
       .store_into(args.out_format);
@@ -433,6 +439,11 @@ int main(int argc, char* argv[]) {
       .metavar("filename")
       .default_value(std::string(""))
       .store_into(args.dem_out_fname);
+  program.add_argument("--confidences-out")
+      .help("File to write weight differences to")
+      .metavar("filename")
+      .default_value(std::string(""))
+      .store_into(args.confidences_out);
   program.add_argument("--stats-out")
       .help("File to write high-level statistics and metadata to")
       .metavar("filename")
@@ -499,6 +510,8 @@ int main(int argc, char* argv[]) {
   std::vector<std::atomic<bool>> finished(shots.size());
   std::vector<common::ObservablesMask> obs_predicted(shots.size());
   std::vector<double> cost_predicted(shots.size());
+  std::vector<std::vector<double>> confidences(shots.size());
+  bool do_confidences_decoding = !args.confidences_out.empty();
   std::vector<double> decoding_time_seconds(shots.size());
   std::vector<std::atomic<bool>> low_confidence(shots.size());
   std::vector<std::thread> decoder_threads;
@@ -512,13 +525,17 @@ int main(int argc, char* argv[]) {
     ++num_worker_threads_active;
     decoder_threads.push_back(std::thread(
         [&config, &next_unclaimed_shot, &shots, &obs_predicted, &cost_predicted,
-         &decoding_time_seconds, &low_confidence, &finished, &error_use_totals,
-         &has_obs, &worker_threads_please_terminate,
-         &num_worker_threads_active]() {
+            &confidences, &decoding_time_seconds, &low_confidence, &finished,
+            &do_confidences_decoding, &error_use_totals, &has_obs,
+            &worker_threads_please_terminate, &num_worker_threads_active]() {
           TesseractDecoder decoder(config);
+          // TODO: Maybe we don't want to instantiate this unless its needed.
+          // TODO: Uses default rather than specified config to meet template.
+          confidences_decoder::ConfidencesDecoder<TesseractInnerDecoder>
+              confidences_decoder(config.dem);
           std::vector<size_t> error_use(config.dem.count_errors());
           for (size_t shot; !worker_threads_please_terminate and
-                            ((shot = next_unclaimed_shot++) < shots.size());) {
+              ((shot = next_unclaimed_shot++) < shots.size());) {
             auto start_time = std::chrono::high_resolution_clock::now();
             decoder.decode_to_errors(shots[shot].hits);
             auto stop_time = std::chrono::high_resolution_clock::now();
@@ -526,7 +543,7 @@ int main(int argc, char* argv[]) {
                 std::chrono::duration_cast<std::chrono::microseconds>(
                     stop_time - start_time)
                     .count() /
-                1e6;
+                    1e6;
             obs_predicted[shot] =
                 decoder.mask_from_errors(decoder.predicted_errors_buffer);
             low_confidence[shot] = decoder.low_confidence_flag;
@@ -536,10 +553,17 @@ int main(int argc, char* argv[]) {
                 shots[shot].obs_mask_as_u64() == obs_predicted[shot]) {
               // Only count the error uses for shots that did not have a logical
               // error, if we know the obs flips.
-              for (size_t ei : decoder.predicted_errors_buffer) {
+              for (size_t ei: decoder.predicted_errors_buffer) {
                 ++error_use[ei];
               }
             }
+
+            // TODO: No need to do redundant work.
+            if (do_confidences_decoding) {
+              confidences[shot] = confidences_decoder.decode_to_confidences(
+                  shots[shot].hits);
+            }
+
             finished[shot] = true;
           }
           // Add the error counts to the total
@@ -554,6 +578,7 @@ int main(int argc, char* argv[]) {
   double total_time_seconds = 0;
   size_t num_observables = config.dem.count_observables();
   size_t shot = 0;
+
   for (; shot < shots.size(); ++shot) {
     while (num_worker_threads_active and !finished[shot]) {
       // We break once the number of active worker threads is 0, at which point
@@ -570,7 +595,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (writer) {
-      writer->write_bits((uint8_t*)&obs_predicted[shot], num_observables);
+      writer->write_bits((uint8_t*) &obs_predicted[shot], num_observables);
       writer->write_end();
     }
 
@@ -587,7 +612,20 @@ int main(int argc, char* argv[]) {
                 << " num_low_confidence = " << num_low_confidence
                 << " num_errors = " << num_errors
                 << " total_time_seconds = " << total_time_seconds << std::endl;
-      std::cout << "cost = " << cost_predicted[shot] << std::endl;
+      std::cout << "cost = " << cost_predicted[shot];
+      if (do_confidences_decoding) {
+        if (args.confidences_out == "-") {
+          std::cout << " confidences = ";
+          for (size_t obs_idx = 0; obs_idx < num_observables; obs_idx++) {
+            std::cout << confidences[shot][obs_idx] << " ";
+          }
+          std::cout << "\n";
+        }
+        else {
+          //TODO: Add to some saved output.
+          throw std::runtime_error("Must print out to terminal for now using '-' arg.");
+        }
+      }
       std::cout.flush();
     }
 
