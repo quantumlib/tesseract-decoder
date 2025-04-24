@@ -59,6 +59,9 @@ class QNode {
 };
 
 struct TesseractDecoder {
+
+  TesseractDecoder() = default;
+
   TesseractConfig config;
   explicit TesseractDecoder(TesseractConfig config);
 

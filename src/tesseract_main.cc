@@ -54,6 +54,10 @@ struct Args {
   // this file.
   std::string dem_out_fname = "";
 
+  // TODO: Add file output.
+  // If confidences_out_fname is nonempty, a set of LLRs will be printed.
+  std::string confidences_out_fname = "";
+
   // If stats_out_fname is present, basic statistics and metadata will be
   // written to this file.
   std::string stats_out_fname = "";
@@ -315,6 +319,39 @@ struct Args {
   }
 };
 
+// Helper function that returns the given DEM with one of the observables
+// transformed into a detector.
+inline stim::DetectorErrorModel fix_obs(const stim::DetectorErrorModel& dem,
+                                    uint64_t obs_idx) {
+
+  if (obs_idx >= dem.count_observables()) {
+    throw std::runtime_error("Observable ID must correspond to a valid "
+                                 "observable index in the DEM.");
+  }
+
+  stim::DetectorErrorModel result;
+  uint64_t num_detectors = dem.count_detectors();
+    for (stim::DemInstruction inst : dem.instructions) {
+      if (inst.type != stim::DemInstructionType::DEM_ERROR) {
+        result.append_dem_instruction(inst);
+      } else {
+        // Save data related to instruction and copy over while replacing
+        // specific observable with a detector.
+        std::vector<stim::DemTarget> target_data;
+        for (auto tar: inst.target_data) {
+          target_data.emplace_back(tar);
+        }
+        for (auto& tar: target_data) {
+          if (tar.is_observable_id() && tar.val() == obs_idx) {
+            tar.data = num_detectors;
+          }
+        }
+        result.append_error_instruction(inst.arg_data[0], target_data, inst.tag);
+      }
+    }
+    return result;
+}
+
 int main(int argc, char* argv[]) {
   std::cout.precision(16);
   argparse::ArgumentParser program("simplex");
@@ -433,6 +470,11 @@ int main(int argc, char* argv[]) {
       .metavar("filename")
       .default_value(std::string(""))
       .store_into(args.dem_out_fname);
+  program.add_argument("--confidences-out")
+    .help("File to write LLRs to")
+    .metavar("filename")
+    .default_value(std::string(""))
+    .store_into(args.confidences_out_fname);
   program.add_argument("--stats-out")
       .help("File to write high-level statistics and metadata to")
       .metavar("filename")
@@ -499,6 +541,8 @@ int main(int argc, char* argv[]) {
   std::vector<std::atomic<bool>> finished(shots.size());
   std::vector<common::ObservablesMask> obs_predicted(shots.size());
   std::vector<double> cost_predicted(shots.size());
+  std::vector<std::vector<double>> confidences(shots.size());
+  bool do_confidences_decoding = !args.confidences_out_fname.empty();
   std::vector<double> decoding_time_seconds(shots.size());
   std::vector<std::atomic<bool>> low_confidence(shots.size());
   std::vector<std::thread> decoder_threads;
@@ -506,6 +550,8 @@ int main(int argc, char* argv[]) {
   bool has_obs = args.has_observables();
   std::atomic<bool> worker_threads_please_terminate = false;
   std::atomic<size_t> num_worker_threads_active;
+  size_t num_observables = config.dem.count_observables();
+  size_t num_detectors = config.dem.count_detectors();
   for (size_t t = 0; t < args.num_threads; ++t) {
     // After this value returns to 0, we know that no further shots will
     // transition to finished.
@@ -513,25 +559,59 @@ int main(int argc, char* argv[]) {
     decoder_threads.push_back(std::thread(
         [&config, &next_unclaimed_shot, &shots, &obs_predicted, &cost_predicted,
          &decoding_time_seconds, &low_confidence, &finished, &error_use_totals,
-         &has_obs, &worker_threads_please_terminate,
-         &num_worker_threads_active]() {
+         &do_confidences_decoding, &confidences, &num_detectors, &num_observables,
+         &has_obs, &worker_threads_please_terminate, &num_worker_threads_active]() {
           TesseractDecoder decoder(config);
+
+          std::vector<TesseractDecoder> obs_fixed_decoders;
+          if (do_confidences_decoding) {
+            TesseractConfig obs_fixed_config = config;
+            for (size_t obs_idx; obs_idx < num_observables; obs_idx++) {
+              obs_fixed_config.dem = fix_obs(config.dem, obs_idx);
+              for (auto& det_order : obs_fixed_config.det_orders) {
+                det_order.emplace_back(num_detectors);
+              }
+              obs_fixed_decoders.emplace_back(obs_fixed_config);
+            }
+          }
           std::vector<size_t> error_use(config.dem.count_errors());
           for (size_t shot; !worker_threads_please_terminate and
                             ((shot = next_unclaimed_shot++) < shots.size());) {
             auto start_time = std::chrono::high_resolution_clock::now();
             decoder.decode_to_errors(shots[shot].hits);
+            obs_predicted[shot] =
+                decoder.mask_from_errors(decoder.predicted_errors_buffer);
+            low_confidence[shot] = decoder.low_confidence_flag;
+            cost_predicted[shot] =
+                decoder.cost_from_errors(decoder.predicted_errors_buffer);
+            if (do_confidences_decoding) {
+              std::vector<uint64_t> obs_fixed_on = shots[shot].hits;
+              obs_fixed_on.emplace_back(num_detectors);
+              std::vector<double> obs_llrs;
+              for (size_t obs_idx = 0; obs_idx < obs_fixed_decoders.size(); obs_idx++) {
+                bool obs_bit = (obs_predicted[shot] & (1ULL << obs_idx)) != 0;
+                double llr;
+                if (obs_bit) {
+                  obs_fixed_decoders[obs_idx].decode_to_errors(shots[shot].hits);
+                  llr = cost_predicted[shot];
+                  llr -= obs_fixed_decoders[obs_idx].cost_from_errors(obs_fixed_decoders[obs_idx].predicted_errors_buffer);
+                }
+                else {
+                  obs_fixed_decoders[obs_idx].decode_to_errors(obs_fixed_on);
+                  llr = obs_fixed_decoders[obs_idx].cost_from_errors(obs_fixed_decoders[obs_idx].predicted_errors_buffer);
+                  llr -= cost_predicted[shot];
+                }
+                obs_llrs.emplace_back(llr);
+              }
+              confidences[shot] = obs_llrs;
+            }
             auto stop_time = std::chrono::high_resolution_clock::now();
             decoding_time_seconds[shot] =
                 std::chrono::duration_cast<std::chrono::microseconds>(
                     stop_time - start_time)
                     .count() /
                 1e6;
-            obs_predicted[shot] =
-                decoder.mask_from_errors(decoder.predicted_errors_buffer);
-            low_confidence[shot] = decoder.low_confidence_flag;
-            cost_predicted[shot] =
-                decoder.cost_from_errors(decoder.predicted_errors_buffer);
+
             if (!has_obs or
                 shots[shot].obs_mask_as_u64() == obs_predicted[shot]) {
               // Only count the error uses for shots that did not have a logical
@@ -552,7 +632,6 @@ int main(int argc, char* argv[]) {
   size_t num_errors = 0;
   size_t num_low_confidence = 0;
   double total_time_seconds = 0;
-  size_t num_observables = config.dem.count_observables();
   size_t shot = 0;
   for (; shot < shots.size(); ++shot) {
     while (num_worker_threads_active and !finished[shot]) {
@@ -587,7 +666,12 @@ int main(int argc, char* argv[]) {
                 << " num_low_confidence = " << num_low_confidence
                 << " num_errors = " << num_errors
                 << " total_time_seconds = " << total_time_seconds << std::endl;
-      std::cout << "cost = " << cost_predicted[shot] << std::endl;
+      std::cout << "cost = " << cost_predicted[shot];
+      std::cout << " confidence = ";
+      for (auto confidence : confidences[shot]) {
+        std::cout << confidence << " ";
+      }
+      std::cout << std::endl;
       std::cout.flush();
     }
 
