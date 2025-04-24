@@ -27,22 +27,20 @@ static stim::simd_bits<64> obs_mask(uint64_t v) {
 
 TEST(confidences_decoder, ConfidenceExamples) {
  // Test a few confidences
- stim::DetectorErrorModel dem("error(0.1) D0 L0\n"
+  stim::DetectorErrorModel dem("error(0.1) D0 L0\n"
                               "error(0.2) D0 D1\n"
                               "error(0.3) D1 L1");
 
- std::vector<stim::SparseShot> shots;
- shots.emplace_back(stim::SparseShot{{0}, obs_mask(0)});
- shots.emplace_back(stim::SparseShot{{1}, obs_mask(1)});
+  confidences_decoder::ConfidencesDecoder<TesseractInnerDecoder> decoder(dem);
 
- confidences_decoder::ConfidencesDecoder<TesseractInnerDecoder> decoder(dem);
- std::vector<std::vector<double>> confidences = decoder.decode_to_confidences(shots);
+  // Magic numbers for shot weights (truncated). Computed by hand.
+  std::vector<double> confidences = decoder.decode_to_confidences({0});
+  double weight_difference = -0.0364;
+  EXPECT_TRUE(abs(confidences[0] - weight_difference) < 0.001);
+  EXPECT_TRUE(abs(confidences[1] + weight_difference) < 0.001);
 
- // Magic numbers for shot weights (truncated). Computed by hand.
- std::vector<double> weight_differences = {-0.0364, 2.7362};
-
- EXPECT_TRUE(abs(confidences[0][0] - weight_differences[0]) < 0.001);
- EXPECT_TRUE(abs(confidences[0][1] + weight_differences[0]) < 0.001);
- EXPECT_TRUE(abs(confidences[1][0] - weight_differences[1]) < 0.001);
- EXPECT_TRUE(abs(confidences[1][1] + weight_differences[1]) < 0.001);
+  confidences = decoder.decode_to_confidences({1});
+  weight_difference = 2.7362;
+  EXPECT_TRUE(abs(confidences[0] - weight_difference) < 0.001);
+  EXPECT_TRUE(abs(confidences[1] + weight_difference) < 0.001);
 }

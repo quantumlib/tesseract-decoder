@@ -27,7 +27,7 @@ struct TesseractInnerDecoder {
 
   TesseractInnerDecoder(const stim::DetectorErrorModel& dem);
 
-  double decode_to_weight(const stim::SparseShot& shot);
+  double decode_to_weight(const std::vector<uint64_t>& detections);
 
 };
 

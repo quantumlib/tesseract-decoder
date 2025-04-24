@@ -27,8 +27,8 @@ TesseractInnerDecoder::TesseractInnerDecoder(
     const stim::DetectorErrorModel& dem) :
     decoder(tesseract_config_from_dem(dem)) {}
 
-double TesseractInnerDecoder::decode_to_weight(const stim::SparseShot& shot) {
-  decoder.decode_to_errors(shot.hits);
+double TesseractInnerDecoder::decode_to_weight(const std::vector<uint64_t>& detections) {
+  decoder.decode_to_errors(detections);
   return decoder.cost_from_errors(decoder.predicted_errors_buffer);
 }
 
