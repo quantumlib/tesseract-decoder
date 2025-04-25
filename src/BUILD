@@ -99,6 +99,7 @@ cc_binary(
         "@nlohmann_json//:json",
         "@stim//:stim_lib",
     ],
+    data = ["//testdata"]
 )
 
 cc_test(
