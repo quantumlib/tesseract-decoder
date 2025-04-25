@@ -139,6 +139,46 @@ struct Args {
     }
   }
 
+  // Helper function for sampling orientations of the error model to use for
+  // the det priority.
+  void sample_orientations_for_det_priority(TesseractConfig& config) {
+    config.det_orders.resize(num_det_orders);
+    std::mt19937_64 rng(det_order_seed);
+    std::normal_distribution<double> dist(/*mean=*/0, /*stddev=*/1);
+
+    std::vector<std::vector<double>> detector_coords =
+        get_detector_coords(config.dem);
+
+    std::vector<double> inner_products(config.dem.count_detectors());
+
+    for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
+      // Sample a direction
+      std::vector<double> orientation_vector;
+      for (size_t i = 0; i < detector_coords.at(0).size(); ++i) {
+        orientation_vector.push_back(dist(rng));
+      }
+
+      for (size_t i = 0; i < detector_coords.size(); ++i) {
+        inner_products[i] = 0;
+        for (size_t j = 0; j < orientation_vector.size(); ++j) {
+          inner_products[i] += detector_coords[i][j] * orientation_vector[j];
+        }
+      }
+      std::vector<size_t> perm(config.dem.count_detectors());
+      std::iota(perm.begin(), perm.end(), 0);
+      std::sort(perm.begin(), perm.end(),
+                [&](const size_t& i, const size_t& j) {
+                  return inner_products[i] > inner_products[j];
+                });
+      // Invert the permutation
+      std::vector<size_t> inv_perm(config.dem.count_detectors());
+      for (size_t i = 0; i < perm.size(); ++i) {
+        inv_perm[perm[i]] = i;
+      }
+      config.det_orders[det_order] = inv_perm;
+    }
+  }
+
   void extract(TesseractConfig& config, std::vector<stim::SparseShot>& shots,
                std::unique_ptr<stim::MeasureRecordWriter>& writer) {
     // Get a circuit, if available
@@ -176,43 +216,7 @@ struct Args {
     }
 
     // Sample orientations of the error model to use for the det priority
-    {
-      config.det_orders.resize(num_det_orders);
-      std::mt19937_64 rng(det_order_seed);
-      std::normal_distribution<double> dist(/*mean=*/0, /*stddev=*/1);
-
-      std::vector<std::vector<double>> detector_coords =
-          get_detector_coords(config.dem);
-
-      std::vector<double> inner_products(config.dem.count_detectors());
-
-      for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
-        // Sample a direction
-        std::vector<double> orientation_vector;
-        for (size_t i = 0; i < detector_coords.at(0).size(); ++i) {
-          orientation_vector.push_back(dist(rng));
-        }
-
-        for (size_t i = 0; i < detector_coords.size(); ++i) {
-          inner_products[i] = 0;
-          for (size_t j = 0; j < orientation_vector.size(); ++j) {
-            inner_products[i] += detector_coords[i][j] * orientation_vector[j];
-          }
-        }
-        std::vector<size_t> perm(config.dem.count_detectors());
-        std::iota(perm.begin(), perm.end(), 0);
-        std::sort(perm.begin(), perm.end(),
-                  [&](const size_t& i, const size_t& j) {
-                    return inner_products[i] > inner_products[j];
-                  });
-        // Invert the permutation
-        std::vector<size_t> inv_perm(config.dem.count_detectors());
-        for (size_t i = 0; i < perm.size(); ++i) {
-          inv_perm[perm[i]] = i;
-        }
-        config.det_orders[det_order] = inv_perm;
-      }
-    }
+    sample_orientations_for_det_priority(config);
 
     if (sample_num_shots > 0) {
       assert(!circuit_path.empty());
@@ -331,25 +335,25 @@ inline stim::DetectorErrorModel fix_obs(const stim::DetectorErrorModel& dem,
 
   stim::DetectorErrorModel result;
   uint64_t num_detectors = dem.count_detectors();
-    for (stim::DemInstruction inst : dem.instructions) {
-      if (inst.type != stim::DemInstructionType::DEM_ERROR) {
-        result.append_dem_instruction(inst);
-      } else {
-        // Save data related to instruction and copy over while replacing
-        // specific observable with a detector.
-        std::vector<stim::DemTarget> target_data;
-        for (auto tar: inst.target_data) {
-          target_data.emplace_back(tar);
-        }
-        for (auto& tar: target_data) {
-          if (tar.is_observable_id() && tar.val() == obs_idx) {
-            tar.data = num_detectors;
-          }
-        }
-        result.append_error_instruction(inst.arg_data[0], target_data, inst.tag);
+  for (stim::DemInstruction inst : dem.instructions) {
+    if (inst.type != stim::DemInstructionType::DEM_ERROR) {
+      result.append_dem_instruction(inst);
+    } else {
+      // Save data related to instruction and copy over while replacing
+      // specific observable with a detector.
+      std::vector<stim::DemTarget> target_data;
+      for (auto tar: inst.target_data) {
+        target_data.emplace_back(tar);
       }
+      for (auto& tar: target_data) {
+        if (tar.is_observable_id() && tar.val() == obs_idx) {
+          tar.data = num_detectors;
+        }
+      }
+      result.append_error_instruction(inst.arg_data[0], target_data, inst.tag);
     }
-    return result;
+  }
+  return result;
 }
 
 int main(int argc, char* argv[]) {
@@ -557,7 +561,7 @@ int main(int argc, char* argv[]) {
     // transition to finished.
     ++num_worker_threads_active;
     decoder_threads.push_back(std::thread(
-        [&config, &next_unclaimed_shot, &shots, &obs_predicted, &cost_predicted,
+        [&args, &config, &next_unclaimed_shot, &shots, &obs_predicted, &cost_predicted,
          &decoding_time_seconds, &low_confidence, &finished, &error_use_totals,
          &do_confidences_decoding, &confidences, &num_detectors, &num_observables,
          &has_obs, &worker_threads_please_terminate, &num_worker_threads_active]() {
@@ -568,9 +572,7 @@ int main(int argc, char* argv[]) {
             TesseractConfig obs_fixed_config = config;
             for (size_t obs_idx; obs_idx < num_observables; obs_idx++) {
               obs_fixed_config.dem = fix_obs(config.dem, obs_idx);
-              for (auto& det_order : obs_fixed_config.det_orders) {
-                det_order.emplace_back(num_detectors);
-              }
+              args.sample_orientations_for_det_priority(obs_fixed_config);
               obs_fixed_decoders.emplace_back(obs_fixed_config);
             }
           }
@@ -667,9 +669,11 @@ int main(int argc, char* argv[]) {
                 << " num_errors = " << num_errors
                 << " total_time_seconds = " << total_time_seconds << std::endl;
       std::cout << "cost = " << cost_predicted[shot];
-      std::cout << " confidence = ";
-      for (auto confidence : confidences[shot]) {
-        std::cout << confidence << " ";
+      if (do_confidences_decoding) {
+        std::cout << " confidence = ";
+        for (auto confidence: confidences[shot]) {
+          std::cout << confidence << " ";
+        }
       }
       std::cout << std::endl;
       std::cout.flush();
