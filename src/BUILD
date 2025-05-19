@@ -32,7 +32,6 @@ OPT_COPTS = select({
     ],
     ":debug": ["-Og"],
 }) + select({
-        "@platforms//os:windows": ["/std:c++20"],
         "//conditions:default": ["-std=c++20"],
 }) + select({
     "@platforms//os:macos": ["-mmacosx-version-min=10.15"],
