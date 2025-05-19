@@ -13,6 +13,8 @@
 # limitations under the License.
 
 # load("@benchmark//:benchmark.bzl", "cc_benchmark")
+load("@pybind11_bazel//:build_defs.bzl", "pybind_extension")
+load("@rules_python//python:defs.bzl", "py_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -62,6 +64,26 @@ cc_library(
         "@stim//:stim_lib",
     ],
 )
+
+
+pybind_extension(
+    name = "tesseract_decoder",
+    srcs = [
+        "common.pybind.h",
+        "tesseract.pybind.cc",
+    ],
+    deps = [
+        ":libcommon",
+    ],
+)
+
+
+py_library(
+    name="lib_tesseract_decoder",
+    data=[":tesseract_decoder"],
+    imports=["src"],
+)
+
 
 cc_library(
     name = "libutils",
@@ -171,3 +193,4 @@ cc_binary(
         "@nlohmann_json//:json",
     ],
 )
+
