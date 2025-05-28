@@ -179,6 +179,11 @@ struct Args {
 
       std::vector<std::vector<double>> detector_coords =
           get_detector_coords(config.dem);
+      if (config.verbose) {
+        for (size_t d=0; d<detector_coords.size(); ++d) {
+          std::cout<<"detector D"<<d<<" at "<<detector_coords[d]<<std::endl;
+        }
+      }
 
       std::vector<double> inner_products(config.dem.count_detectors());
 

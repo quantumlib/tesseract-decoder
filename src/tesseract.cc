@@ -48,6 +48,11 @@ TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
   }
   assert(this->config.det_orders.size());
   errors = get_errors_from_dem(config.dem.flattened());
+  if (config.verbose) {
+    for (auto& error : errors) {
+      std::cout << error.str() << std::endl;
+    }
+  }
   num_detectors = config.dem.count_detectors();
   num_errors = config.dem.count_errors();
   initialize_structures(config.dem.count_detectors());
@@ -276,9 +281,13 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
       std::cout << "num_dets = " << node.num_dets
                 << " max_num_dets = " << max_num_dets << " cost = " << node.cost
                 << std::endl;
+      std::cout<<"errors = ";
       for (size_t oei : node.errs) {
         std::cout << oei << ", ";
       }
+      std::cout << std::endl;
+      std::cout<<"activated_dets = ";
+
       std::cout << std::endl;
     }
 
