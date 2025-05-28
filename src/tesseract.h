@@ -41,10 +41,10 @@ struct TesseractConfig {
 class Node {
  public:
   std::vector<size_t> errs;
-  std::vector<bool> dets;
+  std::vector<char> dets;
   double cost;
   size_t num_dets;
-  std::vector<bool> blocked_errs;
+  std::vector<char> blocked_errs;
 
   bool operator>(const Node& other) const;
 };
@@ -96,10 +96,10 @@ struct TesseractDecoder {
   size_t num_errors;
 
   void initialize_structures(size_t num_detectors);
-  double get_detcost(size_t d, const std::vector<bool>& blocked_errs,
+  double get_detcost(size_t d, const std::vector<char>& blocked_errs,
                      const std::vector<size_t>& det_counts,
-                     const std::vector<bool>& dets) const;
-  void to_node(const QNode& qnode, const std::vector<bool>& shot_dets,
+                     const std::vector<char>& dets) const;
+  void to_node(const QNode& qnode, const std::vector<char>& shot_dets,
                size_t det_order, Node& node) const;
 };
 

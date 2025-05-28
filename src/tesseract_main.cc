@@ -317,7 +317,7 @@ struct Args {
 
 int main(int argc, char* argv[]) {
   std::cout.precision(16);
-  argparse::ArgumentParser program("simplex");
+  argparse::ArgumentParser program("tesseract");
   Args args;
   program.add_argument("--circuit")
       .help("Stim circuit file path")
