@@ -23,9 +23,9 @@ bool Node::operator>(const Node& other) const {
 }
 
 double TesseractDecoder::get_detcost(size_t d,
-                                     const std::vector<bool>& blocked_errs,
+                                     const std::vector<char>& blocked_errs,
                                      const std::vector<size_t>& det_counts,
-                                     const std::vector<bool>& dets) const {
+                                     const std::vector<char>& dets) const {
   double min_cost = INF;
   for (size_t ei : d2e[d]) {
     if (!blocked_errs[ei]) {
@@ -90,15 +90,17 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
   }
 }
 
-struct VectorBoolHash {
-  size_t operator()(const std::vector<bool>& v) const {
-    std::hash<bool> bool_hash;
-    size_t seed = 0;
-    for (bool b : v) {
-      // Combine hash values of individual booleans.
-      // A simple way is to use XOR and bit shifting,
-      // but you can use other combining strategies as well.
-      seed ^= bool_hash(b) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+struct VectorCharHash {
+  size_t operator()(const std::vector<char>& v) const {
+    size_t seed = v.size(); // Still good practice to incorporate vector size
+
+    // Iterate over char elements. Accessing 'b_val' is now a direct memory read.
+    for (char b_val : v) {
+      // The polynomial rolling hash with 31 (or another prime)
+      // 'b_val' is already a char (an 8-bit integer).
+      // static_cast<size_t>(b_val) ensures it's promoted to size_t before arithmetic.
+      // This cast is efficient (likely a simple register extension/move).
+      seed = seed * 31 + static_cast<size_t>(b_val);
     }
     return seed;
   }
@@ -156,7 +158,7 @@ bool QNode::operator>(const QNode& other) const {
 }
 
 void TesseractDecoder::to_node(const QNode& qnode,
-                               const std::vector<bool>& shot_dets,
+                               const std::vector<char>& shot_dets,
                                size_t det_order, Node& node) const {
   node.cost = qnode.cost;
   node.errs = qnode.errs;
@@ -202,20 +204,20 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
   size_t det_beam = config.det_beam;
   predicted_errors_buffer.clear();
   low_confidence_flag = false;
-  std::vector<bool> dets(num_detectors, false);
+  std::vector<char> dets(num_detectors, false);
   for (size_t d : detections) {
     dets[d] = true;
   }
 
   std::priority_queue<QNode, std::vector<QNode>, std::greater<QNode>> pq;
   std::unordered_map<size_t,
-                     std::unordered_set<std::vector<bool>, VectorBoolHash>>
+                     std::unordered_set<std::vector<char>, VectorCharHash>>
       discovered_dets;
 
   size_t min_num_dets;
   {
     std::vector<size_t> errs;
-    std::vector<bool> blocked_errs(num_errors, false);
+    std::vector<char> blocked_errs(num_errors, false);
     std::vector<size_t> det_counts(num_errors, 0);
 
     for (size_t d = 0; d < num_detectors; ++d) {
@@ -243,8 +245,8 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
   size_t max_num_dets = min_num_dets + det_beam;
   Node node;
   std::vector<size_t> next_det_counts;
-  std::vector<bool> next_next_blocked_errs;
-  std::vector<bool> next_dets;
+  std::vector<char> next_next_blocked_errs;
+  std::vector<char> next_dets;
   std::vector<size_t> next_errs;
   while (!pq.empty()) {
     const QNode qnode = pq.top();
@@ -320,7 +322,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
     }
     // We cache as we recompute the det costs
     std::vector<double> det_costs(num_detectors, -1);
-    std::vector<bool> next_blocked_errs = node.blocked_errs;
+    std::vector<char> next_blocked_errs = node.blocked_errs;
     if (config.at_most_two_errors_per_detector) {
       for (int ei : d2e[min_det]) {
         // Block all errors of this detector -- note this is an approximation
