@@ -85,7 +85,7 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
   }
 }
 
-struct VectorBoolHash {
+struct VectorCharHash {
   size_t operator()(const std::vector<char>& v) const {
     size_t seed = v.size(); // Still good practice to incorporate vector size
 
@@ -206,7 +206,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
 
   std::priority_queue<QNode, std::vector<QNode>, std::greater<QNode>> pq;
   std::unordered_map<size_t,
-                     std::unordered_set<std::vector<char>, VectorBoolHash>>
+                     std::unordered_set<std::vector<char>, VectorCharHash>>
       discovered_dets;
 
   size_t min_num_dets;
