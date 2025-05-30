@@ -165,6 +165,13 @@ function handleFile(event) {
 
 function restartAnimationTimer() {
   clearInterval(animationTimer);
+
+  // If trying to play from the very end of a non-looping animation, reset to the beginning first.
+  if (frames.length > 0 && frameIndex === frames.length - 1 && !loop) {
+    frameIndex = 0;
+    updateFrame(); // Immediately update visuals to show frame 0
+  }
+
   animationTimer = setInterval(() => {
     if (!playing || !frames.length) return;
     if (frameIndex < frames.length - 1) {
