@@ -22,9 +22,10 @@ def parse_logfile(filepath):
     i = 0
     while i < len(lines):
         line = lines[i].strip()
+
         if not any(line.startswith(s) for s in ['Error', 'Detector', 'activated_errors', 'activated_dets']):
           continue
-        # Parse detector coordinates
+
         if line.startswith("Detector D"):
             match = re.match(r'Detector D(\d+) coordinate \(([-\d.]+), ([-\d.]+), ([-\d.]+)\)', line)
             if match:
@@ -32,7 +33,6 @@ def parse_logfile(filepath):
                 coord = tuple(float(match.group(j)) for j in range(2, 5))
                 detector_coords[idx] = coord
 
-        # Parse error lines
         elif line.startswith("Error{"):
             match = re.search(r'Symptom\{([^\}]+)\}', line)
             if match:
@@ -40,7 +40,6 @@ def parse_logfile(filepath):
                 det_indices = [int(d[1:]) for d in dets if d.startswith('D')]
                 error_to_detectors.append(det_indices)
 
-        # Parse animation frames
         elif line.startswith("activated_errors"):
             try:
                 error_line = lines[i].strip()
@@ -64,13 +63,11 @@ def parse_logfile(filepath):
     if not detector_coords:
         raise RuntimeError("No detectors parsed!")
 
-    # Mean-center detector coordinates
     coords_array = np.array(list(detector_coords.values()))
     mean_coord = coords_array.mean(axis=0)
     for k in detector_coords:
         detector_coords[k] = (np.array(detector_coords[k]) - mean_coord).tolist()
 
-    # Compute error coordinates
     error_coords = {}
     for i, det_list in enumerate(error_to_detectors):
         try:
@@ -80,9 +77,12 @@ def parse_logfile(filepath):
         except KeyError as e:
             print(f"⚠️ Skipping error {i}: unknown detector {e}")
 
+    error_to_detectors_dict = {str(i): dets for i, dets in enumerate(error_to_detectors)}
+
     return {
         "detectorCoords": {str(k): v for k, v in detector_coords.items()},
         "errorCoords": {str(k): v for k, v in error_coords.items()},
+        "errorToDetectors": error_to_detectors_dict,
         "frames": frames
     }
 
