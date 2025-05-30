@@ -92,21 +92,24 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
 
 struct VectorCharHash {
   size_t operator()(const std::vector<char>& v) const {
-    size_t seed = v.size(); // Still good practice to incorporate vector size
+    size_t seed = v.size();  // Still good practice to incorporate vector size
 
-    // Iterate over char elements. Accessing 'b_val' is now a direct memory read.
+    // Iterate over char elements. Accessing 'b_val' is now a direct memory
+    // read.
     for (char b_val : v) {
       // The polynomial rolling hash with 31 (or another prime)
       // 'b_val' is already a char (an 8-bit integer).
-      // static_cast<size_t>(b_val) ensures it's promoted to size_t before arithmetic.
-      // This cast is efficient (likely a simple register extension/move).
+      // static_cast<size_t>(b_val) ensures it's promoted to size_t before
+      // arithmetic. This cast is efficient (likely a simple register
+      // extension/move).
       seed = seed * 31 + static_cast<size_t>(b_val);
     }
     return seed;
   }
 };
 
-void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
+void TesseractDecoder::decode_to_errors(
+    const std::vector<uint64_t>& detections) {
   std::vector<size_t> best_errors;
   double best_cost = std::numeric_limits<double>::max();
   assert(config.det_orders.size());
@@ -259,6 +262,18 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
 
     if (node.num_dets == 0) {
       if (config.verbose) {
+        std::cout << "activated_errors = ";
+        for (size_t oei : node.errs) {
+          std::cout << oei << ", ";
+        }
+        std::cout << std::endl;
+        std::cout << "activated_dets = ";
+        for (size_t d = 0; d < num_detectors; ++d) {
+          if (node.dets[d]) {
+            std::cout << d << ", ";
+          }
+        }
+        std::cout << std::endl;
         std::cout.precision(13);
         std::cout << "Decoding complete. Cost: " << node.cost
                   << " num_pq_pushed = " << num_pq_pushed << std::endl;
@@ -283,13 +298,17 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
       std::cout << "num_dets = " << node.num_dets
                 << " max_num_dets = " << max_num_dets << " cost = " << node.cost
                 << std::endl;
-      std::cout<<"errors = ";
+      std::cout << "activated_errors = ";
       for (size_t oei : node.errs) {
         std::cout << oei << ", ";
       }
       std::cout << std::endl;
-      std::cout<<"activated_dets = ";
-
+      std::cout << "activated_dets = ";
+      for (size_t d = 0; d < num_detectors; ++d) {
+        if (node.dets[d]) {
+          std::cout << d << ", ";
+        }
+      }
       std::cout << std::endl;
     }
 
