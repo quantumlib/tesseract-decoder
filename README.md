@@ -19,7 +19,7 @@ A Search-Based Decoder for Quantum Error Correction.
 Tesseract is a Most Likely Error decoder designed for Low Density Parity Check (LDPC) quantum
 error-correcting codes. It applies pruning heuristics and manifold orientation techniques during a
 search over the error subsets to identify the most likely error configuration consistent with the
-observed syndrome. Tesseract archives significant speed improvements over traditional integer
+observed syndrome. Tesseract achieves significant speed improvements over traditional integer
 programming-based decoders while maintaining comparable accuracy at moderate physical error rates.
 
 We tested the Tesseract decoder for:
