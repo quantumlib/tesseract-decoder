@@ -38,8 +38,8 @@ std::vector<std::vector<double>> get_detector_coords(
       }
       case stim::DemInstructionType::DEM_DETECTOR: {
         std::vector<double> coord;
-        for (const stim::DemTarget& t : instruction.target_data) {
-          coord.push_back(t.val());
+        for (const double& t : instruction.arg_data) {
+          coord.push_back(t);
         }
         detector_coords.push_back(coord);
         break;

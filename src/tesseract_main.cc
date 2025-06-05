@@ -179,34 +179,58 @@ struct Args {
 
       std::vector<std::vector<double>> detector_coords =
           get_detector_coords(config.dem);
+      if (verbose) {
+        for (size_t d = 0; d < detector_coords.size(); ++d) {
+          std::cout << "Detector D" << d << " coordinate (";
+          size_t e = std::min(3ul, detector_coords[d].size());
+          for (size_t i = 0; i < e; ++i) {
+            std::cout << detector_coords[d][i];
+            if (i + 1 < e) std::cout << ", ";
+          }
+          std::cout << ")" << std::endl;
+        }
+      }
 
       std::vector<double> inner_products(config.dem.count_detectors());
 
-      for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
-        // Sample a direction
-        std::vector<double> orientation_vector;
-        for (size_t i = 0; i < detector_coords.at(0).size(); ++i) {
-          orientation_vector.push_back(dist(rng));
+      if (!detector_coords.size() or !detector_coords.at(0).size()) {
+        // If there are no detector coordinates, just use the standard ordering
+        // of the indices.
+        for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
+          config.det_orders.emplace_back();
+          std::iota(config.det_orders.back().begin(),
+                    config.det_orders.front().end(), 0);
         }
-
-        for (size_t i = 0; i < detector_coords.size(); ++i) {
-          inner_products[i] = 0;
-          for (size_t j = 0; j < orientation_vector.size(); ++j) {
-            inner_products[i] += detector_coords[i][j] * orientation_vector[j];
+      } else {
+        // Use the coordinates to order the detectors based on a random
+        // orientation
+        for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
+          // Sample a direction
+          std::vector<double> orientation_vector;
+          for (size_t i = 0; i < detector_coords.at(0).size(); ++i) {
+            orientation_vector.push_back(dist(rng));
           }
+
+          for (size_t i = 0; i < detector_coords.size(); ++i) {
+            inner_products[i] = 0;
+            for (size_t j = 0; j < orientation_vector.size(); ++j) {
+              inner_products[i] +=
+                  detector_coords[i][j] * orientation_vector[j];
+            }
+          }
+          std::vector<size_t> perm(config.dem.count_detectors());
+          std::iota(perm.begin(), perm.end(), 0);
+          std::sort(perm.begin(), perm.end(),
+                    [&](const size_t& i, const size_t& j) {
+                      return inner_products[i] > inner_products[j];
+                    });
+          // Invert the permutation
+          std::vector<size_t> inv_perm(config.dem.count_detectors());
+          for (size_t i = 0; i < perm.size(); ++i) {
+            inv_perm[perm[i]] = i;
+          }
+          config.det_orders[det_order] = inv_perm;
         }
-        std::vector<size_t> perm(config.dem.count_detectors());
-        std::iota(perm.begin(), perm.end(), 0);
-        std::sort(perm.begin(), perm.end(),
-                  [&](const size_t& i, const size_t& j) {
-                    return inner_products[i] > inner_products[j];
-                  });
-        // Invert the permutation
-        std::vector<size_t> inv_perm(config.dem.count_detectors());
-        for (size_t i = 0; i < perm.size(); ++i) {
-          inv_perm[perm[i]] = i;
-        }
-        config.det_orders[det_order] = inv_perm;
       }
     }
 
