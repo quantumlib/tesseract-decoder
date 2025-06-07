@@ -175,6 +175,7 @@ struct Args {
     if (!no_merge_errors) {
       config.dem = common::merge_identical_errors(config.dem);
     }
+    config.dem = common::remove_zero_probability_errors(config.dem);
 
     if (sample_num_shots > 0) {
       assert(!circuit_path.empty());

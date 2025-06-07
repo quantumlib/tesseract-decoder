@@ -141,6 +141,8 @@ cc_test(
 cc_test(
     name = "common_tests",
     srcs = ["common.test.cc"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
     deps = [
         ":libcommon",
         "@gtest",
