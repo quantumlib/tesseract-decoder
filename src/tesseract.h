@@ -37,6 +37,8 @@ struct TesseractConfig {
   size_t pqlimit = std::numeric_limits<size_t>::max();
   std::vector<std::vector<size_t>> det_orders;
   double det_penalty = 0;
+  bool with_openmp = false;
+  int beam_climbing_openmp_threads = 0;
 };
 
 class Node {
@@ -63,32 +65,23 @@ struct TesseractDecoder {
   TesseractConfig config;
   explicit TesseractDecoder(TesseractConfig config);
 
-  // Clears the predicted_errors_buffer and fills it with the decoded errors for
-  // these detection events.
-  void decode_to_errors(const std::vector<uint64_t>& detections);
+  // Returns the decoded errors for these detection events.
+  std::pair<std::vector<size_t>, bool> decode_to_errors(const std::vector<uint64_t>& detections);
 
-  // Clears the predicted_errors_buffer and fills it with the decoded errors for
-  // these detection events, using a specified detector ordering index.
-  void decode_to_errors(const std::vector<uint64_t>& detections,
-                        size_t det_order);
+  // Returns the decoded errors for these detection events, using a specified detector ordering index and detection beam.
+  std::pair<std::vector<size_t>, bool> decode_to_errors(const std::vector<uint64_t>& detections, size_t det_order, size_t det_beam);
 
   // Returns the bitwise XOR of all the observables bitmasks of all errors in
   // the predicted errors buffer.
-  common::ObservablesMask mask_from_errors(
-      const std::vector<size_t>& predicted_errors);
+  common::ObservablesMask mask_from_errors(const std::vector<size_t>& predicted_errors);
 
   // Returns the sum of the likelihood costs (minus-log-likelihood-ratios) of
   // all errors in the predicted errors buffer.
   double cost_from_errors(const std::vector<size_t>& predicted_errors);
   common::ObservablesMask decode(const std::vector<uint64_t>& detections);
 
-  void decode_shots(std::vector<stim::SparseShot>& shots,
-                    std::vector<common::ObservablesMask>& obs_predicted);
+  void decode_shots(std::vector<stim::SparseShot>& shots, std::vector<common::ObservablesMask>& obs_predicted);
 
-  bool low_confidence_flag = false;
-  std::vector<size_t> predicted_errors_buffer;
-
-  int det_beam;
   std::vector<common::Error> errors;
 
  private:
@@ -99,10 +92,8 @@ struct TesseractDecoder {
   size_t num_errors;
 
   void initialize_structures(size_t num_detectors);
-  double get_detcost(size_t d, const std::vector<char>& blocked_errs,
-                     const std::vector<size_t>& det_counts) const;
-  void to_node(const QNode& qnode, const std::vector<char>& shot_dets,
-               size_t det_order, Node& node) const;
+  double get_detcost(size_t d, const std::vector<char>& blocked_errs, const std::vector<size_t>& det_counts) const;
+  void to_node(const QNode& qnode, const std::vector<char>& shot_dets, size_t det_order, Node& node) const;
 };
 
 #endif  // TESSERACT_DECODER_H

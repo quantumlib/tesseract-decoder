@@ -74,13 +74,19 @@ struct Args {
   bool verbose = false;
   bool print_stats = false;
 
+  // Flag whether to utilize OpenMP to accelerate the decoding phase
+  bool with_openmp = false;
+
+  // Number of OpenMP threads used to accelerate the beam climbing phase
+  int beam_climbing_openmp_threads = 0;
+
   bool has_observables() {
     return append_observables || !obs_in_fname.empty() ||
            (sample_num_shots > 0);
   }
 
   void validate() {
-    if (circuit_path.empty() and dem_path.empty()) {
+    if (circuit_path.empty() && dem_path.empty()) {
       throw std::invalid_argument(
           "Must provide at least one of --circuit or --dem");
     }
@@ -89,27 +95,24 @@ struct Args {
     if (num_data_sources != 1) {
       throw std::invalid_argument("Requires exactly 1 source of shots.");
     }
-    if (!in_fname.empty() and in_format.empty()) {
+    if (!in_fname.empty() && in_format.empty()) {
       throw std::invalid_argument(
           "If --in is provided, must also specify --in-format.");
     }
-    if (!out_fname.empty() and out_format.empty()) {
+    if (!out_fname.empty() && out_format.empty()) {
       throw std::invalid_argument(
           "If --out is provided, must also specify --out-format.");
     }
-    if (!in_format.empty() &&
-        !stim::format_name_to_enum_map().contains(in_format)) {
+    if (!in_format.empty() && !stim::format_name_to_enum_map().contains(in_format)) {
       throw std::invalid_argument("Invalid format: " + in_format);
     }
-    if (!obs_in_format.empty() &&
-        !stim::format_name_to_enum_map().contains(obs_in_format)) {
+    if (!obs_in_format.empty() && !stim::format_name_to_enum_map().contains(obs_in_format)) {
       throw std::invalid_argument("Invalid format: " + obs_in_format);
     }
-    if (!out_format.empty() &&
-        !stim::format_name_to_enum_map().contains(out_format)) {
+    if (!out_format.empty() && !stim::format_name_to_enum_map().contains(out_format)) {
       throw std::invalid_argument("Invalid format: " + out_format);
     }
-    if (!obs_in_fname.empty() and in_fname.empty()) {
+    if (!obs_in_fname.empty() && in_fname.empty()) {
       throw std::invalid_argument(
           "Cannot load observable flips without a corresponding detection "
           "event data file.");
@@ -121,18 +124,27 @@ struct Args {
           "host. You specified " +
           std::to_string(num_threads) + "threads.");
     }
-    if (shot_range_begin or shot_range_end) {
+    if (shot_range_begin || shot_range_end) {
       if (shot_range_end < shot_range_begin) {
         throw std::invalid_argument(
             "Provided shot range must have end >= begin.");
       }
     }
-    if (sample_num_shots > 0 and circuit_path.empty()) {
+    if (sample_num_shots > 0 && circuit_path.empty()) {
       throw std::invalid_argument("Cannot sample shots without a circuit.");
     }
-    if (beam_climbing and det_beam == INF_DET_BEAM) {
+    if (beam_climbing && det_beam == INF_DET_BEAM) {
       throw std::invalid_argument("Beam climbing requires a finite beam");
     }
+
+    if (beam_climbing_openmp_threads > 0 && !with_openmp) {
+      throw std::invalid_argument("Must enable OpenMP support to parallelize beam climbing (use --with-openmp flag)");
+    }
+
+    if (beam_climbing_openmp_threads > 0 && !beam_climbing) {
+      throw std::invalid_argument("Must enable beam climbing to parallelize it with OpenMP (use --beam-climbing)");
+    }
+
   }
 
   void extract(TesseractConfig& config, std::vector<stim::SparseShot>& shots,
@@ -193,7 +205,7 @@ struct Args {
 
       std::vector<double> inner_products(config.dem.count_detectors());
 
-      if (!detector_coords.size() or !detector_coords.at(0).size()) {
+      if (!detector_coords.size() || !detector_coords.at(0).size()) {
         // If there are no detector coordinates, just use the standard ordering
         // of the indices.
         for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
@@ -304,7 +316,7 @@ struct Args {
     }
 
     // Subselect shots, if applicable
-    if (shot_range_begin or shot_range_end) {
+    if (shot_range_begin || shot_range_end) {
       assert(shot_range_end >= shot_range_begin);
       if (shot_range_end > shots.size()) {
         throw std::invalid_argument(
@@ -336,6 +348,8 @@ struct Args {
     config.at_most_two_errors_per_detector = at_most_two_errors_per_detector;
     config.pqlimit = pqlimit;
     config.verbose = verbose;
+    config.with_openmp = with_openmp;
+    config.beam_climbing_openmp_threads = beam_climbing_openmp_threads;
   }
 };
 
@@ -465,7 +479,8 @@ int main(int argc, char* argv[]) {
   program.add_argument("--threads")
       .help("Number of decoder threads to use")
       .metavar("N")
-      .default_value(size_t(std::thread::hardware_concurrency()))
+      //.default_value(size_t(std::thread::hardware_concurrency()))
+      .default_value(size_t(1))
       .store_into(args.num_threads);
   program.add_argument("--beam")
       .help("Beam to use for truncation (default = infinity)")
@@ -506,6 +521,17 @@ int main(int argc, char* argv[]) {
           "during decoding.")
       .flag()
       .store_into(args.print_stats);
+  program
+      .add_argument("--with-openmp")
+      .help("Flag whether Tesseract will utilize OpenMP to accelerate its execution")
+      .default_value(false)
+      .store_into(args.with_openmp)
+      .flag();
+  program
+      .add_argument("--beam-climbing-openmp-threads")
+      .help("Number of OpenMP threads used to parallelize the beam climbing phase. Requires --with-openmp flag.")
+      .store_into(args.beam_climbing_openmp_threads)
+      .default_value(0);
 
   try {
     program.parse_args(argc, argv);
@@ -544,23 +570,25 @@ int main(int argc, char* argv[]) {
           for (size_t shot; !worker_threads_please_terminate and
                             ((shot = next_unclaimed_shot++) < shots.size());) {
             auto start_time = std::chrono::high_resolution_clock::now();
-            decoder.decode_to_errors(shots[shot].hits);
+            auto decoding_result = decoder.decode_to_errors(shots[shot].hits);
             auto stop_time = std::chrono::high_resolution_clock::now();
+            std::vector<size_t> predicted_errors = decoding_result.first;
+            bool low_confidence_flag = decoding_result.second;
             decoding_time_seconds[shot] =
                 std::chrono::duration_cast<std::chrono::microseconds>(
                     stop_time - start_time)
                     .count() /
                 1e6;
             obs_predicted[shot] =
-                decoder.mask_from_errors(decoder.predicted_errors_buffer);
-            low_confidence[shot] = decoder.low_confidence_flag;
+                decoder.mask_from_errors(predicted_errors);
+            low_confidence[shot] = low_confidence_flag;
             cost_predicted[shot] =
-                decoder.cost_from_errors(decoder.predicted_errors_buffer);
+                decoder.cost_from_errors(predicted_errors);
             if (!has_obs or
                 shots[shot].obs_mask_as_u64() == obs_predicted[shot]) {
               // Only count the error uses for shots that did not have a logical
               // error, if we know the obs flips.
-              for (size_t ei : decoder.predicted_errors_buffer) {
+              for (size_t ei : predicted_errors) {
                 ++error_use[ei];
               }
             }

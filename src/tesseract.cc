@@ -18,6 +18,8 @@
 #include <cassert>
 #include <iostream>
 
+#include <omp.h>
+
 bool Node::operator>(const Node& other) const {
   return cost > other.cost || (cost == other.cost && num_dets < other.num_dets);
 }
@@ -71,8 +73,7 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
   eneighbors.resize(num_errors);
   std::vector<std::unordered_set<size_t>> edets_sets(edets.size());
   for (size_t ei = 0; ei < edets.size(); ++ei) {
-    edets_sets[ei] =
-        std::unordered_set<size_t>(edets[ei].begin(), edets[ei].end());
+    edets_sets[ei] = std::unordered_set<size_t>(edets[ei].begin(), edets[ei].end());
   }
   for (size_t ei = 0; ei < num_errors; ++ei) {
     std::set<int> neighbor_set;
@@ -107,52 +108,102 @@ struct VectorCharHash {
   }
 };
 
-void TesseractDecoder::decode_to_errors(
-    const std::vector<uint64_t>& detections) {
+std::pair<std::vector<size_t>, bool> TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
   std::vector<size_t> best_errors;
   double best_cost = std::numeric_limits<double>::max();
   assert(config.det_orders.size());
-  int max_det_beam = config.det_beam;
+
   if (config.beam_climbing) {
-    for (int beam = max_det_beam; beam >= 0; --beam) {
-      config.det_beam = beam;
-      size_t det_order = beam % config.det_orders.size();
-      decode_to_errors(detections, det_order);
-      double this_cost = cost_from_errors(predicted_errors_buffer);
-      if (!low_confidence_flag && this_cost < best_cost) {
-        best_errors = predicted_errors_buffer;
-        best_cost = this_cost;
+    if (config.with_openmp && config.beam_climbing_openmp_threads > 0) {
+
+      std::vector<std::pair<std::vector<size_t>, double>> best_results_per_thread;
+
+      omp_set_num_threads(config.beam_climbing_openmp_threads);
+
+      #pragma omp parallel
+      {
+        std::vector<size_t> local_best_errors;
+        double local_best_cost = std::numeric_limits<double>::max();
+
+        #pragma omp for nowait
+        for (int beam = config.det_beam; beam >= 0; --beam) {
+          size_t det_order = beam % config.det_orders.size();
+          auto decoding_result = decode_to_errors(detections, det_order, beam);
+          std::vector<size_t> predicted_errors = decoding_result.first;
+          bool low_confidence_flag = decoding_result.second;
+          double predicted_cost = cost_from_errors(predicted_errors);
+          if (!low_confidence_flag && predicted_cost < local_best_cost) {
+            local_best_errors = predicted_errors;
+            local_best_cost = predicted_cost;
+          }
+          if (config.verbose) {
+            #pragma omp critical(beam_climbing_output)
+            {
+              std::cout << "for det_order " << det_order << " beam " << beam
+                        << " got low confidence " << low_confidence_flag
+                        << " and cost " << predicted_cost << " and obs_mask "
+                        << mask_from_errors(predicted_errors)
+                        << ". Best cost so far: " << best_cost << std::endl;
+            }
+          }
+        }
+
+        #pragma omp critical(beam_climbing_synchronization)
+        {
+            if (local_best_cost != std::numeric_limits<double>::max()) {
+                best_results_per_thread.push_back({local_best_errors, local_best_cost});
+            }
+        }
       }
-      if (config.verbose) {
-        std::cout << "for det_order " << det_order << " beam " << beam
-                  << " got low confidence " << low_confidence_flag
-                  << " and cost " << this_cost << " and obs_mask "
-                  << mask_from_errors(predicted_errors_buffer)
-                  << ". Best cost so far: " << best_cost << std::endl;
+
+      for (const auto& best_result : best_results_per_thread) {
+          if (best_result.second < best_cost) {
+              best_errors = best_result.first;
+              best_cost = best_result.second;
+          }
+      }
+
+    } else {
+      for (int beam = config.det_beam; beam >= 0; --beam) {
+        size_t det_order = beam % config.det_orders.size();
+        auto decoding_result = decode_to_errors(detections, det_order, beam);
+        std::vector<size_t> predicted_errors = decoding_result.first;
+        bool low_confidence_flag = decoding_result.second;
+        double predicted_cost = cost_from_errors(predicted_errors);
+        if (!low_confidence_flag && predicted_cost < best_cost) {
+          best_errors = predicted_errors;
+          best_cost = predicted_cost;
+        }
+        if (config.verbose) {
+          std::cout << "for det_order " << det_order << " beam " << beam
+                    << " got low confidence " << low_confidence_flag
+                    << " and cost " << predicted_cost << " and obs_mask "
+                    << mask_from_errors(predicted_errors)
+                    << ". Best cost so far: " << best_cost << std::endl;
+        }
       }
     }
   } else {
-    for (size_t det_order = 0; det_order < config.det_orders.size();
-         ++det_order) {
-      decode_to_errors(detections, det_order);
-      double this_cost = cost_from_errors(predicted_errors_buffer);
-      if (!low_confidence_flag && this_cost < best_cost) {
-        best_errors = predicted_errors_buffer;
-        best_cost = this_cost;
+    for (size_t det_order = 0; det_order < config.det_orders.size(); ++det_order) {
+      auto decoding_result = decode_to_errors(detections, det_order, config.det_beam);
+      std::vector<size_t> predicted_errors = decoding_result.first;
+      bool low_confidence_flag = decoding_result.second;
+      double predicted_cost = cost_from_errors(predicted_errors);
+      if (!low_confidence_flag && predicted_cost < best_cost) {
+        best_errors = predicted_errors;
+        best_cost = predicted_cost;
       }
       if (config.verbose) {
         std::cout << "for det_order " << det_order << " beam "
                   << config.det_beam << " got low confidence "
-                  << low_confidence_flag << " and cost " << this_cost
+                  << low_confidence_flag << " and cost " << predicted_cost
                   << " and obs_mask "
-                  << mask_from_errors(predicted_errors_buffer)
+                  << mask_from_errors(predicted_errors)
                   << ". Best cost so far: " << best_cost << std::endl;
       }
     }
   }
-  config.det_beam = max_det_beam;
-  predicted_errors_buffer = best_errors;
-  low_confidence_flag = best_cost == std::numeric_limits<double>::max();
+  return {best_errors, best_cost == std::numeric_limits<double>::max()};
 }
 
 bool QNode::operator>(const QNode& other) const {
@@ -197,20 +248,16 @@ void TesseractDecoder::to_node(const QNode& qnode,
   }
 }
 
-void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
-                                        size_t det_order) {
-  size_t det_beam = config.det_beam;
-  predicted_errors_buffer.clear();
-  low_confidence_flag = false;
+std::pair<std::vector<size_t>, bool> TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections, size_t det_order, size_t det_beam) {
+  std::vector<size_t> predicted_errors;
+
   std::vector<char> dets(num_detectors, false);
   for (size_t d : detections) {
     dets[d] = true;
   }
 
   std::priority_queue<QNode, std::vector<QNode>, std::greater<QNode>> pq;
-  std::unordered_map<size_t,
-                     std::unordered_set<std::vector<char>, VectorCharHash>>
-      discovered_dets;
+  std::unordered_map<size_t, std::unordered_set<std::vector<char>, VectorCharHash>> discovered_dets;
 
   size_t min_num_dets = detections.size();
   std::vector<size_t> errs;
@@ -229,10 +276,8 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
     initial_cost += get_detcost(d, blocked_errs, det_counts);
   }
   if (initial_cost == INF) {
-    low_confidence_flag = true;
-    return;
+    return {std::vector<size_t>(), true};
   }
-  // pq.push({errs, dets, initial_cost, min_num_dets, blocked_errs});
   pq.push({initial_cost, min_num_dets, errs});
 
   size_t num_pq_pushed = 1;
@@ -270,15 +315,12 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
         std::cout << "Decoding complete. Cost: " << node.cost
                   << " num_pq_pushed = " << num_pq_pushed << std::endl;
       }
-      // Store the predicted errors into the buffer
-      predicted_errors_buffer = node.errs;
-      return;
+      return {node.errs, false};
     }
 
     if (node.num_dets > max_num_dets) continue;
 
-    if (config.no_revisit_dets &&
-        !discovered_dets[node.num_dets].insert(node.dets).second) {
+    if (config.no_revisit_dets && !discovered_dets[node.num_dets].insert(node.dets).second) {
       continue;
     }
 
@@ -426,14 +468,11 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
         continue;
       }
 
-      // pq.push({next_errs, next_dets, next_cost, next_num_dets,
-      // next_blocked_errs});
       pq.push({next_cost, next_num_dets, next_errs});
       ++num_pq_pushed;
 
       if (num_pq_pushed > config.pqlimit) {
-        low_confidence_flag = true;
-        return;
+        return {std::vector<size_t>(), true};
       }
     }
   }
@@ -442,15 +481,14 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
   if (config.verbose) {
     std::cout << "Decoding failed to converge within beam limit." << std::endl;
   }
-  low_confidence_flag = true;
-  return;
+  return {std::vector<size_t>(), true};
 }
 
 double TesseractDecoder::cost_from_errors(
     const std::vector<size_t>& predicted_errors) {
   double total_cost = 0;
   // Iterate over all errors and add to the mask
-  for (size_t ei : predicted_errors_buffer) {
+  for (size_t ei : predicted_errors) {
     total_cost += errors[ei].likelihood_cost;
   }
   return total_cost;
@@ -460,7 +498,7 @@ common::ObservablesMask TesseractDecoder::mask_from_errors(
     const std::vector<size_t>& predicted_errors) {
   common::ObservablesMask mask = 0;
   // Iterate over all errors and add to the mask
-  for (size_t ei : predicted_errors_buffer) {
+  for (size_t ei : predicted_errors) {
     mask ^= errors[ei].symptom.observables;
   }
   return mask;
@@ -468,8 +506,9 @@ common::ObservablesMask TesseractDecoder::mask_from_errors(
 
 common::ObservablesMask TesseractDecoder::decode(
     const std::vector<uint64_t>& detections) {
-  decode_to_errors(detections);
-  return mask_from_errors(predicted_errors_buffer);
+  auto decoding_result = decode_to_errors(detections);
+  std::vector<size_t> predicted_errors = decoding_result.first;
+  return mask_from_errors(predicted_errors);
 }
 
 void TesseractDecoder::decode_shots(

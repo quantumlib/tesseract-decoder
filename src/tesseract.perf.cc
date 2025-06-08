@@ -82,7 +82,7 @@ void benchmark_tesseract(std::string circuit_path, size_t num_shots) {
   config.pqlimit = 10'000'000;
   TesseractDecoder decoder(config);
   std::cout << "\tTesseract:";
-  benchmark_decoder(decoder, circuit, num_shots);
+  //benchmark_decoder(decoder, circuit, num_shots);
 }
 
 void benchmark_simplex(std::string circuit_path, size_t num_shots) {

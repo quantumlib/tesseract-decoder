@@ -29,6 +29,7 @@ OPT_COPTS = select({
         "-fno-fast-math",
         "-flto",
         "-march=native",
+        "-fopenmp",
     ],
     ":debug": ["-Og"],
 }) + select({
@@ -44,8 +45,10 @@ OPT_LINKOPTS = select({
         "-fno-fast-math",
         "-flto",
         "-march=native",
+        "-fopenmp",
     ],
-    ":debug": [],
+    ":debug": [
+    ],
 }) + [
     "-lpthread",
 ]
