@@ -23,9 +23,16 @@
 
 constexpr uint64_t test_data_seed = 752024;
 
-bool simplex_test_compare(stim::DetectorErrorModel& dem,
-                          std::vector<stim::SparseShot>& shots) {
+bool simplex_test_compare(stim::DetectorErrorModel& dem, std::vector<stim::SparseShot>& shots, int openmp_threads) {
   TesseractConfig tesseract_config{dem};
+  if (openmp_threads > 0) {
+    tesseract_config.with_openmp = true;
+    if (tesseract_config.beam_climbing) {
+      tesseract_config.beam_climbing_openmp_threads = openmp_threads;
+    } else {
+      tesseract_config.det_orders_openmp_threads = openmp_threads;
+    }
+  }
   TesseractDecoder tesseract_decoder(tesseract_config);
 
   SimplexConfig simplex_config{dem};
@@ -109,7 +116,8 @@ TEST(tesseract, Tesseract_simplex_test) {
           }
           std::vector<stim::SparseShot> shots;
           sample_shots(test_data_seed, circuit, num_shots, shots);
-          ASSERT_TRUE(simplex_test_compare(new_dem, shots));
+          ASSERT_TRUE(simplex_test_compare(new_dem, shots, 0));
+          ASSERT_TRUE(simplex_test_compare(new_dem, shots, 2));
         }
       }
     }
@@ -192,7 +200,7 @@ TEST(tesseract, Tesseract_simplex_DEM_exhaustive_test) {
       shots.push_back(shot);
     }
 
-    bool return_val = simplex_test_compare(dem, shots);
-    ASSERT_TRUE(return_val);
+    ASSERT_TRUE(simplex_test_compare(dem, shots, 0));
+    ASSERT_TRUE(simplex_test_compare(dem, shots, 2));
   }
 }
