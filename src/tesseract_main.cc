@@ -80,6 +80,9 @@ struct Args {
   // Number of OpenMP threads used to accelerate the beam climbing phase
   int beam_climbing_openmp_threads = 0;
 
+  // Number of OpenMP threads used to accelerate decoding across many detection orders
+  int det_orders_openmp_threads = 0;
+
   bool has_observables() {
     return append_observables || !obs_in_fname.empty() ||
            (sample_num_shots > 0);
@@ -87,8 +90,7 @@ struct Args {
 
   void validate() {
     if (circuit_path.empty() && dem_path.empty()) {
-      throw std::invalid_argument(
-          "Must provide at least one of --circuit or --dem");
+      throw std::invalid_argument("Must provide at least one of --circuit or --dem");
     }
 
     int num_data_sources = int(sample_num_shots > 0) + int(!in_fname.empty());
@@ -137,12 +139,32 @@ struct Args {
       throw std::invalid_argument("Beam climbing requires a finite beam");
     }
 
+    if (beam_climbing_openmp_threads < 0) {
+      throw std::invalid_argument("Number of OpenMP threads for beam climbing can't be a negative number");
+    }
+
+    if (det_orders_openmp_threads < 0) {
+      throw std::invalid_argument("Number of OpenMP threads for multiple detection orders can't be a negative number");
+    }
+
     if (beam_climbing_openmp_threads > 0 && !with_openmp) {
-      throw std::invalid_argument("Must enable OpenMP support to parallelize beam climbing (use --with-openmp flag)");
+      throw std::invalid_argument("Must enable OpenMP support to parallelize beam climbing phase (use --with-openmp flag)");
     }
 
     if (beam_climbing_openmp_threads > 0 && !beam_climbing) {
       throw std::invalid_argument("Must enable beam climbing to parallelize it with OpenMP (use --beam-climbing)");
+    }
+
+    if (det_orders_openmp_threads > 0 && !with_openmp) {
+      throw std::invalid_argument("Must enable OpenMP support to parallelize decoding across many detection orders (use --with-openmp flag)");
+    }
+
+    if (det_orders_openmp_threads > 0 && beam_climbing) {
+      throw std::invalid_argument("Can only parallelize beam climbing phase when --beam-climbing set. Use --beam-climbing-openmp-threads instead");
+    }
+
+    if (with_openmp && (beam_climbing_openmp_threads <= 0 && det_orders_openmp_threads <= 0)) {
+      throw std::invalid_argument("Must specify OpenMP parallelization strategy when --with-openmp set. See instructions for more detail");
     }
 
   }
@@ -350,6 +372,7 @@ struct Args {
     config.verbose = verbose;
     config.with_openmp = with_openmp;
     config.beam_climbing_openmp_threads = beam_climbing_openmp_threads;
+    config.det_orders_openmp_threads = det_orders_openmp_threads;
   }
 };
 
@@ -529,8 +552,13 @@ int main(int argc, char* argv[]) {
       .flag();
   program
       .add_argument("--beam-climbing-openmp-threads")
-      .help("Number of OpenMP threads used to parallelize the beam climbing phase. Requires --with-openmp flag.")
+      .help("Number of OpenMP threads used to accelerate the beam climbing phase. Requires --with-openmp flag.")
       .store_into(args.beam_climbing_openmp_threads)
+      .default_value(0);
+  program
+      .add_argument("--det-orders-openmp-threads")
+      .help("Number of OpenMP threads used to accelerate decoding across many detection orders. Requires --with-openmp flag.")
+      .store_into(args.det_orders_openmp_threads)
       .default_value(0);
 
   try {

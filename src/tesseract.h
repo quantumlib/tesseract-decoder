@@ -39,6 +39,7 @@ struct TesseractConfig {
   double det_penalty = 0;
   bool with_openmp = false;
   int beam_climbing_openmp_threads = 0;
+  int det_orders_openmp_threads = 0;
 };
 
 class Node {
