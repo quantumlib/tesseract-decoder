@@ -9,10 +9,10 @@ include only the lines used by the converter script:
 
 ```bash
 bazel build src:all && \
-./bazel-bin/src/tesseract --pqlimit 200000 --beam 5 --num-det-orders 20 \
-  --sample-num-shots 1 --det-order-seed 13267562 --det-order-bfs \
+./bazel-bin/src/tesseract \
+  --sample-num-shots 1 --det-order-seed 13267562 --pqlimit 10000 --beam 1 --num-det-orders 20 --det-order-bfs \
   --circuit testdata/colorcodes/r\=9\,d\=9\,p\=0.002\,noise\=si1000\,c\=superdense_color_code_X\,q\=121\,gates\=cz.stim \
-  --sample-seed 717347 --threads 60 --verbose | \
+  --sample-seed 717347 --threads 1 --verbose | \
   grep -E 'Error|Detector|activated_errors|activated_dets' > logfile.txt
 
 python viz/to_json.py logfile.txt -o logfile.json
