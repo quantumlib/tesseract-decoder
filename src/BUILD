@@ -27,7 +27,6 @@ OPT_COPTS = select({
     "//conditions:default": [
         "-Ofast",
         "-fno-fast-math",
-        "-flto",
         "-march=native",
     ],
     ":debug": ["-Og"],
@@ -42,7 +41,6 @@ OPT_LINKOPTS = select({
     "//conditions:default": [
         "-Ofast",
         "-fno-fast-math",
-        "-flto",
         "-march=native",
     ],
     ":debug": [],
@@ -141,6 +139,9 @@ cc_test(
 cc_test(
     name = "common_tests",
     srcs = ["common.test.cc"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    linkstatic = True,
     deps = [
         ":libcommon",
         "@gtest",

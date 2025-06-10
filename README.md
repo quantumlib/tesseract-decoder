@@ -1,6 +1,6 @@
 <div align="center">
 
-# Tesseract Decoder
+# [Tesseract Decoder](https://quantumlib.github.io/tesseract-decoder)
 
 A Search-Based Decoder for Quantum Error Correction.
 
@@ -19,7 +19,7 @@ A Search-Based Decoder for Quantum Error Correction.
 Tesseract is a Most Likely Error decoder designed for Low Density Parity Check (LDPC) quantum
 error-correcting codes. It applies pruning heuristics and manifold orientation techniques during a
 search over the error subsets to identify the most likely error configuration consistent with the
-observed syndrome. Tesseract archives significant speed improvements over traditional integer
+observed syndrome. Tesseract achieves significant speed improvements over traditional integer
 programming-based decoders while maintaining comparable accuracy at moderate physical error rates.
 
 We tested the Tesseract decoder for:
@@ -37,7 +37,8 @@ We tested the Tesseract decoder for:
 *   **Stim and DEM Support:** processes [Stim](https://github.com/quantumlib/stim) circuit files and
     [Detector Error Model
     (DEM)](https://github.com/quantumlib/Stim/blob/main/doc/file_format_dem_detector_error_model.md)
-    files with arbitrary error models.
+    files with arbitrary error models. Zero-probability error instructions are
+    automatically removed when a DEM is loaded.
 *   **Parallel Decoding:** uses multithreading to accelerate the decoding process, making it
     suitable for large-scale simulations.
 *   **Efficient Beam Search:** implements a [beam search](https://en.wikipedia.org/wiki/Beam_search)
@@ -47,9 +48,10 @@ We tested the Tesseract decoder for:
 *   **Detailed Statistics:** provides comprehensive statistics output, including shot counts, error
     counts, and processing times.
 *   **Heuristics**: includes flexible heuristic options: `--beam`, `--det-penalty`,
-    `--beam-climbing`, `--no-revisit-dets`, `--at-most-two-errors-per-detector` and `--pqlimit` to
+    `--beam-climbing`, `--no-revisit-dets`, `--at-most-two-errors-per-detector`, `--det-order-bfs` and `--pqlimit` to
     improve performance while maintaining a low logical error rate. To learn more about these
     options, use `./bazel-bin/src/tesseract --help`
+*   **Visualization tool:** open the [viz directory](viz/) in your browser to view decoding results. See [viz/README.md](viz/README.md) for instructions on generating the visualization JSON.
 
 ## Installation
 
@@ -67,6 +69,19 @@ Tesseract uses [Bazel](https://bazel.build/) as its build system. To build the d
 ```bash
 bazel build src:all
 ```
+
+## Running Tests
+
+Unit tests are executed with Bazel. Run the quick test suite using:
+```bash
+bazel test //src:all
+```
+By default the tests use reduced parameters and finish in under 30 seconds.
+To run a more exhaustive suite with additional shots and larger distances, set:
+```bash
+TESSERACT_LONG_TESTS=1 bazel test //src:all
+```
+
 
 ## Usage
 
