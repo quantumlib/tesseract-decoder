@@ -1,4 +1,1 @@
-common --enable_bzlmod --enable_workspace
-build --cxxopt='-std=c++20'
-# HIGHS requires this define or else it is about 1.5x slower
-build --copt="-DNDEBUG=0"
+build --cxxopt='-std=c++20' --enable_bzlmod --enable_workspace
