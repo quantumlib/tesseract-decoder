@@ -37,7 +37,8 @@ We tested the Tesseract decoder for:
 *   **Stim and DEM Support:** processes [Stim](https://github.com/quantumlib/stim) circuit files and
     [Detector Error Model
     (DEM)](https://github.com/quantumlib/Stim/blob/main/doc/file_format_dem_detector_error_model.md)
-    files with arbitrary error models.
+    files with arbitrary error models. Zero-probability error instructions are
+    automatically removed when a DEM is loaded.
 *   **Parallel Decoding:** uses multithreading to accelerate the decoding process, making it
     suitable for large-scale simulations.
 *   **Efficient Beam Search:** implements a [beam search](https://en.wikipedia.org/wiki/Beam_search)

@@ -170,6 +170,7 @@ struct Args {
     if (!no_merge_errors) {
       config.dem = common::merge_identical_errors(config.dem);
     }
+    config.dem = common::remove_zero_probability_errors(config.dem);
 
     // Sample orientations of the error model to use for the det priority
     {

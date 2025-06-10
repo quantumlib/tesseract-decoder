@@ -22,6 +22,7 @@
 constexpr size_t T_COORD = 2;
 
 SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
+  config.dem = common::remove_zero_probability_errors(config.dem);
   std::vector<double> detector_t_coords(config.dem.count_detectors());
   for (const stim::DemInstruction& instruction :
        config.dem.flattened().instructions) {
@@ -30,10 +31,8 @@ SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
         assert(false && "unreachable");
         break;
       case stim::DemInstructionType::DEM_ERROR: {
-        // Ignore zero-probability errors
-        if (instruction.arg_data[0] > 0) {
-          errors.emplace_back(instruction);
-        }
+        assert(instruction.arg_data[0] > 0);
+        errors.emplace_back(instruction);
         break;
       }
       case stim::DemInstructionType::DEM_DETECTOR:

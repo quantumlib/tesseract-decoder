@@ -113,6 +113,29 @@ stim::DetectorErrorModel common::merge_identical_errors(
   return out_dem;
 }
 
+stim::DetectorErrorModel common::remove_zero_probability_errors(
+    const stim::DetectorErrorModel& dem) {
+  stim::DetectorErrorModel out_dem;
+  for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
+    switch (instruction.type) {
+      case stim::DemInstructionType::DEM_SHIFT_DETECTORS:
+        assert(false && "unreachable");
+        break;
+      case stim::DemInstructionType::DEM_ERROR:
+        if (instruction.arg_data[0] > 0) {
+          out_dem.append_dem_instruction(instruction);
+        }
+        break;
+      case stim::DemInstructionType::DEM_DETECTOR:
+        out_dem.append_dem_instruction(instruction);
+        break;
+      default:
+        assert(false && "unreachable");
+    }
+  }
+  return out_dem;
+}
+
 stim::DetectorErrorModel common::dem_from_counts(
     stim::DetectorErrorModel& orig_dem, const std::vector<size_t>& error_counts,
     size_t num_shots) {
@@ -121,6 +144,17 @@ stim::DetectorErrorModel common::dem_from_counts(
         "Error hits array must be the same size as the number of errors in the "
         "original DEM.");
   }
+
+  for (const stim::DemInstruction& instruction :
+       orig_dem.flattened().instructions) {
+    if (instruction.type == stim::DemInstructionType::DEM_ERROR &&
+        instruction.arg_data[0] == 0) {
+      throw std::invalid_argument(
+          "dem_from_counts requires DEMs without zero-probability errors. Use"
+          " remove_zero_probability_errors first.");
+    }
+  }
+
   stim::DetectorErrorModel out_dem;
   size_t ei = 0;
   for (const stim::DemInstruction& instruction :
@@ -130,14 +164,11 @@ stim::DetectorErrorModel common::dem_from_counts(
         assert(false && "unreachable");
         break;
       case stim::DemInstructionType::DEM_ERROR: {
-        // Ignore zero-probability errors
-        if (instruction.arg_data[0] > 0) {
-          double est_probability =
-              double(error_counts.at(ei)) / double(num_shots);
-          out_dem.append_error_instruction(est_probability,
-                                           instruction.target_data, /*tag=*/"");
-          ++ei;
-        }
+        double est_probability =
+            double(error_counts.at(ei)) / double(num_shots);
+        out_dem.append_error_instruction(est_probability,
+                                         instruction.target_data, /*tag=*/"");
+        ++ei;
         break;
       }
       case stim::DemInstructionType::DEM_DETECTOR: {

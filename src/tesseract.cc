@@ -37,6 +37,7 @@ double TesseractDecoder::get_detcost(size_t d,
 }
 
 TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
+  config.dem = common::remove_zero_probability_errors(config.dem);
   if (config.det_orders.empty()) {
     config.det_orders.emplace_back(config.dem.count_detectors());
     std::iota(config.det_orders[0].begin(), config.det_orders[0].end(), 0);

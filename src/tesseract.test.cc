@@ -195,3 +195,24 @@ TEST(tesseract, Tesseract_simplex_DEM_exhaustive_test) {
     ASSERT_TRUE(return_val);
   }
 }
+
+TEST(tesseract, DecodersStripZeroProbabilityErrors) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0
+        error(0) D1
+        error(0.2) D2
+        detector(0,0,0) D0
+        detector(0,0,0) D1
+        detector(0,0,0) D2
+      )DEM");
+
+  TesseractConfig t_config{dem};
+  TesseractDecoder t_dec(t_config);
+  EXPECT_EQ(t_dec.config.dem.count_errors(), 2);
+  EXPECT_EQ(t_dec.errors.size(), 2);
+
+  SimplexConfig s_config{dem};
+  SimplexDecoder s_dec(s_config);
+  EXPECT_EQ(s_dec.config.dem.count_errors(), 2);
+  EXPECT_EQ(s_dec.errors.size(), 2);
+}

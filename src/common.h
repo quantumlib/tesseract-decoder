@@ -71,8 +71,15 @@ struct Error {
 stim::DetectorErrorModel merge_identical_errors(
     const stim::DetectorErrorModel& dem);
 
+// Returns a copy of the given error model with any zero-probability DEM_ERROR
+// instructions removed.
+stim::DetectorErrorModel remove_zero_probability_errors(
+    const stim::DetectorErrorModel& dem);
+
 // Makes a new dem where the probabilities of errors are estimated from the
 // fraction of shots they were used in.
+// Throws std::invalid_argument if `orig_dem` contains zero-probability errors;
+// call remove_zero_probability_errors first.
 stim::DetectorErrorModel dem_from_counts(
     stim::DetectorErrorModel& orig_dem, const std::vector<size_t>& error_counts,
     size_t num_shots);
