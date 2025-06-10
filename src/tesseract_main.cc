@@ -576,7 +576,8 @@ int main(int argc, char* argv[]) {
 
     if (low_confidence[shot]) {
       ++num_low_confidence;
-    } else if (obs_predicted[shot] != shots[shot].obs_mask_as_u64()) {
+    }
+    if (obs_predicted[shot] != shots[shot].obs_mask_as_u64()) {
       ++num_errors;
     }
 

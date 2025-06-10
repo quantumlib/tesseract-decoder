@@ -134,8 +134,9 @@ stim::DetectorErrorModel common::dem_from_counts(
         if (instruction.arg_data[0] > 0) {
           double est_probability =
               double(error_counts.at(ei)) / double(num_shots);
+          est_probability = std::max(est_probability, 1e-6);
           out_dem.append_error_instruction(est_probability,
-                                           instruction.target_data, /*tag=*/"");
+                                           instruction.target_data, instruction.tag);
           ++ei;
         }
         break;
