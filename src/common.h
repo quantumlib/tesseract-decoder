@@ -30,7 +30,7 @@ struct Symptom {
     size_t operator()(const Symptom& s) const {
       std::size_t hash = s.detectors.size();
       for (int i : s.detectors) {
-          hash ^= std::hash<uint64_t>{}(i) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+        hash ^= std::hash<int>{}(i) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
       }
       return hash;
     }
