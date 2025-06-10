@@ -51,6 +51,36 @@ std::vector<std::vector<double>> get_detector_coords(
   return detector_coords;
 }
 
+std::vector<std::vector<size_t>> build_detector_graph(
+    const stim::DetectorErrorModel& dem) {
+  size_t num_detectors = dem.count_detectors();
+  std::vector<std::vector<size_t>> neighbors(num_detectors);
+  for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
+    if (instruction.type != stim::DemInstructionType::DEM_ERROR) {
+      continue;
+    }
+    std::vector<int> dets;
+    for (const stim::DemTarget& target : instruction.target_data) {
+      if (target.is_relative_detector_id()) {
+        dets.push_back(target.val());
+      }
+    }
+    for (size_t i = 0; i < dets.size(); ++i) {
+      for (size_t j = i + 1; j < dets.size(); ++j) {
+        size_t a = dets[i];
+        size_t b = dets[j];
+        neighbors[a].push_back(b);
+        neighbors[b].push_back(a);
+      }
+    }
+  }
+  for (auto& neigh : neighbors) {
+    std::sort(neigh.begin(), neigh.end());
+    neigh.erase(std::unique(neigh.begin(), neigh.end()), neigh.end());
+  }
+  return neighbors;
+}
+
 bool sampling_from_dem(uint64_t seed, size_t num_shots,
                        stim::DetectorErrorModel dem,
                        std::vector<stim::SparseShot>& shots) {
