@@ -28,11 +28,10 @@ struct Symptom {
 
   struct hash {
     size_t operator()(const Symptom& s) const {
-      size_t hash = 0;
+      std::size_t hash = s.detectors.size();
       for (int i : s.detectors) {
-        hash += std::hash<int>{}(i);
+          hash ^= std::hash<uint64_t>{}(i) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
       }
-      hash ^= s.observables;
       return hash;
     }
   };
