@@ -69,6 +69,19 @@ Tesseract uses [Bazel](https://bazel.build/) as its build system. To build the d
 bazel build src:all
 ```
 
+## Running Tests
+
+Unit tests are executed with Bazel. Run the quick test suite using:
+```bash
+bazel test //src:all
+```
+By default the tests use reduced parameters and finish in under 30 seconds.
+To run a more exhaustive suite with additional shots and larger distances, set:
+```bash
+TESSERACT_LONG_TESTS=1 bazel test //src:all
+```
+
+
 ## Usage
 
 The file `tesseract_main.cc` provides the main entry point for Tesseract Decoder. It can decode

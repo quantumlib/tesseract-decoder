@@ -15,6 +15,7 @@
 #include "tesseract.h"
 
 #include <vector>
+#include <cstdlib>
 
 #include "gtest/gtest.h"
 #include "simplex.h"
@@ -79,10 +80,19 @@ bool simplex_test_compare(stim::DetectorErrorModel& dem,
 }
 
 TEST(tesseract, Tesseract_simplex_test) {
-  for (float p_err : {0.001, 0.003, 0.005}) {
-    for (size_t distance : {3, 5}) {
-      for (const size_t num_rounds : {2, 5, 10}) {
-        const size_t num_shots = 1000 / num_rounds / distance;
+  bool long_tests = std::getenv("TESSERACT_LONG_TESTS") != nullptr;
+  auto p_errs = long_tests ? std::vector<float>{0.001f, 0.003f, 0.005f}
+                           : std::vector<float>{0.003f};
+  auto distances = long_tests ? std::vector<size_t>{3, 5, 7}
+                              : std::vector<size_t>{3};
+  auto rounds = long_tests ? std::vector<size_t>{2, 5, 10}
+                           : std::vector<size_t>{2};
+  size_t base_shots = long_tests ? 1000 : 100;
+
+  for (float p_err : p_errs) {
+    for (size_t distance : distances) {
+      for (const size_t num_rounds : rounds) {
+        const size_t num_shots = base_shots / num_rounds / distance;
         std::cout << "p_err = " << p_err << " distance = " << distance
                   << " num_rounds = " << num_rounds
                   << " num_shots = " << num_shots << std::endl;
