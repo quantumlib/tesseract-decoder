@@ -1,6 +1,6 @@
 <div align="center">
 
-# Tesseract Decoder
+# [Tesseract Decoder](https://quantumlib.github.io/tesseract-decoder)
 
 A Search-Based Decoder for Quantum Error Correction.
 
@@ -51,6 +51,7 @@ We tested the Tesseract decoder for:
     `--beam-climbing`, `--no-revisit-dets`, `--at-most-two-errors-per-detector` and `--pqlimit` to
     improve performance while maintaining a low logical error rate. To learn more about these
     options, use `./bazel-bin/src/tesseract --help`
+*   **Visualization tool:** open the [viz directory](viz/) in your browser to view decoding results.
 
 ## Installation
 
