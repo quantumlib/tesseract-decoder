@@ -182,6 +182,20 @@ struct Args {
       std::mt19937_64 rng(det_order_seed);
       std::normal_distribution<double> dist(/*mean=*/0, /*stddev=*/1);
 
+      std::vector<std::vector<double>> detector_coords =
+          get_detector_coords(config.dem);
+      if (verbose) {
+        for (size_t d = 0; d < detector_coords.size(); ++d) {
+          std::cout << "Detector D" << d << " coordinate (";
+          size_t e = std::min(3ul, detector_coords[d].size());
+          for (size_t i = 0; i < e; ++i) {
+            std::cout << detector_coords[d][i];
+            if (i + 1 < e) std::cout << ", ";
+          }
+          std::cout << ")" << std::endl;
+        }
+      }
+
       if (det_order_bfs) {
         auto graph = build_detector_graph(config.dem);
         std::uniform_int_distribution<size_t> dist_det(0, graph.size() - 1);
@@ -223,20 +237,6 @@ struct Args {
           config.det_orders[det_order] = inv_perm;
         }
       } else {
-        std::vector<std::vector<double>> detector_coords =
-            get_detector_coords(config.dem);
-        if (verbose) {
-          for (size_t d = 0; d < detector_coords.size(); ++d) {
-            std::cout << "Detector D" << d << " coordinate (";
-            size_t e = std::min(3ul, detector_coords[d].size());
-            for (size_t i = 0; i < e; ++i) {
-              std::cout << detector_coords[d][i];
-              if (i + 1 < e) std::cout << ", ";
-            }
-            std::cout << ")" << std::endl;
-          }
-        }
-
         std::vector<double> inner_products(config.dem.count_detectors());
 
         if (!detector_coords.size() || !detector_coords.at(0).size()) {

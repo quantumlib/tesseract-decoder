@@ -314,6 +314,18 @@ function toggleAnimation() {
   if (playing && frames.length) restartAnimationTimer();
   else clearInterval(animationTimer);
 }
+
+// Try to load a default logfile when the page is opened.
+window.addEventListener('load', () => {
+  fetch('logfile.json')
+    .then(r => r.ok ? r.json() : Promise.reject())
+    .then(data => initializeScene(
+      data.detectorCoords,
+      data.errorCoords,
+      data.frames,
+      data.errorToDetectors))
+    .catch(() => {/* ignore if not present */});
+});
 </script>
 </body>
 </html>

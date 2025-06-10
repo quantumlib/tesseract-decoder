@@ -51,7 +51,7 @@ We tested the Tesseract decoder for:
     `--beam-climbing`, `--no-revisit-dets`, `--at-most-two-errors-per-detector`, `--det-order-bfs` and `--pqlimit` to
     improve performance while maintaining a low logical error rate. To learn more about these
     options, use `./bazel-bin/src/tesseract --help`
-*   **Visualization tool:** open the [viz directory](viz/) in your browser to view decoding results.
+*   **Visualization tool:** open the [viz directory](viz/) in your browser to view decoding results. See [viz/README.md](viz/README.md) for instructions on generating the visualization JSON.
 
 ## Installation
 
