@@ -1,6 +1,7 @@
 import pytest
 import stim
 
+# import tesseract_decoder
 from src import tesseract_decoder
 
 
