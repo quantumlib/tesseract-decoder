@@ -78,8 +78,10 @@ pybind_extension(
 
 py_library(
     name="lib_tesseract_decoder",
-    data=[":tesseract_decoder"],
     imports=["src"],
+    deps=[
+        ":tesseract_decoder",
+    ],
 )
 
 
