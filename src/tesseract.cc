@@ -46,7 +46,7 @@ std::string TesseractConfig::str()
   auto &config = *this;
   std::stringstream ss;
   ss << "TesseractConfig(";
-  ss << "dem=DetectorErrorModelObject" << ", ";
+  ss << "dem=DetectorErrorModel_Object" << ", ";
   ss << "det_beam=" << config.det_beam << ", ";
   ss << "no_revisit_dets=" << config.no_revisit_dets << ", ";
   ss << "at_most_two_errors_per_detector=" << config.at_most_two_errors_per_detector << ", ";
