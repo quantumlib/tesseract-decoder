@@ -30,6 +30,7 @@ struct SimplexConfig {
   size_t window_slide_length = 0;
   bool verbose = false;
   bool windowing_enabled() { return (window_length != 0); }
+  std::string str();
 };
 
 struct SimplexDecoder {

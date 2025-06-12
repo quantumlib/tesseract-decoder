@@ -18,8 +18,70 @@
 #include <cassert>
 #include <iostream>
 
+namespace
+{
+
+  template <typename T>
+  std::ostream &operator<<(std::ostream &os, const std::vector<T> &vec)
+  {
+    os << "[";
+    bool is_first = true;
+    for (auto &x : vec)
+    {
+      if (!is_first)
+      {
+        os << ", ";
+      }
+      is_first = false;
+      os << x;
+    }
+    os << "]";
+    return os;
+  }
+
+};
+
+std::string TesseractConfig::str()
+{
+  auto &config = *this;
+  std::stringstream ss;
+  ss << "TesseractConfig(";
+  ss << "dem=DetectorErrorModelObject" << ", ";
+  ss << "det_beam=" << config.det_beam << ", ";
+  ss << "no_revisit_dets=" << config.no_revisit_dets << ", ";
+  ss << "at_most_two_errors_per_detector=" << config.at_most_two_errors_per_detector << ", ";
+  ss << "verbose=" << config.verbose << ", ";
+  ss << "pqlimit=" << config.pqlimit << ", ";
+  ss << "det_orders=" << config.det_orders << ", ";
+  ss << "det_penalty=" << config.det_penalty << ")";
+  return ss.str();
+}
+
 bool Node::operator>(const Node& other) const {
   return cost > other.cost || (cost == other.cost && num_dets < other.num_dets);
+}
+
+std::string Node::str()
+{
+  std::stringstream ss;
+  auto &self = *this;
+  ss << "Node(";
+  ss << "errs=" << self.errs << ", ";
+  ss << "dets=" << self.dets << ", ";
+  ss << "cost=" << self.cost << ", ";
+  ss << "num_dets=" << self.num_dets << ", ";
+  ss << "blocked_errs=" << self.blocked_errs << ")";
+  return ss.str();
+}
+
+std::string QNode::str() {
+  auto & self = *this;
+  std::stringstream ss;
+  ss << "QNode(";
+  ss << "cost=" << self.cost << ", ";
+  ss << "num_dets=" << self.num_dets << ", ";
+  ss << "errs=" << self.errs << ")";
+  return ss.str();
 }
 
 double TesseractDecoder::get_detcost(size_t d,

@@ -1,10 +1,16 @@
 #include <pybind11/pybind11.h>
-
-#include "common.pybind.h"
 #include "pybind11/detail/common.h"
 
-PYBIND11_MODULE(tesseract_decoder, m)
+#include "common.pybind.h"
+#include "utils.pybind.h"
+#include "simplex.pybind.h"
+#include "tesseract.pybind.h"
+
+PYBIND11_MODULE(tesseract_decoder, tesseract)
 {
     py::module::import("stim");
-    add_common_module(m);
+    add_common_module(tesseract);
+    add_utils_module(tesseract);
+    add_simplex_module(tesseract);
+    add_tesseract_module(tesseract);
 }
