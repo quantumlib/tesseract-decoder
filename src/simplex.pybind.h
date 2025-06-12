@@ -1,4 +1,5 @@
-#pragma once
+#ifndef _SIMPLEX_PYBIND_H
+#define _SIMPLEX_PYBIND_H
 
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
@@ -46,3 +47,4 @@ void add_simplex_module(py::module &root)
         .def("cost_from_errors", &SimplexDecoder::cost_from_errors, py::arg("predicted_errors"))
         .def("decode", &SimplexDecoder::decode, py::arg("detections"));
 }
+#endif

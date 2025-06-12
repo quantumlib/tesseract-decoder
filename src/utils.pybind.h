@@ -1,4 +1,5 @@
-#pragma once
+#ifndef _UTILS_PYBIND_H
+#define _UTILS_PYBIND_H
 
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
@@ -21,3 +22,4 @@ void add_utils_module(py::module &root)
   // Not exposing sampling_from_dem and sample_shots because they depend on
   // stim::SparseShot which stim doesn't expose to python.
 }
+#endif
