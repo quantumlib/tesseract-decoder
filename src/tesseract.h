@@ -37,6 +37,8 @@ struct TesseractConfig {
   size_t pqlimit = std::numeric_limits<size_t>::max();
   std::vector<std::vector<size_t>> det_orders;
   double det_penalty = 0;
+
+  std::string str();
 };
 
 class Node {
@@ -48,6 +50,7 @@ class Node {
   std::vector<char> blocked_errs;
 
   bool operator>(const Node& other) const;
+  std::string str();
 };
 
 class QNode {
@@ -57,6 +60,7 @@ class QNode {
   std::vector<size_t> errs;
 
   bool operator>(const QNode& other) const;
+  std::string str();
 };
 
 struct TesseractDecoder {

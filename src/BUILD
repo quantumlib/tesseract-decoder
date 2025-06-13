@@ -68,9 +68,15 @@ pybind_library(
     name = "tesseract_decoder_pybind",
     srcs = [
         "common.pybind.h",
+        "utils.pybind.h",
+        "simplex.pybind.h",
+        "tesseract.pybind.h",
     ],
     deps = [
         ":libcommon",
+        ":libutils",
+        ":libsimplex",
+        ":libtesseract",
         "@stim_py//:stim_pybind_lib",
     ],
 )

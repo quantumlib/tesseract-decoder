@@ -21,6 +21,17 @@
 
 constexpr size_t T_COORD = 2;
 
+std::string SimplexConfig::str() {
+  auto & self = *this;
+  std::stringstream ss;
+  ss << "SimplexConfig(";
+  ss << "dem=" << "DetectorErrorModel_Object" << ", ";
+  ss << "window_length=" << self.window_length << ", ";
+  ss << "window_slide_length=" << self.window_slide_length << ", ";
+  ss << "verbose=" << self.verbose << ")";
+  return ss.str();
+}
+
 SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
   config.dem = common::remove_zero_probability_errors(config.dem);
   std::vector<double> detector_t_coords(config.dem.count_detectors());
