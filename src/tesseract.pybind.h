@@ -50,26 +50,15 @@ void add_tesseract_module(py::module &root) {
       .def("__str__", &TesseractConfig::str);
 
   py::class_<Node>(m, "Node")
-      .def(py::init<std::vector<size_t>, std::vector<char>, double, size_t>(),
+      .def(py::init<double, size_t, std::vector<size_t>>(),
            py::arg("errs") = std::vector<size_t>(),
-           py::arg("dets") = std::vector<char>(), py::arg("cost") = 0.0,
+           py::arg("cost") = 0.0,
            py::arg("num_dets") = 0)
-      .def_readwrite("errs", &Node::errs)
-      .def_readwrite("dets", &Node::dets)
+      .def_readwrite("errs", &Node::errors)
       .def_readwrite("cost", &Node::cost)
-      .def_readwrite("num_dets", &Node::num_dets)
+      .def_readwrite("num_dets", &Node::num_detectors)
       .def(py::self > py::self)
       .def("__str__", &Node::str);
-
-  py::class_<QNode>(m, "QNode")
-      .def(py::init<double, size_t, std::vector<size_t>>(),
-           py::arg("cost") = 0.0, py::arg("num_dets") = 0,
-           py::arg("errs") = std::vector<size_t>())
-      .def_readwrite("cost", &QNode::cost)
-      .def_readwrite("num_dets", &QNode::num_dets)
-      .def_readwrite("errs", &QNode::errs)
-      .def(py::self > py::self)
-      .def("__str__", &QNode::str);
 
   py::class_<TesseractDecoder>(m, "TesseractDecoder")
       .def(py::init<TesseractConfig>(), py::arg("config"))

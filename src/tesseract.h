@@ -15,14 +15,14 @@
 #ifndef TESSERACT_DECODER_H
 #define TESSERACT_DECODER_H
 
-#include <queue>
 #include <string>
-#include <unordered_map>
 #include <vector>
+#include <queue>
+#include <unordered_map>
 #include <unordered_set>
 
-#include "common.h"
 #include "stim.h"
+#include "common.h"
 #include "utils.h"
 
 constexpr size_t INF_DET_BEAM = std::numeric_limits<uint16_t>::max();
@@ -43,28 +43,17 @@ struct TesseractConfig {
 
 class Node {
  public:
-  std::vector<size_t> errs;
-  std::vector<char> dets;
   double cost;
-  size_t num_dets;
+  size_t num_detectors;
+  std::vector<size_t> errors;
 
   bool operator>(const Node& other) const;
   std::string str();
 };
 
-class QNode {
- public:
-  double cost;
-  size_t num_dets;
-  std::vector<size_t> errs;
-
-  bool operator>(const QNode& other) const;
-  std::string str();
-};
-
 struct DetectorCostTuple {
-  bool error_blocked;
-  size_t detectors_count;
+  uint32_t error_blocked;
+  uint32_t detectors_count;
 };
 
 struct ErrorCost {
@@ -82,7 +71,7 @@ struct TesseractDecoder {
 
   // Clears the predicted_errors_buffer and fills it with the decoded errors for
   // these detection events, using a specified detector ordering index.
-  void decode_to_errors(const std::vector<uint64_t>& detections, size_t det_order, size_t det_beam);
+  void decode_to_errors(const std::vector<uint64_t>& detections, size_t detector_order, size_t detector_beam);
 
   // Returns the bitwise XOR of all the observables bitmasks of all errors in
   // the predicted errors buffer.
@@ -93,8 +82,7 @@ struct TesseractDecoder {
   double cost_from_errors(const std::vector<size_t>& predicted_errors);
 
   common::ObservablesMask decode(const std::vector<uint64_t>& detections);
-  void decode_shots(std::vector<stim::SparseShot>& shots,
-                    std::vector<common::ObservablesMask>& obs_predicted);
+  void decode_shots(std::vector<stim::SparseShot>& shots, std::vector<common::ObservablesMask>& obs_predicted);
 
   bool low_confidence_flag = false;
   std::vector<size_t> predicted_errors_buffer;
@@ -109,10 +97,9 @@ struct TesseractDecoder {
   std::vector<ErrorCost> error_costs;
 
   void initialize_structures(size_t num_detectors);
-
   double get_detcost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const;
-  void to_node(const QNode& qnode, const std::vector<char>& shot_dets,
-               size_t det_order, Node& node, std::vector<DetectorCostTuple>& detector_cost_tuples) const;
+  void flip_detectors_and_block_errors(size_t detector_order, const std::vector<size_t>& errors,
+    std::vector<char>& detectors, std::vector<DetectorCostTuple>& detector_cost_tuples) const;
 };
 
 #endif  // TESSERACT_DECODER_H
