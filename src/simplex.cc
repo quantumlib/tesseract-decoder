@@ -316,7 +316,8 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
     }
 
     // Get the model status
-    const HighsModelStatus& model_status = highs->getModelStatus();
+    [[maybe_unused]] const HighsModelStatus& model_status =
+        highs->getModelStatus();
     assert(model_status == HighsModelStatus::kOptimal);
   }
 
