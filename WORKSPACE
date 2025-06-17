@@ -28,6 +28,7 @@ git_repository(
 http_archive(
     name = "highs",
     sha256 = HIGHS_SHA_256,
+    build_file = "//external:highs.BUILD",
     strip_prefix = "HiGHS-" + HIGHS_VERSION,
     urls = ["https://github.com/ERGO-Code/HiGHS/archive/refs/tags/v" + HIGHS_VERSION + ".tar.gz"],
 )
