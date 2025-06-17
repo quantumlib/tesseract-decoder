@@ -68,51 +68,9 @@ http_archive(
 )
 
 http_archive(
-    name = "rules_python",
-    sha256 = "62ddebb766b4d6ddf1712f753dac5740bea072646f630eb9982caa09ad8a7687",
-    strip_prefix = "rules_python-0.39.0",
-    url = "https://github.com/bazelbuild/rules_python/releases/download/0.39.0/rules_python-0.39.0.tar.gz",
-)
-
-
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-
-http_archive(
-    name = "rules_proto",
-    sha256 = "14a225870ab4e91869652cfd69ef2028277fc1dc4910d65d353b62d6e0ae21f4",
-    strip_prefix = "rules_proto-7.1.0",
-    url = "https://github.com/bazelbuild/rules_proto/releases/download/7.1.0/rules_proto-7.1.0.tar.gz",
-)
-
-load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies")
-rules_proto_dependencies()
-
-load("@rules_proto//proto:toolchains.bzl", "rules_proto_toolchains")
-rules_proto_toolchains()
-
-
-load("@rules_python//python:repositories.bzl", "py_repositories", "python_register_toolchains")
-
-py_repositories()
-
-python_register_toolchains(
-    name = "python",
-    ignore_root_user_error = True,
-    python_version = "3.12",
-)
-
-
-http_archive(
-  name = "pybind11_bazel",
-  strip_prefix = "pybind11_bazel-2.13.6",
-  sha256 = "9df284330336958c837fb70dc34c0a6254dac52a5c983b3373a8c2bbb79ac35e",
-  urls = ["https://github.com/pybind/pybind11_bazel/archive/v2.13.6.zip"],
-)
-# We still require the pybind library.
-http_archive(
-  name = "pybind11",
-  build_file = "@pybind11_bazel//:pybind11-BUILD.bazel",
-  strip_prefix = "pybind11-2.13.6",
-  sha256 = "d0a116e91f64a4a2d8fb7590c34242df92258a61ec644b79127951e821b47be6",
-  urls = ["https://github.com/pybind/pybind11/archive/v2.13.6.zip"],
+    name = "stim_py",
+    build_file = "//external:stim_py.BUILD",
+    sha256 = "95236006859d6754be99629d4fb44788e742e962ac8c59caad421ca088f7350e",
+    strip_prefix = "stim-1.15.0",
+    urls = ["https://github.com/quantumlib/Stim/releases/download/v1.15.0/stim-1.15.0.tar.gz"],
 )

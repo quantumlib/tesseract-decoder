@@ -1,2 +1,2 @@
-common --noenable_bzlmod --enable_workspace
+common --enable_bzlmod --enable_workspace
 build --cxxopt='-std=c++20'

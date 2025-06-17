@@ -1,0 +1,23 @@
+module(name = "tesseract", version = "1.0")
+
+bazel_dep(name = "bazel_skylib", version = "1.7.1")
+bazel_dep(name = "platforms", version = "0.0.10")
+bazel_dep(name = "rules_python", version = "0.40.0")
+bazel_dep(name = "rules_cc", version = "0.0.17")
+bazel_dep(name = "pybind11_bazel", version = "2.13.6")
+
+DEFAULT_PYTHON_VERSION = "3.11"
+
+python_configure = use_extension("@pybind11_bazel//:python_configure.bzl", "extension")
+use_repo(python_configure, "local_config_python")
+
+
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+
+pip.parse(
+    hub_name = "pypi",
+    python_version = "3.11",
+    requirements_lock = "//src/py:requirements_lock.txt",
+)
+
+use_repo(pip, "pypi")
