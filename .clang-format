@@ -1,0 +1,7 @@
+BasedOnStyle: Google
+IndentWidth: 2
+ColumnLimit: 80
+AllowShortFunctionsOnASingleLine: Empty
+PointerAlignment: Left
+Standard: C++20
+SortIncludes: true
