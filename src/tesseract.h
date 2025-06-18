@@ -18,8 +18,8 @@
 #include <queue>
 #include <string>
 #include <unordered_map>
-#include <vector>
 #include <unordered_set>
+#include <vector>
 
 #include "common.h"
 #include "stim.h"
@@ -73,13 +73,11 @@ struct TesseractDecoder {
 
   // Clears the predicted_errors_buffer and fills it with the decoded errors for
   // these detection events, using a specified detector ordering index.
-  void decode_to_errors(const std::vector<uint64_t>& detections,
-                        size_t det_order);
+  void decode_to_errors(const std::vector<uint64_t>& detections, size_t det_order);
 
   // Returns the bitwise XOR of all the observables bitmasks of all errors in
   // the predicted errors buffer.
-  common::ObservablesMask mask_from_errors(
-      const std::vector<size_t>& predicted_errors);
+  common::ObservablesMask mask_from_errors(const std::vector<size_t>& predicted_errors);
 
   // Returns the sum of the likelihood costs (minus-log-likelihood-ratios) of
   // all errors in the predicted errors buffer.
@@ -105,8 +103,8 @@ struct TesseractDecoder {
   void initialize_structures(size_t num_detectors);
   double get_detcost(size_t d, const std::vector<char>& blocked_errs,
                      const std::vector<size_t>& det_counts) const;
-  void to_node(const QNode& qnode, const std::vector<char>& shot_dets,
-               size_t det_order, Node& node) const;
+  void to_node(const QNode& qnode, const std::vector<char>& shot_dets, size_t det_order,
+               Node& node) const;
 };
 
 #endif  // TESSERACT_DECODER_H

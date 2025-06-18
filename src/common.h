@@ -51,11 +51,9 @@ struct Error {
   Symptom symptom;
   std::vector<bool> dets_array;
   Error() = default;
-  Error(double likelihood_cost, std::vector<int>& detectors,
-        ObservablesMask observables, std::vector<bool>& dets_array)
-      : likelihood_cost(likelihood_cost),
-        symptom{detectors, observables},
-        dets_array(dets_array) {}
+  Error(double likelihood_cost, std::vector<int>& detectors, ObservablesMask observables,
+        std::vector<bool>& dets_array)
+      : likelihood_cost(likelihood_cost), symptom{detectors, observables}, dets_array(dets_array) {}
   Error(double likelihood_cost, double probability, std::vector<int>& detectors,
         ObservablesMask observables, std::vector<bool>& dets_array)
       : likelihood_cost(likelihood_cost),
@@ -68,21 +66,18 @@ struct Error {
 
 // Makes a new (flattened) dem where identical error mechanisms have been
 // merged.
-stim::DetectorErrorModel merge_identical_errors(
-    const stim::DetectorErrorModel& dem);
+stim::DetectorErrorModel merge_identical_errors(const stim::DetectorErrorModel& dem);
 
 // Returns a copy of the given error model with any zero-probability DEM_ERROR
 // instructions removed.
-stim::DetectorErrorModel remove_zero_probability_errors(
-    const stim::DetectorErrorModel& dem);
+stim::DetectorErrorModel remove_zero_probability_errors(const stim::DetectorErrorModel& dem);
 
 // Makes a new dem where the probabilities of errors are estimated from the
 // fraction of shots they were used in.
 // Throws std::invalid_argument if `orig_dem` contains zero-probability errors;
 // call remove_zero_probability_errors first.
-stim::DetectorErrorModel dem_from_counts(
-    stim::DetectorErrorModel& orig_dem, const std::vector<size_t>& error_counts,
-    size_t num_shots);
+stim::DetectorErrorModel dem_from_counts(stim::DetectorErrorModel& orig_dem,
+                                         const std::vector<size_t>& error_counts, size_t num_shots);
 
 }  // namespace common
 

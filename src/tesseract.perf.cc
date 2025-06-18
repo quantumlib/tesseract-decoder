@@ -23,8 +23,7 @@
 constexpr uint64_t test_data_seed = 752024;
 
 template <typename Decoder>
-void benchmark_decoder(Decoder& decoder, stim::Circuit& circuit,
-                       size_t num_shots) {
+void benchmark_decoder(Decoder& decoder, stim::Circuit& circuit, size_t num_shots) {
   // Sample data
   std::vector<stim::SparseShot> shots;
   sample_shots(test_data_seed, circuit, num_shots, shots);
@@ -37,10 +36,8 @@ void benchmark_decoder(Decoder& decoder, stim::Circuit& circuit,
   auto benchmark_func = [&]() {
     for (size_t shot = 0; shot < num_shots; ++shot) {
       decoder.decode_to_errors(shots[shot].hits);
-      common::ObservablesMask obs =
-          decoder.mask_from_errors(decoder.predicted_errors_buffer);
-      num_errors += (!decoder.low_confidence_flag and
-                     (obs != shots[shot].obs_mask_as_u64()));
+      common::ObservablesMask obs = decoder.mask_from_errors(decoder.predicted_errors_buffer);
+      num_errors += (!decoder.low_confidence_flag and (obs != shots[shot].obs_mask_as_u64()));
       num_low_confidence += decoder.low_confidence_flag;
       total_num_errors_used += decoder.predicted_errors_buffer.size();
       ++num_decoded;
@@ -52,15 +49,11 @@ void benchmark_decoder(Decoder& decoder, stim::Circuit& circuit,
   do {
     benchmark_func();
     auto end_time = std::chrono::steady_clock::now();
-    num_milliseconds =
-        std::chrono::duration<double, std::milli>(end_time - start_time)
-            .count();
+    num_milliseconds = std::chrono::duration<double, std::milli>(end_time - start_time).count();
   } while (num_milliseconds < 1000.0);
-  std::cout << (num_milliseconds / num_decoded) << " milliseconds per shot "
-            << num_decoded << " shots " << num_low_confidence
-            << " low confidence " << num_errors << " errors "
-            << " total_num_errors_used = " << total_num_errors_used
-            << std::endl;
+  std::cout << (num_milliseconds / num_decoded) << " milliseconds per shot " << num_decoded
+            << " shots " << num_low_confidence << " low confidence " << num_errors << " errors "
+            << " total_num_errors_used = " << total_num_errors_used << std::endl;
 }
 
 void benchmark_tesseract(std::string circuit_path, size_t num_shots) {
@@ -70,13 +63,12 @@ void benchmark_tesseract(std::string circuit_path, size_t num_shots) {
   }
   stim::Circuit circuit = stim::Circuit::from_file(file);
   fclose(file);
-  stim::DetectorErrorModel dem =
-      stim::ErrorAnalyzer::circuit_to_detector_error_model(
-          circuit, /*decompose_errors=*/false, /*fold_loops=*/true,
-          /*allow_gauge_detectors=*/true,
-          /*approximate_disjoint_errors_threshold=*/1,
-          /*ignore_decomposition_failures=*/false,
-          /*block_decomposition_from_introducing_remnant_edges=*/false);
+  stim::DetectorErrorModel dem = stim::ErrorAnalyzer::circuit_to_detector_error_model(
+      circuit, /*decompose_errors=*/false, /*fold_loops=*/true,
+      /*allow_gauge_detectors=*/true,
+      /*approximate_disjoint_errors_threshold=*/1,
+      /*ignore_decomposition_failures=*/false,
+      /*block_decomposition_from_introducing_remnant_edges=*/false);
   dem = common::remove_zero_probability_errors(dem);
   TesseractConfig config{dem};
   config.det_beam = 20;
@@ -93,13 +85,12 @@ void benchmark_simplex(std::string circuit_path, size_t num_shots) {
   }
   stim::Circuit circuit = stim::Circuit::from_file(file);
   fclose(file);
-  stim::DetectorErrorModel dem =
-      stim::ErrorAnalyzer::circuit_to_detector_error_model(
-          circuit, /*decompose_errors=*/false, /*fold_loops=*/true,
-          /*allow_gauge_detectors=*/true,
-          /*approximate_disjoint_errors_threshold=*/1,
-          /*ignore_decomposition_failures=*/false,
-          /*block_decomposition_from_introducing_remnant_edges=*/false);
+  stim::DetectorErrorModel dem = stim::ErrorAnalyzer::circuit_to_detector_error_model(
+      circuit, /*decompose_errors=*/false, /*fold_loops=*/true,
+      /*allow_gauge_detectors=*/true,
+      /*approximate_disjoint_errors_threshold=*/1,
+      /*ignore_decomposition_failures=*/false,
+      /*block_decomposition_from_introducing_remnant_edges=*/false);
   dem = common::remove_zero_probability_errors(dem);
   SimplexConfig config{dem};
   config.parallelize = true;

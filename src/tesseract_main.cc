@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <algorithm>
 #include <argparse/argparse.hpp>
 #include <atomic>
 #include <fstream>
-#include <queue>
-#include <algorithm>
-#include <numeric>
 #include <nlohmann/json.hpp>
+#include <numeric>
+#include <queue>
 #include <thread>
 
 #include "common.h"
@@ -79,14 +79,12 @@ struct Args {
   bool print_stats = false;
 
   bool has_observables() {
-    return append_observables || !obs_in_fname.empty() ||
-           (sample_num_shots > 0);
+    return append_observables || !obs_in_fname.empty() || (sample_num_shots > 0);
   }
 
   void validate() {
     if (circuit_path.empty() and dem_path.empty()) {
-      throw std::invalid_argument(
-          "Must provide at least one of --circuit or --dem");
+      throw std::invalid_argument("Must provide at least one of --circuit or --dem");
     }
 
     int num_data_sources = int(sample_num_shots > 0) + int(!in_fname.empty());
@@ -94,23 +92,18 @@ struct Args {
       throw std::invalid_argument("Requires exactly 1 source of shots.");
     }
     if (!in_fname.empty() and in_format.empty()) {
-      throw std::invalid_argument(
-          "If --in is provided, must also specify --in-format.");
+      throw std::invalid_argument("If --in is provided, must also specify --in-format.");
     }
     if (!out_fname.empty() and out_format.empty()) {
-      throw std::invalid_argument(
-          "If --out is provided, must also specify --out-format.");
+      throw std::invalid_argument("If --out is provided, must also specify --out-format.");
     }
-    if (!in_format.empty() &&
-        !stim::format_name_to_enum_map().contains(in_format)) {
+    if (!in_format.empty() && !stim::format_name_to_enum_map().contains(in_format)) {
       throw std::invalid_argument("Invalid format: " + in_format);
     }
-    if (!obs_in_format.empty() &&
-        !stim::format_name_to_enum_map().contains(obs_in_format)) {
+    if (!obs_in_format.empty() && !stim::format_name_to_enum_map().contains(obs_in_format)) {
       throw std::invalid_argument("Invalid format: " + obs_in_format);
     }
-    if (!out_format.empty() &&
-        !stim::format_name_to_enum_map().contains(out_format)) {
+    if (!out_format.empty() && !stim::format_name_to_enum_map().contains(out_format)) {
       throw std::invalid_argument("Invalid format: " + out_format);
     }
     if (!obs_in_fname.empty() and in_fname.empty()) {
@@ -127,8 +120,7 @@ struct Args {
     }
     if (shot_range_begin or shot_range_end) {
       if (shot_range_end < shot_range_begin) {
-        throw std::invalid_argument(
-            "Provided shot range must have end >= begin.");
+        throw std::invalid_argument("Provided shot range must have end >= begin.");
       }
     }
     if (sample_num_shots > 0 and circuit_path.empty()) {
@@ -182,8 +174,7 @@ struct Args {
       std::mt19937_64 rng(det_order_seed);
       std::normal_distribution<double> dist(/*mean=*/0, /*stddev=*/1);
 
-      std::vector<std::vector<double>> detector_coords =
-          get_detector_coords(config.dem);
+      std::vector<std::vector<double>> detector_coords = get_detector_coords(config.dem);
       if (verbose) {
         for (size_t d = 0; d < detector_coords.size(); ++d) {
           std::cout << "Detector D" << d << " coordinate (";
@@ -244,8 +235,7 @@ struct Args {
           // of the indices.
           for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
             config.det_orders.emplace_back();
-            std::iota(config.det_orders.back().begin(),
-                      config.det_orders.front().end(), 0);
+            std::iota(config.det_orders.back().begin(), config.det_orders.front().end(), 0);
           }
         } else {
           // Use the coordinates to order the detectors based on a random
@@ -260,16 +250,14 @@ struct Args {
             for (size_t i = 0; i < detector_coords.size(); ++i) {
               inner_products[i] = 0;
               for (size_t j = 0; j < orientation_vector.size(); ++j) {
-                inner_products[i] +=
-                    detector_coords[i][j] * orientation_vector[j];
+                inner_products[i] += detector_coords[i][j] * orientation_vector[j];
               }
             }
             std::vector<size_t> perm(config.dem.count_detectors());
             std::iota(perm.begin(), perm.end(), 0);
-            std::sort(perm.begin(), perm.end(),
-                      [&](const size_t& i, const size_t& j) {
-                        return inner_products[i] > inner_products[j];
-                      });
+            std::sort(perm.begin(), perm.end(), [&](const size_t& i, const size_t& j) {
+              return inner_products[i] > inner_products[j];
+            });
             // Invert the permutation
             std::vector<size_t> inv_perm(config.dem.count_detectors());
             for (size_t i = 0; i < perm.size(); ++i) {
@@ -285,8 +273,8 @@ struct Args {
       assert(!circuit_path.empty());
       std::mt19937_64 rng(sample_seed);
       size_t num_detectors = circuit.count_detectors();
-      const auto [dets, obs] = stim::sample_batch_detection_events<64>(
-          circuit, sample_num_shots, rng);
+      const auto [dets, obs] =
+          stim::sample_batch_detection_events<64>(circuit, sample_num_shots, rng);
       stim::simd_bit_table<64> obs_T = obs.transposed();
       shots.resize(sample_num_shots);
       for (size_t k = 0; k < sample_num_shots; k++) {
@@ -305,8 +293,7 @@ struct Args {
       if (!shots_file) {
         throw std::invalid_argument("Could not open the file: " + in_fname);
       }
-      stim::FileFormatData shots_in_format =
-          stim::format_name_to_enum_map().at(in_format);
+      stim::FileFormatData shots_in_format = stim::format_name_to_enum_map().at(in_format);
       auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
           shots_file, shots_in_format.id, 0, config.dem.count_detectors(),
           append_observables * config.dem.count_observables());
@@ -327,12 +314,9 @@ struct Args {
       if (!obs_file) {
         throw std::invalid_argument("Could not open the file: " + obs_in_fname);
       }
-      stim::FileFormatData shots_obs_in_format =
-          stim::format_name_to_enum_map().at(obs_in_format);
-      auto obs_reader =
-          stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
-              obs_file, shots_obs_in_format.id, 0, 0,
-              config.dem.count_observables());
+      stim::FileFormatData shots_obs_in_format = stim::format_name_to_enum_map().at(obs_in_format);
+      auto obs_reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
+          obs_file, shots_obs_in_format.id, 0, 0, config.dem.count_observables());
       stim::SparseShot sparse_shot;
       sparse_shot.clear();
       size_t num_obs_shots = 0;
@@ -354,24 +338,21 @@ struct Args {
     if (shot_range_begin or shot_range_end) {
       assert(shot_range_end >= shot_range_begin);
       if (shot_range_end > shots.size()) {
-        throw std::invalid_argument(
-            "Shot range end is past end of shots array.");
+        throw std::invalid_argument("Shot range end is past end of shots array.");
       }
-      std::vector<stim::SparseShot> shots_in_range(
-          shots.begin() + shot_range_begin, shots.begin() + shot_range_end);
+      std::vector<stim::SparseShot> shots_in_range(shots.begin() + shot_range_begin,
+                                                   shots.begin() + shot_range_end);
       std::swap(shots_in_range, shots);
     }
 
     if (!out_fname.empty()) {
       // Create a writer instance to write the predicted obs to a file
-      stim::FileFormatData predictions_out_format =
-          stim::format_name_to_enum_map().at(out_format);
+      stim::FileFormatData predictions_out_format = stim::format_name_to_enum_map().at(out_format);
       FILE* predictions_file = stdout;
       if (out_fname != "-") {
         predictions_file = fopen(out_fname.c_str(), "w");
       }
-      writer = stim::MeasureRecordWriter::make(predictions_file,
-                                               predictions_out_format.id);
+      writer = stim::MeasureRecordWriter::make(predictions_file, predictions_out_format.id);
       writer->begin_result_type('L');
       // TODO: ensure the fclose happens after all predictions are written to
       // the writer.
@@ -390,18 +371,13 @@ int main(int argc, char* argv[]) {
   std::cout.precision(16);
   argparse::ArgumentParser program("tesseract");
   Args args;
-  program.add_argument("--circuit")
-      .help("Stim circuit file path")
-      .store_into(args.circuit_path);
-  program.add_argument("--dem")
-      .help("Stim dem file path")
-      .store_into(args.dem_path);
+  program.add_argument("--circuit").help("Stim circuit file path").store_into(args.circuit_path);
+  program.add_argument("--dem").help("Stim dem file path").store_into(args.dem_path);
   program.add_argument("--no-merge-errors")
       .help("If provided, will not merge identical error mechanisms.")
       .store_into(args.no_merge_errors);
   program.add_argument("--num-det-orders")
-      .help(
-          "Number of ways to orient the manifold when reordering the detectors")
+      .help("Number of ways to orient the manifold when reordering the detectors")
       .metavar("N")
       .default_value(size_t(1))
       .store_into(args.num_det_orders);
@@ -455,8 +431,7 @@ int main(int argc, char* argv[]) {
       .default_value(size_t(0))
       .store_into(args.shot_range_end);
   program.add_argument("--in")
-      .help(
-          "File to read detection events (and possibly observable flips) from")
+      .help("File to read detection events (and possibly observable flips) from")
       .metavar("filename")
       .default_value(std::string(""))
       .store_into(args.in_fname);
@@ -468,14 +443,11 @@ int main(int argc, char* argv[]) {
     in_formats += key;
   }
   program.add_argument("--in-format", "--in_format")
-      .help("Format of the file to read detection events from (" + in_formats +
-            ")")
+      .help("Format of the file to read detection events from (" + in_formats + ")")
       .metavar(in_formats)
       .default_value(std::string(""))
       .store_into(args.in_format);
-  program
-      .add_argument("--in-includes-appended-observables",
-                    "--in_includes_appended_observables")
+  program.add_argument("--in-includes-appended-observables", "--in_includes_appended_observables")
       .help(
           "If present, assumes that the observable flips are appended to the "
           "end of each shot.")
@@ -498,8 +470,7 @@ int main(int argc, char* argv[]) {
       .default_value(std::string(""))
       .store_into(args.out_fname);
   program.add_argument("--out-format")
-      .help("Format of the file to write observable flip predictions to (" +
-            in_formats + ")")
+      .help("Format of the file to write observable flip predictions to (" + in_formats + ")")
       .metavar(in_formats)
       .default_value(std::string(""))
       .store_into(args.out_format);
@@ -585,44 +556,39 @@ int main(int argc, char* argv[]) {
     // After this value returns to 0, we know that no further shots will
     // transition to finished.
     ++num_worker_threads_active;
-    decoder_threads.push_back(std::thread(
-        [&config, &next_unclaimed_shot, &shots, &obs_predicted, &cost_predicted,
-         &decoding_time_seconds, &low_confidence, &finished, &error_use_totals,
-         &has_obs, &worker_threads_please_terminate,
-         &num_worker_threads_active]() {
-          TesseractDecoder decoder(config);
-          std::vector<size_t> error_use(config.dem.count_errors());
-          for (size_t shot; !worker_threads_please_terminate and
-                            ((shot = next_unclaimed_shot++) < shots.size());) {
-            auto start_time = std::chrono::high_resolution_clock::now();
-            decoder.decode_to_errors(shots[shot].hits);
-            auto stop_time = std::chrono::high_resolution_clock::now();
-            decoding_time_seconds[shot] =
-                std::chrono::duration_cast<std::chrono::microseconds>(
-                    stop_time - start_time)
-                    .count() /
-                1e6;
-            obs_predicted[shot] =
-                decoder.mask_from_errors(decoder.predicted_errors_buffer);
-            low_confidence[shot] = decoder.low_confidence_flag;
-            cost_predicted[shot] =
-                decoder.cost_from_errors(decoder.predicted_errors_buffer);
-            if (!has_obs or
-                shots[shot].obs_mask_as_u64() == obs_predicted[shot]) {
-              // Only count the error uses for shots that did not have a logical
-              // error, if we know the obs flips.
-              for (size_t ei : decoder.predicted_errors_buffer) {
-                ++error_use[ei];
-              }
-            }
-            finished[shot] = true;
+    decoder_threads.push_back(std::thread([&config, &next_unclaimed_shot, &shots, &obs_predicted,
+                                           &cost_predicted, &decoding_time_seconds, &low_confidence,
+                                           &finished, &error_use_totals, &has_obs,
+                                           &worker_threads_please_terminate,
+                                           &num_worker_threads_active]() {
+      TesseractDecoder decoder(config);
+      std::vector<size_t> error_use(config.dem.count_errors());
+      for (size_t shot;
+           !worker_threads_please_terminate and ((shot = next_unclaimed_shot++) < shots.size());) {
+        auto start_time = std::chrono::high_resolution_clock::now();
+        decoder.decode_to_errors(shots[shot].hits);
+        auto stop_time = std::chrono::high_resolution_clock::now();
+        decoding_time_seconds[shot] =
+            std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
+            1e6;
+        obs_predicted[shot] = decoder.mask_from_errors(decoder.predicted_errors_buffer);
+        low_confidence[shot] = decoder.low_confidence_flag;
+        cost_predicted[shot] = decoder.cost_from_errors(decoder.predicted_errors_buffer);
+        if (!has_obs or shots[shot].obs_mask_as_u64() == obs_predicted[shot]) {
+          // Only count the error uses for shots that did not have a logical
+          // error, if we know the obs flips.
+          for (size_t ei : decoder.predicted_errors_buffer) {
+            ++error_use[ei];
           }
-          // Add the error counts to the total
-          for (size_t ei = 0; ei < error_use_totals.size(); ++ei) {
-            error_use_totals[ei] += error_use[ei];
-          }
-          --num_worker_threads_active;
-        }));
+        }
+        finished[shot] = true;
+      }
+      // Add the error counts to the total
+      for (size_t ei = 0; ei < error_use_totals.size(); ++ei) {
+        error_use_totals[ei] += error_use[ei];
+      }
+      --num_worker_threads_active;
+    }));
   }
   size_t num_errors = 0;
   size_t num_low_confidence = 0;
@@ -658,10 +624,9 @@ int main(int argc, char* argv[]) {
     total_time_seconds += decoding_time_seconds[shot];
 
     if (args.print_stats) {
-      std::cout << "num_shots = " << (shot + 1)
-                << " num_low_confidence = " << num_low_confidence
-                << " num_errors = " << num_errors
-                << " total_time_seconds = " << total_time_seconds << std::endl;
+      std::cout << "num_shots = " << (shot + 1) << " num_low_confidence = " << num_low_confidence
+                << " num_errors = " << num_errors << " total_time_seconds = " << total_time_seconds
+                << std::endl;
       std::cout << "cost = " << cost_predicted[shot] << std::endl;
       std::cout.flush();
     }
@@ -675,8 +640,7 @@ int main(int argc, char* argv[]) {
   }
 
   if (!args.dem_out_fname.empty()) {
-    std::vector<size_t> counts(error_use_totals.begin(),
-                               error_use_totals.end());
+    std::vector<size_t> counts(error_use_totals.begin(), error_use_totals.end());
     size_t num_usage_dem_shots = shot;
     if (has_obs) {
       // When we know the obs, we only count non-error shots.
@@ -693,25 +657,25 @@ int main(int argc, char* argv[]) {
 
   bool print_final_stats = true;
   if (!args.stats_out_fname.empty()) {
-    nlohmann::json stats_json = {{"circuit_path", args.circuit_path},
-                                 {"dem_path", args.dem_path},
-                                 {"max_errors", args.max_errors},
-                                 {"sample_seed", args.sample_seed},
-                                 {"at_most_two_errors_per_detector",
-                                  args.at_most_two_errors_per_detector},
-                                 {"det_beam", args.det_beam},
-                                 {"det_penalty", args.det_penalty},
-                                 {"beam_climbing", args.beam_climbing},
-                                 {"no_revisit_dets", args.no_revisit_dets},
-                                 {"pqlimit", args.pqlimit},
-                                 {"num_det_orders", args.num_det_orders},
-                                 {"det_order_seed", args.det_order_seed},
-                                 {"total_time_seconds", total_time_seconds},
-                                 {"num_errors", num_errors},
-                                 {"num_low_confidence", num_low_confidence},
-                                 {"num_shots", shot},
-                                 {"num_threads", args.num_threads},
-                                 {"sample_num_shots", args.sample_num_shots}};
+    nlohmann::json stats_json = {
+        {"circuit_path", args.circuit_path},
+        {"dem_path", args.dem_path},
+        {"max_errors", args.max_errors},
+        {"sample_seed", args.sample_seed},
+        {"at_most_two_errors_per_detector", args.at_most_two_errors_per_detector},
+        {"det_beam", args.det_beam},
+        {"det_penalty", args.det_penalty},
+        {"beam_climbing", args.beam_climbing},
+        {"no_revisit_dets", args.no_revisit_dets},
+        {"pqlimit", args.pqlimit},
+        {"num_det_orders", args.num_det_orders},
+        {"det_order_seed", args.det_order_seed},
+        {"total_time_seconds", total_time_seconds},
+        {"num_errors", num_errors},
+        {"num_low_confidence", num_low_confidence},
+        {"num_shots", shot},
+        {"num_threads", args.num_threads},
+        {"sample_num_shots", args.sample_num_shots}};
 
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;

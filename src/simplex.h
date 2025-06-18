@@ -29,7 +29,9 @@ struct SimplexConfig {
   size_t window_length = 0;
   size_t window_slide_length = 0;
   bool verbose = false;
-  bool windowing_enabled() { return (window_length != 0); }
+  bool windowing_enabled() {
+    return (window_length != 0);
+  }
   std::string str();
 };
 
@@ -60,8 +62,7 @@ struct SimplexDecoder {
   void decode_to_errors(const std::vector<uint64_t>& detections);
   // Returns the bitwise XOR of all the observables bitmasks of all errors in
   // the predicted errors buffer.
-  common::ObservablesMask mask_from_errors(
-      const std::vector<size_t>& predicted_errors);
+  common::ObservablesMask mask_from_errors(const std::vector<size_t>& predicted_errors);
   // Returns the sum of the likelihood costs (minus-log-likelihood-ratios) of
   // all errors in the predicted errors buffer.
   double cost_from_errors(const std::vector<size_t>& predicted_errors);
