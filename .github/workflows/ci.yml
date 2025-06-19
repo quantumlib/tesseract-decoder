@@ -11,6 +11,7 @@ defaults:
   run:
     shell: bash
 
+# Cancels a previous run if a new commit is made on the same pull request
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -36,13 +37,11 @@ jobs:
         [ -z "$files" ] || clang-format --dry-run --Werror $files
 
   build:
-    name: Bazel tests
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
 
     runs-on: ${{ matrix.os }}
-    needs: [clang-format-check]  # Don't run build if format check fails
 
     steps:
     - name: Checkout repository
@@ -65,6 +64,12 @@ jobs:
       if: runner.os == 'macOS'
       run: |
         brew install clang-format
+
+    - name: Check formatting (redundant but allowed)
+      run: |
+        clang-format --version
+        files=$(git ls-files '*.cc' '*.cpp' '*.h' '*.hpp')
+        [ -z "$files" ] || clang-format --dry-run --Werror $files
 
     - name: Bazel tests
       run: bazel test src:all
