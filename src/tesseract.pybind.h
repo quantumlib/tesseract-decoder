@@ -50,29 +50,15 @@ void add_tesseract_module(py::module &root) {
       .def("__str__", &TesseractConfig::str);
 
   py::class_<Node>(m, "Node")
-      .def(py::init<std::vector<size_t>, std::vector<char>, double, size_t,
-                    std::vector<char>>(),
+      .def(py::init<double, size_t, std::vector<size_t>>(),
            py::arg("errs") = std::vector<size_t>(),
-           py::arg("dets") = std::vector<char>(), py::arg("cost") = 0.0,
-           py::arg("num_dets") = 0,
-           py::arg("blocked_errs") = std::vector<char>())
-      .def_readwrite("errs", &Node::errs)
-      .def_readwrite("dets", &Node::dets)
+           py::arg("cost") = 0.0,
+           py::arg("num_dets") = 0)
+      .def_readwrite("errs", &Node::errors)
       .def_readwrite("cost", &Node::cost)
-      .def_readwrite("num_dets", &Node::num_dets)
-      .def_readwrite("blocked_errs", &Node::blocked_errs)
+      .def_readwrite("num_dets", &Node::num_detectors)
       .def(py::self > py::self)
       .def("__str__", &Node::str);
-
-  py::class_<QNode>(m, "QNode")
-      .def(py::init<double, size_t, std::vector<size_t>>(),
-           py::arg("cost") = 0.0, py::arg("num_dets") = 0,
-           py::arg("errs") = std::vector<size_t>())
-      .def_readwrite("cost", &QNode::cost)
-      .def_readwrite("num_dets", &QNode::num_dets)
-      .def_readwrite("errs", &QNode::errs)
-      .def(py::self > py::self)
-      .def("__str__", &QNode::str);
 
   py::class_<TesseractDecoder>(m, "TesseractDecoder")
       .def(py::init<TesseractConfig>(), py::arg("config"))
@@ -81,9 +67,9 @@ void add_tesseract_module(py::module &root) {
                &TesseractDecoder::decode_to_errors),
            py::arg("detections"))
       .def("decode_to_errors",
-           py::overload_cast<const std::vector<uint64_t> &, size_t>(
+           py::overload_cast<const std::vector<uint64_t> &, size_t, size_t>(
                &TesseractDecoder::decode_to_errors),
-           py::arg("detections"), py::arg("det_order"))
+           py::arg("detections"), py::arg("det_order"), py::arg("det_beam"))
       .def("mask_from_errors", &TesseractDecoder::mask_from_errors,
            py::arg("predicted_errors"))
       .def("cost_from_errors", &TesseractDecoder::cost_from_errors,
@@ -93,7 +79,6 @@ void add_tesseract_module(py::module &root) {
                      &TesseractDecoder::low_confidence_flag)
       .def_readwrite("predicted_errors_buffer",
                      &TesseractDecoder::predicted_errors_buffer)
-      .def_readwrite("det_beam", &TesseractDecoder::det_beam)
       .def_readwrite("errors", &TesseractDecoder::errors);
 }
 
