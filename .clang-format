@@ -3,5 +3,4 @@ IndentWidth: 2
 ColumnLimit: 100
 AllowShortFunctionsOnASingleLine: Empty
 PointerAlignment: Left
-Standard: C++20
 SortIncludes: true

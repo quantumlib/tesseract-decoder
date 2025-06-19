@@ -25,8 +25,7 @@
 #include "common.h"
 #include "stim.h"
 
-std::vector<std::vector<double>> get_detector_coords(
-    stim::DetectorErrorModel& dem) {
+std::vector<std::vector<double>> get_detector_coords(stim::DetectorErrorModel& dem) {
   std::vector<std::vector<double>> detector_coords;
   for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
     switch (instruction.type) {
@@ -51,8 +50,7 @@ std::vector<std::vector<double>> get_detector_coords(
   return detector_coords;
 }
 
-std::vector<std::vector<size_t>> build_detector_graph(
-    const stim::DetectorErrorModel& dem) {
+std::vector<std::vector<size_t>> build_detector_graph(const stim::DetectorErrorModel& dem) {
   size_t num_detectors = dem.count_detectors();
   std::vector<std::vector<size_t>> neighbors(num_detectors);
   for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
@@ -81,11 +79,9 @@ std::vector<std::vector<size_t>> build_detector_graph(
   return neighbors;
 }
 
-bool sampling_from_dem(uint64_t seed, size_t num_shots,
-                       stim::DetectorErrorModel dem,
+bool sampling_from_dem(uint64_t seed, size_t num_shots, stim::DetectorErrorModel dem,
                        std::vector<stim::SparseShot>& shots) {
-  stim::DemSampler<stim::MAX_BITWORD_WIDTH> sampler(dem, std::mt19937_64{seed},
-                                                    num_shots);
+  stim::DemSampler<stim::MAX_BITWORD_WIDTH> sampler(dem, std::mt19937_64{seed}, num_shots);
   sampler.resample(false);
   shots.resize(0);
   shots.resize(num_shots);
@@ -112,13 +108,11 @@ bool sampling_from_dem(uint64_t seed, size_t num_shots,
   return true;
 }
 
-void sample_shots(uint64_t sample_seed, stim::Circuit& circuit,
-                  size_t sample_num_shots,
+void sample_shots(uint64_t sample_seed, stim::Circuit& circuit, size_t sample_num_shots,
                   std::vector<stim::SparseShot>& shots) {
   std::mt19937_64 rng(sample_seed);
   size_t num_detectors = circuit.count_detectors();
-  const auto [dets, obs] =
-      stim::sample_batch_detection_events<64>(circuit, sample_num_shots, rng);
+  const auto [dets, obs] = stim::sample_batch_detection_events<64>(circuit, sample_num_shots, rng);
   stim::simd_bit_table<64> obs_T = obs.transposed();
   shots.resize(sample_num_shots);
   for (size_t k = 0; k < sample_num_shots; k++) {
@@ -131,24 +125,20 @@ void sample_shots(uint64_t sample_seed, stim::Circuit& circuit,
   }
 }
 
-std::vector<common::Error> get_errors_from_dem(
-    const stim::DetectorErrorModel& dem) {
+std::vector<common::Error> get_errors_from_dem(const stim::DetectorErrorModel& dem) {
   std::vector<common::Error> errors;
   for (const stim::DemInstruction& instruction : dem.instructions) {
     // Ignore zero-probability errors
-    if (instruction.type == stim::DemInstructionType::DEM_ERROR and
-        instruction.arg_data[0] > 0)
+    if (instruction.type == stim::DemInstructionType::DEM_ERROR and instruction.arg_data[0] > 0)
       errors.emplace_back(instruction);
   }
   return errors;
 }
 
-std::vector<std::string> get_files_recursive(
-    const std::string& directory_path) {
+std::vector<std::string> get_files_recursive(const std::string& directory_path) {
   std::vector<std::string> file_paths;
   try {
-    for (const auto& entry :
-         std::filesystem::recursive_directory_iterator(directory_path)) {
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(directory_path)) {
       if (std::filesystem::is_regular_file(entry)) {
         file_paths.push_back(entry.path().string());
       }
