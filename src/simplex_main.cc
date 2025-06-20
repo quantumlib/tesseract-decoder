@@ -74,14 +74,12 @@ struct Args {
   bool print_stats = false;
 
   bool has_observables() {
-    return append_observables || !obs_in_fname.empty() ||
-           (sample_num_shots > 0);
+    return append_observables || !obs_in_fname.empty() || (sample_num_shots > 0);
   }
 
   void validate() {
     if (circuit_path.empty() and dem_path.empty()) {
-      throw std::invalid_argument(
-          "Must provide at least one of --circuit or --dem");
+      throw std::invalid_argument("Must provide at least one of --circuit or --dem");
     }
 
     int num_data_sources = int(sample_num_shots > 0) + int(!in_fname.empty());
@@ -89,23 +87,18 @@ struct Args {
       throw std::invalid_argument("Requires exactly 1 source of shots.");
     }
     if (!in_fname.empty() and in_format.empty()) {
-      throw std::invalid_argument(
-          "If --in is provided, must also specify --in-format.");
+      throw std::invalid_argument("If --in is provided, must also specify --in-format.");
     }
     if (!out_fname.empty() and out_format.empty()) {
-      throw std::invalid_argument(
-          "If --out is provided, must also specify --out-format.");
+      throw std::invalid_argument("If --out is provided, must also specify --out-format.");
     }
-    if (!in_format.empty() &&
-        !stim::format_name_to_enum_map().contains(in_format)) {
+    if (!in_format.empty() && !stim::format_name_to_enum_map().contains(in_format)) {
       throw std::invalid_argument("Invalid format: " + in_format);
     }
-    if (!obs_in_format.empty() &&
-        !stim::format_name_to_enum_map().contains(obs_in_format)) {
+    if (!obs_in_format.empty() && !stim::format_name_to_enum_map().contains(obs_in_format)) {
       throw std::invalid_argument("Invalid format: " + obs_in_format);
     }
-    if (!out_format.empty() &&
-        !stim::format_name_to_enum_map().contains(out_format)) {
+    if (!out_format.empty() && !stim::format_name_to_enum_map().contains(out_format)) {
       throw std::invalid_argument("Invalid format: " + out_format);
     }
     if (!obs_in_fname.empty() and in_fname.empty()) {
@@ -122,8 +115,7 @@ struct Args {
     }
     if (shot_range_begin or shot_range_end) {
       if (shot_range_end < shot_range_begin) {
-        throw std::invalid_argument(
-            "Provided shot range must have end >= begin.");
+        throw std::invalid_argument("Provided shot range must have end >= begin.");
       }
     }
     if ((window_length != 0) != (window_slide_length != 0)) {
@@ -132,8 +124,7 @@ struct Args {
           "length > 0 is provided.");
     }
     if (window_slide_length > window_length) {
-      throw std::invalid_argument(
-          "Must have window_slide_length <= window_length");
+      throw std::invalid_argument("Must have window_slide_length <= window_length");
     }
     if (sample_num_shots > 0 and circuit_path.empty()) {
       throw std::invalid_argument("Cannot sample shots without a circuit.");
@@ -181,8 +172,8 @@ struct Args {
       assert(!circuit_path.empty());
       std::mt19937_64 rng(sample_seed);
       size_t num_detectors = circuit.count_detectors();
-      const auto [dets, obs] = stim::sample_batch_detection_events<64>(
-          circuit, sample_num_shots, rng);
+      const auto [dets, obs] =
+          stim::sample_batch_detection_events<64>(circuit, sample_num_shots, rng);
       stim::simd_bit_table<64> obs_T = obs.transposed();
       shots.resize(sample_num_shots);
       for (size_t k = 0; k < sample_num_shots; k++) {
@@ -201,8 +192,7 @@ struct Args {
       if (!shots_file) {
         throw std::invalid_argument("Could not open the file: " + in_fname);
       }
-      stim::FileFormatData shots_in_format =
-          stim::format_name_to_enum_map().at(in_format);
+      stim::FileFormatData shots_in_format = stim::format_name_to_enum_map().at(in_format);
       auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
           shots_file, shots_in_format.id, 0, config.dem.count_detectors(),
           append_observables * config.dem.count_observables());
@@ -223,12 +213,9 @@ struct Args {
       if (!obs_file) {
         throw std::invalid_argument("Could not open the file: " + obs_in_fname);
       }
-      stim::FileFormatData shots_obs_in_format =
-          stim::format_name_to_enum_map().at(obs_in_format);
-      auto obs_reader =
-          stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
-              obs_file, shots_obs_in_format.id, 0, 0,
-              config.dem.count_observables());
+      stim::FileFormatData shots_obs_in_format = stim::format_name_to_enum_map().at(obs_in_format);
+      auto obs_reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
+          obs_file, shots_obs_in_format.id, 0, 0, config.dem.count_observables());
       stim::SparseShot sparse_shot;
       sparse_shot.clear();
       size_t num_obs_shots = 0;
@@ -250,24 +237,21 @@ struct Args {
     if (shot_range_begin or shot_range_end) {
       assert(shot_range_end >= shot_range_begin);
       if (shot_range_end > shots.size()) {
-        throw std::invalid_argument(
-            "Shot range end is past end of shots array.");
+        throw std::invalid_argument("Shot range end is past end of shots array.");
       }
-      std::vector<stim::SparseShot> shots_in_range(
-          shots.begin() + shot_range_begin, shots.begin() + shot_range_end);
+      std::vector<stim::SparseShot> shots_in_range(shots.begin() + shot_range_begin,
+                                                   shots.begin() + shot_range_end);
       std::swap(shots_in_range, shots);
     }
 
     if (!out_fname.empty()) {
       // Create a writer instance to write the predicted obs to a file
-      stim::FileFormatData predictions_out_format =
-          stim::format_name_to_enum_map().at(out_format);
+      stim::FileFormatData predictions_out_format = stim::format_name_to_enum_map().at(out_format);
       FILE* predictions_file = stdout;
       if (out_fname != "-") {
         predictions_file = fopen(out_fname.c_str(), "w");
       }
-      writer = stim::MeasureRecordWriter::make(predictions_file,
-                                               predictions_out_format.id);
+      writer = stim::MeasureRecordWriter::make(predictions_file, predictions_out_format.id);
       writer->begin_result_type('L');
       // TODO: ensure the fclose happens after all predictions are written to
       // the writer.
@@ -284,12 +268,8 @@ int main(int argc, char* argv[]) {
   std::cout.precision(16);
   argparse::ArgumentParser program("simplex");
   Args args;
-  program.add_argument("--circuit")
-      .help("Stim circuit file path")
-      .store_into(args.circuit_path);
-  program.add_argument("--dem")
-      .help("Stim dem file path")
-      .store_into(args.dem_path);
+  program.add_argument("--circuit").help("Stim circuit file path").store_into(args.circuit_path);
+  program.add_argument("--dem").help("Stim dem file path").store_into(args.dem_path);
   program.add_argument("--no-merge-errors")
       .help("If provided, will not merge identical error mechanisms.")
       .store_into(args.no_merge_errors);
@@ -332,8 +312,7 @@ int main(int argc, char* argv[]) {
       .default_value(size_t(0))
       .store_into(args.shot_range_end);
   program.add_argument("--in")
-      .help(
-          "File to read detection events (and possibly observable flips) from")
+      .help("File to read detection events (and possibly observable flips) from")
       .metavar("filename")
       .default_value(std::string(""))
       .store_into(args.in_fname);
@@ -345,14 +324,11 @@ int main(int argc, char* argv[]) {
     in_formats += key;
   }
   program.add_argument("--in-format", "--in_format")
-      .help("Format of the file to read detection events from (" + in_formats +
-            ")")
+      .help("Format of the file to read detection events from (" + in_formats + ")")
       .metavar(in_formats)
       .default_value(std::string(""))
       .store_into(args.in_format);
-  program
-      .add_argument("--in-includes-appended-observables",
-                    "--in_includes_appended_observables")
+  program.add_argument("--in-includes-appended-observables", "--in_includes_appended_observables")
       .help(
           "If present, assumes that the observable flips are appended to the "
           "end of each shot.")
@@ -375,8 +351,7 @@ int main(int argc, char* argv[]) {
       .default_value(std::string(""))
       .store_into(args.out_fname);
   program.add_argument("--out-format")
-      .help("Format of the file to write observable flip predictions to (" +
-            in_formats + ")")
+      .help("Format of the file to write observable flip predictions to (" + in_formats + ")")
       .metavar(in_formats)
       .default_value(std::string(""))
       .store_into(args.out_format);
@@ -456,42 +431,38 @@ int main(int argc, char* argv[]) {
     // After this value returns to 0, we know that no further shots will
     // transition to finished.
     ++num_worker_threads_active;
-    decoder_threads.push_back(std::thread(
-        [&config, &next_unclaimed_shot, &shots, &obs_predicted, &cost_predicted,
-         &decoding_time_seconds, &finished, &error_use_totals, &has_obs,
-         &worker_threads_please_terminate, &num_worker_threads_active]() {
-          SimplexDecoder decoder(config);
-          std::vector<size_t> error_use(config.dem.count_errors());
-          for (size_t shot; !worker_threads_please_terminate and
-                            ((shot = next_unclaimed_shot++) < shots.size());) {
-            auto start_time = std::chrono::high_resolution_clock::now();
-            decoder.decode_to_errors(shots[shot].hits);
-            auto stop_time = std::chrono::high_resolution_clock::now();
-            decoding_time_seconds[shot] =
-                std::chrono::duration_cast<std::chrono::microseconds>(
-                    stop_time - start_time)
-                    .count() /
-                1e6;
-            obs_predicted[shot] =
-                decoder.mask_from_errors(decoder.predicted_errors_buffer);
-            cost_predicted[shot] =
-                decoder.cost_from_errors(decoder.predicted_errors_buffer);
-            if (!has_obs or
-                shots[shot].obs_mask_as_u64() == obs_predicted[shot]) {
-              // Only count the error uses for shots that did not have a logical
-              // error, if we know the obs flips.
-              for (size_t ei : decoder.predicted_errors_buffer) {
-                ++error_use[ei];
-              }
-            }
-            finished[shot] = true;
+    decoder_threads.push_back(std::thread([&config, &next_unclaimed_shot, &shots, &obs_predicted,
+                                           &cost_predicted, &decoding_time_seconds, &finished,
+                                           &error_use_totals, &has_obs,
+                                           &worker_threads_please_terminate,
+                                           &num_worker_threads_active]() {
+      SimplexDecoder decoder(config);
+      std::vector<size_t> error_use(config.dem.count_errors());
+      for (size_t shot;
+           !worker_threads_please_terminate and ((shot = next_unclaimed_shot++) < shots.size());) {
+        auto start_time = std::chrono::high_resolution_clock::now();
+        decoder.decode_to_errors(shots[shot].hits);
+        auto stop_time = std::chrono::high_resolution_clock::now();
+        decoding_time_seconds[shot] =
+            std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
+            1e6;
+        obs_predicted[shot] = decoder.mask_from_errors(decoder.predicted_errors_buffer);
+        cost_predicted[shot] = decoder.cost_from_errors(decoder.predicted_errors_buffer);
+        if (!has_obs or shots[shot].obs_mask_as_u64() == obs_predicted[shot]) {
+          // Only count the error uses for shots that did not have a logical
+          // error, if we know the obs flips.
+          for (size_t ei : decoder.predicted_errors_buffer) {
+            ++error_use[ei];
           }
-          // Add the error counts to the total
-          for (size_t ei = 0; ei < config.dem.count_errors(); ++ei) {
-            error_use_totals[ei] += error_use[ei];
-          }
-          --num_worker_threads_active;
-        }));
+        }
+        finished[shot] = true;
+      }
+      // Add the error counts to the total
+      for (size_t ei = 0; ei < config.dem.count_errors(); ++ei) {
+        error_use_totals[ei] += error_use[ei];
+      }
+      --num_worker_threads_active;
+    }));
   }
   size_t num_errors = 0;
   double total_time_seconds = 0;
@@ -522,8 +493,7 @@ int main(int argc, char* argv[]) {
     total_time_seconds += decoding_time_seconds[shot];
 
     if (args.print_stats) {
-      std::cout << "num_shots = " << (shot + 1)
-                << " num_errors = " << num_errors
+      std::cout << "num_shots = " << (shot + 1) << " num_errors = " << num_errors
                 << " total_time_seconds = " << total_time_seconds << std::endl;
       std::cout << "cost = " << cost_predicted[shot] << std::endl;
       std::cout.flush();
@@ -538,8 +508,7 @@ int main(int argc, char* argv[]) {
   }
 
   if (!args.dem_out_fname.empty()) {
-    std::vector<size_t> counts(error_use_totals.begin(),
-                               error_use_totals.end());
+    std::vector<size_t> counts(error_use_totals.begin(), error_use_totals.end());
     size_t num_usage_dem_shots = shot;
     if (has_obs) {
       // When we know the obs, we only count non-error shots.
