@@ -32,8 +32,7 @@ void add_common_module(py::module &root) {
 
   py::class_<common::Symptom>(m, "Symptom")
       .def(py::init<std::vector<int>, common::ObservablesMask>(),
-           py::arg("detectors") = std::vector<int>(),
-           py::arg("observables") = 0)
+           py::arg("detectors") = std::vector<int>(), py::arg("observables") = 0)
       .def_readwrite("detectors", &common::Symptom::detectors)
       .def_readwrite("observables", &common::Symptom::observables)
       .def("__str__", &common::Symptom::str)
@@ -51,25 +50,22 @@ void add_common_module(py::module &root) {
       .def_readwrite("symptom", &common::Error::symptom)
       .def("__str__", &common::Error::str)
       .def(py::init<>())
-      .def(py::init<double, std::vector<int> &, common::ObservablesMask,
-                    std::vector<bool> &>(),
-           py::arg("likelihood_cost"), py::arg("detectors"),
-           py::arg("observables"), py::arg("dets_array"))
+      .def(py::init<double, std::vector<int> &, common::ObservablesMask, std::vector<bool> &>(),
+           py::arg("likelihood_cost"), py::arg("detectors"), py::arg("observables"),
+           py::arg("dets_array"))
       .def(py::init<double, double, std::vector<int> &, common::ObservablesMask,
                     std::vector<bool> &>(),
-           py::arg("likelihood_cost"), py::arg("probability"),
-           py::arg("detectors"), py::arg("observables"), py::arg("dets_array"))
+           py::arg("likelihood_cost"), py::arg("probability"), py::arg("detectors"),
+           py::arg("observables"), py::arg("dets_array"))
       .def(py::init([](stim_pybind::ExposedDemInstruction edi) {
              return new common::Error(edi.as_dem_instruction());
            }),
            py::arg("error"));
 
-  m.def("merge_identical_errors", &common::merge_identical_errors,
-        py::arg("dem"));
-  m.def("remove_zero_probability_errors",
-        &common::remove_zero_probability_errors, py::arg("dem"));
-  m.def("dem_from_counts", &common::dem_from_counts, py::arg("orig_dem"),
-        py::arg("error_counts"), py::arg("num_shots"));
+  m.def("merge_identical_errors", &common::merge_identical_errors, py::arg("dem"));
+  m.def("remove_zero_probability_errors", &common::remove_zero_probability_errors, py::arg("dem"));
+  m.def("dem_from_counts", &common::dem_from_counts, py::arg("orig_dem"), py::arg("error_counts"),
+        py::arg("num_shots"));
 }
 
 #endif

@@ -52,12 +52,10 @@ common::Error::Error(const stim::DemInstruction& error) {
 }
 
 std::string common::Error::str() {
-  return "Error{cost=" + std::to_string(likelihood_cost) +
-         ", symptom=" + symptom.str() + "}";
+  return "Error{cost=" + std::to_string(likelihood_cost) + ", symptom=" + symptom.str() + "}";
 }
 
-std::vector<stim::DemTarget> common::Symptom::as_dem_instruction_targets()
-    const {
+std::vector<stim::DemTarget> common::Symptom::as_dem_instruction_targets() const {
   std::vector<stim::DemTarget> targets;
   for (int d : detectors) {
     targets.push_back(stim::DemTarget::relative_detector_id(d));
@@ -72,8 +70,7 @@ std::vector<stim::DemTarget> common::Symptom::as_dem_instruction_targets()
   return targets;
 }
 
-stim::DetectorErrorModel common::merge_identical_errors(
-    const stim::DetectorErrorModel& dem) {
+stim::DetectorErrorModel common::merge_identical_errors(const stim::DetectorErrorModel& dem) {
   stim::DetectorErrorModel out_dem;
 
   // Map to track the distinct symptoms
@@ -89,11 +86,9 @@ stim::DetectorErrorModel common::merge_identical_errors(
         // Merge with existing error with the same symptom (if applicable)
         if (errors_by_symptom.find(error.symptom) != errors_by_symptom.end()) {
           double p0 = errors_by_symptom[error.symptom].probability;
-          error.probability =
-              p0 * (1 - error.probability) + (1 - p0) * error.probability;
+          error.probability = p0 * (1 - error.probability) + (1 - p0) * error.probability;
         }
-        error.likelihood_cost =
-            -1 * std::log(error.probability / (1 - error.probability));
+        error.likelihood_cost = -1 * std::log(error.probability / (1 - error.probability));
         errors_by_symptom[error.symptom] = error;
         break;
       }
@@ -106,9 +101,9 @@ stim::DetectorErrorModel common::merge_identical_errors(
     }
   }
   for (const auto& it : errors_by_symptom) {
-    out_dem.append_error_instruction(
-        it.second.probability, it.second.symptom.as_dem_instruction_targets(),
-        /*tag=*/"");
+    out_dem.append_error_instruction(it.second.probability,
+                                     it.second.symptom.as_dem_instruction_targets(),
+                                     /*tag=*/"");
   }
   return out_dem;
 }
@@ -136,19 +131,17 @@ stim::DetectorErrorModel common::remove_zero_probability_errors(
   return out_dem;
 }
 
-stim::DetectorErrorModel common::dem_from_counts(
-    stim::DetectorErrorModel& orig_dem, const std::vector<size_t>& error_counts,
-    size_t num_shots) {
+stim::DetectorErrorModel common::dem_from_counts(stim::DetectorErrorModel& orig_dem,
+                                                 const std::vector<size_t>& error_counts,
+                                                 size_t num_shots) {
   if (orig_dem.count_errors() != error_counts.size()) {
     throw std::invalid_argument(
         "Error hits array must be the same size as the number of errors in the "
         "original DEM.");
   }
 
-  for (const stim::DemInstruction& instruction :
-       orig_dem.flattened().instructions) {
-    if (instruction.type == stim::DemInstructionType::DEM_ERROR &&
-        instruction.arg_data[0] == 0) {
+  for (const stim::DemInstruction& instruction : orig_dem.flattened().instructions) {
+    if (instruction.type == stim::DemInstructionType::DEM_ERROR && instruction.arg_data[0] == 0) {
       throw std::invalid_argument(
           "dem_from_counts requires DEMs without zero-probability errors. Use"
           " remove_zero_probability_errors first.");
@@ -157,17 +150,14 @@ stim::DetectorErrorModel common::dem_from_counts(
 
   stim::DetectorErrorModel out_dem;
   size_t ei = 0;
-  for (const stim::DemInstruction& instruction :
-       orig_dem.flattened().instructions) {
+  for (const stim::DemInstruction& instruction : orig_dem.flattened().instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_SHIFT_DETECTORS:
         assert(false && "unreachable");
         break;
       case stim::DemInstructionType::DEM_ERROR: {
-        double est_probability =
-            double(error_counts.at(ei)) / double(num_shots);
-        out_dem.append_error_instruction(est_probability,
-                                         instruction.target_data, /*tag=*/"");
+        double est_probability = double(error_counts.at(ei)) / double(num_shots);
+        out_dem.append_error_instruction(est_probability, instruction.target_data, /*tag=*/"");
         ++ei;
         break;
       }
