@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "tesseract.pybind.h"
 
-#include <pybind11/pybind11.h>
 #include "pybind11/detail/common.h"
+#include <pybind11/pybind11.h>
+
+#include "common.pybind.h"
 #include "simplex.pybind.h"
 #include "utils.pybind.h"
+#include "tesseract.pybind.h"
 
 PYBIND11_MODULE(tesseract_decoder, tesseract) {
   py::module::import("stim");
