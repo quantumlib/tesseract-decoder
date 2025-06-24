@@ -15,6 +15,7 @@
 # load("@benchmark//:benchmark.bzl", "cc_benchmark")
 load("@pybind11_bazel//:build_defs.bzl", "pybind_extension", "pybind_library")
 load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:packaging.bzl", "py_wheel")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -77,6 +78,7 @@ pybind_library(
         ":libutils",
         ":libsimplex",
         ":libtesseract",
+        "@stim//:stim_pybind_lib",
     ],
 )
 
@@ -90,6 +92,17 @@ pybind_extension(
     ],
 )
 
+py_wheel(
+    name="tesseract_decoder_wheel",
+    distribution = "tesseract_decoder",
+    deps=[
+        ":tesseract_decoder",
+    ],
+    version = "0.0.dev0",
+    requires=[
+        "stim",
+    ],
+)
 
 py_library(
     name="lib_tesseract_decoder",
@@ -211,3 +224,5 @@ cc_binary(
         "@nlohmann_json//:json",
     ],
 )
+
+
