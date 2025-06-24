@@ -28,7 +28,7 @@ error(0.25) D1
 
 
 def test_create_simplex_config():
-    sc = tesseract_decoder.simplex.SimplexConfig(_DETECTOR_ERROR_MODEL, window_length=5)
+    sc = tesseract_decoder.simplex.SimplexConfig(_DETECTOR_ERROR_MODEL)
     assert sc.dem == _DETECTOR_ERROR_MODEL
     assert sc.window_length == 5
     assert (
