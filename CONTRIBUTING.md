@@ -45,4 +45,5 @@ main project repository.
 We follow the [Google coding style](https://google.github.io/styleguide/) for
 the programming languages used in this project, with only a few deviations. The
 [`.editorconfig`](.editorconfig) file in this repository defines the settings
-we use.
+we use. Please run `clang-format` on any modified C++ files before submitting a
+pull request.
