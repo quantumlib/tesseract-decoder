@@ -47,10 +47,10 @@ void add_tesseract_module(py::module &root) {
 
   py::class_<Node>(m, "Node")
       .def(py::init<double, size_t, std::vector<size_t>>(), py::arg("cost") = 0.0,
-           py::arg("num_dets") = 0, py::arg("errs") = std::vector<size_t>())
-      .def_readwrite("errs", &Node::errors)
+           py::arg("num_detectors") = 0, py::arg("errors") = std::vector<size_t>())
+      .def_readwrite("errors", &Node::errors)
       .def_readwrite("cost", &Node::cost)
-      .def_readwrite("num_dets", &Node::num_detectors)
+      .def_readwrite("num_detectors", &Node::num_detectors)
       .def(py::self > py::self)
       .def("__str__", &Node::str);
 

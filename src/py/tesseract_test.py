@@ -35,8 +35,8 @@ def test_create_config():
 
 
 def test_create_node():
-    node = tesseract_decoder.tesseract.Node(errs=[1, 0])
-    assert node.errs == [1, 0]
+    node = tesseract_decoder.tesseract.Node(errors=[1, 0])
+    assert node.errors == [1, 0]
 
 
 def test_create_decoder():
