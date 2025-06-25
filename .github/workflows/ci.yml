@@ -72,4 +72,4 @@ jobs:
         [ -z "$files" ] || clang-format --dry-run --Werror $files
 
     - name: Bazel tests
-      run: bazel test src:all
+      run: bazel test src/...
