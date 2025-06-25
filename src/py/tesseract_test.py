@@ -35,23 +35,17 @@ def test_create_config():
 
 
 def test_create_node():
-    node = tesseract_decoder.tesseract.Node(dets=["a"])
-    assert node.dets == ["a"]
-
-
-def test_create_qnode():
-    qnode = tesseract_decoder.tesseract.QNode(num_dets=5, errs=[42])
-    assert qnode.num_dets == 5
-    assert str(qnode) == "QNode(cost=0, num_dets=5, errs=[42])"
+    node = tesseract_decoder.tesseract.Node(errs=[1, 0])
+    assert node.errs == [1, 0]
 
 
 def test_create_decoder():
     config = tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL)
     decoder = tesseract_decoder.tesseract.TesseractDecoder(config)
     decoder.decode_to_errors([0])
-    decoder.decode_to_errors([0], 0)
+    decoder.decode_to_errors(detections=[0], det_order=0, det_beam=0)
     assert decoder.mask_from_errors([1]) == 0
-    assert decoder.cost_from_errors([1]) == pytest.approx(1.609438)
+    assert decoder.cost_from_errors([1]) == pytest.approx(0.5108256237659907)
     assert decoder.decode([0]) == 0
 
 
