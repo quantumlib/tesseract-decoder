@@ -66,11 +66,3 @@ http_archive(
     urls = ["https://github.com/bazelbuild/platforms/archive/refs/tags/0.0.6.zip"],
     strip_prefix = "platforms-0.0.6",
 )
-
-http_archive(
-    name = "stim_py",
-    build_file = "//external:stim_py.BUILD",
-    sha256 = "95236006859d6754be99629d4fb44788e742e962ac8c59caad421ca088f7350e",
-    strip_prefix = "stim-1.15.0",
-    urls = ["https://github.com/quantumlib/Stim/releases/download/v1.15.0/stim-1.15.0.tar.gz"],
-)
