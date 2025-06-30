@@ -237,7 +237,6 @@ struct Args {
             config.det_orders[det_order].resize(config.dem.count_detectors());
             std::iota(config.det_orders[det_order].begin(), config.det_orders[det_order].end(), 0);
           }
-
         } else {
           // Use the coordinates to order the detectors based on a random
           // orientation
