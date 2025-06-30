@@ -10,7 +10,7 @@ include only the lines used by the converter script:
 ```bash
 bazel build src:all && \
 ./bazel-bin/src/tesseract \
-  --sample-num-shots 1 --det-order-seed 13267562 --pqlimit 10000 --beam 1 --num-det-orders 20 --det-order-bfs \
+  --sample-num-shots 1 --det-order-seed 13267562 --pqlimit 10000 --beam 1 --num-det-orders 20 \
   --circuit testdata/colorcodes/r\=9\,d\=9\,p\=0.002\,noise\=si1000\,c\=superdense_color_code_X\,q\=121\,gates\=cz.stim \
   --sample-seed 717347 --threads 1 --verbose | \
   grep -E 'Error|Detector|activated_errors|activated_dets' > logfile.txt
@@ -19,7 +19,7 @@ python viz/to_json.py logfile.txt -o logfile.json
 ```
 
 
-The `--det-order-bfs` flag is compatible with visualization logs. Just make
+The `--no-det-order-bfs` flag is compatible with visualization logs. Just make
 sure `--verbose` is enabled so the detector coordinates are printed for
 `to_json.py` to parse.
 
