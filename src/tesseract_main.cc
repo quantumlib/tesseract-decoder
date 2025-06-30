@@ -231,12 +231,13 @@ struct Args {
         std::vector<double> inner_products(config.dem.count_detectors());
 
         if (!detector_coords.size() || !detector_coords.at(0).size()) {
-          // If there are no detector coordinates, just use the standard ordering
-          // of the indices.
+          // If there are no detector coordinates, just use the standard
+          // ordering of the indices.
           for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
-            config.det_orders.emplace_back();
-            std::iota(config.det_orders.back().begin(), config.det_orders.front().end(), 0);
+            config.det_orders[det_order].resize(config.dem.count_detectors());
+            std::iota(config.det_orders[det_order].begin(), config.det_orders[det_order].end(), 0);
           }
+
         } else {
           // Use the coordinates to order the detectors based on a random
           // orientation
