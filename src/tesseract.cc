@@ -305,12 +305,12 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
   pq.push({initial_cost, min_num_detectors, std::vector<size_t>()});
   size_t num_pq_pushed = 1;
 
+  detectors_count_2_min_cost[min_num_detectors] = initial_cost;
+
   while (!pq.empty()) {
     const Node node = pq.top();
     pq.pop();
-
-    if (detectors_count_2_min_cost[node.num_detectors] == node.cost) detectors_count_2_min_cost.erase(node.num_detectors);
-
+    
     if (node.num_detectors > max_num_detectors) continue;
 
     std::vector<char> detectors = initial_detectors;
@@ -371,7 +371,17 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
           visited_detectors[i].clear();
         }
       }
+
+      size_t prev_max_num_detectors = max_num_detectors;
+
       max_num_detectors = std::min(max_num_detectors, min_num_detectors + detector_beam);
+
+      if (max_num_detectors < prev_max_num_detectors) {
+          for (auto it = detectors_count_2_min_cost.begin(); it != detectors_count_2_min_cost.end(); ) {
+              if (it->first > max_num_detectors) it = detectors_count_2_min_cost.erase(it);
+               else ++it;
+          }
+      }
     }
 
     for (size_t d = 0; d < num_detectors; ++d) {
@@ -473,14 +483,20 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
                                                                    : next_detector_cost_tuples);
       }
 
-      if (next_cost == INF) continue;
+      
+      auto detectors_min_cost = detectors_count_2_min_cost.find(next_num_detectors);
+      if (detectors_min_cost != detectors_count_2_min_cost.end() && next_cost >= detectors_min_cost->second) continue;
 
-      if (detectors_count_2_min_cost.count(next_num_detectors) && detectors_count_2_min_cost[next_num_detectors] <= next_cost) continue;
+
+      if (next_cost == INF) continue;
 
       pq.push({next_cost, next_num_detectors, next_errors});
       ++num_pq_pushed;
+
+      if (detectors_min_cost == detectors_count_2_min_cost.end() || next_cost < detectors_min_cost->second) 
       detectors_count_2_min_cost[next_num_detectors] = next_cost;
 
+      
       if (num_pq_pushed > config.pqlimit) {
         low_confidence_flag = true;
         return;
