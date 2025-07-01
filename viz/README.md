@@ -19,9 +19,10 @@ python viz/to_json.py logfile.txt -o logfile.json
 ```
 
 
-The `--no-det-order-bfs` flag is compatible with visualization logs. Just make
-sure `--verbose` is enabled so the detector coordinates are printed for
-`to_json.py` to parse.
+The `--no-det-order-bfs` flag is compatible with visualization logs. BFS-based
+detector ordering is now enabled by default, so include this flag only if you
+want to disable it. Make sure `--verbose` is enabled so the detector
+coordinates are printed for `to_json.py` to parse.
 
 The `to_json.py` script produces `logfile.json`, which contains the detector
 coordinates and animation frames for the viewer.

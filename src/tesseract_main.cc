@@ -386,6 +386,15 @@ int main(int argc, char* argv[]) {
       .default_value(true)
       .implicit_value(false)
       .store_into(args.det_order_bfs);
+  program.add_argument("--det-order-bfs")
+      .action([&](auto const&) {
+        std::cout << "BFS-based detector ordering is the default now; "
+                     "--det-order-bfs is ignored." << std::endl;
+      })
+      .default_value(true)
+      .implicit_value(true)
+      .store_into(args.det_order_bfs)
+      .hidden();
   program.add_argument("--det-order-seed")
       .help(
           "Seed used when initializing the random detector traversal "
