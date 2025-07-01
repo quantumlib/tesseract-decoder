@@ -423,6 +423,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
       double next_cost = node.cost + errors[ei].likelihood_cost;
       size_t next_num_detectors = node.num_detectors;
 
+
       if (config.at_most_two_errors_per_detector) {
         next_next_detector_cost_tuples = next_detector_cost_tuples;
       }
@@ -443,6 +444,8 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
       }
 
       if (next_num_detectors > max_num_detectors) continue;
+
+
 
       if (config.no_revisit_dets && visited_detectors[next_num_detectors].find(next_detectors) !=
                                         visited_detectors[next_num_detectors].end()) {
@@ -475,11 +478,24 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
 
       if (next_cost == INF) continue;
 
-      if (detectors_count_2_min_cost.count(next_num_detectors) && detectors_count_2_min_cost[next_num_detectors] <= next_cost) continue;
+      {
+        bool will_be_skipped = false;
+        for (size_t possible_num_detectors=0; possible_num_detectors + detector_beam < next_num_detectors ; ++possible_num_detectors) {
+          if (detectors_count_2_min_cost.count(possible_num_detectors) and detectors_count_2_min_cost.at(possible_num_detectors) <= next_cost) {
+            will_be_skipped = true;
+            break;
+          }
+        }
+        if (will_be_skipped) {
+          continue;
+        }
+      }
 
       pq.push({next_cost, next_num_detectors, next_errors});
+      if (!detectors_count_2_min_cost.count(next_num_detectors) or detectors_count_2_min_cost[next_num_detectors] > next_cost) {
+        detectors_count_2_min_cost[next_num_detectors] = next_cost;
+      }
       ++num_pq_pushed;
-      detectors_count_2_min_cost[next_num_detectors] = next_cost;
 
       if (num_pq_pushed > config.pqlimit) {
         low_confidence_flag = true;
