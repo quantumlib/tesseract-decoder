@@ -7,6 +7,7 @@ py_test(
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//pytest",
+        "@pypi//stim",
         "//src:lib_tesseract_decoder",
     ],
 )
@@ -17,6 +18,7 @@ py_test(
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//pytest",
+        "@pypi//stim",
         "//src:lib_tesseract_decoder",
     ],
 )
@@ -27,6 +29,7 @@ py_test(
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//pytest",
+        "@pypi//stim",
         "//src:lib_tesseract_decoder",
     ],
 )
@@ -37,6 +40,7 @@ py_test(
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//pytest",
+        "@pypi//stim",
         "//src:lib_tesseract_decoder",
     ],
 )
