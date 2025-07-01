@@ -67,20 +67,41 @@ bool Node::operator>(const Node& other) const {
 }
 
 double TesseractDecoder::get_detcost(
-    size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const {
+    size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) {
   double min_cost = INF;
+  double error_cost;
   ErrorCost ec;
   DetectorCostTuple dct;
+  // int min_error_index = -1;
 
-  for (size_t ei : d2e[d]) {
+  for (size_t ei : d2e_detcost[d]) {
     ec = error_costs[ei];
-    dct = detector_cost_tuples[ei];
     if (ec.min_cost >= min_cost) break;
+
+    dct = detector_cost_tuples[ei];
     if (!dct.error_blocked) {
-      double error_cost = ec.likelihood_cost / dct.detectors_count;
-      min_cost = std::min(min_cost, error_cost);
+      error_cost = ec.likelihood_cost / dct.detectors_count;
+      if (error_cost < min_cost) {
+        min_cost = error_cost;
+        // min_error_index = ei;
+      }
     }
   }
+
+  /*
+  if (true) {
+    detcost_frequency[d] += 1;
+    if (min_error_index != -1) {
+      d2e_detcost_cache[d].insert(min_error_index);
+    }
+    if (detcost_frequency[d] == 100) {
+      d2e_detcost[d] = std::vector<int>(d2e_detcost_cache[d].begin(), d2e_detcost_cache[d].end());
+      std::sort(d2e_detcost[d].begin(), d2e_detcost[d].end(), [this](size_t idx_a, size_t idx_b) {
+        return error_costs[idx_a].min_cost < error_costs[idx_b].min_cost;
+      });
+    }
+  }
+  */
 
   return min_cost + config.det_penalty;
 }
@@ -121,11 +142,15 @@ TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
 void TesseractDecoder::initialize_structures(size_t num_detectors) {
   d2e.resize(num_detectors);
   edets.resize(num_errors);
+  d2e_detcost.resize(num_detectors);
+  d2e_detcost_cache.resize(num_detectors);
+  detcost_frequency.resize(num_detectors);
 
   for (size_t ei = 0; ei < num_errors; ++ei) {
     edets[ei] = errors[ei].symptom.detectors;
     for (int d : edets[ei]) {
       d2e[d].push_back(ei);
+      d2e_detcost[d].push_back(ei);
     }
   }
 
@@ -135,7 +160,7 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
   }
 
   for (size_t d = 0; d < num_detectors; ++d) {
-    std::sort(d2e[d].begin(), d2e[d].end(), [this](size_t idx_a, size_t idx_b) {
+    std::sort(d2e_detcost[d].begin(), d2e_detcost[d].end(), [this](size_t idx_a, size_t idx_b) {
       return error_costs[idx_a].min_cost < error_costs[idx_b].min_cost;
     });
   }
@@ -199,6 +224,15 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections)
   }
   predicted_errors_buffer = best_errors;
   low_confidence_flag = best_cost == std::numeric_limits<double>::max();
+
+  /*
+  std::cout << "ENDE" << std::endl;
+  for (size_t d = 0; d < num_detectors; ++d) {
+    if (detcost_frequency[d] > 0) {
+      std::cout << "DETECTOR: " << d << ", cost frequency: " << detcost_frequency[d] << ", number of errors: " << d2e[d].size() << ", number of active errors: " << d2e_detcost_cache[d].size() << std::endl;
+    }
+  }
+  */
 }
 
 void TesseractDecoder::flip_detectors_and_block_errors(
@@ -236,7 +270,9 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
 
   std::priority_queue<Node, std::vector<Node>, std::greater<Node>> pq;
   std::unordered_map<size_t, std::unordered_set<std::vector<char>, VectorCharHash>>
-      discovered_detectors;
+      visited_detectors;
+
+  std::unordered_map<size_t, double> detectors_count_2_min_cost;
 
   std::vector<char> initial_detectors(num_detectors, false);
   std::vector<DetectorCostTuple> initial_detector_cost_tuples(num_errors);
@@ -273,6 +309,8 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
     const Node node = pq.top();
     pq.pop();
 
+    if (detectors_count_2_min_cost[node.num_detectors] == node.cost) detectors_count_2_min_cost.erase(node.num_detectors);
+
     if (node.num_detectors > max_num_detectors) continue;
 
     std::vector<char> detectors = initial_detectors;
@@ -302,7 +340,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
     }
 
     if (config.no_revisit_dets &&
-        !discovered_detectors[node.num_detectors].insert(detectors).second) {
+        !visited_detectors[node.num_detectors].insert(detectors).second) {
       continue;
     }
 
@@ -330,7 +368,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
       min_num_detectors = node.num_detectors;
       if (config.no_revisit_dets) {
         for (size_t i = min_num_detectors + detector_beam + 1; i <= max_num_detectors; ++i) {
-          discovered_detectors[i].clear();
+          visited_detectors[i].clear();
         }
       }
       max_num_detectors = std::min(max_num_detectors, min_num_detectors + detector_beam);
@@ -406,8 +444,8 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
 
       if (next_num_detectors > max_num_detectors) continue;
 
-      if (config.no_revisit_dets && discovered_detectors[next_num_detectors].find(next_detectors) !=
-                                        discovered_detectors[next_num_detectors].end()) {
+      if (config.no_revisit_dets && visited_detectors[next_num_detectors].find(next_detectors) !=
+                                        visited_detectors[next_num_detectors].end()) {
         continue;
       }
 
@@ -437,8 +475,11 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
 
       if (next_cost == INF) continue;
 
+      if (detectors_count_2_min_cost.count(next_num_detectors) && detectors_count_2_min_cost[next_num_detectors] <= next_cost) continue;
+
       pq.push({next_cost, next_num_detectors, next_errors});
       ++num_pq_pushed;
+      detectors_count_2_min_cost[next_num_detectors] = next_cost;
 
       if (num_pq_pushed > config.pqlimit) {
         low_confidence_flag = true;
