@@ -1,4 +1,4 @@
-# Visualization
+#Visualization
 
 This tool displays the detectors and errors from a Tesseract decoding run in 3D.
 
@@ -32,4 +32,3 @@ coordinates and animation frames for the viewer.
 Open `viz/index.html` in a modern browser. It will automatically try to load
 `logfile.json` from the same directory. If the file picker is used, any JSON
 produced by `to_json.py` can be visualized.
-

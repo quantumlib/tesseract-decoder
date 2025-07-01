@@ -390,7 +390,8 @@ int main(int argc, char* argv[]) {
   program.add_argument("--det-order-bfs")
       .action([&](auto const&) {
         std::cout << "BFS-based detector ordering is the default now; "
-                     "--det-order-bfs is ignored." << std::endl;
+                     "--det-order-bfs is ignored."
+                  << std::endl;
       })
       .default_value(true)
       .implicit_value(true)
