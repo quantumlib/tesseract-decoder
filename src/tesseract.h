@@ -101,7 +101,7 @@ struct TesseractDecoder {
   std::vector<std::vector<int>> d2e_detcost;
 
   void initialize_structures(size_t num_detectors);
-  double get_detcost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples);
+  double get_detcost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const;
   void flip_detectors_and_block_errors(size_t detector_order, const std::vector<size_t>& errors,
                                        std::vector<char>& detectors,
                                        std::vector<DetectorCostTuple>& detector_cost_tuples) const;
