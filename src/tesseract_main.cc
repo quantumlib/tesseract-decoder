@@ -144,10 +144,10 @@ struct Args {
 
     if (cache_and_trim_detcost && detcost_cache_threshold <= 0) {
       throw std::invalid_argument(
-        "If '--cache-and-trim-detcost' is enabled,"
-        "you must specify the cache threshold (in percentage)"
-        "after which other errors are trimmed."
-        "See '--detcost-cache-threshold' option.");
+          "If '--cache-and-trim-detcost' is enabled,"
+          "you must specify the cache threshold (in percentage)"
+          "after which other errors are trimmed."
+          "See '--detcost-cache-threshold' option.");
     }
   }
 
@@ -564,17 +564,20 @@ int main(int argc, char* argv[]) {
       .flag()
       .store_into(args.print_stats);
   program.add_argument("--cache-and-trim-detcost")
-        .help("Flag whether to cache errors from 'get_detcost' function for each detector"
-              "and trim other errors after the size of cached errors reach a specific threshold")
-        .flag()
-        .store_into(args.cache_and_trim_detcost);
+      .help(
+          "Flag whether to cache errors from 'get_detcost' function for each detector"
+          "and trim other errors after the size of cached errors reach a specific threshold")
+      .flag()
+      .store_into(args.cache_and_trim_detcost);
   program.add_argument("--detcost-cache-threshold")
-        .help("Threshold in percentage that specifies when the errors cached from 'get_detcost' function"
-              "reach that threshold size of all the errors, other errors are trimmed and"
-              "'get_detcost' function is further computed on the accumulated cache."
-              "Threshold is a positive integer number, indicating the percentage (0-100%).")
-        .default_value(size_t(0))
-        .store_into(args.detcost_cache_threshold);
+      .help(
+          "Threshold in percentage that specifies when the errors cached from 'get_detcost' "
+          "function"
+          "reach that threshold size of all the errors, other errors are trimmed and"
+          "'get_detcost' function is further computed on the accumulated cache."
+          "Threshold is a positive integer number, indicating the percentage (0-100%).")
+      .default_value(size_t(0))
+      .store_into(args.detcost_cache_threshold);
 
   try {
     program.parse_args(argc, argv);

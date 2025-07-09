@@ -66,8 +66,8 @@ bool Node::operator>(const Node& other) const {
   return cost > other.cost || (cost == other.cost && num_detectors < other.num_detectors);
 }
 
-double TesseractDecoder::get_detcost(
-    size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) {
+double TesseractDecoder::get_detcost(size_t d,
+                                     const std::vector<DetectorCostTuple>& detector_cost_tuples) {
   double min_cost = INF;
   double error_cost;
   ErrorCost ec;
@@ -101,7 +101,6 @@ double TesseractDecoder::get_detcost(
         return error_costs[idx_a].min_cost < error_costs[idx_b].min_cost;
       });
     }
-
   }
 
   return min_cost + config.det_penalty;
