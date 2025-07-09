@@ -17,7 +17,6 @@
 #include <algorithm>
 #include <cassert>
 #include <iostream>
-#include <random>
 
 namespace {
 
@@ -67,8 +66,8 @@ bool Node::operator>(const Node& other) const {
   return cost > other.cost || (cost == other.cost && num_detectors < other.num_detectors);
 }
 
-double TesseractDecoder::get_detcost(size_t d,
-                                     const std::vector<DetectorCostTuple>& detector_cost_tuples) {
+double TesseractDecoder::get_detcost(
+    size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const {
   double min_cost = INF;
   double error_cost;
   ErrorCost ec;
@@ -468,7 +467,11 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
         if (!next_detectors[d] && config.at_most_two_errors_per_detector) {
           for (size_t oei : d2e[d]) {
             next_detector_cost_tuples[oei].error_blocked =
-                next_detector_cost_tuples[oei].error_blocked == 1 ? 1 : 2;
+                next_detector_cost_tuples[oei].error_blocked == 1
+                    ? 1
+                    : 2;  // we store '2' value to indicate an error that was blocked due to the
+                          // '--at-most-two-error-per-detector' heuristic, in order to revert it in
+                          // the next decoding iteration
           }
         }
       }
