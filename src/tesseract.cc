@@ -67,7 +67,7 @@ bool Node::operator>(const Node& other) const {
 }
 
 double TesseractDecoder::get_detcost(
-    size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const {
+    size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) {
   double min_cost = INF;
   double error_cost;
   ErrorCost ec;
@@ -88,9 +88,8 @@ double TesseractDecoder::get_detcost(
     }
   }
 
-  if (false) {
-
-    int limit = static_cast<int>(d2e_detcost[d].size() / 2);
+  if (config.cache_and_trim_detcost) {
+    size_t limit = static_cast<int>(d2e_detcost[d].size() * config.detcost_cache_threshold / 100.0);
 
     if (d2e_detcost_cache[d].size() < limit) {
       if (min_error_index != -1) {
@@ -146,49 +145,12 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
   edets.resize(num_errors);
   d2e_detcost.resize(num_detectors);
   d2e_detcost_cache.resize(num_detectors);
-  detcost_frequency.resize(num_detectors);
 
   for (size_t ei = 0; ei < num_errors; ++ei) {
     edets[ei] = errors[ei].symptom.detectors;
     for (int d : edets[ei]) {
       d2e[d].push_back(ei);
       d2e_detcost[d].push_back(ei);
-    }
-  }
-
-  if (false) {
-    for (size_t d = 0; d < num_detectors; ++d) {
-      size_t sample_size = d2e_detcost[d].size() / 10;
-      if (sample_size == 0 && !d2e_detcost[d].empty()) {
-          sample_size = 1;
-      }
-
-
-      std::vector<int> sampledVector;
-
-      unsigned int seed_value = 123;
-      std::mt19937 g(seed_value);
-
-      std::sample(d2e_detcost[d].begin(), d2e_detcost[d].end(),
-                  std::back_inserter(sampledVector),
-                  sample_size, g);
-
-      d2e_detcost[d] = sampledVector;
-    }
-  }
-
-  if (false) {
-    for (size_t d = 0; d < num_detectors; ++d) {
-      size_t sample_size = d2e_detcost[d].size() / 10;
-      if (sample_size == 0 && !d2e_detcost[d].empty()) {
-          sample_size = 1;
-      }
-
-
-      size_t actual_elements_to_keep = std::min(sample_size, d2e_detcost[d].size());
-      // std::vector<int> trimmedVector(d2e_detcost[d].begin() + d2e_detcost[d].size() - actual_elements_to_keep, d2e_detcost[d].end());
-      std::vector<int> trimmedVector(d2e_detcost[d].begin(), d2e_detcost[d].begin() + actual_elements_to_keep);
-      d2e_detcost[d] = trimmedVector;
     }
   }
 
@@ -224,9 +186,7 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
 }
 
 void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
-  if (false) {
-    detcost_frequency.resize(0);
-    detcost_frequency.resize(num_detectors);
+  if (config.cache_and_trim_detcost) {
     for (size_t d = 0; d < num_detectors; ++d) {
       d2e_detcost_cache[d].clear();
     }

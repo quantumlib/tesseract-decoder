@@ -78,6 +78,10 @@ struct Args {
   bool verbose = false;
   bool print_stats = false;
 
+  bool cache_and_trim_detcost = false;
+
+  size_t detcost_cache_threshold = 0;
+
   bool has_observables() {
     return append_observables || !obs_in_fname.empty() || (sample_num_shots > 0);
   }
@@ -128,6 +132,22 @@ struct Args {
     }
     if (beam_climbing and det_beam == INF_DET_BEAM) {
       throw std::invalid_argument("Beam climbing requires a finite beam");
+    }
+
+    if (detcost_cache_threshold < 0) {
+      throw std::invalid_argument("Threshold for 'get_detcost' cache must be a positive number");
+    }
+
+    if (detcost_cache_threshold > 100) {
+      throw std::invalid_argument("Threshold for 'get_detcost' cache can't be greater than 100%");
+    }
+
+    if (cache_and_trim_detcost && detcost_cache_threshold <= 0) {
+      throw std::invalid_argument(
+        "If '--cache-and-trim-detcost' is enabled,"
+        "you must specify the cache threshold (in percentage)"
+        "after which other errors are trimmed."
+        "See '--detcost-cache-threshold' option.");
     }
   }
 
@@ -365,6 +385,9 @@ struct Args {
     config.at_most_two_errors_per_detector = at_most_two_errors_per_detector;
     config.pqlimit = pqlimit;
     config.verbose = verbose;
+
+    config.cache_and_trim_detcost = cache_and_trim_detcost;
+    config.detcost_cache_threshold = detcost_cache_threshold;
   }
 };
 
@@ -540,6 +563,18 @@ int main(int argc, char* argv[]) {
           "during decoding.")
       .flag()
       .store_into(args.print_stats);
+  program.add_argument("--cache-and-trim-detcost")
+        .help("Flag whether to cache errors from 'get_detcost' function for each detector"
+              "and trim other errors after the size of cached errors reach a specific threshold")
+        .flag()
+        .store_into(args.cache_and_trim_detcost);
+  program.add_argument("--detcost-cache-threshold")
+        .help("Threshold in percentage that specifies when the errors cached from 'get_detcost' function"
+              "reach that threshold size of all the errors, other errors are trimmed and"
+              "'get_detcost' function is further computed on the accumulated cache."
+              "Threshold is a positive integer number, indicating the percentage (0-100%).")
+        .default_value(size_t(0))
+        .store_into(args.detcost_cache_threshold);
 
   try {
     program.parse_args(argc, argv);
