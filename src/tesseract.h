@@ -140,7 +140,6 @@ struct TesseractDecoder {
 
   DetectorCostCalculator* detector_cost_calculator;
 
-
   void initialize_structures(size_t num_detectors);
   void flip_detectors_and_block_errors(size_t detector_order, const std::vector<size_t>& errors,
                                        std::vector<char>& detectors,
