@@ -11,7 +11,6 @@ defaults:
   run:
     shell: bash
 
-# Cancels a previous run if a new commit is made on the same pull request
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -25,16 +24,19 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install clang-format
+    - name: Install clang-format 20
       run: |
-        sudo apt-get update
-        sudo apt-get install -y clang-format
+        # Install clang-format 20 specifically on Ubuntu
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 20 # Installs clang-format-20 and other LLVM 20 tools
 
     - name: Run clang-format check
       run: |
-        clang-format --version
+        # Ensure we use clang-format-20 explicitly
+        clang-format-20 --version
         files=$(git ls-files '*.cc' '*.cpp' '*.h' '*.hpp')
-        [ -z "$files" ] || clang-format --dry-run --Werror $files
+        [ -z "$files" ] || clang-format-20 --dry-run --Werror $files # Use clang-format-20
 
   build:
     strategy:
@@ -54,22 +56,34 @@ jobs:
         disk-cache: ${{ github.workflow }}
         repository-cache: true
 
-    - name: Install clang-format (Linux)
+    - name: Install clang-format 20 (Linux)
       if: runner.os == 'Linux'
       run: |
-        sudo apt-get update
-        sudo apt-get install -y clang-format
+        # Install clang-format 20 specifically on Ubuntu
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 20 # Installs clang-format-20 and other LLVM 20 tools
+        clang-format-20 --version # Verify
 
     - name: Install clang-format (macOS)
       if: runner.os == 'macOS'
       run: |
-        brew install clang-format
+        brew update
+        brew install clang-format # Homebrew's clang-format is likely already 20.1.7 or newer
+        clang-format --version # Verify
 
     - name: Check formatting (redundant but allowed)
       run: |
-        clang-format --version
-        files=$(git ls-files '*.cc' '*.cpp' '*.h' '*.hpp')
-        [ -z "$files" ] || clang-format --dry-run --Werror $files
+        # Use the appropriate clang-format executable for each OS
+        if [[ "${{ runner.os }}" == "Linux" ]]; then
+          clang-format-20 --version
+          files=$(git ls-files '*.cc' '*.cpp' '*.h' '*.hpp')
+          [ -z "$files" ] || clang-format-20 --dry-run --Werror $files # Use clang-format-20
+        else # macOS
+          clang-format --version
+          files=$(git ls-files '*.cc' '*.cpp' '*.h' '*.hpp')
+          [ -z "$files" ] || clang-format --dry-run --Werror $files # Use clang-format (from brew)
+        fi
 
     - name: Bazel tests
-      run: bazel test src/...
+      run: bazel test src:all
