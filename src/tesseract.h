@@ -94,7 +94,8 @@ struct TesseractDecoder {
   std::vector<common::Error> errors;
 
   using DetCostFunction = double (TesseractDecoder::*)(long unsigned int,
-                                                       const std::vector<DetectorCostTuple>&);
+                                                       const std::vector<DetectorCostTuple>&,
+                                                       std::vector<std::unordered_set<int>>&);
 
  private:
   std::vector<std::vector<int>> d2e;
@@ -105,14 +106,16 @@ struct TesseractDecoder {
   std::vector<ErrorCost> error_costs;
 
   std::vector<std::vector<int>> d2e_detcost;
-  std::vector<std::unordered_set<int>> d2e_detcost_cache;
 
   DetCostFunction detCostFunc_;
+  std::vector<int> d2e_detcost_cache_limit;
 
   void initialize_structures(size_t num_detectors);
-  double get_detcost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples);
+  double get_detcost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples,
+                     std::vector<std::unordered_set<int>>& d2e_detcost_cache);
   double get_detcost_with_caching(size_t d,
-                                  const std::vector<DetectorCostTuple>& detector_cost_tuples);
+                                  const std::vector<DetectorCostTuple>& detector_cost_tuples,
+                                  std::vector<std::unordered_set<int>>& d2e_detcost_cache);
   void flip_detectors_and_block_errors(size_t detector_order, const std::vector<size_t>& errors,
                                        std::vector<char>& detectors,
                                        std::vector<DetectorCostTuple>& detector_cost_tuples) const;
