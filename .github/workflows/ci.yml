@@ -63,15 +63,7 @@ jobs:
     - name: Install clang-format (macOS)
       if: runner.os == 'macOS'
       run: |
-        brew update
-        brew install llvm@18
-        clang-format --version
-
-    - name: Check formatting (redundant but allowed)
-      run: |
-        clang-format --version
-        files=$(git ls-files '*.cc' '*.cpp' '*.h' '*.hpp')
-        [ -z "$files" ] || clang-format --dry-run --Werror $files
+        brew install clang-format
 
     - name: Bazel tests
       run: bazel test src/...
