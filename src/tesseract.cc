@@ -168,11 +168,11 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
   edets.resize(num_errors);
 
   if (config.cache_and_trim_detcost) {
-    detector_cost_calculator =
-        new CachingDetectorCostCalculator(num_detectors, num_errors, config.det_penalty);
+    detector_cost_calculator = std::make_unique<CachingDetectorCostCalculator>(
+        num_detectors, num_errors, config.det_penalty);
   } else {
-    detector_cost_calculator =
-        new StandardDetectorCostCalculator(num_detectors, num_errors, config.det_penalty);
+    detector_cost_calculator = std::make_unique<StandardDetectorCostCalculator>(
+        num_detectors, num_errors, config.det_penalty);
   }
 
   for (size_t ei = 0; ei < num_errors; ++ei) {
@@ -184,7 +184,9 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
   }
 
   if (config.cache_and_trim_detcost) {
-    CachingDetectorCostCalculator* temp = (CachingDetectorCostCalculator*)detector_cost_calculator;
+    CachingDetectorCostCalculator* temp =
+        dynamic_cast<CachingDetectorCostCalculator*>(detector_cost_calculator.get());
+
     for (size_t d = 0; d < num_detectors; ++d) {
       temp->d2e_detcost_cache_limit[d] = static_cast<int>(
           detector_cost_calculator->d2e_detcost[d].size() * config.detcost_cache_threshold / 100.0);

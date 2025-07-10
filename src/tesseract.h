@@ -67,7 +67,7 @@ struct ErrorCost {
 class DetectorCostCalculator {
  public:
   DetectorCostCalculator(size_t num_detectors, size_t num_errors, double det_penalty_)
-      : d2e_detcost(num_detectors), error_costs(num_errors), det_penalty(det_penalty_){};
+      : d2e_detcost(num_detectors), error_costs(num_errors), det_penalty(det_penalty_) {};
   virtual double compute_cost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples,
                               std::vector<std::unordered_set<int>>& d2e_detcost_cache) = 0;
 
@@ -79,7 +79,7 @@ class DetectorCostCalculator {
 class StandardDetectorCostCalculator : public DetectorCostCalculator {
  public:
   StandardDetectorCostCalculator(size_t num_detectors, size_t num_errors, double det_penalty_)
-      : DetectorCostCalculator(num_detectors, num_errors, det_penalty_){};
+      : DetectorCostCalculator(num_detectors, num_errors, det_penalty_) {};
 
   double compute_cost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples,
                       std::vector<std::unordered_set<int>>& d2e_detcost_cache);
@@ -89,7 +89,7 @@ class CachingDetectorCostCalculator : public DetectorCostCalculator {
  public:
   CachingDetectorCostCalculator(size_t num_detectors, size_t num_errors, double det_penalty_)
       : DetectorCostCalculator(num_detectors, num_errors, det_penalty_),
-        d2e_detcost_cache_limit(num_detectors){};
+        d2e_detcost_cache_limit(num_detectors) {};
 
   double compute_cost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples,
                       std::vector<std::unordered_set<int>>& d2e_detcost_cache);
@@ -127,10 +127,6 @@ struct TesseractDecoder {
   std::vector<size_t> predicted_errors_buffer;
   std::vector<common::Error> errors;
 
-  ~TesseractDecoder() {
-    delete detector_cost_calculator;
-  }
-
  private:
   std::vector<std::vector<int>> d2e;
   std::vector<std::vector<int>> eneighbors;
@@ -138,7 +134,7 @@ struct TesseractDecoder {
   size_t num_detectors;
   size_t num_errors;
 
-  DetectorCostCalculator* detector_cost_calculator;
+  std::unique_ptr<DetectorCostCalculator> detector_cost_calculator;
 
   void initialize_structures(size_t num_detectors);
   void flip_detectors_and_block_errors(size_t detector_order, const std::vector<size_t>& errors,
