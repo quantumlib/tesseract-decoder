@@ -67,7 +67,7 @@ struct ErrorCost {
 class DetectorCostCalculator {
  public:
   DetectorCostCalculator(size_t num_detectors, size_t num_errors, double det_penalty_)
-      : d2e_detcost(num_detectors), error_costs(num_errors), det_penalty(det_penalty_) {};
+      : d2e_detcost(num_detectors), error_costs(num_errors), det_penalty(det_penalty_){};
   virtual double compute_cost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples,
                               std::vector<std::unordered_set<int>>& d2e_detcost_cache) = 0;
 
@@ -81,7 +81,7 @@ class DetectorCostCalculator {
 class StandardDetectorCostCalculator : public DetectorCostCalculator {
  public:
   StandardDetectorCostCalculator(size_t num_detectors, size_t num_errors, double det_penalty_)
-      : DetectorCostCalculator(num_detectors, num_errors, det_penalty_) {};
+      : DetectorCostCalculator(num_detectors, num_errors, det_penalty_){};
 
   double compute_cost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples,
                       std::vector<std::unordered_set<int>>& d2e_detcost_cache);
@@ -91,7 +91,7 @@ class CachingDetectorCostCalculator : public DetectorCostCalculator {
  public:
   CachingDetectorCostCalculator(size_t num_detectors, size_t num_errors, double det_penalty_)
       : DetectorCostCalculator(num_detectors, num_errors, det_penalty_),
-        d2e_detcost_cache_limit(num_detectors) {};
+        d2e_detcost_cache_limit(num_detectors){};
 
   double compute_cost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples,
                       std::vector<std::unordered_set<int>>& d2e_detcost_cache);
