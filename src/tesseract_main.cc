@@ -144,10 +144,17 @@ struct Args {
 
     if (cache_and_trim_detcost && detcost_cache_threshold <= 0) {
       throw std::invalid_argument(
-          "If '--cache-and-trim-detcost' is enabled,"
-          "you must specify the cache threshold (in percentage)"
-          "after which other errors are trimmed."
+          "If '--cache-and-trim-detcost' is enabled, "
+          "you must specify the cache threshold (in percentage) "
+          "after which other errors are trimmed. "
           "See '--detcost-cache-threshold' option.");
+    }
+
+    if (detcost_cache_threshold > 0 && !cache_and_trim_detcost) {
+      throw std::invalid_argument(
+          "You must enable caching of 'get_detcost' function, "
+          "in order to use threshold for trimming errors. "
+          "See '--cache-and-trim-detcost' option.");
     }
   }
 
@@ -522,7 +529,7 @@ int main(int argc, char* argv[]) {
   program.add_argument("--threads")
       .help("Number of decoder threads to use")
       .metavar("N")
-      .default_value(size_t(std::thread::hardware_concurrency()))
+      .default_value(size_t(1))
       .store_into(args.num_threads);
   program.add_argument("--beam")
       .help("Beam to use for truncation (default = infinity)")

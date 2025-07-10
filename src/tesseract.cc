@@ -72,6 +72,29 @@ double TesseractDecoder::get_detcost(size_t d,
   double error_cost;
   ErrorCost ec;
   DetectorCostTuple dct;
+
+  for (size_t ei : d2e_detcost[d]) {
+    ec = error_costs[ei];
+    if (ec.min_cost >= min_cost) break;
+
+    dct = detector_cost_tuples[ei];
+    if (!dct.error_blocked) {
+      error_cost = ec.likelihood_cost / dct.detectors_count;
+      if (error_cost < min_cost) {
+        min_cost = error_cost;
+      }
+    }
+  }
+
+  return min_cost + config.det_penalty;
+}
+
+double TesseractDecoder::get_detcost_with_caching(
+    size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) {
+  double min_cost = INF;
+  double error_cost;
+  ErrorCost ec;
+  DetectorCostTuple dct;
   int min_error_index = -1;
 
   for (size_t ei : d2e_detcost[d]) {
@@ -88,19 +111,17 @@ double TesseractDecoder::get_detcost(size_t d,
     }
   }
 
-  if (config.cache_and_trim_detcost) {
-    size_t limit = static_cast<int>(d2e_detcost[d].size() * config.detcost_cache_threshold / 100.0);
+  size_t limit = static_cast<int>(d2e_detcost[d].size() * config.detcost_cache_threshold / 100.0);
 
-    if (d2e_detcost_cache[d].size() < limit) {
-      if (min_error_index != -1) {
-        d2e_detcost_cache[d].insert(min_error_index);
-      }
-    } else if (d2e_detcost_cache[d].size() == limit) {
-      d2e_detcost[d] = std::vector<int>(d2e_detcost_cache[d].begin(), d2e_detcost_cache[d].end());
-      std::sort(d2e_detcost[d].begin(), d2e_detcost[d].end(), [this](size_t idx_a, size_t idx_b) {
-        return error_costs[idx_a].min_cost < error_costs[idx_b].min_cost;
-      });
+  if (d2e_detcost_cache[d].size() < limit) {
+    if (min_error_index != -1) {
+      d2e_detcost_cache[d].insert(min_error_index);
     }
+  } else if (d2e_detcost_cache[d].size() == limit) {
+    d2e_detcost[d] = std::vector<int>(d2e_detcost_cache[d].begin(), d2e_detcost_cache[d].end());
+    std::sort(d2e_detcost[d].begin(), d2e_detcost[d].end(), [this](size_t idx_a, size_t idx_b) {
+      return error_costs[idx_a].min_cost < error_costs[idx_b].min_cost;
+    });
   }
 
   return min_cost + config.det_penalty;
@@ -137,6 +158,9 @@ TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
   num_detectors = config.dem.count_detectors();
   num_errors = config.dem.count_errors();
   initialize_structures(config.dem.count_detectors());
+
+  detCostFunc_ = config.cache_and_trim_detcost ? &TesseractDecoder::get_detcost_with_caching
+                                               : &TesseractDecoder::get_detcost;
 }
 
 void TesseractDecoder::initialize_structures(size_t num_detectors) {
@@ -186,9 +210,7 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
 
 void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
   if (config.cache_and_trim_detcost) {
-    for (size_t d = 0; d < num_detectors; ++d) {
-      d2e_detcost_cache[d].clear();
-    }
+    d2e_detcost_cache.assign(num_detectors, std::unordered_set<int>());
   }
 
   std::vector<size_t> best_errors;
@@ -280,7 +302,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
 
   double initial_cost = 0;
   for (size_t d : detections) {
-    initial_cost += get_detcost(d, initial_detector_cost_tuples);
+    initial_cost += (this->*detCostFunc_)(d, initial_detector_cost_tuples);
   }
 
   if (initial_cost == INF) {
@@ -444,21 +466,21 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
       for (int d : edets[ei]) {
         if (detectors[d]) {
           if (detector_cost_cache[d] == -1) {
-            detector_cost_cache[d] = get_detcost(d, detector_cost_tuples);
+            detector_cost_cache[d] = (this->*detCostFunc_)(d, detector_cost_tuples);
           }
           next_cost -= detector_cost_cache[d];
         } else {
-          next_cost += get_detcost(d, next_detector_cost_tuples);
+          next_cost += (this->*detCostFunc_)(d, next_detector_cost_tuples);
         }
       }
 
-      for (size_t od : eneighbors[ei]) {
-        if (!detectors[od] || !next_detectors[od]) continue;
-        if (detector_cost_cache[od] == -1) {
-          detector_cost_cache[od] = get_detcost(od, detector_cost_tuples);
+      for (size_t d : eneighbors[ei]) {
+        if (!detectors[d] || !next_detectors[d]) continue;
+        if (detector_cost_cache[d] == -1) {
+          detector_cost_cache[d] = (this->*detCostFunc_)(d, detector_cost_tuples);
         }
-        next_cost -= detector_cost_cache[od];
-        next_cost += get_detcost(od, next_detector_cost_tuples);
+        next_cost -= detector_cost_cache[d];
+        next_cost += (this->*detCostFunc_)(d, next_detector_cost_tuples);
       }
 
       if (next_cost == INF) continue;
