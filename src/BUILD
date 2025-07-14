@@ -77,7 +77,6 @@ pybind_library(
         ":libutils",
         ":libsimplex",
         ":libtesseract",
-        "@stim_py//:stim_pybind_lib",
     ],
 )
 
@@ -88,7 +87,6 @@ pybind_extension(
     ],
     deps = [
         ":tesseract_decoder_pybind",
-        "@stim_py//:stim",
     ],
 )
 

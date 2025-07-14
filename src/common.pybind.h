@@ -22,8 +22,6 @@
 #include <vector>
 
 #include "common.h"
-#include "src/stim/dem/dem_instruction.pybind.h"
-#include "stim/dem/detector_error_model_target.pybind.h"
 
 namespace py = pybind11;
 
@@ -37,12 +35,12 @@ void add_common_module(py::module &root) {
       .def_readwrite("observables", &common::Symptom::observables)
       .def("__str__", &common::Symptom::str)
       .def(py::self == py::self)
-      .def(py::self != py::self)
-      .def("as_dem_instruction_targets", [](common::Symptom s) {
-        std::vector<stim_pybind::ExposedDemTarget> ret;
-        for (auto &t : s.as_dem_instruction_targets()) ret.emplace_back(t);
-        return ret;
-      });
+      .def(py::self != py::self);
+     //  .def("as_dem_instruction_targets", [](common::Symptom s) {
+     //    std::vector<stim_pybind::ExposedDemTarget> ret;
+     //    for (auto &t : s.as_dem_instruction_targets()) ret.emplace_back(t);
+     //    return ret;
+     //  });
 
   py::class_<common::Error>(m, "Error")
       .def_readwrite("likelihood_cost", &common::Error::likelihood_cost)
@@ -56,11 +54,11 @@ void add_common_module(py::module &root) {
       .def(py::init<double, double, std::vector<int> &, common::ObservablesMask,
                     std::vector<bool> &>(),
            py::arg("likelihood_cost"), py::arg("probability"), py::arg("detectors"),
-           py::arg("observables"), py::arg("dets_array"))
-      .def(py::init([](stim_pybind::ExposedDemInstruction edi) {
-             return new common::Error(edi.as_dem_instruction());
-           }),
-           py::arg("error"));
+           py::arg("observables"), py::arg("dets_array"));
+     //  .def(py::init([](stim_pybind::ExposedDemInstruction edi) {
+     //         return new common::Error(edi.as_dem_instruction());
+     //       }),
+     //       py::arg("error"));
 
   m.def("merge_identical_errors", &common::merge_identical_errors, py::arg("dem"));
   m.def("remove_zero_probability_errors", &common::remove_zero_probability_errors, py::arg("dem"));
