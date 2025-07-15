@@ -63,7 +63,6 @@ cc_library(
     ],
 )
 
-
 pybind_library(
     name = "tesseract_decoder_pybind",
     srcs = [
