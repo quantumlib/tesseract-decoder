@@ -39,8 +39,6 @@ jobs:
         include:
           - os: ubuntu-24.04
             arch: x86_64
-          - os: macos-14
-            arch: auto
           - os: macos-13
             arch: auto
 

@@ -17,7 +17,7 @@ py_wheel(
         "stim",
     ],
     platform= select({
-        "@platforms//os:macos": "macosx_11_0_arm64",
+        "@platforms//os:macos": "macosx_10_13_x86_64",
         "@platforms//os:windows": "win32",
         "@platforms//os:linux": "manylinux_2_17_x86_64.manylinux2014_x86_64",
     }),
