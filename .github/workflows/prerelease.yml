@@ -68,7 +68,7 @@ jobs:
 
     - name: Build package
       run: |
-        bazel build --define TARGET_VERSION=\"${TARGET_PYTHON}\" --define VERSION="$(cat version/version.txt)"  :tesseract_decoder_wheel
+        bazel build --define TARGET_VERSION="${TARGET_PYTHON}" --define VERSION="$(cat version/version.txt)"  :tesseract_decoder_wheel
 
     - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
       with:
