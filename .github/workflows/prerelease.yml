@@ -74,7 +74,7 @@ jobs:
 
     - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
       with:
-        name: python-wheels-${{ matrix.os }}-{{ matrix.python-version }}
+        name: python-wheels-${{ matrix.os }}-${{ matrix.python-version }}
         path: ./bazel-bin/*.whl
 
   release-wheels:
