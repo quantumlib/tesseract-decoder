@@ -34,16 +34,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs: [create_version]
     strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            arch: x86_64
-          - os: macos-13
-            arch: auto
-    strategy:
       fail-fast: true
       matrix:
+        os: [ubuntu-24.04, macos-13]
         python-version: ['3.10', '3.11', '3.12']
 
 
