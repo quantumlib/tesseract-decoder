@@ -6,11 +6,19 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+
+filegroup(
+    name="package_data",
+    srcs=["LICENSE"],
+    visibility = ["//visibility:public"],
+)
+
 py_wheel(
     name="tesseract_decoder_wheel",
     distribution = "tesseract_decoder",
     deps=[
         "//src:tesseract_decoder",
+        ":package_data",
     ],
     version = "$(VERSION)",
     requires=[

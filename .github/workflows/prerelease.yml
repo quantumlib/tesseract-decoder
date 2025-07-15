@@ -83,6 +83,11 @@ jobs:
         merge-multiple: true
         path: wheelhouse/
 
+    - name: Check token
+      run: echo "received $MY_KEY"
+      env:
+        MY_KEY: ${{ secrets.TEST_PYPI_TOKEN }}
+
     - name: Publish package to testpypi
       uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
       with:
