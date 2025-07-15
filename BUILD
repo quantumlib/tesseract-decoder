@@ -29,6 +29,7 @@ py_wheel(
         "@platforms//os:windows": "win32",
         "@platforms//os:linux": "manylinux_2_17_x86_64.manylinux2014_x86_64",
     }),
+    strip_path_prefixes = ["src"],
     description_file=":package_description",
     description_content_type="text/markdown",
     summary="A search-based decoder for quantum error correction (QEC).",
