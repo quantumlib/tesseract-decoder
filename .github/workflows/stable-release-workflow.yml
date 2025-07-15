@@ -57,7 +57,8 @@ jobs:
       env:
         TARGET_PYTHON: ${{ matrix.python-version }}
       run: |
-        sed -i "s/DEFAULT_PYTHON_VERSION =.*/DEFAULT_PYTHON_VERSION = \"${TARGET_PYTHON}\"/g" MODULE.bazel
+        echo "set version to ${TARGET_PYTHON}"
+        python _update_bazel_py_version.py $TARGET_PYTHON 
 
     - name: Build package
       run: |
