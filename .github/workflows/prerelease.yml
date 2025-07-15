@@ -5,6 +5,10 @@ on:
     branches:
     - main
 
+  pull_request:
+    branches:
+      - main
+
 permissions:
   contents: read
 
@@ -35,6 +39,8 @@ jobs:
         include:
           - os: ubuntu-24.04
             arch: x86_64
+          - os: macos-14
+            arch: auto
           - os: macos-13
             arch: auto
 
@@ -86,11 +92,10 @@ jobs:
         user: __token__
         password: ${{ secrets.TEST_PYPI_TOKEN }}
         packages_dir: wheelhouse/
-        verbose: true
 
-    - name: Publish package to pypi
-      uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
-      with:
-        user: __token__
-        password: ${{ secrets.PYPI_TOKEN }}
-        packages_dir: wheelhouse/
+    # - name: Publish package to pypi
+    #   uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
+    #   with:
+    #     user: __token__
+    #     password: ${{ secrets.PYPI_TOKEN }}
+    #     packages_dir: wheelhouse/

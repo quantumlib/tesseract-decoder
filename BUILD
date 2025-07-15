@@ -6,26 +6,18 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
-
-filegroup(
-    name="package_data",
-    srcs=["LICENSE"],
-    visibility = ["//visibility:public"],
-)
-
 py_wheel(
     name="tesseract_decoder_wheel",
     distribution = "tesseract_decoder",
     deps=[
         "//src:tesseract_decoder",
-        ":package_data",
     ],
     version = "$(VERSION)",
     requires=[
         "stim",
     ],
     platform= select({
-        "@platforms//os:macos": "macosx_10_13_x86_64",
+        "@platforms//os:macos": "macosx_11_0_arm64",
         "@platforms//os:windows": "win32",
         "@platforms//os:linux": "manylinux_2_17_x86_64.manylinux2014_x86_64",
     }),
