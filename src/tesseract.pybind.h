@@ -19,22 +19,35 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include "stim_utils.pybind.h"
 #include "tesseract.h"
 
 namespace py = pybind11;
 
+namespace {
+TesseractConfig tesseract_config_maker(
+    py::object dem, int det_beam = INF_DET_BEAM, bool beam_climbing = false,
+    bool no_revisit_dets = false, bool at_most_two_errors_per_detector = false,
+    bool verbose = false, size_t pqlimit = std::numeric_limits<size_t>::max(),
+    std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
+    double det_penalty = 0.0) {
+  stim::DetectorErrorModel input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
+  return TesseractConfig({input_dem, det_beam, beam_climbing, no_revisit_dets,
+                          at_most_two_errors_per_detector, verbose, pqlimit, det_orders,
+                          det_penalty});
+}
+};  // namespace
 void add_tesseract_module(py::module &root) {
   auto m = root.def_submodule("tesseract", "Module containing the tesseract algorithm");
 
   m.attr("INF_DET_BEAM") = INF_DET_BEAM;
   py::class_<TesseractConfig>(m, "TesseractConfig")
-      .def(py::init<stim::DetectorErrorModel, int, bool, bool, bool, bool, size_t,
-                    std::vector<std::vector<size_t>>, double>(),
-           py::arg("dem"), py::arg("det_beam") = INF_DET_BEAM, py::arg("beam_climbing") = false,
-           py::arg("no_revisit_dets") = false, py::arg("at_most_two_errors_per_detector") = false,
-           py::arg("verbose") = false, py::arg("pqlimit") = std::numeric_limits<size_t>::max(),
+      .def(py::init(&tesseract_config_maker), py::arg("dem"), py::arg("det_beam") = INF_DET_BEAM,
+           py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = false,
+           py::arg("at_most_two_errors_per_detector") = false, py::arg("verbose") = false,
+           py::arg("pqlimit") = std::numeric_limits<size_t>::max(),
            py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0)
-      .def_readwrite("dem", &TesseractConfig::dem)
+      .def_property("dem", &dem_getter<TesseractConfig>, &dem_setter<TesseractConfig>)
       .def_readwrite("det_beam", &TesseractConfig::det_beam)
       .def_readwrite("no_revisit_dets", &TesseractConfig::no_revisit_dets)
       .def_readwrite("at_most_two_errors_per_detector",

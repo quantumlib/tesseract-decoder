@@ -32,6 +32,10 @@ def test_create_config():
         str(tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL))
         == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=65535, no_revisit_dets=0, at_most_two_errors_per_detector=0, verbose=0, pqlimit=18446744073709551615, det_orders=[], det_penalty=0)"
     )
+    assert (
+        tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL).dem
+        == _DETECTOR_ERROR_MODEL
+    )
 
 
 def test_create_node():
