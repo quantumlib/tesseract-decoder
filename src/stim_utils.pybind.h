@@ -23,7 +23,7 @@ T parse_py_object(py::object py_obj) {
   return T(obj_str);
 }
 
-stim::DemInstructionType parase_dit(std::string dit_str) {
+stim::DemInstructionType parse_dit(std::string dit_str) {
   if (dit_str == "error") return stim::DemInstructionType::DEM_ERROR;
   if (dit_str == "detector") return stim::DemInstructionType::DEM_DETECTOR;
   if (dit_str == "logical_observable") return stim::DemInstructionType::DEM_LOGICAL_OBSERVABLE;
@@ -46,7 +46,7 @@ stim::DemInstruction parse_py_dem_instruction(py::object py_obj, std::vector<dou
     targets.push_back(parse_py_dem_target(t.cast<py::object>()));
 
   stim::SpanRef targets_ref(targets);
-  auto ty = parase_dit(py::cast<std::string>(py_obj.attr("type")));
+  auto ty = parse_dit(py::cast<std::string>(py_obj.attr("type")));
   std::string tag = py::cast<std::string>(py_obj.attr("tag"));
 
   auto di = stim::DemInstruction();
