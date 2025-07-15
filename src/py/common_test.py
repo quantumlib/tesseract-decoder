@@ -34,7 +34,6 @@ def test_as_dem_instruction_targets():
 
 def test_error_from_dem_instruction():
     di = stim.DemInstruction("error", [0.125], [stim.target_logical_observable_id(3)])
-    print(str(di))
     error = tesseract_decoder.common.Error(di)
 
     assert str(error) == "Error{cost=1.945910, symptom=Symptom{}}"

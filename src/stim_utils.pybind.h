@@ -54,7 +54,6 @@ stim::DemInstruction parse_py_dem_instruction(py::object py_obj, std::vector<dou
   di.target_data = targets_ref;
   di.tag = tag;
   di.type = ty;
-  std::cout << "here " << (di.str()) << std::endl;
   return di;
 }
 
