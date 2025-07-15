@@ -24,6 +24,8 @@ py_wheel(
     requires=[
         "stim",
     ],
+    abi="$(TARGET_VERSION)",
+    python_tag="$(TARGET_VERSION)",
     platform= select({
         "@platforms//os:macos": "macosx_10_13_x86_64",
         "@platforms//os:windows": "win32",
