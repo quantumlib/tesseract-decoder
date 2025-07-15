@@ -29,20 +29,17 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs: [create_version]
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
-        include:
-          - os: ubuntu-24.04
-            arch: x86_64
-          - os: macos-13
-            arch: auto
+        os: [ubuntu-24.04, macos-13]
+        python-version: ['3.10', '3.11', '3.12']
 
     steps:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
     - name: Set up Python
       uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5
       with:
-        python-version: '3.10'
+        python-version: ${{ matrix.python-version }}
 
     - uses: actions/download-artifact@master
       with:
@@ -56,13 +53,22 @@ jobs:
         disk-cache: ${{ github.workflow }}
         repository-cache: true
 
-    - name: Build package
+    - name: Set Python Version
+      env:
+        TARGET_PYTHON: ${{ matrix.python-version }}
       run: |
-        bazel build --define VERSION="$(cat version/version.txt)"  :tesseract_decoder_wheel
+        echo "set version to ${TARGET_PYTHON}"
+        python _update_bazel_py_version.py $TARGET_PYTHON 
+
+    - name: Build package
+      env:
+        TARGET_PYTHON: ${{ matrix.python-version }}
+      run: |
+        bazel build --define TARGET_VERSION="$(python -c "print(\"py${TARGET_PYTHON}\".replace(\".\", \"\"))")" --define VERSION="$(cat version/version.txt)"  :tesseract_decoder_wheel
 
     - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
       with:
-        name: python-wheels-${{ matrix.os }}
+        name: python-wheels-${{ matrix.os }}-${{ matrix.python-version }}
         path: ./bazel-bin/*.whl
 
   release-wheels:
@@ -77,7 +83,6 @@ jobs:
         pattern: python-wheels-*
         merge-multiple: true
         path: wheelhouse/
-
 
     - name: Publish package to testpypi
       uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
