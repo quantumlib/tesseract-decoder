@@ -41,9 +41,7 @@ jobs:
             arch: x86_64
           - os: macos-13
             arch: auto
-      matrix:
-        include:
-          python-version: [3.10, 3.11, 3.12]
+          - python-version: [3.10, 3.11, 3.12]
 
     steps:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -68,6 +66,7 @@ jobs:
       env:
         TARGET_PYTHON: ${{ matrix.python-version }}
       run: |
+        echo "set version to ${TARGET_PYTHON}"
         sed -i "s/DEFAULT_PYTHON_VERSION =.*/DEFAULT_PYTHON_VERSION = \"${TARGET_PYTHON}\"/g" MODULE.bazel
 
     - name: Build package
