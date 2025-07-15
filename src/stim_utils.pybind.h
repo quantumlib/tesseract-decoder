@@ -57,11 +57,6 @@ stim::DemInstruction parse_py_dem_instruction(py::object py_obj, std::vector<dou
   return di;
 }
 
-py::object create_py_dem_instruction(stim::DemInstruction di) {
-  auto stim_lib = py::module::import("stim");
-  return stim_lib.attr("DemInstruction")(di.type, di.arg_data, di.target_data);
-}
-
 template <typename T>
 py::object dem_getter(const T& config) {
   return make_py_object(config.dem, "DetectorErrorModel");
