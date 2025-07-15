@@ -16,6 +16,7 @@ py_wheel(
     requires=[
         "stim",
     ],
+    strip_path_prefixes = ["src"],
     platform= select({
         "@platforms//os:macos": "macosx_11_0_arm64",
         "@platforms//os:windows": "win32",
