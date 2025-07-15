@@ -67,6 +67,7 @@ cc_library(
 pybind_library(
     name = "tesseract_decoder_pybind",
     srcs = [
+        "stim_utils.pybind.h",
         "common.pybind.h",
         "utils.pybind.h",
         "simplex.pybind.h",
@@ -211,4 +212,3 @@ cc_binary(
         "@nlohmann_json//:json",
     ],
 )
-
