@@ -61,6 +61,8 @@ jobs:
         python _update_bazel_py_version.py $TARGET_PYTHON 
 
     - name: Build package
+      env:
+        TARGET_PYTHON: ${{ matrix.python-version }}
       run: |
         bazel build --define TARGET_VERSION="$(python -c "print(\"py${TARGET_PYTHON}\".replace(\".\", \"\"))")" --define VERSION="$(cat version/version.txt)"  :tesseract_decoder_wheel
 
