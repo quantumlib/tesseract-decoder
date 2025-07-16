@@ -118,7 +118,7 @@ cc_library(
 cc_library(
     name = "libtesseract",
     srcs = ["tesseract.cc"],
-    hdrs = ["tesseract.h"],
+    hdrs = ["tesseract.h", "tree.h"],
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
     deps = [

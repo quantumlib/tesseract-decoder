@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "tesseract.h"
+#include "tree.h"
 
 #include <algorithm>
 #include <cassert>
@@ -68,20 +69,37 @@ bool Node::operator>(const Node& other) const {
 
 double TesseractDecoder::get_detcost(
     size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const {
+  return decision_tree_predict(d, detector_cost_tuples, d2e);
+
   double min_cost = INF;
   ErrorCost ec;
   DetectorCostTuple dct;
-
+  if (config.verbose) {
+      std::cout <<"Detcost("<<d<<"):error_blocked=";
+      for (size_t ei : d2e[d]) {
+        dct = detector_cost_tuples[ei];
+        std::cout<<dct.error_blocked;
+      }
+      std::cout <<";detectors_count=";
+      for (size_t ei : d2e[d]) {
+        dct = detector_cost_tuples[ei];
+        std::cout<<dct.detectors_count<<",";
+      }
+      std::cout <<";";
+  }
   for (size_t ei : d2e[d]) {
     ec = error_costs[ei];
     dct = detector_cost_tuples[ei];
+
     if (ec.min_cost >= min_cost) break;
     if (!dct.error_blocked) {
       double error_cost = ec.likelihood_cost / dct.detectors_count;
       min_cost = std::min(min_cost, error_cost);
     }
   }
-
+  if (config.verbose) {
+    std::cout<<"result="<<min_cost<<std::endl;
+  }
   return min_cost + config.det_penalty;
 }
 
