@@ -69,7 +69,7 @@ bool Node::operator>(const Node& other) const {
 
 double TesseractDecoder::get_detcost(
     size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const {
-  return decision_tree_predict(d, detector_cost_tuples, d2e);
+  return decision_tree_predict(d, detector_cost_tuples);
 
   double min_cost = INF;
   ErrorCost ec;
@@ -175,6 +175,25 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
       }
     }
     eneighbors[ei] = std::vector<int>(neighbor_set.begin(), neighbor_set.end());
+  }
+  if (config.verbose) {
+    for (size_t d=0; d<d2e.size(); ++d) {
+      std::cout<<"d2e["<<d<<"]=";
+      for (size_t ei : d2e[d]) {
+        std::cout<<ei<<",";
+      }
+      std::cout<<std::endl;
+      std::cout <<"ecosts["<<d<<"]=";
+      for (size_t ei : d2e[d]) {
+        std::cout<<errors[ei].likelihood_cost<<",";
+      }
+      std::cout<<std::endl;
+      std::cout <<"error_min_costs["<<d<<"]=";
+      for (size_t ei : d2e[d]) {
+        std::cout<<error_costs[ei].min_cost<<",";
+      }
+      std::cout<<std::endl;
+    }
   }
 }
 

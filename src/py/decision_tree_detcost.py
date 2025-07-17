@@ -2,7 +2,6 @@
 
 import argparse
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 import time
 from sklearn.tree import DecisionTreeRegressor, plot_tree, _tree
@@ -58,20 +57,36 @@ def visualize_tree(model, feature_dim, filename):
     plt.savefig(filename, dpi=300)
     print(f"Decision tree plot saved to '{filename}'")
 
-
-def tree_to_cpp_switch(trees_by_d: dict) -> str:
+def parse_d2e_file(filepath: str) -> dict:
+    d2e = {}
+    with open(filepath) as f:
+        for line in f:
+            line = line.strip()
+            if not line or not line.startswith("d2e["):
+                continue
+            try:
+                left, right = line.split("=")
+                d = int(left[len("d2e["):-1])
+                indices = [int(x.strip()) for x in right.split(",") if x.strip()]
+                d2e[d] = indices
+            except Exception as e:
+                print(f"Skipping d2e line due to parse error: {e}\n{line}")
+    return d2e
+def tree_to_cpp_switch(trees_by_d: dict, d2e: dict) -> str:
     def emit_tree(tree, d):
         tree_ = tree.tree_
+        d2e_list = d2e.get(d, [])
 
         def recurse(node, depth):
             indent = "    " * depth
             if tree_.feature[node] == _tree.TREE_UNDEFINED:
                 return f"{indent}return {tree_.value[node][0][0]:.10f};\n"
             i = tree_.feature[node]
+            ei = d2e_list[i] if i < len(d2e_list) else 0  # fallback for safety
             threshold = tree_.threshold[node]
             feature_expr = (
-                f"(1 - int(detector_cost_tuples[d2e[d][{i}]].error_blocked)) * "
-                f"detector_cost_tuples[d2e[d][{i}]].detectors_count"
+                f"(1 - int(detector_cost_tuples[{ei}].error_blocked)) * "
+                f"detector_cost_tuples[{ei}].detectors_count"
             )
             left = recurse(tree_.children_left[node], depth + 1)
             right = recurse(tree_.children_right[node], depth + 1)
@@ -92,7 +107,7 @@ def tree_to_cpp_switch(trees_by_d: dict) -> str:
         "#define TREE_H\n\n"
         "#include <vector>\n"
         "#include \"tesseract.h\"\n\n"
-        "double decision_tree_predict(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples, const std::vector<std::vector<int>>& d2e) {\n"
+        "double decision_tree_predict(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) {\n"
         "  switch (d) {\n"
         f"{all_switch_cases}"
         "    default:\n"
@@ -103,13 +118,20 @@ def tree_to_cpp_switch(trees_by_d: dict) -> str:
     )
 
 
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("logfile", help="Path to logfile.txt")
     parser.add_argument("--max-depth", type=int, default=5)
     parser.add_argument("--max-leaf-nodes", type=int, default=None)
+    parser.add_argument("--d2e-file", type=str, default=None, help="Path to d2e array file")
     parser.add_argument("--cpp-impl-out", type=str, default=None, help="Write C++ function to file")
     args = parser.parse_args()
+
+    d2e = {}
+    assert args.d2e_file
+    d2e = parse_d2e_file(args.d2e_file)
+    print(f"Parsed d2e mapping for {len(d2e)} detectors")
 
     from collections import defaultdict
     detectors = defaultdict(list)  # d → list of (X_row, y)
@@ -164,10 +186,11 @@ def main():
 
 
     if args.cpp_impl_out:
-        cpp_code = tree_to_cpp_switch(trees_by_d)
+        cpp_code = tree_to_cpp_switch(trees_by_d, d2e)
         with open(args.cpp_impl_out, "w") as f:
             f.write(cpp_code)
         print(f"C++ implementation written to {args.cpp_impl_out}")
+
 
 
 if __name__ == "__main__":
