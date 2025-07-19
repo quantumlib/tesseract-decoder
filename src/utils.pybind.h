@@ -28,9 +28,27 @@ void add_utils_module(py::module &root) {
 
   m.attr("EPSILON") = EPSILON;
   m.attr("INF") = INF;
-  m.def("get_detector_coords", &get_detector_coords, py::arg("dem"));
-  m.def("build_detector_graph", &build_detector_graph, py::arg("dem"));
-  m.def("get_errors_from_dem", &get_errors_from_dem, py::arg("dem"));
+  m.def(
+      "get_detector_coords",
+      [](py::object dem) {
+        auto input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
+        return get_detector_coords(input_dem);
+      },
+      py::arg("dem"));
+  m.def(
+      "build_detector_graph",
+      [](py::object dem) {
+        auto input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
+        return build_detector_graph(input_dem);
+      },
+      py::arg("dem"));
+  m.def(
+      "get_errors_from_dem",
+      [](py::object dem) {
+        auto input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
+        return get_errors_from_dem(input_dem);
+      },
+      py::arg("dem"));
 
   // Not exposing sampling_from_dem and sample_shots because they depend on
   // stim::SparseShot which stim doesn't expose to python.
