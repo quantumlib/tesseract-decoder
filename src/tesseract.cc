@@ -74,7 +74,7 @@ double TesseractDecoder::get_detcost(
   DetectorCostTuple dct;
   // int min_error_index = -1;
 
-  for (size_t ei : d2e_detcost[d]) {
+  for (size_t ei : d2e[d]) {
     ec = error_costs[ei];
     if (ec.min_cost >= min_cost) break;
 
@@ -127,13 +127,11 @@ TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
 void TesseractDecoder::initialize_structures(size_t num_detectors) {
   d2e.resize(num_detectors);
   edets.resize(num_errors);
-  d2e_detcost.resize(num_detectors);
 
   for (size_t ei = 0; ei < num_errors; ++ei) {
     edets[ei] = errors[ei].symptom.detectors;
     for (int d : edets[ei]) {
       d2e[d].push_back(ei);
-      d2e_detcost[d].push_back(ei);
     }
   }
 
@@ -143,7 +141,7 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
   }
 
   for (size_t d = 0; d < num_detectors; ++d) {
-    std::sort(d2e_detcost[d].begin(), d2e_detcost[d].end(), [this](size_t idx_a, size_t idx_b) {
+    std::sort(d2e[d].begin(), d2e[d].end(), [this](size_t idx_a, size_t idx_b) {
       return error_costs[idx_a].min_cost < error_costs[idx_b].min_cost;
     });
   }
