@@ -29,7 +29,7 @@ OPT_COPTS = select({
         "-fno-fast-math",
         "-march=native",
     ],
-    ":debug": ["-Og"],
+    ":debug": ["-O3", "-g", "-ffast-math"],
 }) + select({
         "//conditions:default": ["-std=c++20"],
 }) + select({
@@ -121,6 +121,7 @@ cc_library(
     linkopts = OPT_LINKOPTS,
     deps = [
         ":libutils",
+        "@boost//:dynamic_bitset", # <--- ADD THIS LINE if used here
     ],
 )
 
