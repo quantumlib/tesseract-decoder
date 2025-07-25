@@ -31,7 +31,7 @@ def parse_d2e_and_ecosts_file(filepath):
 
     return result
 
-def emit_cpp_switch(d2e_and_costs):
+def emit_cpp_switch(d2e_and_costs, ignore_blocked):
     lines = []
     lines.append("#ifndef TREE_H")
     lines.append("#define TREE_H\n")
@@ -44,17 +44,15 @@ def emit_cpp_switch(d2e_and_costs):
     for d, triples in sorted(d2e_and_costs.items()):
         lines.append(f"    case {d}: {{")
         lines.append("      double min_cost = std::numeric_limits<double>::infinity();")
-        count = 0
         for ei, ecost, next_min in triples:
-            lines.append(f"      if (!detector_cost_tuples[{ei}].error_blocked) {{")
+            if ignore_blocked:
+              lines.append("{")
+            else:
+              lines.append(f"      if (!detector_cost_tuples[{ei}].error_blocked) {{")
             lines.append(f"        double cost = {ecost:.10f} / detector_cost_tuples[{ei}].detectors_count;")
             lines.append("        if (cost < min_cost) min_cost = cost;")
             lines.append("      }")
-            if count > 10 and count % 20 == 0:
-              lines.append(f"      if (min_cost <= {next_min:.10f}) return min_cost;")
-            if count > 10:
-              break
-            count += 1
+            lines.append(f"      if (min_cost <= {next_min:.10f}) return min_cost;")
         lines.append("      return min_cost;")
         lines.append("    }")
 
@@ -69,10 +67,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--d2e-file", required=True, help="Path to file containing d2e[...] and ecosts[...] and error_min_costs[...]")
     parser.add_argument("--cpp-impl-out", required=True, help="Output .cpp file path")
+    parser.add_argument("--ignore-blocked", action='store_true', default=False)
     args = parser.parse_args()
 
     d2e_data = parse_d2e_and_ecosts_file(args.d2e_file)
-    cpp_code = emit_cpp_switch(d2e_data)
+    cpp_code = emit_cpp_switch(d2e_data, args.ignore_blocked)
 
     with open(args.cpp_impl_out, "w") as f:
         f.write(cpp_code)
