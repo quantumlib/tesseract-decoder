@@ -85,7 +85,6 @@ double TesseractDecoder::get_detcost(
   double error_cost;
   ErrorCost ec;
   DetectorCostTuple dct;
-  // int min_error_index = -1;
 
   for (size_t ei : d2e[d]) {
     ec = error_costs[ei];
@@ -96,7 +95,6 @@ double TesseractDecoder::get_detcost(
       error_cost = ec.likelihood_cost / dct.detectors_count;
       if (error_cost < min_cost) {
         min_cost = error_cost;
-        // min_error_index = ei;
       }
     }
   }
