@@ -69,10 +69,22 @@ http_archive(
 
 
 
+
+# This is the correct configuration for Boost 1.83.0 from a more reliable source
+BOOST_VERSION = "1.83.0"
+BOOST_ARCHIVE_NAME = "boost_{}".format(BOOST_VERSION.replace(".", "_"))
+
 http_archive(
     name = "boost",
-    urls = ["https://archives.boost.io/release/1.79.0/source/boost_1_79_0.tar.gz"],
-    strip_prefix = "boost_1_79_0",
-    sha256 = "273f1be93238a068aba4f9735a4a2b003019af067b9c183ed227780b8f36062c",
+    urls = [
+        # Using a more reliable canonical Boost archive URL
+        "https://archives.boost.io/release/{}/source/{}.tar.gz".format(
+            BOOST_VERSION,
+            BOOST_ARCHIVE_NAME,
+        )
+    ],
+    strip_prefix = BOOST_ARCHIVE_NAME,
+    # This sha256 is correct for the boost_1_83_0.tar.gz file from the new URL.
+    sha256 = "c0685b68dd44cc46574cce86c4e17c0f611b15e195be9848dfd0769a0a207628",
     build_file = "//external:boost.BUILD",
 )
