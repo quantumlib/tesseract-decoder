@@ -43,12 +43,14 @@ We tested the Tesseract decoder for:
     suitable for large-scale simulations.
 *   **Efficient Beam Search:** implements a [beam search](https://en.wikipedia.org/wiki/Beam_search)
     algorithm to minimize decoding cost and enhance efficiency.
-*   **Sampling and Shot Range Processing:** supports sampling shots from circuits and processing
-    specific ranges of shots for flexible experiment setups.
+**Sampling and Shot Range Processing:** supports sampling shots from circuits. When a detection
+    error model is provided without an accompanying circuit, Tesseract requires detection events from
+    files using `--in`. The decoder can also process specific shot ranges for flexible experiment
+    setups.
 *   **Detailed Statistics:** provides comprehensive statistics output, including shot counts, error
     counts, and processing times.
 *   **Heuristics**: includes flexible heuristic options: `--beam`, `--det-penalty`,
-    `--beam-climbing`, `--no-revisit-dets`, `--at-most-two-errors-per-detector`, `--det-order-bfs` and `--pqlimit` to
+    `--beam-climbing`, `--no-revisit-dets`, `--at-most-two-errors-per-detector`, and `--pqlimit` to
     improve performance while maintaining a low logical error rate. To learn more about these
     options, use `./bazel-bin/src/tesseract --help`
 *   **Visualization tool:** open the [viz directory](viz/) in your browser to view decoding results. See [viz/README.md](viz/README.md) for instructions on generating the visualization JSON.
@@ -93,6 +95,10 @@ Basic Usage:
 ```bash
 ./tesseract --circuit CIRCUIT_FILE.stim --sample-num-shots N --print-stats
 ```
+
+To decode pre-generated detection events, provide the input file using
+`--in SHOTS_FILE --in-format FORMAT`.
+
 
 Example with Advanced Options:
 

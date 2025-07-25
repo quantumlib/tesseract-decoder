@@ -21,18 +21,29 @@
 
 #include "common.h"
 #include "simplex.h"
+#include "stim_utils.pybind.h"
 
 namespace py = pybind11;
+
+namespace {
+SimplexConfig simplex_config_maker(py::object dem, bool parallelize = false,
+                                   size_t window_length = 0, size_t window_slide_length = 0,
+                                   bool verbose = false) {
+  stim::DetectorErrorModel input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
+  return SimplexConfig({input_dem, parallelize, window_length, window_slide_length, verbose});
+}
+
+};  // namespace
 
 void add_simplex_module(py::module &root) {
   auto m =
       root.def_submodule("simplex", "Module containing the SimplexDecoder and related methods");
 
   py::class_<SimplexConfig>(m, "SimplexConfig")
-      .def(py::init<stim::DetectorErrorModel, bool, size_t, size_t, bool>(), py::arg("dem"),
-           py::arg("parallelize") = false, py::arg("window_length") = 0,
-           py::arg("window_slide_length") = 0, py::arg("verbose") = false)
-      .def_readwrite("dem", &SimplexConfig::dem)
+      .def(py::init(&simplex_config_maker), py::arg("dem"), py::arg("parallelize") = false,
+           py::arg("window_length") = 0, py::arg("window_slide_length") = 0,
+           py::arg("verbose") = false)
+      .def_property("dem", &dem_getter<SimplexConfig>, &dem_setter<SimplexConfig>)
       .def_readwrite("parallelize", &SimplexConfig::parallelize)
       .def_readwrite("window_length", &SimplexConfig::window_length)
       .def_readwrite("window_slide_length", &SimplexConfig::window_slide_length)

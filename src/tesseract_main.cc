@@ -33,7 +33,7 @@ struct Args {
   // Manifold orientation options
   uint64_t det_order_seed;
   size_t num_det_orders = 10;
-  bool det_order_bfs = false;
+  bool det_order_bfs = true;
 
   // Sampling options
   size_t sample_num_shots = 0;
@@ -231,12 +231,13 @@ struct Args {
         std::vector<double> inner_products(config.dem.count_detectors());
 
         if (!detector_coords.size() || !detector_coords.at(0).size()) {
-          // If there are no detector coordinates, just use the standard ordering
-          // of the indices.
+          // If there are no detector coordinates, just use the standard
+          // ordering of the indices.
           for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
-            config.det_orders.emplace_back();
-            std::iota(config.det_orders.back().begin(), config.det_orders.front().end(), 0);
+            config.det_orders[det_order].resize(config.dem.count_detectors());
+            std::iota(config.det_orders[det_order].begin(), config.det_orders[det_order].end(), 0);
           }
+
         } else {
           // Use the coordinates to order the detectors based on a random
           // orientation
@@ -381,10 +382,21 @@ int main(int argc, char* argv[]) {
       .metavar("N")
       .default_value(size_t(1))
       .store_into(args.num_det_orders);
-  program.add_argument("--det-order-bfs")
-      .help("Use BFS-based detector ordering instead of geometric orientation")
-      .flag()
+  program.add_argument("--no-det-order-bfs")
+      .help("Disable BFS-based detector ordering and use geometric orientation")
+      .default_value(true)
+      .implicit_value(false)
       .store_into(args.det_order_bfs);
+  program.add_argument("--det-order-bfs")
+      .action([&](auto const&) {
+        std::cout << "BFS-based detector ordering is the default now; "
+                     "--det-order-bfs is ignored."
+                  << std::endl;
+      })
+      .default_value(true)
+      .implicit_value(true)
+      .store_into(args.det_order_bfs)
+      .hidden();
   program.add_argument("--det-order-seed")
       .help(
           "Seed used when initializing the random detector traversal "

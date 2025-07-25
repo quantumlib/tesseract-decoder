@@ -32,26 +32,24 @@ def test_create_config():
         str(tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL))
         == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=65535, no_revisit_dets=0, at_most_two_errors_per_detector=0, verbose=0, pqlimit=18446744073709551615, det_orders=[], det_penalty=0)"
     )
+    assert (
+        tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL).dem
+        == _DETECTOR_ERROR_MODEL
+    )
 
 
 def test_create_node():
-    node = tesseract_decoder.tesseract.Node(dets=["a"])
-    assert node.dets == ["a"]
-
-
-def test_create_qnode():
-    qnode = tesseract_decoder.tesseract.QNode(num_dets=5, errs=[42])
-    assert qnode.num_dets == 5
-    assert str(qnode) == "QNode(cost=0, num_dets=5, errs=[42])"
+    node = tesseract_decoder.tesseract.Node(errors=[1, 0])
+    assert node.errors == [1, 0]
 
 
 def test_create_decoder():
     config = tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL)
     decoder = tesseract_decoder.tesseract.TesseractDecoder(config)
     decoder.decode_to_errors([0])
-    decoder.decode_to_errors([0], 0)
+    decoder.decode_to_errors(detections=[0], det_order=0, det_beam=0)
     assert decoder.mask_from_errors([1]) == 0
-    assert decoder.cost_from_errors([1]) == pytest.approx(1.609438)
+    assert decoder.cost_from_errors([1]) == pytest.approx(0.5108256237659907)
     assert decoder.decode([0]) == 0
 
 
