@@ -15,6 +15,8 @@
 #ifndef TESSERACT_DECODER_H
 #define TESSERACT_DECODER_H
 
+#include <boost/dynamic_bitset.hpp>
+#include <boost/functional/hash.hpp>  // For boost::hash
 #include <queue>
 #include <string>
 #include <unordered_map>
@@ -101,7 +103,7 @@ struct TesseractDecoder {
   void initialize_structures(size_t num_detectors);
   double get_detcost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const;
   void flip_detectors_and_block_errors(size_t detector_order, const std::vector<size_t>& errors,
-                                       std::vector<char>& detectors,
+                                       boost::dynamic_bitset<>& detectors,
                                        std::vector<DetectorCostTuple>& detector_cost_tuples) const;
 };
 
