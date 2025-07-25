@@ -72,7 +72,6 @@ double TesseractDecoder::get_detcost(
   double error_cost;
   ErrorCost ec;
   DetectorCostTuple dct;
-  // int min_error_index = -1;
 
   for (size_t ei : d2e[d]) {
     ec = error_costs[ei];
