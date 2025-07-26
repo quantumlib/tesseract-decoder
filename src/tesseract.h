@@ -16,7 +16,6 @@
 #define TESSERACT_DECODER_H
 
 #include <boost/dynamic_bitset.hpp>
-#include <boost/functional/hash.hpp>  // For boost::hash
 #include <queue>
 #include <string>
 #include <unordered_map>
