@@ -121,6 +121,7 @@ cc_library(
     linkopts = OPT_LINKOPTS,
     deps = [
         ":libutils",
+        "@boost//:dynamic_bitset",
     ],
 )
 
