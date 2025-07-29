@@ -42,7 +42,7 @@ py_wheel(
 config_setting(
     name = "macos_arm",
     constraint_values = [
-        "@platforms//os:osx",
+        "@platforms//os:macos",
         "@platforms//cpu:arm",
     ]
 )
@@ -50,7 +50,7 @@ config_setting(
 config_setting(
     name = "macos_x86",
     constraint_values = [
-        "@platforms//os:osx",
+        "@platforms//os:macos",
         "@platforms//cpu:x86_64",
     ]
 )
