@@ -26,6 +26,7 @@ py_wheel(
     ],
     python_tag="$(TARGET_VERSION)",
     platform= select({
+        "@platforms//os:osx": "macosx_11_0_arm64.whl",
         "@platforms//os:macos": "macosx_10_13_x86_64",
         "@platforms//os:windows": "win32",
         "@platforms//os:linux": "manylinux_2_17_x86_64.manylinux2014_x86_64",
