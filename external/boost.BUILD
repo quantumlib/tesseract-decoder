@@ -3,7 +3,7 @@ package(default_visibility = ["//visibility:public"])
 
 # A cc_library for the Boost headers themselves.
 cc_library(
-    name = "headers",
+    name = "boost_headers",
     hdrs = glob(["boost/**/*.hpp"]),
     includes = ["."],
 )
