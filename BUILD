@@ -51,6 +51,6 @@ config_setting(
     name = "macos_x86",
     constraint_values = [
         "@platforms//os:macos",
-        "@platforms//cpu:x86_32",
+        "@platforms//cpu:x86_64",
     ],
 )
