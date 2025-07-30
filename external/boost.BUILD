@@ -14,11 +14,3 @@ cc_library(
     name = "dynamic_bitset",
     deps = [":boost_headers"],
 )
-
-# You would add other Boost components here as needed, e.g.:
-# cc_library(
-#     name = "system",
-#     srcs = glob(["libs/system/src/*.cpp"]),
-#     hdrs = glob(["boost/system/**/*.hpp"]),
-#     includes = ["."],
-# )
