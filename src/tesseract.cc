@@ -498,12 +498,12 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
       for (int od : eneighbors[ei]) {
         if (!detectors[od] || !next_detectors[od]) continue;
         if (detector_cost_cache[od] == -1) {
-          detector_cost_cache[d] =
-              detector_cost_calculator->compute_cost(d, detector_cost_tuples, d2e_detcost_cache);
+          detector_cost_cache[od] =
+              detector_cost_calculator->compute_cost(od, detector_cost_tuples, d2e_detcost_cache);
         }
         next_cost -= detector_cost_cache[od];
         next_cost +=
-            detector_cost_calculator->compute_cost(d, next_detector_cost_tuples, d2e_detcost_cache);
+            detector_cost_calculator->compute_cost(od, next_detector_cost_tuples, d2e_detcost_cache);
       }
 
       if (next_cost == INF) continue;
