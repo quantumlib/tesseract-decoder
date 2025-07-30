@@ -502,8 +502,8 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
               detector_cost_calculator->compute_cost(od, detector_cost_tuples, d2e_detcost_cache);
         }
         next_cost -= detector_cost_cache[od];
-        next_cost +=
-            detector_cost_calculator->compute_cost(od, next_detector_cost_tuples, d2e_detcost_cache);
+        next_cost += detector_cost_calculator->compute_cost(od, next_detector_cost_tuples,
+                                                            d2e_detcost_cache);
       }
 
       if (next_cost == INF) continue;
