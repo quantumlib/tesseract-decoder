@@ -12,7 +12,7 @@ cc_library(
 # and depends on the main headers.
 cc_library(
     name = "dynamic_bitset",
-    deps = [":headers"],
+    deps = [":boost_headers"],
 )
 
 # You would add other Boost components here as needed, e.g.:
