@@ -15,7 +15,9 @@
 #include "tesseract.h"
 
 #include <algorithm>
+#include <boost/functional/hash.hpp>  // For boost::hash_range
 #include <cassert>
+#include <functional>  // For std::hash (though not strictly necessary here, but good practice)
 #include <iostream>
 
 namespace {
@@ -36,6 +38,17 @@ std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec) {
 }
 
 };  // namespace
+
+namespace std {
+template <>
+struct hash<boost::dynamic_bitset<>> {
+  size_t operator()(const boost::dynamic_bitset<>& bs) const {
+    // Delegate to Boost's internal hash_value for dynamic_bitset
+    // This is the correct and most efficient way.
+    return boost::hash_value(bs);
+  }
+};
+}  // namespace std
 
 std::string TesseractConfig::str() {
   auto& config = *this;
@@ -74,7 +87,7 @@ double StandardDetectorCostCalculator::compute_cost(
   ErrorCost ec;
   DetectorCostTuple dct;
 
-  for (size_t ei : d2e_detcost[d]) {
+  for (int ei : d2e_detcost[d]) {
     ec = error_costs[ei];
     if (ec.min_cost >= min_cost) break;
 
@@ -99,7 +112,7 @@ double CachingDetectorCostCalculator::compute_cost(
   DetectorCostTuple dct;
   int min_error_index = -1;
 
-  for (size_t ei : d2e_detcost[d]) {
+  for (int ei : d2e_detcost[d]) {
     ec = error_costs[ei];
     if (ec.min_cost >= min_cost) break;
 
@@ -129,17 +142,6 @@ double CachingDetectorCostCalculator::compute_cost(
 
   return min_cost + det_penalty;
 }
-
-struct VectorCharHash {
-  size_t operator()(const std::vector<char>& v) const {
-    size_t seed = v.size();
-
-    for (char el : v) {
-      seed = seed * 31 + static_cast<size_t>(el);
-    }
-    return seed;
-  }
-};
 
 TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
   config.dem = common::remove_zero_probability_errors(config.dem);
@@ -269,7 +271,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections)
 }
 
 void TesseractDecoder::flip_detectors_and_block_errors(
-    size_t detector_order, const std::vector<size_t>& errors, std::vector<char>& detectors,
+    size_t detector_order, const std::vector<size_t>& errors, boost::dynamic_bitset<>& detectors,
     std::vector<DetectorCostTuple>& detector_cost_tuples) const {
   for (size_t ei : errors) {
     size_t min_detector = std::numeric_limits<size_t>::max();
@@ -280,15 +282,15 @@ void TesseractDecoder::flip_detectors_and_block_errors(
       }
     }
 
-    for (size_t oei : d2e[min_detector]) {
+    for (int oei : d2e[min_detector]) {
       detector_cost_tuples[oei].error_blocked = 1;
       if (!config.at_most_two_errors_per_detector && oei == ei) break;
     }
 
-    for (size_t d : edets[ei]) {
+    for (int d : edets[ei]) {
       detectors[d] = !detectors[d];
       if (!detectors[d] && config.at_most_two_errors_per_detector) {
-        for (size_t oei : d2e[d]) {
+        for (int oei : d2e[d]) {
           detector_cost_tuples[oei].error_blocked = 1;
         }
       }
@@ -304,10 +306,9 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
   low_confidence_flag = false;
 
   std::priority_queue<Node, std::vector<Node>, std::greater<Node>> pq;
-  std::unordered_map<size_t, std::unordered_set<std::vector<char>, VectorCharHash>>
-      visited_detectors;
+  std::unordered_map<size_t, std::unordered_set<boost::dynamic_bitset<>>> visited_detectors;
 
-  std::vector<char> initial_detectors(num_detectors, false);
+  boost::dynamic_bitset<> initial_detectors(num_detectors, false);
   std::vector<DetectorCostTuple> initial_detector_cost_tuples(num_errors);
 
   for (size_t d : detections) {
@@ -332,7 +333,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
   size_t max_num_detectors = min_num_detectors + detector_beam;
 
   std::vector<size_t> next_errors;
-  std::vector<char> next_detectors;
+  boost::dynamic_bitset<> next_detectors;
   std::vector<DetectorCostTuple> next_detector_cost_tuples;
 
   pq.push({initial_cost, min_num_detectors, std::vector<size_t>()});
@@ -344,7 +345,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
 
     if (node.num_detectors > max_num_detectors) continue;
 
-    std::vector<char> detectors = initial_detectors;
+    boost::dynamic_bitset<> detectors = initial_detectors;
     std::vector<DetectorCostTuple> detector_cost_tuples(num_errors);
     flip_detectors_and_block_errors(detector_order, node.errors, detectors, detector_cost_tuples);
 
@@ -429,7 +430,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
     size_t prev_ei = std::numeric_limits<size_t>::max();
     std::vector<double> detector_cost_cache(num_detectors, -1);
 
-    for (size_t ei : d2e[min_detector]) {
+    for (int ei : d2e[min_detector]) {
       if (detector_cost_tuples[ei].error_blocked) continue;
 
       if (prev_ei != std::numeric_limits<size_t>::max()) {
@@ -464,7 +465,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
         }
 
         if (!next_detectors[d] && config.at_most_two_errors_per_detector) {
-          for (size_t oei : d2e[d]) {
+          for (int oei : d2e[d]) {
             next_detector_cost_tuples[oei].error_blocked =
                 next_detector_cost_tuples[oei].error_blocked == 1
                     ? 1
@@ -494,13 +495,13 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
         }
       }
 
-      for (size_t d : eneighbors[ei]) {
-        if (!detectors[d] || !next_detectors[d]) continue;
-        if (detector_cost_cache[d] == -1) {
+      for (int od : eneighbors[ei]) {
+        if (!detectors[od] || !next_detectors[od]) continue;
+        if (detector_cost_cache[od] == -1) {
           detector_cost_cache[d] =
               detector_cost_calculator->compute_cost(d, detector_cost_tuples, d2e_detcost_cache);
         }
-        next_cost -= detector_cost_cache[d];
+        next_cost -= detector_cost_cache[od];
         next_cost +=
             detector_cost_calculator->compute_cost(d, next_detector_cost_tuples, d2e_detcost_cache);
       }
