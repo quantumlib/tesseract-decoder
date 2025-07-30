@@ -51,8 +51,6 @@ config_setting(
     name = "macos_x86",
     constraint_values = [
         "@platforms//os:macos",
+        "@platforms//cpu:x86_32",
     ],
-    values = {
-        "cpu": "darwin",
-    },
 )
