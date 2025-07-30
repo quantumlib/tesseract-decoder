@@ -43,10 +43,8 @@ config_setting(
     name = "macos_arm",
     constraint_values = [
         "@platforms//os:macos",
+        "@platforms//cpu:arm64e",
     ],
-    values = {
-        "cpu": "arm",
-    }
 )
 
 config_setting(
