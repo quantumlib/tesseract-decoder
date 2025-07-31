@@ -30,21 +30,18 @@ jobs:
           path: version
 
   build_wheels:
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os_dist.os }}
     needs: [create_version]
     strategy:
       fail-fast: true
       matrix:
         python-version: ['3.10', '3.11', '3.12']
-        include:
-          - os: ubuntu-20.04
-            EXTRACT_GLIBC_VERSION: "yes"
-          - os: ubuntu-24.04
-            EXTRACT_GLIBC_VERSION: "yes"
-          - os: macos-13
-            EXTRACT_GLIBC_VERSION: "no"
-          - os: macos-14
-            EXTRACT_GLIBC_VERSION: "no"
+        os_dist: [
+          {os: ubuntu-20.04, EXTRACT_GLIBC_VERSION: "yes"},
+          {os: ubuntu-24.04, EXTRACT_GLIBC_VERSION: "yes"},
+          {os: macos-13, EXTRACT_GLIBC_VERSION: "no"},
+          {os: macos-14, EXTRACT_GLIBC_VERSION: "no"},
+        ]
     steps:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
     - name: Set up Python
@@ -74,16 +71,16 @@ jobs:
     - name: Build package
       env:
         TARGET_PYTHON: ${{ matrix.python-version }}
-        EXTRACT_GLIBC_VERSION: ${{ matrix.EXTRACT_GLIBC_VERSION }}
+        EXTRACT_GLIBC_VERSION: ${{ matrix.os_dist.EXTRACT_GLIBC_VERSION }}
       run: |
-        GLIBC_VERSION=''
-        if [[ "$EXTRACT_GLIBC_VERSION"=='x' ]]; then s=$(ldd --version | awk '/ldd/{print $NF}'); GLIBC_VERSION=${s//./_}" fi
+        export GLIBC_VERSION=''
+        if [[ "$EXTRACT_GLIBC_VERSION"=='x' ]]; then s=$(ldd --version | awk '/ldd/{print $NF}'); export GLIBC_VERSION="${s//./_}"; fi
         echo $GLIBC_VERSION
         bazel build --define GLIBC_VERSION="$GLIBC_VERSION" --define TARGET_VERSION="$(python -c "print(\"py${TARGET_PYTHON}\".replace(\".\", \"\"))")" --define VERSION="$(cat version/version.txt)"  :tesseract_decoder_wheel
 
     - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
       with:
-        name: python-wheels-${{ matrix.os }}-${{ matrix.python-version }}
+        name: python-wheels-${{ matrix.os_dist.os }}-${{ matrix.python-version }}
         path: ./bazel-bin/*.whl
 
   release-wheels:
