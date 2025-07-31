@@ -4,9 +4,6 @@ on:
   push:
     branches:
     - main
-  pull_request:
-    branches:
-      - main
 
 permissions:
   contents: read
@@ -67,7 +64,6 @@ jobs:
       env:
         TARGET_PYTHON: ${{ matrix.python-version }}
       run: |
-        ldd --version || true
         glibc_version=$(ldd --version | awk '/ldd/{print $NF}')
         export GLIBC_VERSION="${glibc_version//./_}"
         echo $GLIBC_VERSION
