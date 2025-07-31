@@ -34,8 +34,8 @@ jobs:
     needs: [create_version]
     strategy:
       fail-fast: true
-      matrix:  # ubuntu-22.04, 
-        os: [ubuntu-24.04, macos-13, macos-14]
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, macos-13, macos-14]
         python-version: ['3.10', '3.11', '3.12']
     steps:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -67,7 +67,7 @@ jobs:
       env:
         TARGET_PYTHON: ${{ matrix.python-version }}
       run: |
-        ldd --version
+        ldd --version || 0
         glibc_version=$(ldd --version | awk '/ldd/{print $NF}')
         export GLIBC_VERSION="${glibc_version//./_}"
         echo $GLIBC_VERSION
