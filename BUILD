@@ -13,6 +13,8 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+MANYLINUX_VERSION="manylinux_2_17_x86_64.manylinux2014_x86_64"
+
 py_wheel(
     name="tesseract_decoder_wheel",
     distribution = "tesseract_decoder",
@@ -29,7 +31,7 @@ py_wheel(
         ":macos_arm": "macosx_11_0_arm64",
         ":macos_x86": "macosx_10_13_x86_64",
         "@platforms//os:windows": "win32",
-        "@platforms//os:linux": "manylinux_$(GLIBC_VERSION)_x86_64.manylinux2014_x86_64",
+        "@platforms//os:linux": MANYLINUX_VERSION,
     }),
     strip_path_prefixes = ["src"],
     description_file=":package_description",
