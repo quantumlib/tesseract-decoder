@@ -67,7 +67,7 @@ jobs:
       env:
         TARGET_PYTHON: ${{ matrix.python-version }}
       run: |
-        ldd --version || 0
+        ldd --version || true
         glibc_version=$(ldd --version | awk '/ldd/{print $NF}')
         export GLIBC_VERSION="${glibc_version//./_}"
         echo $GLIBC_VERSION
