@@ -52,7 +52,7 @@ def test_create_decoder():
     assert decoder.cost_from_errors([1]) == pytest.approx(0.5108256237659907)
     assert decoder.decode([0]) == []
 
-def test_decoder_predicts_various_observable_flips():
+def test_tesseract_decoder_predicts_various_observable_flips():
     """
     Tests that the Tesseract decoder correctly predicts a logical observable
     flip when a specific detector is triggered by an error that explicitly
