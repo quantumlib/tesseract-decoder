@@ -15,6 +15,7 @@
 #ifndef SIMPLEX_HPP
 #define SIMPLEX_HPP
 #include <vector>
+#include <unordered_set>
 
 #include "common.h"
 #include "stim.h"
@@ -41,7 +42,7 @@ struct SimplexDecoder {
   size_t num_detectors = 0;
   size_t num_observables = 0;
   std::vector<size_t> predicted_errors_buffer;
-  std::vector<common::ObservablesMask> error_masks;
+  std::vector<std::vector<int>> error_masks;
   std::vector<std::vector<size_t>> start_time_to_errors;
   std::vector<std::vector<size_t>> end_time_to_errors;
 
@@ -62,14 +63,14 @@ struct SimplexDecoder {
   void decode_to_errors(const std::vector<uint64_t>& detections);
   // Returns the bitwise XOR of all the observables bitmasks of all errors in
   // the predicted errors buffer.
-  common::ObservablesMask mask_from_errors(const std::vector<size_t>& predicted_errors);
+  std::vector<int> mask_from_errors(const std::vector<size_t>& predicted_errors);
   // Returns the sum of the likelihood costs (minus-log-likelihood-ratios) of
   // all errors in the predicted errors buffer.
   double cost_from_errors(const std::vector<size_t>& predicted_errors);
-  common::ObservablesMask decode(const std::vector<uint64_t>& detections);
+  std::vector<int> decode(const std::vector<uint64_t>& detections);
 
   void decode_shots(std::vector<stim::SparseShot>& shots,
-                    std::vector<common::ObservablesMask>& obs_predicted);
+                    std::vector<std::vector<int>>& obs_predicted);
 
   ~SimplexDecoder();
 };
