@@ -23,7 +23,7 @@ TEST(common, ErrorsStructFromDemInstruction) {
   stim::DemInstruction instruction = dem.instructions.at(0);
   common::Error ES(instruction);
   EXPECT_EQ(ES.symptom.detectors, std::vector<int>{1});
-  EXPECT_EQ(ES.symptom.observables, 0b01);
+  EXPECT_EQ(ES.symptom.observables, std::vector<int>{0});
 }
 
 TEST(common, DemFromCountsRejectsZeroProbabilityErrors) {
