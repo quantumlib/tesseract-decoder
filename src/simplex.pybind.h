@@ -35,7 +35,7 @@ SimplexConfig simplex_config_maker(py::object dem, bool parallelize = false,
 
 };  // namespace
 
-void add_simplex_module(py::module &root) {
+void add_simplex_module(py::module& root) {
   auto m =
       root.def_submodule("simplex", "Module containing the SimplexDecoder and related methods");
 
@@ -64,24 +64,28 @@ void add_simplex_module(py::module &root) {
       .def_readonly("low_confidence_flag", &SimplexDecoder::low_confidence_flag)
       .def("init_ilp", &SimplexDecoder::init_ilp)
       .def("decode_to_errors", &SimplexDecoder::decode_to_errors, py::arg("detections"))
-        .def("mask_from_errors",
-             [](SimplexDecoder& self, const std::vector<size_t>& predicted_errors) {
-                 std::vector<bool> result(self.num_observables, false);
-                 const auto& indices = self.mask_from_errors(predicted_errors);
-                 for (int index : indices) {
-                     result[index] = true;
-                 }
-                 return result;
-             }, py::arg("predicted_errors"))
+      .def(
+          "mask_from_errors",
+          [](SimplexDecoder& self, const std::vector<size_t>& predicted_errors) {
+            std::vector<bool> result(self.num_observables, false);
+            const auto& indices = self.mask_from_errors(predicted_errors);
+            for (int index : indices) {
+              result[index] = true;
+            }
+            return result;
+          },
+          py::arg("predicted_errors"))
       .def("cost_from_errors", &SimplexDecoder::cost_from_errors, py::arg("predicted_errors"))
-        .def("decode",
-             [](SimplexDecoder& self, const std::vector<uint64_t>& detections) {
-                 std::vector<bool> result(self.num_observables, false);
-                 const auto& indices = self.decode(detections);
-                 for (int index : indices) {
-                     result[index] = true;
-                 }
-                 return result;
-             }, py::arg("detections"));
+      .def(
+          "decode",
+          [](SimplexDecoder& self, const std::vector<uint64_t>& detections) {
+            std::vector<bool> result(self.num_observables, false);
+            const auto& indices = self.decode(detections);
+            for (int index : indices) {
+              result[index] = true;
+            }
+            return result;
+          },
+          py::arg("detections"));
 }
 #endif

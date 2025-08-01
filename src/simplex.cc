@@ -326,30 +326,30 @@ double SimplexDecoder::cost_from_errors(const std::vector<size_t>& predicted_err
   return total_cost;
 }
 
-std::vector<int> SimplexDecoder::mask_from_errors(
-    const std::vector<size_t>& predicted_errors) {
-    std::unordered_set<int> flipped_observables_set;
+std::vector<int> SimplexDecoder::mask_from_errors(const std::vector<size_t>& predicted_errors) {
+  std::unordered_set<int> flipped_observables_set;
 
-    // Iterate over all predicted errors
-    for (size_t ei : predicted_errors) {
-        // Iterate over the observables associated with each error
-        for (int obs_index : errors[ei].symptom.observables) {
-            // Perform an XOR-like sum using a set.
-            // If the observable is already in the set, it means we've seen it an
-            // even number of times, so we remove it.
-            // If it's not, we add it, which means we've seen it an odd number of times.
-            if (flipped_observables_set.count(obs_index)) {
-                flipped_observables_set.erase(obs_index);
-            } else {
-                flipped_observables_set.insert(obs_index);
-            }
-        }
+  // Iterate over all predicted errors
+  for (size_t ei : predicted_errors) {
+    // Iterate over the observables associated with each error
+    for (int obs_index : errors[ei].symptom.observables) {
+      // Perform an XOR-like sum using a set.
+      // If the observable is already in the set, it means we've seen it an
+      // even number of times, so we remove it.
+      // If it's not, we add it, which means we've seen it an odd number of times.
+      if (flipped_observables_set.count(obs_index)) {
+        flipped_observables_set.erase(obs_index);
+      } else {
+        flipped_observables_set.insert(obs_index);
+      }
     }
+  }
 
-    // Convert the set to a vector and return it.
-    std::vector<int> flipped_observables(flipped_observables_set.begin(), flipped_observables_set.end());
-    std::sort(flipped_observables.begin(), flipped_observables.end());
-    return flipped_observables;
+  // Convert the set to a vector and return it.
+  std::vector<int> flipped_observables(flipped_observables_set.begin(),
+                                       flipped_observables_set.end());
+  std::sort(flipped_observables.begin(), flipped_observables.end());
+  return flipped_observables;
 }
 
 std::vector<int> SimplexDecoder::decode(const std::vector<uint64_t>& detections) {

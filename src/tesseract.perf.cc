@@ -34,11 +34,11 @@ void benchmark_decoder(Decoder& decoder, stim::Circuit& circuit, size_t num_shot
   size_t num_errors = 0;
   size_t num_decoded = 0;
   auto vector_to_u64_mask = [](const std::vector<int>& v) {
-      uint64_t mask = 0;
-      for (int i : v) {
-          mask ^= (1ULL << i);
-      }
-      return mask;
+    uint64_t mask = 0;
+    for (int i : v) {
+      mask ^= (1ULL << i);
+    }
+    return mask;
   };
 
   auto benchmark_func = [&]() {

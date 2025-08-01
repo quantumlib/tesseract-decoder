@@ -37,7 +37,7 @@ TesseractConfig tesseract_config_maker(
                           det_penalty});
 }
 };  // namespace
-void add_tesseract_module(py::module &root) {
+void add_tesseract_module(py::module& root) {
   auto m = root.def_submodule("tesseract", "Module containing the tesseract algorithm");
 
   m.attr("INF_DET_BEAM") = INF_DET_BEAM;
@@ -70,31 +70,35 @@ void add_tesseract_module(py::module &root) {
   py::class_<TesseractDecoder>(m, "TesseractDecoder")
       .def(py::init<TesseractConfig>(), py::arg("config"))
       .def("decode_to_errors",
-           py::overload_cast<const std::vector<uint64_t> &>(&TesseractDecoder::decode_to_errors),
+           py::overload_cast<const std::vector<uint64_t>&>(&TesseractDecoder::decode_to_errors),
            py::arg("detections"))
       .def("decode_to_errors",
-           py::overload_cast<const std::vector<uint64_t> &, size_t, size_t>(
+           py::overload_cast<const std::vector<uint64_t>&, size_t, size_t>(
                &TesseractDecoder::decode_to_errors),
            py::arg("detections"), py::arg("det_order"), py::arg("det_beam"))
-        .def("mask_from_errors",
-             [](TesseractDecoder& self, const std::vector<size_t>& predicted_errors) {
-                 std::vector<bool> result(self.num_observables, false);
-                 const auto& indices = self.mask_from_errors(predicted_errors);
-                 for (int index : indices) {
-                     result[index] = true;
-                 }
-                 return result;
-             }, py::arg("predicted_errors"))
+      .def(
+          "mask_from_errors",
+          [](TesseractDecoder& self, const std::vector<size_t>& predicted_errors) {
+            std::vector<bool> result(self.num_observables, false);
+            const auto& indices = self.mask_from_errors(predicted_errors);
+            for (int index : indices) {
+              result[index] = true;
+            }
+            return result;
+          },
+          py::arg("predicted_errors"))
       .def("cost_from_errors", &TesseractDecoder::cost_from_errors, py::arg("predicted_errors"))
-        .def("decode",
-             [](TesseractDecoder& self, const std::vector<uint64_t>& detections) {
-                 std::vector<bool> result(self.num_observables, false);
-                 const auto& indices = self.decode(detections);
-                 for (int index : indices) {
-                     result[index] = true;
-                 }
-                 return result;
-             }, py::arg("detections"))
+      .def(
+          "decode",
+          [](TesseractDecoder& self, const std::vector<uint64_t>& detections) {
+            std::vector<bool> result(self.num_observables, false);
+            const auto& indices = self.decode(detections);
+            for (int index : indices) {
+              result[index] = true;
+            }
+            return result;
+          },
+          py::arg("detections"))
       .def_readwrite("low_confidence_flag", &TesseractDecoder::low_confidence_flag)
       .def_readwrite("predicted_errors_buffer", &TesseractDecoder::predicted_errors_buffer)
       .def_readwrite("errors", &TesseractDecoder::errors);
