@@ -43,9 +43,9 @@ def test_create_simplex_decoder():
     )
     decoder.init_ilp()
     decoder.decode_to_errors([1])
-    assert decoder.mask_from_errors([1]) == 0
+    assert decoder.mask_from_errors([1]) == []
     assert decoder.cost_from_errors([2]) == pytest.approx(1.0986123)
-    assert decoder.decode([1]) == 0
+    assert decoder.decode([1]) == []
 
 
 if __name__ == "__main__":

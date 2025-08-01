@@ -48,9 +48,9 @@ def test_create_decoder():
     decoder = tesseract_decoder.tesseract.TesseractDecoder(config)
     decoder.decode_to_errors([0])
     decoder.decode_to_errors(detections=[0], det_order=0, det_beam=0)
-    assert decoder.mask_from_errors([1]) == 0
+    assert decoder.mask_from_errors([1]) == []
     assert decoder.cost_from_errors([1]) == pytest.approx(0.5108256237659907)
-    assert decoder.decode([0]) == 0
+    assert decoder.decode([0]) == []
 
 
 if __name__ == "__main__":
