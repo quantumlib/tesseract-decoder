@@ -52,6 +52,45 @@ def test_create_decoder():
     assert decoder.cost_from_errors([1]) == pytest.approx(0.5108256237659907)
     assert decoder.decode([0]) == []
 
+def test_decoder_predicts_various_observable_flips():
+    """
+    Tests that the Tesseract decoder correctly predicts a logical observable
+    flip when a specific detector is triggered by an error that explicitly
+    flips that logical observable.
+
+    This test iterates through various observable IDs to ensure the backend logic
+    correctly handles different positions.
+    """
+    # Iterate through observable IDs from 0 to 63 (inclusive)
+    for observable_id in range(64):
+        # Create a simple DetectorErrorModel where an error on D0 also flips L{observable_id}
+        dem_string = f'''
+            error(0.01) D0 L{observable_id}
+        '''
+        dem = stim.DetectorErrorModel(dem_string)
+
+        # Initialize TesseractConfig and TesseractDecoder with the generated DEM
+        config = tesseract_decoder.tesseract.TesseractConfig(dem)
+        decoder = tesseract_decoder.tesseract.TesseractDecoder(config)
+
+        # Simulate a detection event on D0.
+        # The decoder should identify the most likely error causing D0,
+        # which in this DEM is the error that also flips L{observable_id}.
+        # The decode method is expected to return an array where array[i] is True if observable i is flipped.
+        predicted_logical_flips_array = decoder.decode(detections=[0])
+
+        # Convert the boolean array/list to a list of flipped observable IDs
+        actual_flipped_observables = [
+            idx for idx, is_flipped in enumerate(predicted_logical_flips_array) if is_flipped
+        ]
+
+        # Assert that the list of actual flipped observables matches the single expected observable_id.
+        assert actual_flipped_observables == [observable_id], \
+            (f"For observable L{observable_id}: "
+             f"Expected predicted logical flips: [{observable_id}], "
+             f"but got: {actual_flipped_observables} (from raw: {predicted_logical_flips_array})")
+
+
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))
