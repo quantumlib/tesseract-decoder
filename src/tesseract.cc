@@ -485,7 +485,6 @@ std::vector<int> TesseractDecoder::mask_from_errors(const std::vector<size_t>& p
   // Convert the set to a vector and return it.
   std::vector<int> flipped_observables(flipped_observables_set.begin(),
                                        flipped_observables_set.end());
-  std::sort(flipped_observables.begin(), flipped_observables.end());
   return flipped_observables;
 }
 
