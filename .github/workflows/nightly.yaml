@@ -1,0 +1,42 @@
+# Run regular code scans and other checks every night.
+#
+# This workflow calls other workflows to do code scans on a schedule.
+# It can also be invoked manually via the "Run workflow" button at
+# https://github.com/quantumlib/REPO/actions/workflows/nightly.yaml
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+name: Nightly code scans
+run-name: Run nightly tests and code scans in ${{github.repository}}
+
+on:
+  schedule:
+    - cron: '15 2 * * *'
+
+  # Allow manual invocation.
+  workflow_dispatch:
+
+# Declare default permissions as read only.
+permissions: read-all
+
+jobs:
+  codeql:
+    name: Nightly CodeQL code scan
+    uses: ./.github/workflows/codeql.yaml
+    permissions: write-all
+    with:
+      reason: '(nightly)'
+
+  osv:
+    name: Nightly OSV code scan
+    uses: ./.github/workflows/osv-scanner.yaml
+    permissions: write-all
+    with:
+      reason: '(nightly)'
+
+  scorecard:
+    name: Nightly Scorecard analysis
+    uses: ./.github/workflows/scorecard.yaml
+    permissions: write-all
+    secrets: inherit
+    with:
+      reason: '(nightly)'
