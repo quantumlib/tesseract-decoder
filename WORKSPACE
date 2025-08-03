@@ -66,3 +66,22 @@ http_archive(
     urls = ["https://github.com/bazelbuild/platforms/archive/refs/tags/0.0.6.zip"],
     strip_prefix = "platforms-0.0.6",
 )
+
+
+
+
+BOOST_VERSION = "1.83.0"
+BOOST_ARCHIVE_NAME = "boost_{}".format(BOOST_VERSION.replace(".", "_"))
+
+http_archive(
+    name = "boost",
+    urls = [
+        "https://archives.boost.io/release/{}/source/{}.tar.gz".format(
+            BOOST_VERSION,
+            BOOST_ARCHIVE_NAME,
+        )
+    ],
+    strip_prefix = BOOST_ARCHIVE_NAME,
+    sha256 = "c0685b68dd44cc46574cce86c4e17c0f611b15e195be9848dfd0769a0a207628",
+    build_file = "//external:boost.BUILD",
+)

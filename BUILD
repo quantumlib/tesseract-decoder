@@ -13,6 +13,8 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+MANYLINUX_VERSION="manylinux_2_17_x86_64.manylinux2014_x86_64"
+
 py_wheel(
     name="tesseract_decoder_wheel",
     distribution = "tesseract_decoder",
@@ -26,9 +28,10 @@ py_wheel(
     ],
     python_tag="$(TARGET_VERSION)",
     platform= select({
-        "@platforms//os:macos": "macosx_10_13_x86_64",
+        ":macos_arm": "macosx_11_0_arm64",
+        ":macos_x86": "macosx_10_13_x86_64",
         "@platforms//os:windows": "win32",
-        "@platforms//os:linux": "manylinux_2_17_x86_64.manylinux2014_x86_64",
+        "@platforms//os:linux": MANYLINUX_VERSION,
     }),
     strip_path_prefixes = ["src"],
     description_file=":package_description",
@@ -36,4 +39,20 @@ py_wheel(
     summary="A search-based decoder for quantum error correction (QEC).",
     author="The Tesseract Decoder Authors.",
     homepage="https://github.com/quantumlib/tesseract-decoder",
+)
+
+config_setting(
+    name = "macos_arm",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:arm64",
+    ],
+)
+
+config_setting(
+    name = "macos_x86",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:x86_64",
+    ],
 )
