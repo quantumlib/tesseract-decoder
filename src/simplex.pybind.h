@@ -83,7 +83,7 @@ void add_simplex_module(py::module& root) {
             self.decode(detections);
             for (size_t ei : self.predicted_errors_buffer) {
               for (int obs_index : self.errors[ei].symptom.observables) {
-                  result[obs_index] = result[obs_index] ^ true;
+                result[obs_index] = result[obs_index] ^ true;
               }
             }
             return result;
