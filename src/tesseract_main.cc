@@ -592,7 +592,7 @@ int main(int argc, char* argv[]) {
             std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
             1e6;
         obs_predicted[shot] =
-            vector_to_u64_mask(decoder.mask_from_errors(decoder.predicted_errors_buffer));
+            vector_to_u64_mask(decoder.get_flipped_observables(decoder.predicted_errors_buffer));
         low_confidence[shot] = decoder.low_confidence_flag;
         cost_predicted[shot] = decoder.cost_from_errors(decoder.predicted_errors_buffer);
         if (!has_obs or shots[shot].obs_mask_as_u64() == obs_predicted[shot]) {

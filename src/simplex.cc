@@ -326,7 +326,8 @@ double SimplexDecoder::cost_from_errors(const std::vector<size_t>& predicted_err
   return total_cost;
 }
 
-std::vector<int> SimplexDecoder::mask_from_errors(const std::vector<size_t>& predicted_errors) {
+std::vector<int> SimplexDecoder::get_flipped_observables(
+    const std::vector<size_t>& predicted_errors) {
   std::unordered_set<int> flipped_observables_set;
 
   // Iterate over all predicted errors
@@ -348,12 +349,14 @@ std::vector<int> SimplexDecoder::mask_from_errors(const std::vector<size_t>& pre
   // Convert the set to a vector and return it.
   std::vector<int> flipped_observables(flipped_observables_set.begin(),
                                        flipped_observables_set.end());
+  // Sort observables
+  std::sort(flipped_observables.begin(), flipped_observables.end());
   return flipped_observables;
 }
 
 std::vector<int> SimplexDecoder::decode(const std::vector<uint64_t>& detections) {
   decode_to_errors(detections);
-  return mask_from_errors(predicted_errors_buffer);
+  return get_flipped_observables(predicted_errors_buffer);
 }
 
 void SimplexDecoder::decode_shots(std::vector<stim::SparseShot>& shots,

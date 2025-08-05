@@ -63,7 +63,7 @@ struct SimplexDecoder {
   void decode_to_errors(const std::vector<uint64_t>& detections);
   // Returns the bitwise XOR of all the observables bitmasks of all errors in
   // the predicted errors buffer.
-  std::vector<int> mask_from_errors(const std::vector<size_t>& predicted_errors);
+  std::vector<int> get_flipped_observables(const std::vector<size_t>& predicted_errors);
   // Returns the sum of the likelihood costs (minus-log-likelihood-ratios) of
   // all errors in the predicted errors buffer.
   double cost_from_errors(const std::vector<size_t>& predicted_errors);

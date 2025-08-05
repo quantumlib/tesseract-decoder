@@ -184,7 +184,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections)
       if (config.verbose) {
         std::cout << "for detector_order " << detector_order << " beam " << beam
                   << " got low confidence " << low_confidence_flag << " and cost " << local_cost
-                  << " and obs_mask " << mask_from_errors(predicted_errors_buffer)
+                  << " and obs_mask " << get_flipped_observables(predicted_errors_buffer)
                   << ". Best cost so far: " << best_cost << std::endl;
       }
     }
@@ -199,7 +199,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections)
       if (config.verbose) {
         std::cout << "for detector_order " << detector_order << " beam " << config.det_beam
                   << " got low confidence " << low_confidence_flag << " and cost " << local_cost
-                  << " and obs_mask " << mask_from_errors(predicted_errors_buffer)
+                  << " and obs_mask " << get_flipped_observables(predicted_errors_buffer)
                   << ". Best cost so far: " << best_cost << std::endl;
       }
     }
@@ -465,7 +465,8 @@ double TesseractDecoder::cost_from_errors(const std::vector<size_t>& predicted_e
   return total_cost;
 }
 
-std::vector<int> TesseractDecoder::mask_from_errors(const std::vector<size_t>& predicted_errors) {
+std::vector<int> TesseractDecoder::get_flipped_observables(
+    const std::vector<size_t>& predicted_errors) {
   std::unordered_set<int> flipped_observables_set;
 
   // Iterate over all errors and compute the mask.
@@ -485,12 +486,14 @@ std::vector<int> TesseractDecoder::mask_from_errors(const std::vector<size_t>& p
   // Convert the set to a vector and return it.
   std::vector<int> flipped_observables(flipped_observables_set.begin(),
                                        flipped_observables_set.end());
+  // Sort observables
+  std::sort(flipped_observables.begin(), flipped_observables.end());
   return flipped_observables;
 }
 
 std::vector<int> TesseractDecoder::decode(const std::vector<uint64_t>& detections) {
   decode_to_errors(detections);
-  return mask_from_errors(predicted_errors_buffer);
+  return get_flipped_observables(predicted_errors_buffer);
 }
 
 void TesseractDecoder::decode_shots(std::vector<stim::SparseShot>& shots,

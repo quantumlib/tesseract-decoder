@@ -77,10 +77,10 @@ void add_tesseract_module(py::module& root) {
                &TesseractDecoder::decode_to_errors),
            py::arg("detections"), py::arg("det_order"), py::arg("det_beam"))
       .def(
-          "mask_from_errors",
+          "get_observables_from_errors",
           [](TesseractDecoder& self, const std::vector<size_t>& predicted_errors) {
             std::vector<bool> result(self.num_observables, false);
-            const auto& indices = self.mask_from_errors(predicted_errors);
+            const auto& indices = self.get_flipped_observables(predicted_errors);
             for (int index : indices) {
               result[index] = true;
             }

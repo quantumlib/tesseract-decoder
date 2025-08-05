@@ -44,7 +44,8 @@ void benchmark_decoder(Decoder& decoder, stim::Circuit& circuit, size_t num_shot
   auto benchmark_func = [&]() {
     for (size_t shot = 0; shot < num_shots; ++shot) {
       decoder.decode_to_errors(shots[shot].hits);
-      uint64_t obs = vector_to_u64_mask(decoder.mask_from_errors(decoder.predicted_errors_buffer));
+      uint64_t obs =
+          vector_to_u64_mask(decoder.get_flipped_observables(decoder.predicted_errors_buffer));
       num_errors += (!decoder.low_confidence_flag and (obs != shots[shot].obs_mask_as_u64()));
       num_low_confidence += decoder.low_confidence_flag;
       total_num_errors_used += decoder.predicted_errors_buffer.size();
