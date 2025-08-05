@@ -21,6 +21,7 @@
 #include "common.h"
 #include "simplex.h"
 #include "stim.h"
+#include "utils.h"
 
 struct Args {
   std::string circuit_path;
@@ -419,7 +420,7 @@ int main(int argc, char* argv[]) {
   args.extract(config, shots, writer);
   std::atomic<size_t> next_unclaimed_shot;
   std::vector<std::atomic<bool>> finished(shots.size());
-  std::vector<common::ObservablesMask> obs_predicted(shots.size());
+  std::vector<uint64_t> obs_predicted(shots.size());
   std::vector<double> cost_predicted(shots.size());
   std::vector<double> decoding_time_seconds(shots.size());
   std::vector<std::thread> decoder_threads;
@@ -446,7 +447,8 @@ int main(int argc, char* argv[]) {
         decoding_time_seconds[shot] =
             std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
             1e6;
-        obs_predicted[shot] = decoder.mask_from_errors(decoder.predicted_errors_buffer);
+        obs_predicted[shot] =
+            vector_to_u64_mask(decoder.get_flipped_observables(decoder.predicted_errors_buffer));
         cost_predicted[shot] = decoder.cost_from_errors(decoder.predicted_errors_buffer);
         if (!has_obs or shots[shot].obs_mask_as_u64() == obs_predicted[shot]) {
           // Only count the error uses for shots that did not have a logical
