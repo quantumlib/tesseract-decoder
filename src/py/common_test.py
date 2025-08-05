@@ -17,9 +17,29 @@ import stim
 
 from src import tesseract_decoder
 
+def get_set_bits(n):
+    """
+    Converts an observable bitmask (integer) into a list of observable indices.
+
+    Args:
+        n (int): The integer representing the observable bitmask.
+
+    Returns:
+        list[int]: A list containing the indices of the set bits (observable IDs)
+    """
+    bits = []
+    i = 0
+
+    while n > 0:
+        if n & 1:
+            bits.append(i)
+        n >>= 1
+        i += 1
+    return bits
+
 
 def test_as_dem_instruction_targets():
-    s = tesseract_decoder.common.Symptom([1, 2], 4324)
+    s = tesseract_decoder.common.Symptom([1, 2], get_set_bits(4324))
     dits = s.as_dem_instruction_targets()
     assert dits == [
         stim.DemTarget("D1"),
