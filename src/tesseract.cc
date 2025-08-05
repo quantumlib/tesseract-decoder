@@ -148,22 +148,32 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
   }
 
   eneighbors.resize(num_errors);
-  std::vector<std::unordered_set<size_t>> edets_sets(edets.size());
-  for (size_t ei = 0; ei < edets.size(); ++ei) {
-    edets_sets[ei] = std::unordered_set<size_t>(edets[ei].begin(), edets[ei].end());
-  }
+
+  std::vector<boost::dynamic_bitset<>> edets_bitsets(num_errors,
+                                                     boost::dynamic_bitset<>(num_detectors));
   for (size_t ei = 0; ei < num_errors; ++ei) {
-    std::set<int> neighbor_set;
+    for (int d : edets[ei]) {
+      edets_bitsets[ei][d] = 1;
+    }
+  }
+
+  for (size_t ei = 0; ei < num_errors; ++ei) {
+    boost::dynamic_bitset<> neighbor_set(num_detectors, false);
     for (int d : edets[ei]) {
       for (int oei : d2e[d]) {
-        for (int od : edets[oei]) {
-          if (!edets_sets[ei].contains(od)) {
-            neighbor_set.insert(od);
-          }
-        }
+        if (oei == ei) continue;
+        // Unify detectors from neighboring errors
+        neighbor_set |= edets_bitsets[oei];
       }
     }
-    eneighbors[ei] = std::vector<int>(neighbor_set.begin(), neighbor_set.end());
+    // Remove detectors from error's own set
+    neighbor_set &= ~edets_bitsets[ei];
+
+    for (size_t d = 0; d < num_detectors; ++d) {
+      if (neighbor_set[d]) {
+        eneighbors[ei].push_back(d);
+      }
+    }
   }
 }
 
