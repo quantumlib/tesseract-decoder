@@ -92,9 +92,11 @@ void add_tesseract_module(py::module& root) {
           "decode",
           [](TesseractDecoder& self, const std::vector<uint64_t>& detections) {
             std::vector<bool> result(self.num_observables, false);
-            const auto& indices = self.decode(detections);
-            for (int index : indices) {
-              result[index] = true;
+            self.decode(detections);
+            for (size_t ei : self.predicted_errors_buffer) {
+              for (int obs_index : self.errors[ei].symptom.observables) {
+                  result[obs_index] = result[obs_index] ^ true;
+              }
             }
             return result;
           },
