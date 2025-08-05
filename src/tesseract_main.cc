@@ -24,14 +24,7 @@
 #include "common.h"
 #include "stim.h"
 #include "tesseract.h"
-
-uint64_t vector_to_u64_mask(const std::vector<int>& v) {
-  uint64_t mask = 0;
-  for (int i : v) {
-    mask ^= (1ULL << i);
-  }
-  return mask;
-}
+#include "utils.h"
 
 struct Args {
   std::string circuit_path;

@@ -46,4 +46,6 @@ std::vector<common::Error> get_errors_from_dem(const stim::DetectorErrorModel& d
 
 std::vector<std::string> get_files_recursive(const std::string& directory_path);
 
+uint64_t vector_to_u64_mask(const std::vector<int>& v);
+
 #endif  // __TESSERACT_UTILS_H__
