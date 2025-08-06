@@ -165,7 +165,7 @@ void SimplexDecoder::init_ilp() {
   // https://github.com/ERGO-Code/HiGHS/issues/1273
   highs->setOptionValue("presolve", "off");
   highs->setOptionValue("output_flag", config.log_stream.active);
-  highs->setOptionValue("log_to_console", false);
+  highs->setOptionValue("log_to_console", config.log_stream.active);
   if (config.log_stream.active) {
     highs->setLogCallback(highs_log_cb, &config.log_stream);
   }
