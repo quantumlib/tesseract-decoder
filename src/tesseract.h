@@ -16,6 +16,7 @@
 #define TESSERACT_DECODER_H
 
 #include <boost/dynamic_bitset.hpp>
+#include <functional>
 #include <queue>
 #include <string>
 #include <unordered_map>
@@ -34,10 +35,11 @@ struct TesseractConfig {
   bool beam_climbing = false;
   bool no_revisit_dets = false;
   bool at_most_two_errors_per_detector = false;
-  bool verbose;
   size_t pqlimit = std::numeric_limits<size_t>::max();
   std::vector<std::vector<size_t>> det_orders;
   double det_penalty = 0;
+  std::function<void(const std::string&)> verbose_callback;
+  CallbackStream log_stream;
 
   std::string str();
 };
