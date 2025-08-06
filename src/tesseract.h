@@ -16,6 +16,7 @@
 #define TESSERACT_DECODER_H
 
 #include <boost/dynamic_bitset.hpp>
+#include <functional>
 #include <queue>
 #include <string>
 #include <unordered_map>
@@ -34,10 +35,11 @@ struct TesseractConfig {
   bool beam_climbing = false;
   bool no_revisit_dets = false;
   bool at_most_two_errors_per_detector = false;
-  bool verbose;
   size_t pqlimit = std::numeric_limits<size_t>::max();
   std::vector<std::vector<size_t>> det_orders;
   double det_penalty = 0;
+  std::function<void(const std::string&)> verbose_callback;
+  CallbackStream log_stream;
 
   std::string str();
 };
@@ -77,19 +79,20 @@ struct TesseractDecoder {
 
   // Returns the bitwise XOR of all the observables bitmasks of all errors in
   // the predicted errors buffer.
-  common::ObservablesMask mask_from_errors(const std::vector<size_t>& predicted_errors);
+  std::vector<int> get_flipped_observables(const std::vector<size_t>& predicted_errors);
 
   // Returns the sum of the likelihood costs (minus-log-likelihood-ratios) of
   // all errors in the predicted errors buffer.
   double cost_from_errors(const std::vector<size_t>& predicted_errors);
 
-  common::ObservablesMask decode(const std::vector<uint64_t>& detections);
+  std::vector<int> decode(const std::vector<uint64_t>& detections);
   void decode_shots(std::vector<stim::SparseShot>& shots,
-                    std::vector<common::ObservablesMask>& obs_predicted);
+                    std::vector<std::vector<int>>& obs_predicted);
 
   bool low_confidence_flag = false;
   std::vector<size_t> predicted_errors_buffer;
   std::vector<common::Error> errors;
+  size_t num_observables;
 
  private:
   std::vector<std::vector<int>> d2e;

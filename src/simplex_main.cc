@@ -15,12 +15,14 @@
 #include <argparse/argparse.hpp>
 #include <atomic>
 #include <fstream>
+#include <iostream>
 #include <nlohmann/json.hpp>
 #include <thread>
 
 #include "common.h"
 #include "simplex.h"
 #include "stim.h"
+#include "utils.h"
 
 struct Args {
   std::string circuit_path;
@@ -133,6 +135,8 @@ struct Args {
 
   void extract(SimplexConfig& config, std::vector<stim::SparseShot>& shots,
                std::unique_ptr<stim::MeasureRecordWriter>& writer) {
+    config.verbose_callback = [](const std::string& s) { std::cout << s; };
+    config.log_stream = CallbackStream(verbose, config.verbose_callback);
     // Get a circuit, if available
     stim::Circuit circuit;
     if (!circuit_path.empty()) {
@@ -260,7 +264,8 @@ struct Args {
     config.parallelize = enable_ilp_solver_parallelism;
     config.window_length = window_length;
     config.window_slide_length = window_slide_length;
-    config.verbose = verbose;
+    config.log_stream.active = verbose;
+    config.log_stream.callback = config.verbose_callback;
   }
 };
 
@@ -419,7 +424,7 @@ int main(int argc, char* argv[]) {
   args.extract(config, shots, writer);
   std::atomic<size_t> next_unclaimed_shot;
   std::vector<std::atomic<bool>> finished(shots.size());
-  std::vector<common::ObservablesMask> obs_predicted(shots.size());
+  std::vector<uint64_t> obs_predicted(shots.size());
   std::vector<double> cost_predicted(shots.size());
   std::vector<double> decoding_time_seconds(shots.size());
   std::vector<std::thread> decoder_threads;
@@ -446,7 +451,8 @@ int main(int argc, char* argv[]) {
         decoding_time_seconds[shot] =
             std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
             1e6;
-        obs_predicted[shot] = decoder.mask_from_errors(decoder.predicted_errors_buffer);
+        obs_predicted[shot] =
+            vector_to_u64_mask(decoder.get_flipped_observables(decoder.predicted_errors_buffer));
         cost_predicted[shot] = decoder.cost_from_errors(decoder.predicted_errors_buffer);
         if (!has_obs or shots[shot].obs_mask_as_u64() == obs_predicted[shot]) {
           // Only count the error uses for shots that did not have a logical

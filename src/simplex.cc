@@ -15,11 +15,20 @@
 #include "simplex.h"
 
 #include <cassert>
+#include <iostream>
 
 #include "Highs.h"
 #include "io/HMPSIO.h"
 
 constexpr size_t T_COORD = 2;
+
+namespace {
+void highs_log_cb(HighsLogType, const char* msg, void* user_data) {
+  CallbackStream* stream = static_cast<CallbackStream*>(user_data);
+  (*stream) << msg;
+  stream->flush();
+}
+}  // namespace
 
 std::string SimplexConfig::str() {
   auto& self = *this;
@@ -27,12 +36,15 @@ std::string SimplexConfig::str() {
   ss << "SimplexConfig(";
   ss << "dem=" << "DetectorErrorModel_Object" << ", ";
   ss << "window_length=" << self.window_length << ", ";
-  ss << "window_slide_length=" << self.window_slide_length << ", ";
-  ss << "verbose=" << self.verbose << ")";
+  ss << "window_slide_length=" << self.window_slide_length << ")";
   return ss.str();
 }
 
 SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
+  if (!config.verbose_callback) {
+    config.verbose_callback = [](const std::string& s) { std::cout << s; };
+  }
+  config.log_stream.callback = config.verbose_callback;
   config.dem = common::remove_zero_probability_errors(config.dem);
   std::vector<double> detector_t_coords(config.dem.count_detectors());
   for (const stim::DemInstruction& instruction : config.dem.flattened().instructions) {
@@ -152,7 +164,11 @@ void SimplexDecoder::init_ilp() {
   // Disabled presolve entirely after encountering bugs similar to this one:
   // https://github.com/ERGO-Code/HiGHS/issues/1273
   highs->setOptionValue("presolve", "off");
-  highs->setOptionValue("output_flag", config.verbose);
+  highs->setOptionValue("output_flag", config.log_stream.active);
+  highs->setOptionValue("log_to_console", false);
+  if (config.log_stream.active) {
+    highs->setLogCallback(highs_log_cb, &config.log_stream);
+  }
 }
 
 void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
@@ -197,9 +213,7 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
         add_costs_for_time(t1);
         ++t1;
       }
-      if (config.verbose) {
-        std::cout << "t0 = " << t0 << " t1 = " << t1 << std::endl;
-      }
+      config.log_stream << "t0 = " << t0 << " t1 = " << t1 << std::endl;
 
       // Pass the model to HiGHS
       *return_status = highs->passModel(*model);
@@ -235,16 +249,20 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
       }
       assert(*return_status == HighsStatus::kOk);
 
-      if (config.verbose) {
-        // Get the solution information
+      if (config.log_stream.active) {
         const HighsInfo& info = highs->getInfo();
-        std::cout << "Simplex iteration count: " << info.simplex_iteration_count << std::endl;
-        std::cout << "Objective function value: " << info.objective_function_value << std::endl;
-        std::cout << "Primal  solution status: "
-                  << highs->solutionStatusToString(info.primal_solution_status) << std::endl;
-        std::cout << "Dual    solution status: "
-                  << highs->solutionStatusToString(info.dual_solution_status) << std::endl;
-        std::cout << "Basis: " << highs->basisValidityToString(info.basis_validity) << std::endl;
+        config.log_stream << "Simplex iteration count: " << info.simplex_iteration_count
+                          << std::endl;
+        config.log_stream << "Objective function value: " << info.objective_function_value
+                          << std::endl;
+        config.log_stream << "Primal  solution status: "
+                          << highs->solutionStatusToString(info.primal_solution_status)
+                          << std::endl;
+        config.log_stream << "Dual    solution status: "
+                          << highs->solutionStatusToString(info.dual_solution_status)
+                          << std::endl;
+        config.log_stream << "Basis: "
+                           << highs->basisValidityToString(info.basis_validity) << std::endl;
       }
 
       // Get the model status
@@ -286,16 +304,20 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
     *return_status = highs->run();
     assert(*return_status == HighsStatus::kOk);
 
-    if (config.verbose) {
-      // Get the solution information
+    if (config.log_stream.active) {
       const HighsInfo& info = highs->getInfo();
-      std::cout << "Simplex iteration count: " << info.simplex_iteration_count << std::endl;
-      std::cout << "Objective function value: " << info.objective_function_value << std::endl;
-      std::cout << "Primal  solution status: "
-                << highs->solutionStatusToString(info.primal_solution_status) << std::endl;
-      std::cout << "Dual    solution status: "
-                << highs->solutionStatusToString(info.dual_solution_status) << std::endl;
-      std::cout << "Basis: " << highs->basisValidityToString(info.basis_validity) << std::endl;
+      config.log_stream << "Simplex iteration count: " << info.simplex_iteration_count
+                        << std::endl;
+      config.log_stream << "Objective function value: " << info.objective_function_value
+                        << std::endl;
+      config.log_stream << "Primal  solution status: "
+                        << highs->solutionStatusToString(info.primal_solution_status)
+                        << std::endl;
+      config.log_stream << "Dual    solution status: "
+                        << highs->solutionStatusToString(info.dual_solution_status)
+                        << std::endl;
+      config.log_stream << "Basis: "
+                         << highs->basisValidityToString(info.basis_validity) << std::endl;
     }
 
     // Get the model status
@@ -326,23 +348,41 @@ double SimplexDecoder::cost_from_errors(const std::vector<size_t>& predicted_err
   return total_cost;
 }
 
-common::ObservablesMask SimplexDecoder::mask_from_errors(
+std::vector<int> SimplexDecoder::get_flipped_observables(
     const std::vector<size_t>& predicted_errors) {
-  common::ObservablesMask mask = 0;
-  // Iterate over all errors and add to the mask
-  for (size_t ei : predicted_errors_buffer) {
-    mask ^= errors[ei].symptom.observables;
+  std::unordered_set<int> flipped_observables_set;
+
+  // Iterate over all predicted errors
+  for (size_t ei : predicted_errors) {
+    // Iterate over the observables associated with each error
+    for (int obs_index : errors[ei].symptom.observables) {
+      // Perform an XOR-like sum using a set.
+      // If the observable is already in the set, it means we've seen it an
+      // even number of times, so we remove it.
+      // If it's not, we add it, which means we've seen it an odd number of times.
+      if (flipped_observables_set.count(obs_index)) {
+        flipped_observables_set.erase(obs_index);
+      } else {
+        flipped_observables_set.insert(obs_index);
+      }
+    }
   }
-  return mask;
+
+  // Convert the set to a vector and return it.
+  std::vector<int> flipped_observables(flipped_observables_set.begin(),
+                                       flipped_observables_set.end());
+  // Sort observables
+  std::sort(flipped_observables.begin(), flipped_observables.end());
+  return flipped_observables;
 }
 
-common::ObservablesMask SimplexDecoder::decode(const std::vector<uint64_t>& detections) {
+std::vector<int> SimplexDecoder::decode(const std::vector<uint64_t>& detections) {
   decode_to_errors(detections);
-  return mask_from_errors(predicted_errors_buffer);
+  return get_flipped_observables(predicted_errors_buffer);
 }
 
 void SimplexDecoder::decode_shots(std::vector<stim::SparseShot>& shots,
-                                  std::vector<common::ObservablesMask>& obs_predicted) {
+                                  std::vector<std::vector<int>>& obs_predicted) {
   obs_predicted.resize(shots.size());
   for (size_t i = 0; i < shots.size(); ++i) {
     obs_predicted[i] = decode(shots[i].hits);

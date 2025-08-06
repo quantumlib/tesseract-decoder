@@ -19,13 +19,15 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <numeric>
+#include <queue>
 #include <random>
 #include <string>
 
 #include "common.h"
 #include "stim.h"
 
-std::vector<std::vector<double>> get_detector_coords(stim::DetectorErrorModel& dem) {
+std::vector<std::vector<double>> get_detector_coords(const stim::DetectorErrorModel& dem) {
   std::vector<std::vector<double>> detector_coords;
   for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
     switch (instruction.type) {
@@ -77,6 +79,91 @@ std::vector<std::vector<size_t>> build_detector_graph(const stim::DetectorErrorM
     neigh.erase(std::unique(neigh.begin(), neigh.end()), neigh.end());
   }
   return neighbors;
+}
+
+std::vector<std::vector<size_t>> build_det_orders(const stim::DetectorErrorModel& dem,
+                                                  size_t num_det_orders, bool det_order_bfs,
+                                                  uint64_t seed) {
+  std::vector<std::vector<size_t>> det_orders(num_det_orders);
+  std::mt19937_64 rng(seed);
+  std::normal_distribution<double> dist(0, 1);
+
+  auto detector_coords = get_detector_coords(dem);
+
+  if (det_order_bfs) {
+    auto graph = build_detector_graph(dem);
+    std::uniform_int_distribution<size_t> dist_det(0, graph.size() - 1);
+    for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
+      std::vector<size_t> perm;
+      perm.reserve(graph.size());
+      std::vector<char> visited(graph.size(), false);
+      std::queue<size_t> q;
+      size_t start = dist_det(rng);
+      while (perm.size() < graph.size()) {
+        if (!visited[start]) {
+          visited[start] = true;
+          q.push(start);
+          perm.push_back(start);
+        }
+        while (!q.empty()) {
+          size_t cur = q.front();
+          q.pop();
+          auto neigh = graph[cur];
+          std::shuffle(neigh.begin(), neigh.end(), rng);
+          for (size_t n : neigh) {
+            if (!visited[n]) {
+              visited[n] = true;
+              q.push(n);
+              perm.push_back(n);
+            }
+          }
+        }
+        if (perm.size() < graph.size()) {
+          do {
+            start = dist_det(rng);
+          } while (visited[start]);
+        }
+      }
+      std::vector<size_t> inv_perm(graph.size());
+      for (size_t i = 0; i < perm.size(); ++i) {
+        inv_perm[perm[i]] = i;
+      }
+      det_orders[det_order] = inv_perm;
+    }
+  } else {
+    std::vector<double> inner_products(dem.count_detectors());
+    if (!detector_coords.size() || !detector_coords.at(0).size()) {
+      for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
+        det_orders[det_order].resize(dem.count_detectors());
+        std::iota(det_orders[det_order].begin(), det_orders[det_order].end(), 0);
+      }
+    } else {
+      for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
+        std::vector<double> orientation_vector;
+        for (size_t i = 0; i < detector_coords.at(0).size(); ++i) {
+          orientation_vector.push_back(dist(rng));
+        }
+
+        for (size_t i = 0; i < detector_coords.size(); ++i) {
+          inner_products[i] = 0;
+          for (size_t j = 0; j < orientation_vector.size(); ++j) {
+            inner_products[i] += detector_coords[i][j] * orientation_vector[j];
+          }
+        }
+        std::vector<size_t> perm(dem.count_detectors());
+        std::iota(perm.begin(), perm.end(), 0);
+        std::sort(perm.begin(), perm.end(), [&](const size_t& i, const size_t& j) {
+          return inner_products[i] > inner_products[j];
+        });
+        std::vector<size_t> inv_perm(dem.count_detectors());
+        for (size_t i = 0; i < perm.size(); ++i) {
+          inv_perm[perm[i]] = i;
+        }
+        det_orders[det_order] = inv_perm;
+      }
+    }
+  }
+  return det_orders;
 }
 
 bool sampling_from_dem(uint64_t seed, size_t num_shots, stim::DetectorErrorModel dem,
@@ -147,4 +234,12 @@ std::vector<std::string> get_files_recursive(const std::string& directory_path) 
     std::cerr << "Filesystem error: " << ex.what() << std::endl;
   }
   return file_paths;
+}
+
+uint64_t vector_to_u64_mask(const std::vector<int>& v) {
+  uint64_t mask = 0;
+  for (int i : v) {
+    mask ^= (1ULL << i);
+  }
+  return mask;
 }

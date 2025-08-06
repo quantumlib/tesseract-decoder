@@ -19,6 +19,7 @@
 #include <cassert>
 #include <functional>  // For std::hash (though not strictly necessary here, but good practice)
 #include <iostream>
+#include <iostream>
 
 namespace {
 
@@ -58,7 +59,6 @@ std::string TesseractConfig::str() {
   ss << "det_beam=" << config.det_beam << ", ";
   ss << "no_revisit_dets=" << config.no_revisit_dets << ", ";
   ss << "at_most_two_errors_per_detector=" << config.at_most_two_errors_per_detector << ", ";
-  ss << "verbose=" << config.verbose << ", ";
   ss << "pqlimit=" << config.pqlimit << ", ";
   ss << "det_orders=" << config.det_orders << ", ";
   ss << "det_penalty=" << config.det_penalty << ")";
@@ -103,6 +103,10 @@ double TesseractDecoder::get_detcost(
 }
 
 TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
+  if (!config.verbose_callback) {
+    config.verbose_callback = [](const std::string& s) { std::cout << s; };
+  }
+  config.log_stream.callback = config.verbose_callback;
   config.dem = common::remove_zero_probability_errors(config.dem);
   if (config.det_orders.empty()) {
     config.det_orders.emplace_back(config.dem.count_detectors());
@@ -114,13 +118,12 @@ TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
   }
   assert(config.det_orders.size());
   errors = get_errors_from_dem(config.dem.flattened());
-  if (config.verbose) {
-    for (auto& error : errors) {
-      std::cout << error.str() << std::endl;
-    }
+  for (auto& error : errors) {
+    config.log_stream << error.str() << std::endl;
   }
   num_detectors = config.dem.count_detectors();
   num_errors = config.dem.count_errors();
+  num_observables = config.dem.count_observables();
   initialize_structures(config.dem.count_detectors());
 }
 
@@ -180,12 +183,17 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections)
         best_errors = predicted_errors_buffer;
         best_cost = local_cost;
       }
-      if (config.verbose) {
-        std::cout << "for detector_order " << detector_order << " beam " << beam
-                  << " got low confidence " << low_confidence_flag << " and cost " << local_cost
-                  << " and obs_mask " << mask_from_errors(predicted_errors_buffer)
-                  << ". Best cost so far: " << best_cost << std::endl;
+      auto obs_mask_vec = get_flipped_observables(predicted_errors_buffer);
+      config.log_stream << "for detector_order " << detector_order << " beam " << beam
+                        << " got low confidence " << low_confidence_flag << " and cost "
+                        << local_cost << " and obs_mask ";
+      config.log_stream << "[";
+      for (size_t i = 0; i < obs_mask_vec.size(); ++i) {
+        config.log_stream << obs_mask_vec[i];
+        if (i + 1 < obs_mask_vec.size()) config.log_stream << ", ";
       }
+      config.log_stream << "]";
+      config.log_stream << ". Best cost so far: " << best_cost << std::endl;
     }
   } else {
     for (size_t detector_order = 0; detector_order < config.det_orders.size(); ++detector_order) {
@@ -195,12 +203,17 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections)
         best_errors = predicted_errors_buffer;
         best_cost = local_cost;
       }
-      if (config.verbose) {
-        std::cout << "for detector_order " << detector_order << " beam " << config.det_beam
-                  << " got low confidence " << low_confidence_flag << " and cost " << local_cost
-                  << " and obs_mask " << mask_from_errors(predicted_errors_buffer)
-                  << ". Best cost so far: " << best_cost << std::endl;
+      auto obs_mask_vec = get_flipped_observables(predicted_errors_buffer);
+      config.log_stream << "for detector_order " << detector_order << " beam " << config.det_beam
+                        << " got low confidence " << low_confidence_flag << " and cost "
+                        << local_cost << " and obs_mask ";
+      config.log_stream << "[";
+      for (size_t i = 0; i < obs_mask_vec.size(); ++i) {
+        config.log_stream << obs_mask_vec[i];
+        if (i + 1 < obs_mask_vec.size()) config.log_stream << ", ";
       }
+      config.log_stream << "]";
+      config.log_stream << ". Best cost so far: " << best_cost << std::endl;
     }
   }
   predicted_errors_buffer = best_errors;
@@ -284,23 +297,20 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
     flip_detectors_and_block_errors(detector_order, node.errors, detectors, detector_cost_tuples);
 
     if (node.num_detectors == 0) {
-      if (config.verbose) {
-        std::cout << "activated_errors = ";
-        for (size_t oei : node.errors) {
-          std::cout << oei << ", ";
-        }
-        std::cout << std::endl;
-        std::cout << "activated_detectors = ";
-        for (size_t d = 0; d < num_detectors; ++d) {
-          if (detectors[d]) {
-            std::cout << d << ", ";
-          }
-        }
-        std::cout << std::endl;
-        std::cout.precision(13);
-        std::cout << "Decoding complete. Cost: " << node.cost
-                  << " num_pq_pushed = " << num_pq_pushed << std::endl;
+      config.log_stream << "activated_errors = ";
+      for (size_t oei : node.errors) {
+        config.log_stream << oei << ", ";
       }
+      config.log_stream << std::endl;
+      config.log_stream << "activated_detectors = ";
+      for (size_t d = 0; d < num_detectors; ++d) {
+        if (detectors[d]) {
+          config.log_stream << d << ", ";
+        }
+      }
+      config.log_stream << std::endl;
+      config.log_stream << "Decoding complete. Cost: " << node.cost
+                        << " num_pq_pushed = " << num_pq_pushed << std::endl;
       predicted_errors_buffer = node.errors;
       return;
     }
@@ -308,25 +318,23 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
     if (config.no_revisit_dets && !visited_detectors[node.num_detectors].insert(detectors).second)
       continue;
 
-    if (config.verbose) {
-      std::cout.precision(13);
-      std::cout << "len(pq) = " << pq.size() << " num_pq_pushed = " << num_pq_pushed << std::endl;
-      std::cout << "num_detectors = " << node.num_detectors
-                << " max_num_detectors = " << max_num_detectors << " cost = " << node.cost
-                << std::endl;
-      std::cout << "activated_errors = ";
-      for (size_t oei : node.errors) {
-        std::cout << oei << ", ";
-      }
-      std::cout << std::endl;
-      std::cout << "activated_detectors = ";
-      for (size_t d = 0; d < num_detectors; ++d) {
-        if (detectors[d]) {
-          std::cout << d << ", ";
-        }
-      }
-      std::cout << std::endl;
+    config.log_stream << "len(pq) = " << pq.size() << " num_pq_pushed = " << num_pq_pushed
+                      << std::endl;
+    config.log_stream << "num_detectors = " << node.num_detectors
+                      << " max_num_detectors = " << max_num_detectors
+                      << " cost = " << node.cost << std::endl;
+    config.log_stream << "activated_errors = ";
+    for (size_t oei : node.errors) {
+      config.log_stream << oei << ", ";
     }
+    config.log_stream << std::endl;
+    config.log_stream << "activated_detectors = ";
+    for (size_t d = 0; d < num_detectors; ++d) {
+      if (detectors[d]) {
+        config.log_stream << d << ", ";
+      }
+    }
+    config.log_stream << std::endl;
 
     if (node.num_detectors < min_num_detectors) {
       min_num_detectors = node.num_detectors;
@@ -449,9 +457,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
   }
 
   assert(pq.empty());
-  if (config.verbose) {
-    std::cout << "Decoding failed to converge within beam limit." << std::endl;
-  }
+  config.log_stream << "Decoding failed to converge within beam limit." << std::endl;
   low_confidence_flag = true;
 }
 
@@ -464,23 +470,39 @@ double TesseractDecoder::cost_from_errors(const std::vector<size_t>& predicted_e
   return total_cost;
 }
 
-common::ObservablesMask TesseractDecoder::mask_from_errors(
+std::vector<int> TesseractDecoder::get_flipped_observables(
     const std::vector<size_t>& predicted_errors) {
-  common::ObservablesMask mask = 0;
-  // Iterate over all errors and compute the mask
+  std::unordered_set<int> flipped_observables_set;
+
+  // Iterate over all errors and compute the mask.
+  // We use a set to perform an XOR-like sum.
+  // If an observable is already in the set, we remove it (XORing with itself).
+  // If it's not, we add it.
   for (size_t ei : predicted_errors) {
-    mask ^= errors[ei].symptom.observables;
+    for (int obs_index : errors[ei].symptom.observables) {
+      if (flipped_observables_set.count(obs_index)) {
+        flipped_observables_set.erase(obs_index);
+      } else {
+        flipped_observables_set.insert(obs_index);
+      }
+    }
   }
-  return mask;
+
+  // Convert the set to a vector and return it.
+  std::vector<int> flipped_observables(flipped_observables_set.begin(),
+                                       flipped_observables_set.end());
+  // Sort observables
+  std::sort(flipped_observables.begin(), flipped_observables.end());
+  return flipped_observables;
 }
 
-common::ObservablesMask TesseractDecoder::decode(const std::vector<uint64_t>& detections) {
+std::vector<int> TesseractDecoder::decode(const std::vector<uint64_t>& detections) {
   decode_to_errors(detections);
-  return mask_from_errors(predicted_errors_buffer);
+  return get_flipped_observables(predicted_errors_buffer);
 }
 
 void TesseractDecoder::decode_shots(std::vector<stim::SparseShot>& shots,
-                                    std::vector<common::ObservablesMask>& obs_predicted) {
+                                    std::vector<std::vector<int>>& obs_predicted) {
   obs_predicted.resize(shots.size());
   for (size_t i = 0; i < shots.size(); ++i) {
     obs_predicted[i] = decode(shots[i].hits);

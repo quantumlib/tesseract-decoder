@@ -30,11 +30,15 @@ common::Error::Error(const stim::DemInstruction& error) {
   assert(probability >= 0 && probability <= 1);
 
   std::set<int> detectors_set;
-  ObservablesMask observables = 0;
+  std::set<int> observables_set;
 
   for (const stim::DemTarget& target : error.target_data) {
     if (target.is_observable_id()) {
-      observables ^= (1 << target.val());
+      if (observables_set.find(target.val()) != observables_set.end()) {
+        observables_set.erase(target.val());
+      } else {
+        observables_set.insert(target.val());
+      }
     } else if (target.is_relative_detector_id()) {
       if (detectors_set.find(target.val()) != detectors_set.end()) {
         detectors_set.erase(target.val());
@@ -46,6 +50,7 @@ common::Error::Error(const stim::DemInstruction& error) {
   // Detectors in the set are already sorted order, which we need so that there
   // is a unique canonical representative for each set of detectors.
   std::vector<int> detectors(detectors_set.begin(), detectors_set.end());
+  std::vector<int> observables(observables_set.begin(), observables_set.end());
   likelihood_cost = -1 * std::log(probability / (1 - probability));
   symptom.detectors = detectors;
   symptom.observables = observables;
@@ -60,12 +65,8 @@ std::vector<stim::DemTarget> common::Symptom::as_dem_instruction_targets() const
   for (int d : detectors) {
     targets.push_back(stim::DemTarget::relative_detector_id(d));
   }
-  common::ObservablesMask mask = observables;
-  for (size_t oi = 0; oi < 8 * sizeof(common::ObservablesMask); ++oi) {
-    if (mask & 1) {
-      targets.push_back(stim::DemTarget::observable_id(oi));
-    }
-    mask >>= 1;
+  for (int o : observables) {
+    targets.push_back(stim::DemTarget::observable_id(o));
   }
   return targets;
 }

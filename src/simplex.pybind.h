@@ -18,6 +18,7 @@
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <iostream>
 
 #include "common.h"
 #include "simplex.h"
@@ -28,26 +29,42 @@ namespace py = pybind11;
 namespace {
 SimplexConfig simplex_config_maker(py::object dem, bool parallelize = false,
                                    size_t window_length = 0, size_t window_slide_length = 0,
-                                   bool verbose = false) {
+                                   py::object verbose_callback = py::none()) {
   stim::DetectorErrorModel input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
-  return SimplexConfig({input_dem, parallelize, window_length, window_slide_length, verbose});
+  SimplexConfig cfg;
+  cfg.dem = input_dem;
+  cfg.parallelize = parallelize;
+  cfg.window_length = window_length;
+  cfg.window_slide_length = window_slide_length;
+  std::function<void(const std::string&)> cb;
+  bool active = false;
+  if (!verbose_callback.is_none()) {
+    py::function f = verbose_callback;
+    cb = [f](const std::string& s) {
+      py::gil_scoped_acquire gil;
+      f(s);
+    };
+    active = true;
+  }
+  cfg.verbose_callback = cb;
+  cfg.log_stream = CallbackStream(active, cfg.verbose_callback);
+  return cfg;
 }
 
 };  // namespace
 
-void add_simplex_module(py::module &root) {
+void add_simplex_module(py::module& root) {
   auto m =
       root.def_submodule("simplex", "Module containing the SimplexDecoder and related methods");
 
   py::class_<SimplexConfig>(m, "SimplexConfig")
       .def(py::init(&simplex_config_maker), py::arg("dem"), py::arg("parallelize") = false,
            py::arg("window_length") = 0, py::arg("window_slide_length") = 0,
-           py::arg("verbose") = false)
+           py::arg("verbose_callback") = py::none())
       .def_property("dem", &dem_getter<SimplexConfig>, &dem_setter<SimplexConfig>)
       .def_readwrite("parallelize", &SimplexConfig::parallelize)
       .def_readwrite("window_length", &SimplexConfig::window_length)
       .def_readwrite("window_slide_length", &SimplexConfig::window_slide_length)
-      .def_readwrite("verbose", &SimplexConfig::verbose)
       .def("windowing_enabled", &SimplexConfig::windowing_enabled)
       .def("__str__", &SimplexConfig::str);
 
@@ -62,10 +79,31 @@ void add_simplex_module(py::module &root) {
       .def_readwrite("start_time_to_errors", &SimplexDecoder::start_time_to_errors)
       .def_readwrite("end_time_to_errors", &SimplexDecoder::end_time_to_errors)
       .def_readonly("low_confidence_flag", &SimplexDecoder::low_confidence_flag)
-      .def("init_ilp", &SimplexDecoder::init_ilp)
       .def("decode_to_errors", &SimplexDecoder::decode_to_errors, py::arg("detections"))
-      .def("mask_from_errors", &SimplexDecoder::mask_from_errors, py::arg("predicted_errors"))
+      .def(
+          "get_observables_from_errors",
+          [](SimplexDecoder& self, const std::vector<size_t>& predicted_errors) {
+            std::vector<bool> result(self.num_observables, false);
+            const auto& indices = self.get_flipped_observables(predicted_errors);
+            for (int index : indices) {
+              result[index] = true;
+            }
+            return result;
+          },
+          py::arg("predicted_errors"))
       .def("cost_from_errors", &SimplexDecoder::cost_from_errors, py::arg("predicted_errors"))
-      .def("decode", &SimplexDecoder::decode, py::arg("detections"));
+      .def(
+          "decode",
+          [](SimplexDecoder& self, const std::vector<uint64_t>& detections) {
+            std::vector<bool> result(self.num_observables, false);
+            self.decode(detections);
+            for (size_t ei : self.predicted_errors_buffer) {
+              for (int obs_index : self.errors[ei].symptom.observables) {
+                result[obs_index] = result[obs_index] ^ true;
+              }
+            }
+            return result;
+          },
+          py::arg("detections"));
 }
 #endif

@@ -16,7 +16,7 @@ import math
 import pytest
 import stim
 
-from src import tesseract_decoder
+import tesseract_decoder
 
 
 _DETECTOR_ERROR_MODEL = stim.DetectorErrorModel(
@@ -42,6 +42,18 @@ def test_build_detector_graph():
         [1],
         [0],
     ]
+
+
+def test_build_det_orders():
+    assert tesseract_decoder.utils.build_det_orders(
+        _DETECTOR_ERROR_MODEL, num_det_orders=1, seed=0
+    ) == [[0, 1]]
+
+
+def test_build_det_orders_no_bfs():
+    assert tesseract_decoder.utils.build_det_orders(
+        _DETECTOR_ERROR_MODEL, num_det_orders=1, det_order_bfs=False, seed=0
+    ) == [[0, 1]]
 
 
 def test_get_errors_from_dem():

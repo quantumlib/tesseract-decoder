@@ -30,8 +30,8 @@ void add_common_module(py::module &root) {
   auto m = root.def_submodule("common", "classes commonly used by the decoder");
 
   py::class_<common::Symptom>(m, "Symptom")
-      .def(py::init<std::vector<int>, common::ObservablesMask>(),
-           py::arg("detectors") = std::vector<int>(), py::arg("observables") = 0)
+      .def(py::init<std::vector<int>, std::vector<int>>(),
+           py::arg("detectors") = std::vector<int>(), py::arg("observables") = std::vector<int>())
       .def_readwrite("detectors", &common::Symptom::detectors)
       .def_readwrite("observables", &common::Symptom::observables)
       .def("__str__", &common::Symptom::str)
@@ -50,11 +50,10 @@ void add_common_module(py::module &root) {
       .def_readwrite("symptom", &common::Error::symptom)
       .def("__str__", &common::Error::str)
       .def(py::init<>())
-      .def(py::init<double, std::vector<int> &, common::ObservablesMask, std::vector<bool> &>(),
+      .def(py::init<double, std::vector<int> &, std::vector<int>, std::vector<bool> &>(),
            py::arg("likelihood_cost"), py::arg("detectors"), py::arg("observables"),
            py::arg("dets_array"))
-      .def(py::init<double, double, std::vector<int> &, common::ObservablesMask,
-                    std::vector<bool> &>(),
+      .def(py::init<double, double, std::vector<int> &, std::vector<int>, std::vector<bool> &>(),
            py::arg("likelihood_cost"), py::arg("probability"), py::arg("detectors"),
            py::arg("observables"), py::arg("dets_array"))
       .def(py::init([](py::object edi) {
