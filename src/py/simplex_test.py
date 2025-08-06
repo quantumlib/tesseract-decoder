@@ -16,7 +16,7 @@ import math
 import pytest
 import stim
 
-from src import tesseract_decoder
+import tesseract_decoder
 
 _DETECTOR_ERROR_MODEL = stim.DetectorErrorModel(
     """
@@ -33,7 +33,7 @@ def test_create_simplex_config():
     assert sc.window_length == 5
     assert (
         str(sc)
-        == "SimplexConfig(dem=DetectorErrorModel_Object, window_length=5, window_slide_length=0, verbose=0)"
+        == "SimplexConfig(dem=DetectorErrorModel_Object, window_length=5, window_slide_length=0)"
     )
 
 
@@ -45,6 +45,20 @@ def test_create_simplex_decoder():
     assert decoder.get_observables_from_errors([1]) == []
     assert decoder.cost_from_errors([2]) == pytest.approx(1.0986123)
     assert decoder.decode([1]) == []
+
+
+def test_simplex_verbose_callback_receives_output():
+    lines = []
+
+    def cb(s: str) -> None:
+        lines.append(s)
+
+    config = tesseract_decoder.simplex.SimplexConfig(
+        _DETECTOR_ERROR_MODEL, window_length=5, verbose_callback=cb
+    )
+    decoder = tesseract_decoder.simplex.SimplexDecoder(config)
+    decoder.decode_to_errors([1])
+    assert any(lines)
 
 def test_simplex_decoder_predicts_various_observable_flips():
     """

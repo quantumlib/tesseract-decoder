@@ -18,6 +18,7 @@
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <iostream>
 
 #include "stim_utils.pybind.h"
 #include "tesseract.h"
@@ -28,13 +29,32 @@ namespace {
 TesseractConfig tesseract_config_maker(
     py::object dem, int det_beam = INF_DET_BEAM, bool beam_climbing = false,
     bool no_revisit_dets = false, bool at_most_two_errors_per_detector = false,
-    bool verbose = false, size_t pqlimit = std::numeric_limits<size_t>::max(),
+    size_t pqlimit = std::numeric_limits<size_t>::max(),
     std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
-    double det_penalty = 0.0) {
+    double det_penalty = 0.0, py::object verbose_callback = py::none()) {
   stim::DetectorErrorModel input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
-  return TesseractConfig({input_dem, det_beam, beam_climbing, no_revisit_dets,
-                          at_most_two_errors_per_detector, verbose, pqlimit, det_orders,
-                          det_penalty});
+  TesseractConfig cfg;
+  cfg.dem = input_dem;
+  cfg.det_beam = det_beam;
+  cfg.beam_climbing = beam_climbing;
+  cfg.no_revisit_dets = no_revisit_dets;
+  cfg.at_most_two_errors_per_detector = at_most_two_errors_per_detector;
+  cfg.pqlimit = pqlimit;
+  cfg.det_orders = det_orders;
+  cfg.det_penalty = det_penalty;
+  std::function<void(const std::string&)> cb;
+  bool active = false;
+  if (!verbose_callback.is_none()) {
+    py::function f = verbose_callback;
+    cb = [f](const std::string& s) {
+      py::gil_scoped_acquire gil;
+      f(s);
+    };
+    active = true;
+  }
+  cfg.verbose_callback = cb;
+  cfg.log_stream = CallbackStream(active, cfg.verbose_callback);
+  return cfg;
 }
 };  // namespace
 void add_tesseract_module(py::module& root) {
@@ -44,15 +64,15 @@ void add_tesseract_module(py::module& root) {
   py::class_<TesseractConfig>(m, "TesseractConfig")
       .def(py::init(&tesseract_config_maker), py::arg("dem"), py::arg("det_beam") = INF_DET_BEAM,
            py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = false,
-           py::arg("at_most_two_errors_per_detector") = false, py::arg("verbose") = false,
+           py::arg("at_most_two_errors_per_detector") = false,
            py::arg("pqlimit") = std::numeric_limits<size_t>::max(),
-           py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0)
+           py::arg("det_orders") = std::vector<std::vector<size_t>>(),
+           py::arg("det_penalty") = 0.0, py::arg("verbose_callback") = py::none())
       .def_property("dem", &dem_getter<TesseractConfig>, &dem_setter<TesseractConfig>)
       .def_readwrite("det_beam", &TesseractConfig::det_beam)
       .def_readwrite("no_revisit_dets", &TesseractConfig::no_revisit_dets)
       .def_readwrite("at_most_two_errors_per_detector",
                      &TesseractConfig::at_most_two_errors_per_detector)
-      .def_readwrite("verbose", &TesseractConfig::verbose)
       .def_readwrite("pqlimit", &TesseractConfig::pqlimit)
       .def_readwrite("det_orders", &TesseractConfig::det_orders)
       .def_readwrite("det_penalty", &TesseractConfig::det_penalty)

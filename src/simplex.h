@@ -14,11 +14,13 @@
 
 #ifndef SIMPLEX_HPP
 #define SIMPLEX_HPP
+#include <functional>
 #include <unordered_set>
 #include <vector>
 
 #include "common.h"
 #include "stim.h"
+#include "utils.h"
 
 struct HighsModel;
 struct Highs;
@@ -29,7 +31,8 @@ struct SimplexConfig {
   bool parallelize = false;
   size_t window_length = 0;
   size_t window_slide_length = 0;
-  bool verbose = false;
+  std::function<void(const std::string&)> verbose_callback;
+  CallbackStream log_stream;
   bool windowing_enabled() {
     return (window_length != 0);
   }
