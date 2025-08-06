@@ -161,7 +161,6 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
     boost::dynamic_bitset<> neighbor_set(num_detectors, false);
     for (int d : edets[ei]) {
       for (int oei : d2e[d]) {
-        if (oei == ei) continue;
         // Unify detectors from neighboring errors
         neighbor_set |= edets_bitsets[oei];
       }
@@ -169,10 +168,9 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
     // Remove detectors from error's own set
     neighbor_set &= ~edets_bitsets[ei];
 
-    for (size_t d = 0; d < num_detectors; ++d) {
-      if (neighbor_set[d]) {
-        eneighbors[ei].push_back(d);
-      }
+    for (size_t d = neighbor_set.find_first(); d != boost::dynamic_bitset<>::npos;
+         d = neighbor_set.find_next(d)) {
+      eneighbors[ei].push_back(d);
     }
   }
 }
