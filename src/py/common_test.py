@@ -15,7 +15,7 @@
 import pytest
 import stim
 
-import tesseract_decoder
+from src import tesseract_decoder
 
 def get_set_bits(n):
     """

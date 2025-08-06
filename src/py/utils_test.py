@@ -16,7 +16,7 @@ import math
 import pytest
 import stim
 
-import tesseract_decoder
+from src import tesseract_decoder
 
 
 _DETECTOR_ERROR_MODEL = stim.DetectorErrorModel(
