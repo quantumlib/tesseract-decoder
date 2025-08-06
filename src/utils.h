@@ -63,8 +63,7 @@ struct CallbackStream {
   CallbackStream(bool active_, std::function<void(const std::string&)> cb)
       : active(active_), callback(std::move(cb)) {}
 
-  CallbackStream(const CallbackStream& other)
-      : active(other.active), callback(other.callback) {}
+  CallbackStream(const CallbackStream& other) : active(other.active), callback(other.callback) {}
   CallbackStream& operator=(const CallbackStream& other) {
     active = other.active;
     callback = other.callback;
@@ -100,7 +99,9 @@ struct CallbackStream {
     }
   }
 
-  ~CallbackStream() { flush(); }
+  ~CallbackStream() {
+    flush();
+  }
 };
 
 #endif  // __TESSERACT_UTILS_H__

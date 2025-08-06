@@ -259,10 +259,9 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
                           << highs->solutionStatusToString(info.primal_solution_status)
                           << std::endl;
         config.log_stream << "Dual    solution status: "
-                          << highs->solutionStatusToString(info.dual_solution_status)
+                          << highs->solutionStatusToString(info.dual_solution_status) << std::endl;
+        config.log_stream << "Basis: " << highs->basisValidityToString(info.basis_validity)
                           << std::endl;
-        config.log_stream << "Basis: "
-                           << highs->basisValidityToString(info.basis_validity) << std::endl;
       }
 
       // Get the model status
@@ -306,18 +305,15 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
 
     if (config.log_stream.active) {
       const HighsInfo& info = highs->getInfo();
-      config.log_stream << "Simplex iteration count: " << info.simplex_iteration_count
-                        << std::endl;
+      config.log_stream << "Simplex iteration count: " << info.simplex_iteration_count << std::endl;
       config.log_stream << "Objective function value: " << info.objective_function_value
                         << std::endl;
       config.log_stream << "Primal  solution status: "
-                        << highs->solutionStatusToString(info.primal_solution_status)
-                        << std::endl;
+                        << highs->solutionStatusToString(info.primal_solution_status) << std::endl;
       config.log_stream << "Dual    solution status: "
-                        << highs->solutionStatusToString(info.dual_solution_status)
+                        << highs->solutionStatusToString(info.dual_solution_status) << std::endl;
+      config.log_stream << "Basis: " << highs->basisValidityToString(info.basis_validity)
                         << std::endl;
-      config.log_stream << "Basis: "
-                         << highs->basisValidityToString(info.basis_validity) << std::endl;
     }
 
     // Get the model status

@@ -18,6 +18,7 @@
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+
 #include <iostream>
 
 #include "stim_utils.pybind.h"
@@ -66,8 +67,8 @@ void add_tesseract_module(py::module& root) {
            py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = false,
            py::arg("at_most_two_errors_per_detector") = false,
            py::arg("pqlimit") = std::numeric_limits<size_t>::max(),
-           py::arg("det_orders") = std::vector<std::vector<size_t>>(),
-           py::arg("det_penalty") = 0.0, py::arg("verbose_callback") = py::none())
+           py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0,
+           py::arg("verbose_callback") = py::none())
       .def_property("dem", &dem_getter<TesseractConfig>, &dem_setter<TesseractConfig>)
       .def_readwrite("det_beam", &TesseractConfig::det_beam)
       .def_readwrite("no_revisit_dets", &TesseractConfig::no_revisit_dets)

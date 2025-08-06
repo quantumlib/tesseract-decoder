@@ -19,7 +19,6 @@
 #include <cassert>
 #include <functional>  // For std::hash (though not strictly necessary here, but good practice)
 #include <iostream>
-#include <iostream>
 
 namespace {
 
@@ -321,8 +320,8 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
     config.log_stream << "len(pq) = " << pq.size() << " num_pq_pushed = " << num_pq_pushed
                       << std::endl;
     config.log_stream << "num_detectors = " << node.num_detectors
-                      << " max_num_detectors = " << max_num_detectors
-                      << " cost = " << node.cost << std::endl;
+                      << " max_num_detectors = " << max_num_detectors << " cost = " << node.cost
+                      << std::endl;
     config.log_stream << "activated_errors = ";
     for (size_t oei : node.errors) {
       config.log_stream << oei << ", ";
