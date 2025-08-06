@@ -62,7 +62,6 @@ void add_simplex_module(py::module& root) {
       .def_readwrite("start_time_to_errors", &SimplexDecoder::start_time_to_errors)
       .def_readwrite("end_time_to_errors", &SimplexDecoder::end_time_to_errors)
       .def_readonly("low_confidence_flag", &SimplexDecoder::low_confidence_flag)
-      .def("init_ilp", &SimplexDecoder::init_ilp)
       .def("decode_to_errors", &SimplexDecoder::decode_to_errors, py::arg("detections"))
       .def(
           "get_observables_from_errors",
