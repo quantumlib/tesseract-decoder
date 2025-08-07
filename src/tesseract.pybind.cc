@@ -34,7 +34,7 @@ PYBIND11_MODULE(tesseract_decoder, tesseract) {
   // to python's stdout/stderr at run time like
   // with tesseract_decoder.ostream_redirect(stdout=..., stderr=...):
   //    do_work()
-  // This is only needed if the C++ function's stdout/stderr which is not redirected to python's
+  // This is only needed if the C++ function's stdout/stderr is not redirected to python's
   // stdout/stderr using the py::call_guard<py::scoped_ostream_redirect,
   // py::scoped_estream_redirect>() statement.
   py::add_ostream_redirect(tesseract, "ostream_redirect");
