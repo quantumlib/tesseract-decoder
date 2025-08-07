@@ -96,7 +96,7 @@ void add_tesseract_module(py::module& root) {
       .def(
           "decode_from_detection_events",
           [](TesseractDecoder& self, const py::array_t<bool>& syndrome) {
-            std::vector<size_t> detections;
+            std::vector<uint64_t> detections;
             auto syndrome_unchecked = syndrome.unchecked<1>();
             for (size_t i = 0; i < syndrome_unchecked.size(); ++i) {
               if (syndrome_unchecked(i)) {
@@ -139,7 +139,7 @@ void add_tesseract_module(py::module& root) {
 
             // Iterate over each shot and decode it.
             for (size_t i = 0; i < num_shots; ++i) {
-              std::vector<size_t> detections;
+              std::vector<uint64_t> detections;
               for (size_t j = 0; j < num_detectors; ++j) {
                 if (syndromes_unchecked(i, j)) {
                   detections.push_back(j);
