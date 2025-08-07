@@ -109,10 +109,15 @@ TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
     std::iota(config.det_orders[0].begin(), config.det_orders[0].end(), 0);
   } else {
     for (size_t i = 0; i < config.det_orders.size(); ++i) {
-      assert(config.det_orders[i].size() == config.dem.count_detectors());
+      if (config.det_orders[i].size() != config.dem.count_detectors()) {
+        throw std::invalid_argument(
+            "Size of detector orders does not match the number of detectors.");
+      }
     }
   }
-  assert(config.det_orders.size());
+  if (config.det_orders.size() == 0) {
+    throw std::invalid_argument("Detector orders cannot be empty after initialization.");
+  }
   errors = get_errors_from_dem(config.dem.flattened());
   if (config.verbose) {
     for (auto& error : errors) {
@@ -170,7 +175,9 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
 void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
   std::vector<size_t> best_errors;
   double best_cost = std::numeric_limits<double>::max();
-  assert(config.det_orders.size());
+  if (config.det_orders.empty()) {
+    throw std::invalid_argument("Detector orders cannot be empty.");
+  }
 
   if (config.beam_climbing) {
     for (int beam = config.det_beam; beam >= 0; --beam) {
@@ -449,7 +456,9 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
     }
   }
 
-  assert(pq.empty());
+  if (!pq.empty()) {
+    throw std::runtime_error("Priority queue was not empty at the end of the decoding loop.");
+  }
   if (config.verbose) {
     std::cout << "Decoding failed to converge within beam limit." << std::endl;
   }

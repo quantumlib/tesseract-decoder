@@ -25,9 +25,13 @@ std::string common::Symptom::str() {
 }
 
 common::Error::Error(const stim::DemInstruction& error) {
-  assert(error.type == stim::DemInstructionType::DEM_ERROR);
+  if (error.type != stim::DemInstructionType::DEM_ERROR) {
+    throw std::invalid_argument("Expected a DEM_ERROR instruction.");
+  }
   probability = error.arg_data[0];
-  assert(probability >= 0 && probability <= 1);
+  if (probability < 0 || probability > 1) {
+    throw std::invalid_argument("Probability must be between 0 and 1.");
+  }
 
   std::set<int> detectors_set;
   std::set<int> observables_set;
@@ -79,11 +83,14 @@ stim::DetectorErrorModel common::merge_identical_errors(const stim::DetectorErro
   for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_SHIFT_DETECTORS:
-        assert(false && "unreachable");
+        throw std::runtime_error(
+            "DEM_SHIFT_DETECTORS instruction is not supported by merge_identical_errors.");
         break;
       case stim::DemInstructionType::DEM_ERROR: {
         Error error(instruction);
-        assert(error.symptom.detectors.size());
+        if (error.symptom.detectors.size() == 0) {
+          throw std::invalid_argument("An error instruction must target at least one detector.");
+        }
         // Merge with existing error with the same symptom (if applicable)
         if (errors_by_symptom.find(error.symptom) != errors_by_symptom.end()) {
           double p0 = errors_by_symptom[error.symptom].probability;
@@ -98,7 +105,7 @@ stim::DetectorErrorModel common::merge_identical_errors(const stim::DetectorErro
         break;
       }
       default:
-        assert(false && "unreachable");
+        throw std::runtime_error("Encountered an unsupported DEM instruction type.");
     }
   }
   for (const auto& it : errors_by_symptom) {
@@ -115,7 +122,8 @@ stim::DetectorErrorModel common::remove_zero_probability_errors(
   for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_SHIFT_DETECTORS:
-        assert(false && "unreachable");
+        throw std::runtime_error(
+            "DEM_SHIFT_DETECTORS is not supported by remove_zero_probability_errors.");
         break;
       case stim::DemInstructionType::DEM_ERROR:
         if (instruction.arg_data[0] > 0) {
@@ -126,7 +134,7 @@ stim::DetectorErrorModel common::remove_zero_probability_errors(
         out_dem.append_dem_instruction(instruction);
         break;
       default:
-        assert(false && "unreachable");
+        throw std::runtime_error("Encountered an unsupported DEM instruction type.");
     }
   }
   return out_dem;
@@ -154,7 +162,7 @@ stim::DetectorErrorModel common::dem_from_counts(stim::DetectorErrorModel& orig_
   for (const stim::DemInstruction& instruction : orig_dem.flattened().instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_SHIFT_DETECTORS:
-        assert(false && "unreachable");
+        throw std::runtime_error("DEM_SHIFT_DETECTORS is not supported by dem_from_counts.");
         break;
       case stim::DemInstructionType::DEM_ERROR: {
         double est_probability = double(error_counts.at(ei)) / double(num_shots);
@@ -167,7 +175,7 @@ stim::DetectorErrorModel common::dem_from_counts(stim::DetectorErrorModel& orig_
         break;
       }
       default:
-        assert(false && "unreachable");
+        throw std::runtime_error("Encountered an unsupported DEM instruction type.");
     }
   }
   return out_dem;

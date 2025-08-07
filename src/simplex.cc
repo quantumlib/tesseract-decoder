@@ -38,10 +38,12 @@ SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
   for (const stim::DemInstruction& instruction : config.dem.flattened().instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_SHIFT_DETECTORS:
-        assert(false && "unreachable");
+        throw std::runtime_error("DEM_SHIFT_DETECTORS is not supported.");
         break;
       case stim::DemInstructionType::DEM_ERROR: {
-        assert(instruction.arg_data[0] > 0);
+        if (instruction.arg_data[0] <= 0) {
+          throw std::invalid_argument("DEM_ERROR probability must be greater than zero.");
+        }
         errors.emplace_back(instruction);
         break;
       }
@@ -49,7 +51,7 @@ SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
         detector_t_coords[instruction.target_data[0].val()] = instruction.arg_data[T_COORD];
         break;
       default:
-        assert(false && "unreachable");
+        throw std::runtime_error("Encountered an unsupported DEM instruction type.");
     }
   }
   std::map<double, std::vector<size_t>> start_time_to_errors_map, end_time_to_errors_map;
@@ -159,7 +161,9 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
   predicted_errors_buffer.clear();
   // Adjust the constraints for the detection events
   for (size_t d : detections) {
-    assert(d < num_detectors && "invalid detector");
+    if (d >= num_detectors) {
+      throw std::invalid_argument("Invalid detector ID in detections vector.");
+    }
     model->lp_.row_lower_[d] = 1;
     model->lp_.row_upper_[d] = 1;
   }
@@ -204,19 +208,17 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
       // Pass the model to HiGHS
       *return_status = highs->passModel(*model);
       if (*return_status != HighsStatus::kOk) {
-        std::cerr << "Error: passModel failed with status: " << highsStatusToString(*return_status)
-                  << std::endl;
+        throw std::runtime_error("HiGHS passModel failed with status: " +
+                                 highsStatusToString(*return_status));
       }
-      assert(*return_status == HighsStatus::kOk);
 
       // Set the feasible solution, if one is known
       if (!solution_empty) {
         *return_status = highs->setSolution(solution);
         if (*return_status != HighsStatus::kOk) {
-          std::cerr << "Error: setSolution failed with status: "
-                    << highsStatusToString(*return_status) << std::endl;
+          throw std::runtime_error("HiGHS setSolution failed with status: " +
+                                   highsStatusToString(*return_status));
         }
-        assert(*return_status == HighsStatus::kOk);
       }
 
       // Solve the model
@@ -230,10 +232,16 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
                             /*free_format=*/true);
         std::cerr << "Write return had status: " << highsStatusToString(write_return_status)
                   << std::endl;
-        assert(write_return_status == HighsStatus::kOk or
-               write_return_status == HighsStatus::kWarning);
+        if (write_return_status != HighsStatus::kOk and
+            write_return_status != HighsStatus::kWarning) {
+          throw std::runtime_error("HiGHS run failed with status: " +
+                                   highsStatusToString(*return_status));
+        }
       }
-      assert(*return_status == HighsStatus::kOk);
+      if (*return_status != HighsStatus::kOk) {
+        throw std::runtime_error("HiGHS setSolution failed with status: " +
+                                 highsStatusToString(*return_status));
+      }
 
       if (config.verbose) {
         // Get the solution information
@@ -253,11 +261,16 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
         std::cerr << "Error: Model did not reach an optimal solution. Status: "
                   << highs->modelStatusToString(model_status) << std::endl;
       }
-      assert(model_status == HighsModelStatus::kOptimal);
+      if (model_status != HighsModelStatus::kOptimal) {
+        throw std::runtime_error("HiGHS did not find an optimal solution. Status: " +
+                                 highs->modelStatusToString(model_status));
+      }
 
       // Extract the used errors
       solution = highs->getSolution();
-      assert(!solution.hasUndefined());
+      if (solution.hasUndefined()) {
+        throw std::runtime_error("HiGHS returned an undefined solution.");
+      }
       solution_empty = false;
 
       for (size_t step = 0; step < config.window_slide_length && t0 < end_time_to_errors.size();
@@ -280,11 +293,17 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
   } else {
     // Pass the model to HiGHS
     *return_status = highs->passModel(*model);
-    assert(*return_status == HighsStatus::kOk);
+    if (*return_status != HighsStatus::kOk) {
+      throw std::runtime_error("HiGHS setSolution failed with status: " +
+                               highsStatusToString(*return_status));
+    }
 
     // Solve the model
     *return_status = highs->run();
-    assert(*return_status == HighsStatus::kOk);
+    if (*return_status != HighsStatus::kOk) {
+      throw std::runtime_error("HiGHS setSolution failed with status: " +
+                               highsStatusToString(*return_status));
+    }
 
     if (config.verbose) {
       // Get the solution information
@@ -300,7 +319,10 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
 
     // Get the model status
     [[maybe_unused]] const HighsModelStatus& model_status = highs->getModelStatus();
-    assert(model_status == HighsModelStatus::kOptimal);
+    if (model_status != HighsModelStatus::kOptimal) {
+      throw std::runtime_error("HiGHS did not find an optimal solution. Status: " +
+                               highs->modelStatusToString(model_status));
+    }
   }
 
   // Extract the used errors

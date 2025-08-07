@@ -32,7 +32,7 @@ std::vector<std::vector<double>> get_detector_coords(const stim::DetectorErrorMo
   for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_SHIFT_DETECTORS:
-        assert(false && "unreachable");
+        throw std::runtime_error("DEM_SHIFT_DETECTORS is not supported by get_detector_coords.");
         break;
       case stim::DemInstructionType::DEM_ERROR: {
         break;
@@ -46,7 +46,8 @@ std::vector<std::vector<double>> get_detector_coords(const stim::DetectorErrorMo
         break;
       }
       default:
-        assert(false && "unreachable");
+        throw std::runtime_error(
+            "Encountered an unsupported DEM instruction type in get_detector_coords.");
     }
   }
   return detector_coords;
