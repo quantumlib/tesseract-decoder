@@ -126,7 +126,7 @@ stim::DetectorErrorModel common::remove_zero_probability_errors(
         out_dem.append_dem_instruction(instruction);
         break;
       default:
-        std::cout << "Unrecognized instruction type: " << instruction.type << std::endl;
+        throw std::invalid_argument("Unrecognized instruction type: " + op.str());
     }
   }
   return out_dem;
