@@ -158,6 +158,26 @@ def test_decode_from_detection_events_complex_dem():
     expected = np.array([True, False, True], dtype=bool)
     assert np.array_equal(predicted, expected)
 
+def test_decode_batch_with_invalid_dimensions():
+    """
+    Tests that decode_batch raises a RuntimeError when given a 1D array.
+    """
+    dem_string = f'''
+        error(0.1) D0 D1 L0
+    '''
+
+    # Create the DEM.
+    dem = stim.DetectorErrorModel(dem_string)
+
+    # Configure the decoder.
+    config = tesseract_decoder.simplex.SimplexConfig(dem, window_length=1)
+    decoder = tesseract_decoder.simplex.SimplexDecoder(config)
+    decoder.init_ilp()
+
+    # Try decoding an invalid syndrome.
+    invalid_syndrome = np.array([True, True], dtype=bool)
+    with pytest.raises(RuntimeError, match="Input syndromes must be a 2D NumPy array."):
+        decoder.decode_batch(invalid_syndrome)
 
 def test_decode_batch():
     """
