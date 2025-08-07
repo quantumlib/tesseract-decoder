@@ -15,20 +15,11 @@
 #include "simplex.h"
 
 #include <cassert>
-#include <iostream>
 
 #include "Highs.h"
 #include "io/HMPSIO.h"
 
 constexpr size_t T_COORD = 2;
-
-namespace {
-void highs_log_cb(HighsLogType, const char* msg, void* user_data) {
-  CallbackStream* stream = static_cast<CallbackStream*>(user_data);
-  (*stream) << msg;
-  stream->flush();
-}
-}  // namespace
 
 std::string SimplexConfig::str() {
   auto& self = *this;
@@ -36,15 +27,12 @@ std::string SimplexConfig::str() {
   ss << "SimplexConfig(";
   ss << "dem=" << "DetectorErrorModel_Object" << ", ";
   ss << "window_length=" << self.window_length << ", ";
-  ss << "window_slide_length=" << self.window_slide_length << ")";
+  ss << "window_slide_length=" << self.window_slide_length << ", ";
+  ss << "verbose=" << self.verbose << ")";
   return ss.str();
 }
 
 SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
-  if (!config.verbose_callback) {
-    config.verbose_callback = [](const std::string& s) { std::cout << s; };
-  }
-  config.log_stream.callback = config.verbose_callback;
   config.dem = common::remove_zero_probability_errors(config.dem);
   std::vector<double> detector_t_coords(config.dem.count_detectors());
   for (const stim::DemInstruction& instruction : config.dem.flattened().instructions) {
@@ -164,11 +152,7 @@ void SimplexDecoder::init_ilp() {
   // Disabled presolve entirely after encountering bugs similar to this one:
   // https://github.com/ERGO-Code/HiGHS/issues/1273
   highs->setOptionValue("presolve", "off");
-  highs->setOptionValue("output_flag", config.log_stream.active);
-  highs->setOptionValue("log_to_console", config.log_stream.active);
-  if (config.log_stream.active) {
-    highs->setLogCallback(highs_log_cb, &config.log_stream);
-  }
+  highs->setOptionValue("output_flag", config.verbose);
 }
 
 void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
@@ -213,7 +197,9 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
         add_costs_for_time(t1);
         ++t1;
       }
-      config.log_stream << "t0 = " << t0 << " t1 = " << t1 << std::endl;
+      if (config.verbose) {
+        std::cout << "t0 = " << t0 << " t1 = " << t1 << std::endl;
+      }
 
       // Pass the model to HiGHS
       *return_status = highs->passModel(*model);
@@ -249,8 +235,10 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
       }
       assert(*return_status == HighsStatus::kOk);
 
-      if (config.log_stream.active) {
+      if (config.verbose) {
+        // Get the solution information
         const HighsInfo& info = highs->getInfo();
+<<<<<<< HEAD
         config.log_stream << "Simplex iteration count: " << info.simplex_iteration_count
                           << std::endl;
         config.log_stream << "Objective function value: " << info.objective_function_value
@@ -262,6 +250,15 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
                           << highs->solutionStatusToString(info.dual_solution_status) << std::endl;
         config.log_stream << "Basis: " << highs->basisValidityToString(info.basis_validity)
                           << std::endl;
+=======
+        std::cout << "Simplex iteration count: " << info.simplex_iteration_count << std::endl;
+        std::cout << "Objective function value: " << info.objective_function_value << std::endl;
+        std::cout << "Primal  solution status: "
+                  << highs->solutionStatusToString(info.primal_solution_status) << std::endl;
+        std::cout << "Dual    solution status: "
+                  << highs->solutionStatusToString(info.dual_solution_status) << std::endl;
+        std::cout << "Basis: " << highs->basisValidityToString(info.basis_validity) << std::endl;
+>>>>>>> parent of d4d0040 (refactor: remove verbose flag in favor of log stream)
       }
 
       // Get the model status
@@ -303,8 +300,10 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
     *return_status = highs->run();
     assert(*return_status == HighsStatus::kOk);
 
-    if (config.log_stream.active) {
+    if (config.verbose) {
+      // Get the solution information
       const HighsInfo& info = highs->getInfo();
+<<<<<<< HEAD
       config.log_stream << "Simplex iteration count: " << info.simplex_iteration_count << std::endl;
       config.log_stream << "Objective function value: " << info.objective_function_value
                         << std::endl;
@@ -314,6 +313,15 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
                         << highs->solutionStatusToString(info.dual_solution_status) << std::endl;
       config.log_stream << "Basis: " << highs->basisValidityToString(info.basis_validity)
                         << std::endl;
+=======
+      std::cout << "Simplex iteration count: " << info.simplex_iteration_count << std::endl;
+      std::cout << "Objective function value: " << info.objective_function_value << std::endl;
+      std::cout << "Primal  solution status: "
+                << highs->solutionStatusToString(info.primal_solution_status) << std::endl;
+      std::cout << "Dual    solution status: "
+                << highs->solutionStatusToString(info.dual_solution_status) << std::endl;
+      std::cout << "Basis: " << highs->basisValidityToString(info.basis_validity) << std::endl;
+>>>>>>> parent of d4d0040 (refactor: remove verbose flag in favor of log stream)
     }
 
     // Get the model status

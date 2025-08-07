@@ -16,7 +16,6 @@
 #include <argparse/argparse.hpp>
 #include <atomic>
 #include <fstream>
-#include <iostream>
 #include <nlohmann/json.hpp>
 #include <numeric>
 #include <queue>
@@ -135,8 +134,6 @@ struct Args {
 
   void extract(TesseractConfig& config, std::vector<stim::SparseShot>& shots,
                std::unique_ptr<stim::MeasureRecordWriter>& writer) {
-    config.verbose_callback = [](const std::string& s) { std::cout << s; };
-    config.log_stream = CallbackStream(verbose, config.verbose_callback);
     // Get a circuit, if available
     stim::Circuit circuit;
     if (!circuit_path.empty()) {
@@ -174,15 +171,17 @@ struct Args {
 
     // Sample orientations of the error model to use for the det priority
     {
-      auto detector_coords = get_detector_coords(config.dem);
-      for (size_t d = 0; d < detector_coords.size(); ++d) {
-        config.log_stream << "Detector D" << d << " coordinate (";
-        size_t e = std::min(3ul, detector_coords[d].size());
-        for (size_t i = 0; i < e; ++i) {
-          config.log_stream << detector_coords[d][i];
-          if (i + 1 < e) config.log_stream << ", ";
+      if (verbose) {
+        auto detector_coords = get_detector_coords(config.dem);
+        for (size_t d = 0; d < detector_coords.size(); ++d) {
+          std::cout << "Detector D" << d << " coordinate (";
+          size_t e = std::min(3ul, detector_coords[d].size());
+          for (size_t i = 0; i < e; ++i) {
+            std::cout << detector_coords[d][i];
+            if (i + 1 < e) std::cout << ", ";
+          }
+          std::cout << ")" << std::endl;
         }
-        config.log_stream << ")" << std::endl;
       }
       config.det_orders =
           build_det_orders(config.dem, num_det_orders, det_order_bfs, det_order_seed);
@@ -282,8 +281,7 @@ struct Args {
     config.no_revisit_dets = no_revisit_dets;
     config.at_most_two_errors_per_detector = at_most_two_errors_per_detector;
     config.pqlimit = pqlimit;
-    config.log_stream.active = verbose;
-    config.log_stream.callback = config.verbose_callback;
+    config.verbose = verbose;
   }
 };
 
