@@ -201,7 +201,7 @@ void add_simplex_module(py::module& root) {
         ----------
         syndromes : np.ndarray
             A 2D NumPy array of booleans where each row represents a single shot's
-            detection events. The shape should be (num_shots, num_detectors): each shot has
+            detector outcomes. The shape should be (num_shots, num_detectors): each shot has
             a new array with num_detectors size.
 
         Returns
