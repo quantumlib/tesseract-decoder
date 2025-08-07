@@ -94,8 +94,12 @@ stim::DetectorErrorModel common::merge_identical_errors(const stim::DetectorErro
         out_dem.append_dem_instruction(instruction);
         break;
       }
+      case stim::DemInstructionType::DEM_LOGICAL_OBSERVABLE: {
+        out_dem.append_dem_instruction(instruction);
+        break;
+      }
       default:
-        std::cerr << "Unrecognized instruction type: " << instruction.type << std::endl;
+        throw std::invalid_argument("Unrecognized instruction type: " + instruction.str());
     }
   }
   for (const auto& it : errors_by_symptom) {
@@ -119,8 +123,11 @@ stim::DetectorErrorModel common::remove_zero_probability_errors(
       case stim::DemInstructionType::DEM_DETECTOR:
         out_dem.append_dem_instruction(instruction);
         break;
+      case stim::DemInstructionType::DEM_LOGICAL_OBSERVABLE:
+        out_dem.append_dem_instruction(instruction);
+        break;
       default:
-        std::cerr << "Unrecognized instruction type: " << instruction.type << std::endl;
+        throw std::invalid_argument("Unrecognized instruction type: " + instruction.str());
     }
   }
   return out_dem;
@@ -147,9 +154,6 @@ stim::DetectorErrorModel common::dem_from_counts(stim::DetectorErrorModel& orig_
   size_t ei = 0;
   for (const stim::DemInstruction& instruction : orig_dem.flattened().instructions) {
     switch (instruction.type) {
-      case stim::DemInstructionType::DEM_SHIFT_DETECTORS:
-        assert(false && "unreachable");
-        break;
       case stim::DemInstructionType::DEM_ERROR: {
         double est_probability = double(error_counts.at(ei)) / double(num_shots);
         out_dem.append_error_instruction(est_probability, instruction.target_data, /*tag=*/"");
@@ -160,8 +164,12 @@ stim::DetectorErrorModel common::dem_from_counts(stim::DetectorErrorModel& orig_
         out_dem.append_dem_instruction(instruction);
         break;
       }
+      case stim::DemInstructionType::DEM_LOGICAL_OBSERVABLE: {
+        out_dem.append_dem_instruction(instruction);
+        break;
+      }
       default:
-        assert(false && "unreachable");
+        throw std::invalid_argument("Unrecognized instruction type: " + instruction.str());
     }
   }
   return out_dem;
