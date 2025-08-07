@@ -62,7 +62,7 @@ def test_simplex_decoder_predicts_various_observable_flips():
         dem = stim.DetectorErrorModel(dem_string)
 
         # Initialize SimplexConfig and SimplexDecoder with the generated DEM
-        config = tesseract_decoder.simplex.SimplexConfig(dem, window_length=1)
+        config = tesseract_decoder.simplex.SimplexConfig(dem)
         decoder = tesseract_decoder.simplex.SimplexDecoder(config)
 
         # Simulate a detection event on D0.
@@ -96,7 +96,7 @@ def test_decode_from_detection_events():
     dem = stim.DetectorErrorModel(dem_string)
 
     # Configure the decoder.
-    config = tesseract_decoder.simplex.SimplexConfig(dem, window_length=1)
+    config = tesseract_decoder.simplex.SimplexConfig(dem)
     decoder = tesseract_decoder.simplex.SimplexDecoder(config)
     decoder.init_ilp()
 
@@ -140,7 +140,7 @@ def test_decode_from_detection_events_complex_dem():
     dem = stim.DetectorErrorModel(dem_string)
 
     # Configure the decoder.
-    config = tesseract_decoder.simplex.SimplexConfig(dem, window_length=1)
+    config = tesseract_decoder.simplex.SimplexConfig(dem)
     decoder = tesseract_decoder.simplex.SimplexDecoder(config)
     decoder.init_ilp()
 
@@ -168,7 +168,7 @@ def test_decode_batch_with_invalid_dimensions():
     dem = stim.DetectorErrorModel(dem_string)
 
     # Configure the decoder.
-    config = tesseract_decoder.simplex.SimplexConfig(dem, window_length=1)
+    config = tesseract_decoder.simplex.SimplexConfig(dem)
     decoder = tesseract_decoder.simplex.SimplexDecoder(config)
     decoder.init_ilp()
 
@@ -190,7 +190,7 @@ def test_decode_batch():
         error(0.05) D1
     '''
     dem = stim.DetectorErrorModel(dem_string)
-    config = tesseract_decoder.simplex.SimplexConfig(dem, window_length=1)
+    config = tesseract_decoder.simplex.SimplexConfig(dem)
     decoder = tesseract_decoder.simplex.SimplexDecoder(config)
     decoder.init_ilp()
 
@@ -235,7 +235,7 @@ def test_decode_batch_more_complex_dem():
     dem = stim.DetectorErrorModel(dem_string)
 
     # Configure the decoder.
-    config = tesseract_decoder.simplex.SimplexConfig(dem, window_length=1)
+    config = tesseract_decoder.simplex.SimplexConfig(dem)
     decoder = tesseract_decoder.simplex.SimplexDecoder(config)
     decoder.init_ilp()
 
