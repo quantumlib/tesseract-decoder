@@ -16,6 +16,7 @@
 #define _TESSERACT_PYBIND_H
 
 #include <pybind11/iostream.h>
+#include <pybind11/numpy.h>
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -83,28 +84,89 @@ void add_tesseract_module(py::module& root) {
           "get_observables_from_errors",
           [](TesseractDecoder& self, const std::vector<size_t>& predicted_errors) {
             std::vector<bool> result(self.num_observables, false);
-            const auto& indices = self.get_flipped_observables(predicted_errors);
-            for (int index : indices) {
-              result[index] = true;
-            }
-            return result;
-          },
-          py::arg("predicted_errors"))
-      .def("cost_from_errors", &TesseractDecoder::cost_from_errors, py::arg("predicted_errors"))
-      .def(
-          "decode",
-          [](TesseractDecoder& self, const std::vector<uint64_t>& detections) {
-            std::vector<bool> result(self.num_observables, false);
-            self.decode(detections);
-            for (size_t ei : self.predicted_errors_buffer) {
+            for (size_t ei : predicted_errors) {
               for (int obs_index : self.errors[ei].symptom.observables) {
                 result[obs_index] = result[obs_index] ^ true;
               }
             }
             return result;
           },
-          py::arg("detections"),
-          py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>())
+          py::arg("predicted_errors"))
+      .def("cost_from_errors", &TesseractDecoder::cost_from_errors, py::arg("predicted_errors"))
+      .def(
+          "decode_from_detection_events",
+          [](TesseractDecoder& self, const py::array_t<bool>& syndrome) {
+            std::vector<size_t> detections;
+            auto syndrome_unchecked = syndrome.unchecked<1>();
+            for (size_t i = 0; i < syndrome_unchecked.size(); ++i) {
+              if (syndrome_unchecked(i)) {
+                detections.push_back(i);
+              }
+            }
+            self.decode(detections);
+            // Note: `std::vector<bool>` is a special C++ template that does not
+            // provide a contiguous memory block, which is required by `pybind11`
+            // for direct NumPy array creation. Therefose, I use `std::vector<char>`
+            // instead to ensure compatibility with `py::array`.
+            std::vector<char> result(self.num_observables, 0);
+            for (size_t ei : self.predicted_errors_buffer) {
+              for (int obs_index : self.errors[ei].symptom.observables) {
+                result[obs_index] = result[obs_index] ^ true;
+              }
+            }
+            return py::array(py::dtype::of<bool>(), result.size(), result.data());
+          },
+          py::arg("syndrome"),
+          py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>(),
+          "Decodes a single shot (a 1D NumPy array of booleans) and returns "
+          "a NumPy array of predicted observable flips.")
+      .def(
+          "decode_batch",
+          [](TesseractDecoder& self, const py::array_t<bool>& syndromes) {
+            // Ensure the input is in correct 2D array.
+            if (syndromes.ndim() != 2) {
+              throw std::runtime_error("Input syndromes must be a 2D NumPy array.");
+            }
+
+            // Extract dimensions and syndromes.
+            auto syndromes_unchecked = syndromes.unchecked<2>();
+            size_t num_shots = syndromes_unchecked.shape(0);
+            size_t num_detectors = syndromes_unchecked.shape(1);
+
+            // Allocate memory for the function output.
+            py::array_t<bool> result({num_shots, self.num_observables});
+            auto result_unchecked = result.mutable_unchecked<2>();
+
+            // Iterate over each shot and decode it.
+            for (size_t i = 0; i < num_shots; ++i) {
+              std::vector<size_t> detections;
+              for (size_t j = 0; j < num_detectors; ++j) {
+                if (syndromes_unchecked(i, j)) {
+                  detections.push_back(j);
+                }
+              }
+              self.decode(detections);
+
+              // Collect results for the current shot being decoded.
+              std::vector<char> shot_result(self.num_observables, 0);
+              for (size_t ei : self.predicted_errors_buffer) {
+                for (int obs_index : self.errors[ei].symptom.observables) {
+                  shot_result[obs_index] ^= true;
+                }
+              }
+
+              // Copy the result into the pre-allocated array.
+              for (size_t k = 0; k < self.num_observables; ++k) {
+                result_unchecked(i, k) = shot_result[k];
+              }
+            }
+
+            return result;
+          },
+          py::arg("syndromes"),
+          "Decodes a batch of shots (a 2D NumPy array of booleans) and "
+          "returns a 2D NumPy array of predicted observable flips, where "
+          "each row corresponds to a shot.")
       .def_readwrite("low_confidence_flag", &TesseractDecoder::low_confidence_flag)
       .def_readwrite("predicted_errors_buffer", &TesseractDecoder::predicted_errors_buffer)
       .def_readwrite("errors", &TesseractDecoder::errors);
