@@ -30,7 +30,7 @@ error(0.25) D1
 def test_create_config():
     assert (
         str(tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL))
-        == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=65535, no_revisit_dets=0, at_most_two_errors_per_detector=0, pqlimit=18446744073709551615, det_orders=[], det_penalty=0)"
+        == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=65535, no_revisit_dets=0, at_most_two_errors_per_detector=0, verbose=0, pqlimit=18446744073709551615, det_orders=[], det_penalty=0)"
     )
     assert (
         tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL).dem
@@ -51,20 +51,6 @@ def test_create_decoder():
     assert decoder.get_observables_from_errors([1]) == []
     assert decoder.cost_from_errors([1]) == pytest.approx(0.5108256237659907)
     assert decoder.decode([0]) == []
-
-
-def test_tesseract_verbose_callback_receives_output():
-    lines = []
-
-    def cb(s: str) -> None:
-        lines.append(s)
-
-    config = tesseract_decoder.tesseract.TesseractConfig(
-        _DETECTOR_ERROR_MODEL, verbose_callback=cb
-    )
-    decoder = tesseract_decoder.tesseract.TesseractDecoder(config)
-    decoder.decode_to_errors([0])
-    assert any(lines)
 
 def test_tesseract_decoder_predicts_various_observable_flips():
     """

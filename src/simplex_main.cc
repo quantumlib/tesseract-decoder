@@ -15,7 +15,6 @@
 #include <argparse/argparse.hpp>
 #include <atomic>
 #include <fstream>
-#include <iostream>
 #include <nlohmann/json.hpp>
 #include <thread>
 
@@ -135,8 +134,6 @@ struct Args {
 
   void extract(SimplexConfig& config, std::vector<stim::SparseShot>& shots,
                std::unique_ptr<stim::MeasureRecordWriter>& writer) {
-    config.verbose_callback = [](const std::string& s) { std::cout << s; };
-    config.log_stream = CallbackStream(verbose, config.verbose_callback);
     // Get a circuit, if available
     stim::Circuit circuit;
     if (!circuit_path.empty()) {
@@ -264,8 +261,7 @@ struct Args {
     config.parallelize = enable_ilp_solver_parallelism;
     config.window_length = window_length;
     config.window_slide_length = window_slide_length;
-    config.log_stream.active = verbose;
-    config.log_stream.callback = config.verbose_callback;
+    config.verbose = verbose;
   }
 };
 
