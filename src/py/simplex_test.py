@@ -41,7 +41,6 @@ def test_create_simplex_decoder():
     decoder = tesseract_decoder.simplex.SimplexDecoder(
         tesseract_decoder.simplex.SimplexConfig(_DETECTOR_ERROR_MODEL, window_length=5)
     )
-    decoder.init_ilp()
     decoder.decode_to_errors([1])
     assert decoder.get_observables_from_errors([1]) == []
     assert decoder.cost_from_errors([2]) == pytest.approx(1.0986123)
@@ -67,7 +66,6 @@ def test_simplex_decoder_predicts_various_observable_flips():
         # Initialize SimplexConfig and SimplexDecoder with the generated DEM
         config = tesseract_decoder.simplex.SimplexConfig(dem, window_length=1) # window_length must be set
         decoder = tesseract_decoder.simplex.SimplexDecoder(config)
-        decoder.init_ilp() # Initialize the ILP solver
 
         # Simulate a detection event on D0.
         # The decoder should identify the most likely error causing D0,

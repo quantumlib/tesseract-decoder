@@ -326,7 +326,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
       std::cout << "activated_errors = ";
       for (size_t oei : node.errors) {
         std::cout << oei << ", ";
-      }
+        }
       std::cout << std::endl;
       std::cout << "activated_detectors = ";
       for (size_t d = 0; d < num_detectors; ++d) {

@@ -238,6 +238,19 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
       if (config.verbose) {
         // Get the solution information
         const HighsInfo& info = highs->getInfo();
+<<<<<<< HEAD
+        config.log_stream << "Simplex iteration count: " << info.simplex_iteration_count
+                          << std::endl;
+        config.log_stream << "Objective function value: " << info.objective_function_value
+                          << std::endl;
+        config.log_stream << "Primal  solution status: "
+                          << highs->solutionStatusToString(info.primal_solution_status)
+                          << std::endl;
+        config.log_stream << "Dual    solution status: "
+                          << highs->solutionStatusToString(info.dual_solution_status) << std::endl;
+        config.log_stream << "Basis: " << highs->basisValidityToString(info.basis_validity)
+                          << std::endl;
+=======
         std::cout << "Simplex iteration count: " << info.simplex_iteration_count << std::endl;
         std::cout << "Objective function value: " << info.objective_function_value << std::endl;
         std::cout << "Primal  solution status: "
@@ -245,6 +258,7 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
         std::cout << "Dual    solution status: "
                   << highs->solutionStatusToString(info.dual_solution_status) << std::endl;
         std::cout << "Basis: " << highs->basisValidityToString(info.basis_validity) << std::endl;
+>>>>>>> parent of d4d0040 (refactor: remove verbose flag in favor of log stream)
       }
 
       // Get the model status
@@ -289,6 +303,17 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
     if (config.verbose) {
       // Get the solution information
       const HighsInfo& info = highs->getInfo();
+<<<<<<< HEAD
+      config.log_stream << "Simplex iteration count: " << info.simplex_iteration_count << std::endl;
+      config.log_stream << "Objective function value: " << info.objective_function_value
+                        << std::endl;
+      config.log_stream << "Primal  solution status: "
+                        << highs->solutionStatusToString(info.primal_solution_status) << std::endl;
+      config.log_stream << "Dual    solution status: "
+                        << highs->solutionStatusToString(info.dual_solution_status) << std::endl;
+      config.log_stream << "Basis: " << highs->basisValidityToString(info.basis_validity)
+                        << std::endl;
+=======
       std::cout << "Simplex iteration count: " << info.simplex_iteration_count << std::endl;
       std::cout << "Objective function value: " << info.objective_function_value << std::endl;
       std::cout << "Primal  solution status: "
@@ -296,6 +321,7 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
       std::cout << "Dual    solution status: "
                 << highs->solutionStatusToString(info.dual_solution_status) << std::endl;
       std::cout << "Basis: " << highs->basisValidityToString(info.basis_validity) << std::endl;
+>>>>>>> parent of d4d0040 (refactor: remove verbose flag in favor of log stream)
     }
 
     // Get the model status
