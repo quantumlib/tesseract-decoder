@@ -71,8 +71,6 @@ struct SimplexDecoder {
                     std::vector<std::vector<int>>& obs_predicted);
 
   ~SimplexDecoder();
-
- private:
   void init_ilp();
 };
 
