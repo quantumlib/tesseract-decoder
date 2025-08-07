@@ -122,7 +122,7 @@ void add_simplex_module(py::module& root) {
             self.decode(detections);
             // Note: `std::vector<bool>` is a special C++ template that does not
             // provide a contiguous memory block, which is required by `pybind11`
-            // for direct NumPy array creation. Therefose, I use `std::vector<char>`
+            // for direct NumPy array creation. Therefore, I use `std::vector<char>`
             // to ensure compatibility with `py::array`.
             std::vector<char> result(self.num_observables, 0);
             for (size_t ei : self.predicted_errors_buffer) {
