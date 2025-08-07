@@ -43,6 +43,14 @@ void add_utils_module(py::module &root) {
       },
       py::arg("dem"));
   m.def(
+      "build_det_orders",
+      [](py::object dem, size_t num_det_orders, bool det_order_bfs, uint64_t seed) {
+        auto input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
+        return build_det_orders(input_dem, num_det_orders, det_order_bfs, seed);
+      },
+      py::arg("dem"), py::arg("num_det_orders"), py::arg("det_order_bfs") = true,
+      py::arg("seed") = 0);
+  m.def(
       "get_errors_from_dem",
       [](py::object dem) {
         auto input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
