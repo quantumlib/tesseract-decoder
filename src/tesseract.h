@@ -92,6 +92,10 @@ struct TesseractDecoder {
   std::vector<common::Error> errors;
   size_t num_observables;
 
+  std::vector<std::vector<int>>& get_eneighbors() {
+    return eneighbors;
+  }
+
  private:
   std::vector<std::vector<int>> d2e;
   std::vector<std::vector<int>> eneighbors;
