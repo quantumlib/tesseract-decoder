@@ -79,7 +79,7 @@ stim::DetectorErrorModel common::merge_identical_errors(const stim::DetectorErro
   for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_SHIFT_DETECTORS:
-        assert(false && "unreachable");
+        std::cout << "Unrecognized instruction: DEM_SHIFT_DETECTORS" << std::endl;
         break;
       case stim::DemInstructionType::DEM_ERROR: {
         Error error(instruction);
@@ -98,7 +98,7 @@ stim::DetectorErrorModel common::merge_identical_errors(const stim::DetectorErro
         break;
       }
       default:
-        assert(false && "unreachable");
+        std::cout << "Unrecognized instruction type: " << instruction.type << std::endl;
     }
   }
   for (const auto& it : errors_by_symptom) {
@@ -115,7 +115,7 @@ stim::DetectorErrorModel common::remove_zero_probability_errors(
   for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_SHIFT_DETECTORS:
-        assert(false && "unreachable");
+        std::cout << "Unrecognized instruction: DEM_SHIFT_DETECTORS" << std::endl;
         break;
       case stim::DemInstructionType::DEM_ERROR:
         if (instruction.arg_data[0] > 0) {
@@ -126,7 +126,7 @@ stim::DetectorErrorModel common::remove_zero_probability_errors(
         out_dem.append_dem_instruction(instruction);
         break;
       default:
-        assert(false && "unreachable");
+        std::cout << "Unrecognized instruction type: " << instruction.type << std::endl;
     }
   }
   return out_dem;
