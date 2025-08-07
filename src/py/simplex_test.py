@@ -62,7 +62,7 @@ def test_simplex_decoder_predicts_various_observable_flips():
         dem = stim.DetectorErrorModel(dem_string)
 
         # Initialize SimplexConfig and SimplexDecoder with the generated DEM
-        config = tesseract_decoder.simplex.SimplexConfig(dem, window_length=1) # window_length must be set
+        config = tesseract_decoder.simplex.SimplexConfig(dem, window_length=1)
         decoder = tesseract_decoder.simplex.SimplexDecoder(config)
 
         # Simulate a detection event on D0.
