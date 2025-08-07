@@ -15,6 +15,7 @@
 #ifndef _SIMPLEX_PYBIND_H
 #define _SIMPLEX_PYBIND_H
 
+#include <pybind11/iostream.h>
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -63,7 +64,8 @@ void add_simplex_module(py::module& root) {
       .def_readwrite("end_time_to_errors", &SimplexDecoder::end_time_to_errors)
       .def_readonly("low_confidence_flag", &SimplexDecoder::low_confidence_flag)
       .def("init_ilp", &SimplexDecoder::init_ilp)
-      .def("decode_to_errors", &SimplexDecoder::decode_to_errors, py::arg("detections"))
+      .def("decode_to_errors", &SimplexDecoder::decode_to_errors, py::arg("detections"),
+           py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>())
       .def(
           "get_observables_from_errors",
           [](SimplexDecoder& self, const std::vector<size_t>& predicted_errors) {
@@ -88,6 +90,7 @@ void add_simplex_module(py::module& root) {
             }
             return result;
           },
-          py::arg("detections"));
+          py::arg("detections"),
+          py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>());
 }
 #endif
