@@ -4,9 +4,9 @@ import stim
 
 
 
-def shared_test_decode_from_detection_events(decoder_class, config_class):
+def shared_test_decode(decoder_class, config_class):
     """
-    Tests that the 'decode_from_detection_events' method computes a correct decoding output.
+    Tests that the 'decode' method computes a correct decoding output.
     """
     dem_string = f'''
         error(0.1) D0 D1 L0
@@ -19,20 +19,20 @@ def shared_test_decode_from_detection_events(decoder_class, config_class):
         decoder.init_ilp()
 
     syndrome1 = np.array([True, True], dtype=bool)
-    predicted1 = decoder.decode_from_detection_events(syndrome1)
+    predicted1 = decoder.decode(syndrome1)
     assert isinstance(predicted1, np.ndarray)
     assert predicted1.dtype.type == np.bool_
     assert np.array_equal(predicted1, np.array([True], dtype=bool))
 
     syndrome2 = np.array([True, False], dtype=bool)
-    predicted2 = decoder.decode_from_detection_events(syndrome2)
+    predicted2 = decoder.decode(syndrome2)
     assert isinstance(predicted2, np.ndarray)
     assert predicted2.dtype.type == np.bool_
     assert np.array_equal(predicted2, np.array([False], dtype=bool))
 
-def shared_test_decode_from_detection_events_complex_dem(decoder_class, config_class):
+def shared_test_decode_complex_dem(decoder_class, config_class):
     """
-    Tests the 'decode_from_detection_events' method with a more complex DEM.
+    Tests the 'decode' method with a more complex DEM.
     """
     dem_string = f'''
         error(0.5) D0 D1 L0 L2
@@ -47,7 +47,7 @@ def shared_test_decode_from_detection_events_complex_dem(decoder_class, config_c
         decoder.init_ilp()
 
     syndrome = np.array([True, True, False], dtype=bool)
-    predicted = decoder.decode_from_detection_events(syndrome)
+    predicted = decoder.decode(syndrome)
     assert isinstance(predicted, np.ndarray)
     assert predicted.dtype.type == np.bool_
     expected = np.array([True, False, True], dtype=bool)
@@ -157,7 +157,7 @@ def shared_test_decoder_predicts_various_observable_flips(decoder_class, config_
             decoder.init_ilp()
         syndrome = np.zeros(dem.num_detectors, dtype=bool)
         syndrome[0] = True
-        predicted_logical_flips_array = decoder.decode_from_detection_events(syndrome)
+        predicted_logical_flips_array = decoder.decode(syndrome)
         actual_flipped_observables = [
             idx for idx, is_flipped in enumerate(predicted_logical_flips_array) if is_flipped
         ]
@@ -168,3 +168,37 @@ def shared_test_decoder_predicts_various_observable_flips(decoder_class, config_
 
 
 
+def shared_test_decode_from_detection_events(decoder_class, config_class):
+    """
+    Tests the `decode_from_detection_events` method with a list of detection indices.
+    """
+    dem_string = f'''
+        error(0.1) D0 D1 L0
+        error(0.2) D0
+    '''
+    dem = stim.DetectorErrorModel(dem_string)
+    config = config_class(dem)
+    decoder = decoder_class(config)
+    if hasattr(decoder, 'init_ilp'):
+        decoder.init_ilp()
+
+    # Case 1: Detections corresponding to the D0 D1 L0 error
+    detections1 = [0, 1]
+    predicted1 = decoder.decode_from_detection_events(detections1)
+    assert isinstance(predicted1, np.ndarray)
+    assert predicted1.dtype.type == np.bool_
+    assert np.array_equal(predicted1, np.array([True], dtype=bool))
+
+    # Case 2: Detections corresponding to the D0 error
+    detections2 = [0]
+    predicted2 = decoder.decode_from_detection_events(detections2)
+    assert isinstance(predicted2, np.ndarray)
+    assert predicted2.dtype.type == np.bool_
+    assert np.array_equal(predicted2, np.array([False], dtype=bool))
+
+    # Case 3: No detections
+    detections3 = []
+    predicted3 = decoder.decode_from_detection_events(detections3)
+    assert isinstance(predicted3, np.ndarray)
+    assert predicted3.dtype.type == np.bool_
+    assert np.array_equal(predicted3, np.array([False], dtype=bool))

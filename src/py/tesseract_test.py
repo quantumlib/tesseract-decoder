@@ -18,13 +18,14 @@ import stim
 import numpy as np
 
 from src import tesseract_decoder
-from src.py.test_utils import (
-    shared_test_decode_from_detection_events,
+from src.py.shared_decoding_tests import (
+    shared_test_decode,
     shared_test_decode_batch_with_invalid_dimensions,
     shared_test_decode_batch_with_complex_model,
     shared_test_decoder_predicts_various_observable_flips,
-    shared_test_decode_from_detection_events_complex_dem,
+    shared_test_decode_complex_dem,
     shared_test_decode_batch,
+    shared_test_decode_from_detection_events,
 )
 
 _DETECTOR_ERROR_MODEL = stim.DetectorErrorModel(
@@ -72,16 +73,16 @@ def test_tesseract_decoder_predicts_various_observable_flips(decoder_class, conf
     "decoder_class, config_class",
     [(tesseract_decoder.tesseract.TesseractDecoder, tesseract_decoder.tesseract.TesseractConfig)]
 )
-def test_tesseract_decode_from_detection_events(decoder_class, config_class):
-    shared_test_decode_from_detection_events(decoder_class, config_class)
+def test_tesseract_decode(decoder_class, config_class):
+    shared_test_decode(decoder_class, config_class)
 
 
 @pytest.mark.parametrize(
     "decoder_class, config_class",
     [(tesseract_decoder.tesseract.TesseractDecoder, tesseract_decoder.tesseract.TesseractConfig)]
 )
-def test_tesseract_decode_from_detection_events_complex_dem(decoder_class, config_class):
-    shared_test_decode_from_detection_events_complex_dem(decoder_class, config_class)
+def test_tesseract_decode_complex_dem(decoder_class, config_class):
+    shared_test_decode_complex_dem(decoder_class, config_class)
 
 
 @pytest.mark.parametrize(
@@ -107,6 +108,12 @@ def test_tesseract_decode_batch(decoder_class, config_class):
 def test_tesseract_decode_batch_with_complex_model(decoder_class, config_class):
     shared_test_decode_batch_with_complex_model(decoder_class, config_class)
 
+@pytest.mark.parametrize(
+    "decoder_class, config_class",
+    [(tesseract_decoder.tesseract.TesseractDecoder, tesseract_decoder.tesseract.TesseractConfig)]
+)
+def test_tesseract_decode_from_detection_events(decoder_class, config_class):
+    shared_test_decode_from_detection_events(decoder_class, config_class)
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))

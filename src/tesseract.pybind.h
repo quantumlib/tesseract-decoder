@@ -95,6 +95,35 @@ void add_tesseract_module(py::module& root) {
       .def("cost_from_errors", &TesseractDecoder::cost_from_errors, py::arg("predicted_errors"))
       .def(
           "decode_from_detection_events",
+          [](TesseractDecoder& self, const std::vector<uint64_t>& detections) {
+            std::vector<char> result(self.num_observables, false);
+            self.decode(detections);
+            for (size_t ei : self.predicted_errors_buffer) {
+              for (int obs_index : self.errors[ei].symptom.observables) {
+                result[obs_index] = result[obs_index] ^ true;
+              }
+            }
+            return py::array(py::dtype::of<bool>(), result.size(), result.data());
+          },
+          py::arg("detections"),
+          py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>(),
+          R"pbdoc(
+          Decodes a single shot from a list of detection events.
+
+          Parameters
+          ----------
+          detections : list[int]
+              A list of `uint64_t` indices corresponding to the detectors that were
+              fired. This input represents a single measurement shot.
+
+          Returns
+          -------
+          np.ndarray
+              A 1D NumPy array of booleans. Each boolean value indicates whether the
+              corresponding logical observable has been flipped by the decoded error.
+      )pbdoc")
+      .def(
+          "decode",
           [](TesseractDecoder& self, const py::array_t<bool>& syndrome) {
             std::vector<uint64_t> detections;
             auto syndrome_unchecked = syndrome.unchecked<1>();

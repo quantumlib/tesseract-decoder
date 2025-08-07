@@ -3,8 +3,8 @@ load("@rules_python//python:pip.bzl", "compile_pip_requirements")
 load("@rules_python//python:py_library.bzl", "py_library")
 
 py_library(
-    name = "test_utils",
-    srcs = ["test_utils.py"],
+    name = "shared_decoding_tests",
+    srcs = ["shared_decoding_tests.py"],
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//pytest",
@@ -43,7 +43,7 @@ py_test(
         "@pypi//pytest",
         "@pypi//stim",
         "//src:lib_tesseract_decoder",
-        ":test_utils",
+        ":shared_decoding_tests",
     ],
 )
 
@@ -55,7 +55,7 @@ py_test(
         "@pypi//pytest",
         "@pypi//stim",
         "//src:lib_tesseract_decoder",
-        ":test_utils",
+        ":shared_decoding_tests",
     ],
 )
 
