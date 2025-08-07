@@ -94,6 +94,10 @@ stim::DetectorErrorModel common::merge_identical_errors(const stim::DetectorErro
         out_dem.append_dem_instruction(instruction);
         break;
       }
+      case stim::DemInstructionType::DEM_LOGICAL_OBSERVABLE: {
+        out_dem.append_dem_instruction(instruction);
+        break;
+      }
       default:
         std::cerr << "Unrecognized instruction type: " << instruction.type << std::endl;
     }
@@ -117,6 +121,9 @@ stim::DetectorErrorModel common::remove_zero_probability_errors(
         }
         break;
       case stim::DemInstructionType::DEM_DETECTOR:
+        out_dem.append_dem_instruction(instruction);
+        break;
+      case stim::DemInstructionType::DEM_LOGICAL_OBSERVABLE:
         out_dem.append_dem_instruction(instruction);
         break;
       default:
@@ -157,6 +164,10 @@ stim::DetectorErrorModel common::dem_from_counts(stim::DetectorErrorModel& orig_
         break;
       }
       case stim::DemInstructionType::DEM_DETECTOR: {
+        out_dem.append_dem_instruction(instruction);
+        break;
+      }
+      case stim::DemInstructionType::DEM_LOGICAL_OBSERVABLE: {
         out_dem.append_dem_instruction(instruction);
         break;
       }
