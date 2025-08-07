@@ -153,7 +153,7 @@ void add_tesseract_module(py::module& root) {
         Parameters
         ----------
         syndrome : np.ndarray
-            A 1D NumPy array of booleans representing the detection events for a single shot.
+            A 1D NumPy array of booleans representing the detector outcomes for a single shot.
             The length of the array should match the number of detectors in the DEM.
 
         Returns
