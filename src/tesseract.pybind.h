@@ -15,6 +15,7 @@
 #ifndef _TESSERACT_PYBIND_H
 #define _TESSERACT_PYBIND_H
 
+#include <pybind11/iostream.h>
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -71,11 +72,13 @@ void add_tesseract_module(py::module& root) {
       .def(py::init<TesseractConfig>(), py::arg("config"))
       .def("decode_to_errors",
            py::overload_cast<const std::vector<uint64_t>&>(&TesseractDecoder::decode_to_errors),
-           py::arg("detections"))
+           py::arg("detections"),
+           py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>())
       .def("decode_to_errors",
            py::overload_cast<const std::vector<uint64_t>&, size_t, size_t>(
                &TesseractDecoder::decode_to_errors),
-           py::arg("detections"), py::arg("det_order"), py::arg("det_beam"))
+           py::arg("detections"), py::arg("det_order"), py::arg("det_beam"),
+           py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>())
       .def(
           "get_observables_from_errors",
           [](TesseractDecoder& self, const std::vector<size_t>& predicted_errors) {
@@ -100,7 +103,8 @@ void add_tesseract_module(py::module& root) {
             }
             return result;
           },
-          py::arg("detections"))
+          py::arg("detections"),
+          py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>())
       .def_readwrite("low_confidence_flag", &TesseractDecoder::low_confidence_flag)
       .def_readwrite("predicted_errors_buffer", &TesseractDecoder::predicted_errors_buffer)
       .def_readwrite("errors", &TesseractDecoder::errors);

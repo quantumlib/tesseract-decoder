@@ -14,6 +14,7 @@
 
 #include "tesseract.pybind.h"
 
+#include <pybind11/iostream.h>
 #include <pybind11/pybind11.h>
 
 #include "common.pybind.h"
@@ -23,8 +24,18 @@
 
 PYBIND11_MODULE(tesseract_decoder, tesseract) {
   py::module::import("stim");
+
   add_common_module(tesseract);
   add_utils_module(tesseract);
   add_simplex_module(tesseract);
   add_tesseract_module(tesseract);
+
+  // Adds a context manager to the python library that can be used to redirect C++'s stdout/stderr
+  // to python's stdout/stderr at run time like
+  // with tesseract_decoder.ostream_redirect(stdout=..., stderr=...):
+  //    do_work()
+  // This is only needed if the C++ function's stdout/stderr is not redirected to python's
+  // stdout/stderr using the py::call_guard<py::scoped_ostream_redirect,
+  // py::scoped_estream_redirect>() statement.
+  py::add_ostream_redirect(tesseract, "ostream_redirect");
 }

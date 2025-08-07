@@ -160,6 +160,40 @@ Here are some tips for improving performance:
 *   *DEM usage frequency output*: if `--dem-out` is specified, outputs estimated error frequencies.
 *   *Statistics output*: includes number of shots, errors, low confidence shots, and processing time.
 
+## Python Interface
+This repository contains the C++ implementation of the Tesseract quantum error correction decoder, along with a Python wrapper. The Python wrapper/interface exposes the decoding algorithms and helper utilities, allowing Python users to leverage this high-performance decoding algorithm.
+
+The following example demonstrates how to create and use the Tesseract decoder using the Python interface.
+
+```python
+import tesseract_decoder.tesseract as tesseract
+import stim
+
+# 1. Define a detector error model (DEM)
+dem = stim.DetectorErrorModel("""
+    error(0.1) D0 D1
+    error(0.2) D1 D2 L0
+    detector(0, 0, 0) D0
+    detector(1, 0, 0) D1
+    detector(2, 0, 0) D2
+""")
+
+# 2. Create the decoder configuration
+config = tesseract.TesseractConfig(dem=dem, det_beam=50)
+
+# 3. Configure and create a decoder instance
+decoder = tesseract.TesseractDecoder(config)
+
+# 4. Simulate detection events and decode it
+detections = [1, 2]
+flipped_observables = decoder.decode(detections)
+
+print(f"Detections: {detections}")
+print(f"Flipped observables: {flipped_observables}")
+```
+
+For full documentation and detailed examples of the Python interface, please refer to the [docs](src/py/README.md).
+
 ## Help
 
 *   Do you have a feature request or want to report a bug? [Open an issue on
