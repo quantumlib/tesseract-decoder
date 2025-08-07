@@ -56,8 +56,6 @@ struct SimplexDecoder {
 
   SimplexDecoder(SimplexConfig config);
 
-  void init_ilp();
-
   // Clears the predicted_errors_buffer and fills it with the decoded errors for
   // these detection events.
   void decode_to_errors(const std::vector<uint64_t>& detections);
@@ -73,6 +71,9 @@ struct SimplexDecoder {
                     std::vector<std::vector<int>>& obs_predicted);
 
   ~SimplexDecoder();
+
+ private:
+  void init_ilp();
 };
 
 #endif  // SIMPLEX_HPP
