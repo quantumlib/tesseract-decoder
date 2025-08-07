@@ -118,8 +118,21 @@ void add_tesseract_module(py::module& root) {
           },
           py::arg("syndrome"),
           py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>(),
-          "Decodes a single shot (a 1D NumPy array of booleans) and returns "
-          "a NumPy array of predicted observable flips.")
+          R"pbdoc(
+        Decodes a single shot.
+
+        Parameters
+        ----------
+        syndrome : np.ndarray
+            A 1D NumPy array of booleans representing the detection events for a single shot.
+            The length of the array should match the number of detectors in the DEM.
+
+        Returns
+        -------
+        np.ndarray
+            A 1D NumPy array of booleans indicating which observables are flipped.
+            The length of the array matches the number of observables.
+    )pbdoc")
       .def(
           "decode_batch",
           [](TesseractDecoder& self, const py::array_t<bool>& syndromes) {
@@ -164,9 +177,23 @@ void add_tesseract_module(py::module& root) {
             return result;
           },
           py::arg("syndromes"),
-          "Decodes a batch of shots (a 2D NumPy array of booleans) and "
-          "returns a 2D NumPy array of predicted observable flips, where "
-          "each row corresponds to a shot.")
+          R"pbdoc(
+        Decodes a batch of shots.
+
+        Parameters
+        ----------
+        syndromes : np.ndarray
+            A 2D NumPy array of booleans where each row represents a single shot's
+            detection events. The shape should be (num_shots, num_detectors): each shot has
+            a new array with num_detectors size.
+
+        Returns
+        -------
+        np.ndarray
+            A 2D NumPy array of booleans where each row corresponds to a shot and
+            that short specifies which logical observable are flipped. The shape is
+            (num_shots, num_observables).
+    )pbdoc")
       .def_readwrite("low_confidence_flag", &TesseractDecoder::low_confidence_flag)
       .def_readwrite("predicted_errors_buffer", &TesseractDecoder::predicted_errors_buffer)
       .def_readwrite("errors", &TesseractDecoder::errors);
