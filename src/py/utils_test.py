@@ -44,6 +44,18 @@ def test_build_detector_graph():
     ]
 
 
+def test_build_det_orders():
+    assert tesseract_decoder.utils.build_det_orders(
+        _DETECTOR_ERROR_MODEL, num_det_orders=1, seed=0
+    ) == [[0, 1]]
+
+
+def test_build_det_orders_no_bfs():
+    assert tesseract_decoder.utils.build_det_orders(
+        _DETECTOR_ERROR_MODEL, num_det_orders=1, det_order_bfs=False, seed=0
+    ) == [[0, 1]]
+
+
 def test_get_errors_from_dem():
     expected = "Error{cost=1.945910, symptom=Symptom{D0 }}, Error{cost=0.510826, symptom=Symptom{D0 D1 }}, Error{cost=1.098612, symptom=Symptom{D1 }}"
     assert (

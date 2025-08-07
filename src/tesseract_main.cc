@@ -171,12 +171,8 @@ struct Args {
 
     // Sample orientations of the error model to use for the det priority
     {
-      config.det_orders.resize(num_det_orders);
-      std::mt19937_64 rng(det_order_seed);
-      std::normal_distribution<double> dist(/*mean=*/0, /*stddev=*/1);
-
-      std::vector<std::vector<double>> detector_coords = get_detector_coords(config.dem);
       if (verbose) {
+        auto detector_coords = get_detector_coords(config.dem);
         for (size_t d = 0; d < detector_coords.size(); ++d) {
           std::cout << "Detector D" << d << " coordinate (";
           size_t e = std::min(3ul, detector_coords[d].size());
@@ -187,88 +183,8 @@ struct Args {
           std::cout << ")" << std::endl;
         }
       }
-
-      if (det_order_bfs) {
-        auto graph = build_detector_graph(config.dem);
-        std::uniform_int_distribution<size_t> dist_det(0, graph.size() - 1);
-        for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
-          std::vector<size_t> perm;
-          perm.reserve(graph.size());
-          std::vector<char> visited(graph.size(), false);
-          std::queue<size_t> q;
-          size_t start = dist_det(rng);
-          while (perm.size() < graph.size()) {
-            if (!visited[start]) {
-              visited[start] = true;
-              q.push(start);
-              perm.push_back(start);
-            }
-            while (!q.empty()) {
-              size_t cur = q.front();
-              q.pop();
-              auto neigh = graph[cur];
-              std::shuffle(neigh.begin(), neigh.end(), rng);
-              for (size_t n : neigh) {
-                if (!visited[n]) {
-                  visited[n] = true;
-                  q.push(n);
-                  perm.push_back(n);
-                }
-              }
-            }
-            if (perm.size() < graph.size()) {
-              do {
-                start = dist_det(rng);
-              } while (visited[start]);
-            }
-          }
-          std::vector<size_t> inv_perm(graph.size());
-          for (size_t i = 0; i < perm.size(); ++i) {
-            inv_perm[perm[i]] = i;
-          }
-          config.det_orders[det_order] = inv_perm;
-        }
-      } else {
-        std::vector<double> inner_products(config.dem.count_detectors());
-
-        if (!detector_coords.size() || !detector_coords.at(0).size()) {
-          // If there are no detector coordinates, just use the standard
-          // ordering of the indices.
-          for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
-            config.det_orders[det_order].resize(config.dem.count_detectors());
-            std::iota(config.det_orders[det_order].begin(), config.det_orders[det_order].end(), 0);
-          }
-
-        } else {
-          // Use the coordinates to order the detectors based on a random
-          // orientation
-          for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
-            // Sample a direction
-            std::vector<double> orientation_vector;
-            for (size_t i = 0; i < detector_coords.at(0).size(); ++i) {
-              orientation_vector.push_back(dist(rng));
-            }
-
-            for (size_t i = 0; i < detector_coords.size(); ++i) {
-              inner_products[i] = 0;
-              for (size_t j = 0; j < orientation_vector.size(); ++j) {
-                inner_products[i] += detector_coords[i][j] * orientation_vector[j];
-              }
-            }
-            std::vector<size_t> perm(config.dem.count_detectors());
-            std::iota(perm.begin(), perm.end(), 0);
-            std::sort(perm.begin(), perm.end(), [&](const size_t& i, const size_t& j) {
-              return inner_products[i] > inner_products[j];
-            });
-            // Invert the permutation
-            std::vector<size_t> inv_perm(config.dem.count_detectors());
-            for (size_t i = 0; i < perm.size(); ++i) {
-              inv_perm[perm[i]] = i;
-            }
-            config.det_orders[det_order] = inv_perm;
-          }
-        }
-      }
+      config.det_orders =
+          build_det_orders(config.dem, num_det_orders, det_order_bfs, det_order_seed);
     }
 
     if (sample_num_shots > 0) {
