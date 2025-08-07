@@ -192,7 +192,7 @@ print(f"Detections: {detections}")
 print(f"Flipped observables: {flipped_observables}")
 ```
 
-For full documentation and detailed examples of the Python interface, please refer to the [src/py/README.md](src/py/README.md).
+For full documentation and detailed examples of the Python interface, please refer to the [docs](src/py/README.md).
 
 ## Help
 
