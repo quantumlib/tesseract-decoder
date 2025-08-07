@@ -1,6 +1,18 @@
 load("@rules_python//python:py_test.bzl", "py_test")
 load("@rules_python//python:pip.bzl", "compile_pip_requirements")
+load("@rules_python//python:py_library.bzl", "py_library")
 
+py_library(
+    name = "test_utils",
+    srcs = ["test_utils.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//stim",
+        "@pypi//numpy",
+        "//src:lib_tesseract_decoder",
+    ],
+)
 py_test(
     name = "common_test",
     srcs = ["common_test.py"],
@@ -31,6 +43,7 @@ py_test(
         "@pypi//pytest",
         "@pypi//stim",
         "//src:lib_tesseract_decoder",
+        ":test_utils",
     ],
 )
 
@@ -42,6 +55,7 @@ py_test(
         "@pypi//pytest",
         "@pypi//stim",
         "//src:lib_tesseract_decoder",
+        ":test_utils",
     ],
 )
 
