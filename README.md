@@ -184,7 +184,7 @@ config = tesseract.TesseractConfig(dem=dem, det_beam=50)
 # 3. Configure and create a decoder instance
 decoder = tesseract.TesseractDecoder(config)
 
-# 4. Simulate a detection event and decode it
+# 4. Simulate detection events and decode it
 detections = [1, 2]
 flipped_observables = decoder.decode(detections)
 
