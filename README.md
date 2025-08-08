@@ -228,7 +228,7 @@ cite the following:
 
 ## Contact
 
-For any questions or concerns not addressed here, please email <quantum-oss-maintainers@google.com>.
+For any questions or concerns not addressed here, please email <tesseract-decoder-dev@google.com>.
 
 ## Disclaimer
 
