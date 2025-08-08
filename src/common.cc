@@ -25,6 +25,9 @@ std::string common::Symptom::str() {
 }
 
 common::Error::Error(const stim::DemInstruction& error) {
+  if (error.type != stim::DemInstructionType::DEM_ERROR) {
+     throw std::invalid_argument("Error must be loaded from an error dem instruction, but received: " + error.str());
+  }
   assert(error.type == stim::DemInstructionType::DEM_ERROR);
   double probability = error.arg_data[0];
   assert(probability >= 0 && probability <= 1);
