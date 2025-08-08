@@ -110,7 +110,7 @@ void add_common_module(py::module &root) {
             Parameters
             ----------
             likelihood_cost : float
-                The cost of this error.
+                The cost of this error, usually log((1 - probability) / probability)
             probability : float
                 The probability of this error occurring.
             detectors : list[int]
