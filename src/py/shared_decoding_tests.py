@@ -202,3 +202,17 @@ def shared_test_decode_from_detection_events(decoder_class, config_class):
     assert isinstance(predicted3, np.ndarray)
     assert predicted3.dtype.type == np.bool_
     assert np.array_equal(predicted3, np.array([False], dtype=bool))
+
+def shared_test_compile_decoder(config_class, decoder_class):
+    """
+    Tests the `compile_decoder` method on a config class.
+    """
+    dem_string = "error(0.1) D0 D1 L0"
+    dem = stim.DetectorErrorModel(dem_string)
+    config = config_class(dem)
+    
+    decoder = config.compile_decoder()
+    
+    assert isinstance(decoder, decoder_class)
+    assert decoder.config.dem == config.dem
+    assert decoder.num_observables == dem.num_observables
