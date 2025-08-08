@@ -334,8 +334,8 @@ void add_tesseract_module(py::module& root) {
               }
               self.decode(detections);
 
-              // Note: I must do this if I want to modify the results on the 'result_unchecked'
-              // itself.
+              // Note: I must do this if I want to modify the results
+              // on the 'result_unchecked' itself.
               for (size_t k = 0; k < self.num_observables; ++k) {
                 result_unchecked(i, k) = 0;
               }
