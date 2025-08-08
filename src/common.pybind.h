@@ -30,7 +30,7 @@ void add_common_module(py::module &root) {
   auto m = root.def_submodule("common", "classes commonly used by the decoder");
 
   py::class_<common::Symptom>(m, "Symptom", R"pbdoc(
-        Represents a syndrome in terms of detectors and observables.
+        Represents a symptom of an error, which is a list of detectors and a list of observables
 
         A symptom is defined by a list of detectors it affects and a list of
         observables it flips.
