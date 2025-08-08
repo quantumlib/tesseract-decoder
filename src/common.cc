@@ -31,9 +31,10 @@ common::Error::Error(const stim::DemInstruction& error) {
   }
   assert(error.type == stim::DemInstructionType::DEM_ERROR);
   double probability = error.arg_data[0];
-if (probability < 0 || probability > 1) {
-    throw std::invalid_argument("Probability must be between 0 and 1, but received: " + std::to_string(probability));
-}
+  if (probability < 0 || probability > 1) {
+    throw std::invalid_argument("Probability must be between 0 and 1, but received: " +
+                                std::to_string(probability));
+  }
 
   std::set<int> detectors_set;
   std::set<int> observables_set;
