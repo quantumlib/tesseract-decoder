@@ -50,7 +50,7 @@ void add_common_module(py::module &root) {
       .def_readwrite("detectors", &common::Symptom::detectors,
                      "A list of the detector indices that are flipped in this symptom.")
       .def_readwrite("observables", &common::Symptom::observables,
-                     "A list of observable indices that are flipped by this symptom.")
+                     "A list of observable indices that are flipped in this symptom.")
       .def("__str__", &common::Symptom::str)
       .def(py::self == py::self)
       .def(py::self != py::self)
