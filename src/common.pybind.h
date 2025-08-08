@@ -45,7 +45,7 @@ void add_common_module(py::module &root) {
             detectors : list[int], default=[]
                 The indices of the detectors in this symptom.
             observables : list[int], default=[]
-                The indices of the observables flipped by this symptom.
+                The indices of the flipped observables.
            )pbdoc")
       .def_readwrite("detectors", &common::Symptom::detectors,
                      "A list of detector indices that are flipped by this symptom.")
