@@ -33,7 +33,7 @@ void add_common_module(py::module &root) {
         Represents a symptom of an error, which is a list of detectors and a list of observables
 
         A symptom is defined by a list of detectors that are flipped and a list of
-        observables it flips.
+        observables that are flipped.
     )pbdoc")
       .def(py::init<std::vector<int>, std::vector<int>>(),
            py::arg("detectors") = std::vector<int>(), py::arg("observables") = std::vector<int>(),
