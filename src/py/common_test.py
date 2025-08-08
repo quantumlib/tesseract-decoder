@@ -37,6 +37,17 @@ def get_set_bits(n):
         i += 1
     return bits
 
+def test_error_from_direct_constructor():
+    # Test the new constructor with likelihood_cost, detectors, and observables
+    likelihood_cost = 1.945910
+    detectors = [1, 2]
+    observables = get_set_bits(4324)
+    error = tesseract_decoder.common.Error(likelihood_cost, detectors, observables)
+
+    assert error.likelihood_cost == pytest.approx(likelihood_cost)
+    assert error.symptom.detectors == detectors
+    assert error.symptom.observables == observables
+
 
 def test_as_dem_instruction_targets():
     s = tesseract_decoder.common.Symptom([1, 2], get_set_bits(4324))
