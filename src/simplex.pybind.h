@@ -100,7 +100,7 @@ void add_simplex_module(py::module& root) {
           Parameters
           ----------
           detections : list[int]
-              A list of `uint64_t` indices corresponding to the detectors that were
+              A list of indices corresponding to the detectors that were
               fired. This input represents a single measurement shot.
 
           Returns
