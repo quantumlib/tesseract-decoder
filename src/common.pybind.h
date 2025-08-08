@@ -32,7 +32,7 @@ void add_common_module(py::module &root) {
   py::class_<common::Symptom>(m, "Symptom", R"pbdoc(
         Represents a symptom of an error, which is a list of detectors and a list of observables
 
-        A symptom is defined by a list of detectors it affects and a list of
+        A symptom is defined by a list of detectors that are flipped and a list of
         observables it flips.
     )pbdoc")
       .def(py::init<std::vector<int>, std::vector<int>>(),
