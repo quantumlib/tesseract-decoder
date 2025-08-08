@@ -71,6 +71,10 @@ stim::DetectorErrorModel remove_zero_probability_errors(const stim::DetectorErro
 stim::DetectorErrorModel dem_from_counts(stim::DetectorErrorModel& orig_dem,
                                          const std::vector<size_t>& error_counts, size_t num_shots);
 
+/// Computes the weight of an edge resulting from merging edges with weight `a' and weight `b',
+/// assuming each edge weight is a log-likelihood ratio log((1-p)/p) associated with the probability
+/// p of an error occurring on the edge, and that the error mechanisms associated with the two edges
+/// being merged are independent.
 double merge_weights(double a, double b);
 
 }  // namespace common
