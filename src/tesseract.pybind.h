@@ -120,7 +120,7 @@ void add_tesseract_module(py::module& root) {
           -------
           np.ndarray
               A 1D NumPy array of booleans. Each boolean value indicates whether the
-              corresponding logical observable has been flipped by the decoded error.
+              decoder predicts that the corresponding logical observable has been flipped.
       )pbdoc")
       .def(
           "decode",
