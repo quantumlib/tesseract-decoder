@@ -43,7 +43,7 @@ void add_common_module(py::module &root) {
             Parameters
             ----------
             detectors : list[int], default=[]
-                The indices of the detectors affected by this symptom.
+                The indices of the detectors in this symptom.
             observables : list[int], default=[]
                 The indices of the observables flipped by this symptom.
            )pbdoc")
