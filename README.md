@@ -9,6 +9,7 @@ A Search-Based Decoder for Quantum Error Correction.
 
 [Installation](#installation) &ndash;
 [Usage](#usage) &ndash;
+[Python Interface](#python-interface) &ndash;
 [Paper](https://arxiv.org/pdf/2503.10988) &ndash;
 [Help](#help) &ndash;
 [Citation](#citation) &ndash;
@@ -161,6 +162,9 @@ Here are some tips for improving performance:
 *   *Statistics output*: includes number of shots, errors, low confidence shots, and processing time.
 
 ## Python Interface
+
+[Full Python wrapper documentation](src/py/README.md)
+
 This repository contains the C++ implementation of the Tesseract quantum error correction decoder, along with a Python wrapper. The Python wrapper/interface exposes the decoding algorithms and helper utilities, allowing Python users to leverage this high-performance decoding algorithm.
 
 The following example demonstrates how to create and use the Tesseract decoder using the Python interface.
@@ -192,7 +196,6 @@ print(f"Detections: {detections}")
 print(f"Flipped observables: {flipped_observables}")
 ```
 
-For full documentation and detailed examples of the Python interface, please refer to the [docs](src/py/README.md).
 
 ## Help
 
