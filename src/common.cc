@@ -103,7 +103,7 @@ stim::DetectorErrorModel common::merge_indistinguishable_errors(
 
         if (errors_by_symptom.find(error.symptom) != errors_by_symptom.end()) {
           double existing_cost = errors_by_symptom[error.symptom].likelihood_cost;
-          error.likelihood_cost = -merge_weights(-existing_cost, -error.likelihood_cost);
+          error.likelihood_cost = merge_weights(existing_cost, error.likelihood_cost);
         }
         errors_by_symptom[error.symptom] = error;
         break;
