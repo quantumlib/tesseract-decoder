@@ -212,8 +212,8 @@ void add_tesseract_module(py::module& root) {
         Parameters
         ----------
         syndromes : np.ndarray
-            A 2D NumPy array of booleans where each row represents a single shot's
-            detection events. The shape should be (num_shots, num_detectors): each shot has
+            A 2D NumPy array of booleans where each row corresponds to a shot and
+            each column corresponds to a logical observable. Each row is the decoder's prediction of which observables were flipped in the shot. The shape is
             a new array with num_detectors size.
 
         Returns
