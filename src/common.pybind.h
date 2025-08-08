@@ -74,7 +74,8 @@ void add_common_module(py::module &root) {
   py::class_<common::Error>(m, "Error", R"pbdoc(
         Represents an error, including its cost, probability, and symptom.
 
-        An error links a physical event to the logical syndrome it produces.
+        An error is a physical event (or set of indistinguishable physical events)
+        defined by the detectors and observables that it flips in the circuit.
     )pbdoc")
       .def_readwrite("likelihood_cost", &common::Error::likelihood_cost,
                      "The cost of this error (often -log(probability)).")
