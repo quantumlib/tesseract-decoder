@@ -46,42 +46,109 @@ void add_simplex_module(py::module& root) {
   auto m =
       root.def_submodule("simplex", "Module containing the SimplexDecoder and related methods");
 
-  py::class_<SimplexConfig>(m, "SimplexConfig")
+  py::class_<SimplexConfig>(m, "SimplexConfig", R"pbdoc(
+        Configuration object for the `SimplexDecoder`.
+
+        This class holds all the parameters needed to initialize and configure a
+        Simplex decoder instance, including the detector error model and
+        decoding options.
+    )pbdoc")
       .def(py::init(&simplex_config_maker), py::arg("dem"), py::arg("parallelize") = false,
            py::arg("window_length") = 0, py::arg("window_slide_length") = 0,
-           py::arg("verbose") = false)
-      .def_property("dem", &dem_getter<SimplexConfig>, &dem_setter<SimplexConfig>)
-      .def_readwrite("parallelize", &SimplexConfig::parallelize)
-      .def_readwrite("window_length", &SimplexConfig::window_length)
-      .def_readwrite("window_slide_length", &SimplexConfig::window_slide_length)
-      .def_readwrite("verbose", &SimplexConfig::verbose)
-      .def("windowing_enabled", &SimplexConfig::windowing_enabled)
+           py::arg("verbose") = false, R"pbdoc(
+            The constructor for the `SimplexConfig` class.
+
+            Parameters
+            ----------
+            dem : stim.DetectorErrorModel
+                The detector error model to be decoded.
+            parallelize : bool, default=False
+                Whether to use multithreading for decoding.
+            window_length : int, default=0
+                The length of the time window for decoding. A value of 0 disables windowing.
+            window_slide_length : int, default=0
+                The number of time steps to slide the window after each decode. A value of 0
+                disables windowing.
+            verbose : bool, default=False
+                If True, enables verbose logging from the decoder.
+           )pbdoc")
+      .def_property("dem", &dem_getter<SimplexConfig>, &dem_setter<SimplexConfig>,
+                    "The `stim.DetectorErrorModel` that defines the error channels and detectors.")
+      .def_readwrite("parallelize", &SimplexConfig::parallelize,
+                     "If True, enables multithreaded decoding.")
+      .def_readwrite("window_length", &SimplexConfig::window_length,
+                     "The number of time steps in each decoding window.")
+      .def_readwrite("window_slide_length", &SimplexConfig::window_slide_length,
+                     "The number of time steps the window slides after each decode.")
+      .def_readwrite("verbose", &SimplexConfig::verbose,
+                     "If True, the decoder will print verbose output.")
+      .def("windowing_enabled", &SimplexConfig::windowing_enabled,
+           "Returns True if windowing is enabled (i.e., `window_length > 0`).")
       .def("__str__", &SimplexConfig::str)
       .def("compile_decoder", &_compile_simplex_decoder_helper,
            py::return_value_policy::take_ownership, R"pbdoc(
-          Compiles the configuration into a new SimplexDecoder instance.
+            Compiles the configuration into a new SimplexDecoder instance.
 
-          Returns
-          -------
-          SimplexDecoder
-              A new SimplexDecoder instance configured with the current
-              settings.
-      )pbdoc");
+            Returns
+            -------
+            SimplexDecoder
+                A new SimplexDecoder instance configured with the current
+                settings.
+           )pbdoc");
 
-  py::class_<SimplexDecoder>(m, "SimplexDecoder")
-      .def(py::init<SimplexConfig>(), py::arg("config"))
-      .def_readwrite("config", &SimplexDecoder::config)
-      .def_readwrite("errors", &SimplexDecoder::errors)
-      .def_readwrite("num_detectors", &SimplexDecoder::num_detectors)
-      .def_readwrite("num_observables", &SimplexDecoder::num_observables)
-      .def_readwrite("predicted_errors_buffer", &SimplexDecoder::predicted_errors_buffer)
-      .def_readwrite("error_masks", &SimplexDecoder::error_masks)
-      .def_readwrite("start_time_to_errors", &SimplexDecoder::start_time_to_errors)
-      .def_readwrite("end_time_to_errors", &SimplexDecoder::end_time_to_errors)
-      .def_readonly("low_confidence_flag", &SimplexDecoder::low_confidence_flag)
-      .def("init_ilp", &SimplexDecoder::init_ilp)
+  py::class_<SimplexDecoder>(m, "SimplexDecoder", R"pbdoc(
+        A class that implements the Simplex decoding algorithm.
+
+        It can decode syndromes from a `stim.DetectorErrorModel` to predict
+        which observables have been flipped.
+    )pbdoc")
+      .def(py::init<SimplexConfig>(), py::arg("config"), R"pbdoc(
+        The constructor for the `SimplexDecoder` class.
+
+        Parameters
+        ----------
+        config : SimplexConfig
+            The configuration object for the decoder.
+      )pbdoc")
+      .def_readwrite("config", &SimplexDecoder::config,
+                     "The configuration used to create this decoder.")
+      .def_readwrite("errors", &SimplexDecoder::errors,
+                     "The list of all errors in the detector error model.")
+      .def_readwrite("num_detectors", &SimplexDecoder::num_detectors,
+                     "The total number of detectors in the detector error model.")
+      .def_readwrite("num_observables", &SimplexDecoder::num_observables,
+                     "The total number of logical observables in the detector error model.")
+      .def_readwrite(
+          "predicted_errors_buffer", &SimplexDecoder::predicted_errors_buffer,
+          "A buffer containing the predicted errors from the most recent decode operation.")
+      .def_readwrite("error_masks", &SimplexDecoder::error_masks,
+                     "The list of error masks used for decoding.")
+      .def_readwrite(
+          "start_time_to_errors", &SimplexDecoder::start_time_to_errors,
+          "A map from a detector's start time to the errors that are correlated with it.")
+      .def_readwrite("end_time_to_errors", &SimplexDecoder::end_time_to_errors,
+                     "A map from a detector's end time to the errors that are correlated with it.")
+      .def_readonly("low_confidence_flag", &SimplexDecoder::low_confidence_flag,
+                    "A flag indicating if the decoder's prediction has low confidence.")
+      .def("init_ilp", &SimplexDecoder::init_ilp, R"pbdoc(
+        Initializes the Integer Linear Programming (ILP) solver.
+
+        This method must be called before decoding.
+      )pbdoc")
       .def("decode_to_errors", &SimplexDecoder::decode_to_errors, py::arg("detections"),
-           py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>())
+           py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>(), R"pbdoc(
+            Decodes a single shot to a list of error indices.
+
+            Parameters
+            ----------
+            detections : list[int]
+                A list of indices of the detectors that have fired.
+
+            Returns
+            -------
+            list[int]
+                A list of predicted error indices.
+           )pbdoc")
       .def(
           "get_observables_from_errors",
           [](SimplexDecoder& self, const std::vector<size_t>& predicted_errors) {
@@ -93,8 +160,36 @@ void add_simplex_module(py::module& root) {
             }
             return result;
           },
-          py::arg("predicted_errors"))
-      .def("cost_from_errors", &SimplexDecoder::cost_from_errors, py::arg("predicted_errors"))
+          py::arg("predicted_errors"), R"pbdoc(
+            Converts a list of predicted error indices into a list of
+            flipped logical observables.
+
+            Parameters
+            ----------
+            predicted_errors : list[int]
+                A list of integers representing the predicted error indices.
+
+            Returns
+            -------
+            list[bool]
+                A list of booleans, where each boolean corresponds to a
+                logical observable and is `True` if the observable was flipped.
+           )pbdoc")
+      .def("cost_from_errors", &SimplexDecoder::cost_from_errors, py::arg("predicted_errors"),
+           R"pbdoc(
+            Calculates the total logarithmic probability cost for a given set of
+            predicted errors. The cost is a measure of how likely a set of errors is.
+
+            Parameters
+            ----------
+            predicted_errors : list[int]
+                A list of integers representing the predicted error indices.
+
+            Returns
+            -------
+            float
+                A float representing the total logarithmic probability cost.
+           )pbdoc")
       .def(
           "decode_from_detection_events",
           [](SimplexDecoder& self, const std::vector<uint64_t>& detections) {
@@ -192,8 +287,8 @@ void add_simplex_module(py::module& root) {
               }
               self.decode(detections);
 
-              // Note: I must do this if I want to modify the results on the 'result_unchecked'
-              // itself.
+              // Note: I must do this if I want to modify the results
+              // on the 'result_unchecked' itself.
               for (size_t k = 0; k < self.num_observables; ++k) {
                 result_unchecked(i, k) = 0;
               }

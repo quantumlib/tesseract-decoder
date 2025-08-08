@@ -48,21 +48,64 @@ void add_tesseract_module(py::module& root) {
   auto m = root.def_submodule("tesseract", "Module containing the tesseract algorithm");
 
   m.attr("INF_DET_BEAM") = INF_DET_BEAM;
-  py::class_<TesseractConfig>(m, "TesseractConfig")
+  m.doc() = "A sentinel value indicating an infinite beam size for the decoder.";
+
+  py::class_<TesseractConfig>(m, "TesseractConfig", R"pbdoc(
+        Configuration object for the `TesseractDecoder`.
+
+        This class holds all the parameters needed to initialize and configure a
+        Tesseract decoder instance.
+    )pbdoc")
       .def(py::init(&tesseract_config_maker), py::arg("dem"), py::arg("det_beam") = INF_DET_BEAM,
            py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = false,
            py::arg("at_most_two_errors_per_detector") = false, py::arg("verbose") = false,
            py::arg("pqlimit") = std::numeric_limits<size_t>::max(),
-           py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0)
-      .def_property("dem", &dem_getter<TesseractConfig>, &dem_setter<TesseractConfig>)
-      .def_readwrite("det_beam", &TesseractConfig::det_beam)
-      .def_readwrite("no_revisit_dets", &TesseractConfig::no_revisit_dets)
+           py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0,
+           R"pbdoc(
+            The constructor for the `TesseractConfig` class.
+
+            Parameters
+            ----------
+            dem : stim.DetectorErrorModel
+                The detector error model to be decoded.
+            det_beam : int, default=INF_DET_BEAM
+                Beam cutoff that specifies the maximum number of detection events a search state can have.
+            beam_climbing : bool, default=False
+                If True, enables a beam climbing heuristic.
+            no_revisit_dets : bool, default=False
+                If True, prevents the decoder from revisiting a syndrome pattern more than once.
+            at_most_two_errors_per_detector : bool, default=False
+                If True, an optimization is enabled that assumes at most two errors
+                are correlated with each detector.
+            verbose : bool, default=False
+                If True, enables verbose logging from the decoder.
+            pqlimit : int, default=max_size_t
+                The maximum size of the priority queue.
+            det_orders : list[list[int]], default=empty
+                A list of detector orderings to use for decoding. If empty, the decoder
+                will generate its own orderings.
+            det_penalty : float, default=0.0
+                A penalty value added to the cost of each detector visited.
+           )pbdoc")
+      .def_property("dem", &dem_getter<TesseractConfig>, &dem_setter<TesseractConfig>,
+                    "The `stim.DetectorErrorModel` that defines the error channels and detectors.")
+      .def_readwrite("det_beam", &TesseractConfig::det_beam,
+                     "Beam cutoff argument for the beam search.")
+      .def_readwrite("beam_climbing", &TesseractConfig::beam_climbing,
+                     "Whether to use a beam climbing heuristic.")
+      .def_readwrite("no_revisit_dets", &TesseractConfig::no_revisit_dets,
+                     "Whether to prevent revisiting same syndrome patterns during decoding.")
       .def_readwrite("at_most_two_errors_per_detector",
-                     &TesseractConfig::at_most_two_errors_per_detector)
-      .def_readwrite("verbose", &TesseractConfig::verbose)
-      .def_readwrite("pqlimit", &TesseractConfig::pqlimit)
-      .def_readwrite("det_orders", &TesseractConfig::det_orders)
-      .def_readwrite("det_penalty", &TesseractConfig::det_penalty)
+                     &TesseractConfig::at_most_two_errors_per_detector,
+                     "Whether to assume at most two errors per detector for optimization.")
+      .def_readwrite("verbose", &TesseractConfig::verbose,
+                     "If True, the decoder will print verbose output.")
+      .def_readwrite("pqlimit", &TesseractConfig::pqlimit,
+                     "The maximum size of the priority queue.")
+      .def_readwrite("det_orders", &TesseractConfig::det_orders,
+                     "A list of pre-specified detector orderings.")
+      .def_readwrite("det_penalty", &TesseractConfig::det_penalty,
+                     "The penalty cost added for each detector.")
       .def("__str__", &TesseractConfig::str)
       .def("compile_decoder", &_compile_tesseract_decoder_helper,
            py::return_value_policy::take_ownership,
@@ -76,26 +119,84 @@ void add_tesseract_module(py::module& root) {
               settings.
       )pbdoc");
 
-  py::class_<Node>(m, "Node")
+  py::class_<Node>(m, "Node", R"pbdoc(
+        A class representing a node in the Tesseract search graph.
+
+        This is used internally by the decoder to track decoding progress.
+    )pbdoc")
       .def(py::init<double, size_t, std::vector<size_t>>(), py::arg("cost") = 0.0,
-           py::arg("num_detectors") = 0, py::arg("errors") = std::vector<size_t>())
-      .def_readwrite("errors", &Node::errors)
-      .def_readwrite("cost", &Node::cost)
-      .def_readwrite("num_detectors", &Node::num_detectors)
-      .def(py::self > py::self)
+           py::arg("num_detectors") = 0, py::arg("errors") = std::vector<size_t>(), R"pbdoc(
+            The constructor for the `Node` class.
+
+            Parameters
+            ----------
+            cost : float, default=0.0
+                The cost of the path to this node.
+            num_detectors : int, default=0
+                The number of detectors this search node has.
+            errors : list[int], default=empty
+                The list of error indices this search node has.
+           )pbdoc")
+      .def_readwrite("cost", &Node::cost, "The cost of the node.")
+      .def_readwrite("num_detectors", &Node::num_detectors,
+                     "The number of detectors this search node has.")
+      .def_readwrite("errors", &Node::errors, "The list of error indices this search node has.")
+      .def(py::self > py::self,
+           "Comparison operator for nodes based on cost. This is necessary to prioritize "
+           "lower-cost nodes during the search.")
       .def("__str__", &Node::str);
 
-  py::class_<TesseractDecoder>(m, "TesseractDecoder")
-      .def(py::init<TesseractConfig>(), py::arg("config"))
+  py::class_<TesseractDecoder>(m, "TesseractDecoder", R"pbdoc(
+        A class that implements the Tesseract decoding algorithm.
+
+        It can decode syndromes from a `stim.DetectorErrorModel` to predict
+        which observables have been flipped.
+    )pbdoc")
+      .def(py::init<TesseractConfig>(), py::arg("config"), R"pbdoc(
+        The constructor for the `TesseractDecoder` class.
+
+        Parameters
+        ----------
+        config : TesseractConfig
+            The configuration object for the decoder.
+      )pbdoc")
       .def("decode_to_errors",
            py::overload_cast<const std::vector<uint64_t>&>(&TesseractDecoder::decode_to_errors),
            py::arg("detections"),
-           py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>())
+           py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>(), R"pbdoc(
+            Decodes a single shot to a list of error indices.
+
+            Parameters
+            ----------
+            detections : list[int]
+                A list of indices of the detectors that have fired.
+
+            Returns
+            -------
+            list[int]
+                A list of predicted error indices.
+           )pbdoc")
       .def("decode_to_errors",
            py::overload_cast<const std::vector<uint64_t>&, size_t, size_t>(
                &TesseractDecoder::decode_to_errors),
            py::arg("detections"), py::arg("det_order"), py::arg("det_beam"),
-           py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>())
+           py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>(), R"pbdoc(
+            Decodes a single shot using a specific detector ordering and beam size.
+
+            Parameters
+            ----------
+            detections : list[int]
+                A list of indices of the detectors that have fired.
+            det_order : int
+                The index of the detector ordering to use.
+            det_beam : int
+                The beam size to use during the decoding.
+
+            Returns
+            -------
+            list[int]
+                A list of predicted error indices.
+           )pbdoc")
       .def(
           "get_observables_from_errors",
           [](TesseractDecoder& self, const std::vector<size_t>& predicted_errors) {
@@ -107,8 +208,36 @@ void add_tesseract_module(py::module& root) {
             }
             return result;
           },
-          py::arg("predicted_errors"))
-      .def("cost_from_errors", &TesseractDecoder::cost_from_errors, py::arg("predicted_errors"))
+          py::arg("predicted_errors"), R"pbdoc(
+            Converts a list of predicted error indices into a list of
+            flipped logical observables.
+
+            Parameters
+            ----------
+            predicted_errors : list[int]
+                A list of integers representing the predicted error indices.
+
+            Returns
+            -------
+            list[bool]
+                A list of booleans, where each boolean corresponds to a
+                logical observable and is `True` if the observable was flipped.
+           )pbdoc")
+      .def("cost_from_errors", &TesseractDecoder::cost_from_errors, py::arg("predicted_errors"),
+           R"pbdoc(
+            Calculates the total logarithmic probability cost for a given set of
+            predicted errors.
+
+            Parameters
+            ----------
+            predicted_errors : list[int]
+                A list of integers representing the predicted error indices.
+
+            Returns
+            -------
+            float
+                A float representing the total logarithmic probability cost.
+           )pbdoc")
       .def(
           "decode_from_detection_events",
           [](TesseractDecoder& self, const std::vector<uint64_t>& detections) {
@@ -239,11 +368,17 @@ void add_tesseract_module(py::module& root) {
             that short specifies which logical observable are flipped. The shape is
             (num_shots, num_observables).
     )pbdoc")
-      .def_readwrite("low_confidence_flag", &TesseractDecoder::low_confidence_flag)
-      .def_readwrite("predicted_errors_buffer", &TesseractDecoder::predicted_errors_buffer)
-      .def_readwrite("errors", &TesseractDecoder::errors)
-      .def_readwrite("config", &TesseractDecoder::config)
-      .def_readwrite("num_observables", &TesseractDecoder::num_observables);
+      .def_readwrite("config", &TesseractDecoder::config,
+                     "The configuration used to create this decoder.")
+      .def_readwrite("low_confidence_flag", &TesseractDecoder::low_confidence_flag,
+                     "A flag indicating if the decoder's prediction has low confidence.")
+      .def_readwrite(
+          "predicted_errors_buffer", &TesseractDecoder::predicted_errors_buffer,
+          "A buffer containing the predicted errors from the most recent decode operation.")
+      .def_readwrite("errors", &TesseractDecoder::errors,
+                     "The list of all errors in the detector error model.")
+      .def_readwrite("num_observables", &TesseractDecoder::num_observables,
+                     "The total number of logical observables in the detector error model.");
 }
 
 #endif

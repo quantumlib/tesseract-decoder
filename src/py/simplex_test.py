@@ -27,6 +27,8 @@ from src.py.shared_decoding_tests import (
     shared_test_decode_batch,
     shared_test_decode_from_detection_events,
     shared_test_compile_decoder,
+    shared_test_cost_from_errors,
+    shared_test_get_observables_from_errors,
 )
 
 _DETECTOR_ERROR_MODEL = stim.DetectorErrorModel(
@@ -62,6 +64,30 @@ def test_create_simplex_decoder():
 )
 def test_simplex_compile_decoder(config_class, decoder_class):
     shared_test_compile_decoder(config_class, decoder_class)
+
+
+@pytest.mark.parametrize(
+    "decoder_class, config_class",
+    [(tesseract_decoder.tesseract.TesseractDecoder, tesseract_decoder.tesseract.TesseractConfig)]
+)
+def test_tesseract_cost_from_errors(decoder_class, config_class):
+    shared_test_cost_from_errors(decoder_class, config_class)
+
+
+@pytest.mark.parametrize(
+    "decoder_class, config_class",
+    [(tesseract_decoder.simplex.SimplexDecoder, tesseract_decoder.simplex.SimplexConfig)]
+)
+def test_simplex_get_observables_from_errors(decoder_class, config_class):
+    shared_test_get_observables_from_errors(decoder_class, config_class)
+
+
+@pytest.mark.parametrize(
+    "decoder_class, config_class",
+    [(tesseract_decoder.simplex.SimplexDecoder, tesseract_decoder.simplex.SimplexConfig)]
+)
+def test_simplex_decode_from_detection_events(decoder_class, config_class):
+    shared_test_decode_from_detection_events(decoder_class, config_class)
 
 
 @pytest.mark.parametrize(
@@ -111,13 +137,6 @@ def test_simplex_decode_batch(decoder_class, config_class):
 def test_simplex_decode_batch_with_complex_model(decoder_class, config_class):
     shared_test_decode_batch_with_complex_model(decoder_class, config_class)
 
-
-@pytest.mark.parametrize(
-    "decoder_class, config_class",
-    [(tesseract_decoder.simplex.SimplexDecoder, tesseract_decoder.simplex.SimplexConfig)]
-)
-def test_simplex_decode_from_detection_events(decoder_class, config_class):
-    shared_test_decode_from_detection_events(decoder_class, config_class)
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))
