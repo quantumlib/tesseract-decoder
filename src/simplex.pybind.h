@@ -28,6 +28,11 @@
 namespace py = pybind11;
 
 namespace {
+// Helper function to compile the decoder.
+std::unique_ptr<SimplexDecoder> _compile_simplex_decoder_helper(const SimplexConfig& self) {
+  return std::make_unique<SimplexDecoder>(self);
+}
+
 SimplexConfig simplex_config_maker(py::object dem, bool parallelize = false,
                                    size_t window_length = 0, size_t window_slide_length = 0,
                                    bool verbose = false) {
@@ -51,7 +56,17 @@ void add_simplex_module(py::module& root) {
       .def_readwrite("window_slide_length", &SimplexConfig::window_slide_length)
       .def_readwrite("verbose", &SimplexConfig::verbose)
       .def("windowing_enabled", &SimplexConfig::windowing_enabled)
-      .def("__str__", &SimplexConfig::str);
+      .def("__str__", &SimplexConfig::str)
+      .def("compile_decoder", &_compile_simplex_decoder_helper,
+           py::return_value_policy::take_ownership, R"pbdoc(
+          Compiles the configuration into a new SimplexDecoder instance.
+
+          Returns
+          -------
+          SimplexDecoder
+              A new SimplexDecoder instance configured with the current
+              settings.
+      )pbdoc");
 
   py::class_<SimplexDecoder>(m, "SimplexDecoder")
       .def(py::init<SimplexConfig>(), py::arg("config"))
