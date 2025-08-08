@@ -65,7 +65,7 @@ print(f"Custom configuration detection penalty: {config2.det_beam}")
 This is the main class that implements the Tesseract decoding logic.
 * `TesseractDecoder(config: tesseract.TesseractConfig)`
 * `decode_to_errors(detections: list[int])`
-* `decode_to_errors(detections: list[int], detector_order: int, detector_beam: int)`
+* `decode_to_errors(detections: list[int], det_order: int, det_beam: int)`
 * `get_observables_from_errors(predicted_errors: list[int]) -> list[bool]`
 * `cost_from_errors(predicted_errors: list[int]) -> float`
 * `decode(detections: list[int]) -> list[bool]`
@@ -79,7 +79,7 @@ Decodes a single measurement shot to predict a list of errors.
 
 * **Returns:** A list of integers, where each integer is the index of a predicted error.
 
-#### `decode_to_errors(detections: list[int], detector_order: int, detector_beam: int)`
+#### `decode_to_errors(detections: list[int], det_order: int, det_beam: int)`
 
 An overloaded version of the `decode_to_errors` method that allows for a different decoding strategy.
 
@@ -87,9 +87,9 @@ An overloaded version of the `decode_to_errors` method that allows for a differe
 
   * `detections` is a list of integers representing the indices of the fired detectors.
 
-  * `detector_order` is an integer that specifies a different ordering of detectors to use for the decoding.
+  * `det_order` is an integer that specifies a different ordering of detectors to use for the decoding.
 
-  * `detector_beam` is an integer that specifies the beam size to use for the decoding.
+  * `det_beam` is an integer that specifies the beam size to use for the decoding.
 
 * **Returns:** A list of integers, where each integer is the index of a predicted error.
 
@@ -138,7 +138,7 @@ Decodes a batch of shots at once.
 ```python
 import tesseract_decoder.tesseract as tesseract
 import stim
-import tesseract_decoder.common as common
+import numpy as np
 
 # Create a DEM and a configuration
 dem = stim.DetectorErrorModel("""
@@ -152,14 +152,14 @@ config = tesseract.TesseractConfig(dem=dem)
 # Create the decoder
 decoder = tesseract.TesseractDecoder(config)
 
-# Decode the detections and get flipped observables
+# --- Decode a single shot using detection events (list of integers) ---
 detections = [1]
-flipped_observables = decoder.decode(detections)
-print(f"Flipped observables for detections {detections}: {flipped_observables}")
+flipped_observables_events = decoder.decode_from_detection_events(detections)
+print(f"Decoded (from events) flipped observables for detections {detections}: {flipped_observables_events}")
 
-# Access predicted errors after decoding
+# Access predicted errors
 predicted_errors = decoder.predicted_errors_buffer
-print(f"Predicted errors: {predicted_errors}")
+print(f"\nPredicted errors after single-shot decode: {predicted_errors}")
 
 # Calculate cost for predicted errors
 cost = decoder.cost_from_errors(predicted_errors)
@@ -167,6 +167,16 @@ print(f"Cost of predicted errors: {cost}")
 
 # Check the low confidence flag
 print(f"Decoder low confidence: {decoder.low_confidence_flag}")
+
+# --- Decode a single shot using a syndrome array (NumPy array of booleans) ---
+syndrome_array = np.array([False, True])
+flipped_observables_syndrome = decoder.decode(syndrome_array)
+print(f"Decoded (from syndrome) flipped observables for syndrome {syndrome_array}: {flipped_observables_syndrome}")
+
+# --- Decode a batch of shots using a syndrome array (2D NumPy array of booleans) ---
+syndromes_batch = np.array([[False, True], [True, False]])
+flipped_observables_batch = decoder.decode_batch(syndromes_batch)
+print(f"Decoded (batch) flipped observables for syndromes:\n{syndromes_batch}\nResult:\n{flipped_observables_batch}")
 ```
 
 ### `tesseract_decoder.simplex` Module
