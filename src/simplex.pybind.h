@@ -208,7 +208,7 @@ void add_simplex_module(py::module& root) {
         -------
         np.ndarray
             A 2D NumPy array of booleans where each row corresponds to a shot and
-            that short specifies which logical observable are flipped. The shape is
+            each column corresponds to a logical observable. Each row is the decoder's prediction of which observables were flipped in the shot. The shape is
             (num_shots, num_observables).
     )pbdoc");
 }
