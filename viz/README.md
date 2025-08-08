@@ -1,4 +1,4 @@
-#Visualization
+# Visualization
 
 This tool displays the detectors and errors from a Tesseract decoding run in 3D.
 
