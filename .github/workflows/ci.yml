@@ -65,11 +65,5 @@ jobs:
       run: |
         brew install clang-format
 
-    - name: Check formatting (redundant but allowed)
-      run: |
-        clang-format --version
-        files=$(git ls-files '*.cc' '*.cpp' '*.h' '*.hpp')
-        [ -z "$files" ] || clang-format --dry-run --Werror $files
-
     - name: Bazel tests
       run: bazel test src/...
