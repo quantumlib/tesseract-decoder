@@ -26,6 +26,7 @@ from src.py.shared_decoding_tests import (
     shared_test_decode_complex_dem,
     shared_test_decode_batch,
     shared_test_decode_from_detection_events,
+    shared_test_compile_decoder,
 )
 
 _DETECTOR_ERROR_MODEL = stim.DetectorErrorModel(
@@ -54,6 +55,14 @@ def test_create_simplex_decoder():
     decoder.decode_to_errors([1])
     assert decoder.get_observables_from_errors([1]) == []
     assert decoder.cost_from_errors([2]) == pytest.approx(1.0986123)
+
+@pytest.mark.parametrize(
+    "config_class, decoder_class",
+    [(tesseract_decoder.simplex.SimplexConfig, tesseract_decoder.simplex.SimplexDecoder)]
+)
+def test_simplex_compile_decoder(config_class, decoder_class):
+    shared_test_compile_decoder(config_class, decoder_class)
+
 
 @pytest.mark.parametrize(
     "decoder_class, config_class",

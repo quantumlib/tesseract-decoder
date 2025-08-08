@@ -27,6 +27,11 @@
 namespace py = pybind11;
 
 namespace {
+// Helper function to compile the decoder.
+std::unique_ptr<TesseractDecoder> _compile_tesseract_decoder_helper(const TesseractConfig& self) {
+  return std::make_unique<TesseractDecoder>(self);
+}
+
 TesseractConfig tesseract_config_maker(
     py::object dem, int det_beam = INF_DET_BEAM, bool beam_climbing = false,
     bool no_revisit_dets = false, bool at_most_two_errors_per_detector = false,
@@ -58,7 +63,18 @@ void add_tesseract_module(py::module& root) {
       .def_readwrite("pqlimit", &TesseractConfig::pqlimit)
       .def_readwrite("det_orders", &TesseractConfig::det_orders)
       .def_readwrite("det_penalty", &TesseractConfig::det_penalty)
-      .def("__str__", &TesseractConfig::str);
+      .def("__str__", &TesseractConfig::str)
+      .def("compile_decoder", &_compile_tesseract_decoder_helper,
+           py::return_value_policy::take_ownership,
+           R"pbdoc(
+          Compiles the configuration into a new `TesseractDecoder` instance.
+
+          Returns
+          -------
+          TesseractDecoder
+              A new `TesseractDecoder` instance configured with the current
+              settings.
+      )pbdoc");
 
   py::class_<Node>(m, "Node")
       .def(py::init<double, size_t, std::vector<size_t>>(), py::arg("cost") = 0.0,
@@ -225,7 +241,9 @@ void add_tesseract_module(py::module& root) {
     )pbdoc")
       .def_readwrite("low_confidence_flag", &TesseractDecoder::low_confidence_flag)
       .def_readwrite("predicted_errors_buffer", &TesseractDecoder::predicted_errors_buffer)
-      .def_readwrite("errors", &TesseractDecoder::errors);
+      .def_readwrite("errors", &TesseractDecoder::errors)
+      .def_readwrite("config", &TesseractDecoder::config)
+      .def_readwrite("num_observables", &TesseractDecoder::num_observables);
 }
 
 #endif
