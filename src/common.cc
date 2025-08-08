@@ -95,7 +95,9 @@ stim::DetectorErrorModel common::merge_indistinguishable_errors(
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_ERROR: {
         Error error(instruction);
-        assert(error.symptom.detectors.size());
+        if (error.symptom.detectors.size() == 0) {
+            throw std::invalid_argument("Errors that do not flip any detectors are not supported.");
+        }
         error.likelihood_cost =
             -1 * std::log(instruction.arg_data[0] / (1 - instruction.arg_data[0]));
 
