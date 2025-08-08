@@ -177,17 +177,17 @@ void add_simplex_module(py::module& root) {
               }
               self.decode(detections);
 
-              // Collect results for the current shot being decoded.
-              std::vector<char> shot_result(self.num_observables, 0);
-              for (size_t ei : self.predicted_errors_buffer) {
-                for (int obs_index : self.errors[ei].symptom.observables) {
-                  shot_result[obs_index] ^= 1;
-                }
+              // Note: I must do this if I want to modify the results on the 'result_unchecked'
+              // itself.
+              for (size_t k = 0; k < self.num_observables; ++k) {
+                result_unchecked(i, k) = 0;
               }
 
-              // Copy the result into the pre-allocated array.
-              for (size_t k = 0; k < self.num_observables; ++k) {
-                result_unchecked(i, k) = shot_result[k];
+              // Collect results for the current shot being decoded.
+              for (size_t ei : self.predicted_errors_buffer) {
+                for (int obs_index : self.errors[ei].symptom.observables) {
+                  result_unchecked(i, obs_index) ^= 1;
+                }
               }
             }
 

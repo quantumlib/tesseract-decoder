@@ -165,21 +165,21 @@ void add_tesseract_module(py::module& root) {
       .def(
           "decode_batch",
           [](TesseractDecoder& self, const py::array_t<bool>& syndromes) {
-            // Ensure the input is in correct 2D array.
+            // Check the dimensions of the `syndromes` argument.
             if (syndromes.ndim() != 2) {
               throw std::runtime_error("Input syndromes must be a 2D NumPy array.");
             }
 
-            // Extract dimensions and syndromes.
+            // Retrieve the number of shots, detectors and the syndrome patterns.
             auto syndromes_unchecked = syndromes.unchecked<2>();
             size_t num_shots = syndromes_unchecked.shape(0);
             size_t num_detectors = syndromes_unchecked.shape(1);
 
-            // Allocate memory for the function output.
+            // Allocate the result array.
             py::array_t<bool> result({num_shots, self.num_observables});
             auto result_unchecked = result.mutable_unchecked<2>();
 
-            // Iterate over each shot and decode it.
+            // Process and decode each shot.
             for (size_t i = 0; i < num_shots; ++i) {
               std::vector<uint64_t> detections;
               for (size_t j = 0; j < num_detectors; ++j) {
@@ -189,17 +189,17 @@ void add_tesseract_module(py::module& root) {
               }
               self.decode(detections);
 
-              // Collect results for the current shot being decoded.
-              std::vector<char> shot_result(self.num_observables, 0);
-              for (size_t ei : self.predicted_errors_buffer) {
-                for (int obs_index : self.errors[ei].symptom.observables) {
-                  shot_result[obs_index] ^= true;
-                }
+              // Note: I must do this if I want to modify the results on the 'result_unchecked'
+              // itself.
+              for (size_t k = 0; k < self.num_observables; ++k) {
+                result_unchecked(i, k) = 0;
               }
 
-              // Copy the result into the pre-allocated array.
-              for (size_t k = 0; k < self.num_observables; ++k) {
-                result_unchecked(i, k) = shot_result[k];
+              // Collect results for the current shot being decoded.
+              for (size_t ei : self.predicted_errors_buffer) {
+                for (int obs_index : self.errors[ei].symptom.observables) {
+                  result_unchecked(i, obs_index) ^= 1;
+                }
               }
             }
 
