@@ -78,7 +78,7 @@ void add_common_module(py::module &root) {
         defined by the detectors and observables that it flips in the circuit.
     )pbdoc")
       .def_readwrite("likelihood_cost", &common::Error::likelihood_cost,
-                     "The cost of this error (often -log(probability)).")
+                     "The cost of this error (often log((1 - probability) / probability)).")
       .def_readwrite("probability", &common::Error::probability,
                      "The probability of this error occurring.")
       .def_readwrite("symptom", &common::Error::symptom, "The symptom associated with this error.")
