@@ -70,6 +70,69 @@ This is the main class that implements the Tesseract decoding logic.
 * `cost_from_errors(predicted_errors: list[int]) -> float`
 * `decode(detections: list[int]) -> list[bool]`
 
+Explanation of each method:
+#### `decode_to_errors(detections: list[int])`
+
+Decodes a single measurement shot to predict a list of errors.
+
+* **Parameters:** `detections` is a list of integers that represent the indices of the detectors that have fired in a single shot.
+
+* **Returns:** A list of integers, where each integer is the index of a predicted error.
+
+#### `decode_to_errors(detections: list[int], detector_order: int, detector_beam: int)`
+
+An overloaded version of the `decode_to_errors` method that allows for a different decoding strategy.
+
+* **Parameters:**
+
+  * `detections` is a list of integers representing the indices of the fired detectors.
+
+  * `detector_order` is an integer that specifies a different ordering of detectors to use for the decoding.
+
+  * `detector_beam` is an integer that specifies the beam size to use for the decoding.
+
+* **Returns:** A list of integers, where each integer is the index of a predicted error.
+
+#### `get_observables_from_errors(predicted_errors: list[int]) -> list[bool]`
+
+Converts a list of predicted error indices into a list of flipped logical observables.
+
+* **Parameters:** `predicted_errors` is a list of integers representing the predicted error indices.
+
+* **Returns:** A list of booleans. Each boolean corresponds to a logical observable and is `True` if the observable was flipped, and `False` otherwise.
+
+#### `cost_from_errors(predicted_errors: list[int]) -> float`
+
+Calculates the total logarithmic probability cost for a given set of predicted errors. The cost is a measure of how likely a set of errors is.
+
+* **Parameters:** `predicted_errors` is a list of integers representing the predicted error indices.
+
+* **Returns:** A float representing the total logarithmic probability cost.
+
+#### `decode_from_detection_events(detections: list[int]) -> numpy.ndarray`
+
+This method decodes a single shot from a list of detection events. This is an alternative to the `decode` method that takes a NumPy array.
+
+* **Parameters:** `detections` is a list of integers representing the indices of the detectors that were fired.
+
+* **Returns:** A 1D NumPy array of booleans. Each boolean indicates whether the corresponding logical observable has been flipped by the decoded error.
+
+#### `decode(syndrome: numpy.ndarray) -> numpy.ndarray`
+
+A convenience function that decodes a single shot and returns the flipped logical observables directly. It combines the functionality of `decode_to_errors` and `get_observables_from_errors`.
+
+* **Parameters:** `syndrome` is a 1D NumPy array of booleans representing the detector outcomes for a single shot. The length of the array should match the number of detectors in the DEM.
+
+* **Returns:** A 1D NumPy array of booleans, where each boolean corresponds to a logical observable and is `True` if the observable was flipped.
+
+#### `decode_batch(syndromes: numpy.ndarray) -> numpy.ndarray`
+
+Decodes a batch of shots at once.
+
+* **Parameters:** `syndromes` is a 2D NumPy array of booleans where each row represents a single shot's detector outcomes. The shape should be `(num_shots, num_detectors)`.
+
+* **Returns:** A 2D NumPy array of booleans with the shape `(num_shots, num_observables)`. Each row is the decoder's prediction of which observables were flipped in the shot.
+
 **Example Usage**:
 
 ```python
