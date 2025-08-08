@@ -94,7 +94,8 @@ void add_common_module(py::module &root) {
             Parameters
             ----------
             likelihood_cost : float
-                The cost of this error. This is often `-log(probability)`.
+                The cost of this error. 
+                This is often `log((1 - probability) / probability)`.
             detectors : list[int]
                 A list of indices of the detectors flipped by this error.
             observables : list[int]
