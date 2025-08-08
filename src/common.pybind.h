@@ -97,7 +97,7 @@ void add_common_module(py::module &root) {
             detectors : list[int]
                 A list of detector indices affected by this error.
             observables : list[int]
-                A list of observable indices flipped by this error.
+                A list of indices of the observables flipped by this error.
             dets_array : list[bool]
                 A boolean array representing the detectors affected.
            )pbdoc")
