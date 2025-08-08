@@ -145,6 +145,11 @@ void add_common_module(py::module &root) {
       },
       py::arg("dem"), R"pbdoc(
         Merges identical errors in a `stim.DetectorErrorModel`.
+        
+        Errors are identical if they flip the same set of detectors and observables (the same symptom).
+        For example, two identical errors with probabilities p1 and p2
+        would be merged into a single error with the same symptom,
+        but with probability `p1 * (1 - p2) + p2 * (1 - p1)`
 
         Parameters
         ----------
