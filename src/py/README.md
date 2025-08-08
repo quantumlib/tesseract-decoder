@@ -407,7 +407,7 @@ print(f"Error symptom detectors: {error3.symptom.detectors}")
 ```
 
 #### Functions
-* `common.merge_identical_errors(dem: stim.DetectorErrorModel) -> stim.DetectorErrorModel`
+* `common.merge_indistinguishable_errors(dem: stim.DetectorErrorModel) -> stim.DetectorErrorModel`
   * Takes a `stim.DetectorErrorModel` and returns a new model where error mechanisms with identical symptoms are combined.
 
 **Example Usage**:
@@ -427,7 +427,7 @@ print(original_dem)
 # Two have the same symptom (D0 D1) with probabilities 0.1 and 0.05.
 # The third has a different symptom (D2) with probability 0.2.
 
-merged_dem = common.merge_identical_errors(original_dem)
+merged_dem = common.merge_indistinguishable_errors(original_dem)
 print("\nMerged DEM:")
 print(merged_dem)
 # This merged DEM has 2 error instructions.

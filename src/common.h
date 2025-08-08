@@ -67,7 +67,7 @@ struct Error {
 
 // Makes a new (flattened) dem where identical error mechanisms have been
 // merged.
-stim::DetectorErrorModel merge_identical_errors(const stim::DetectorErrorModel& dem);
+stim::DetectorErrorModel merge_indistinguishable_errors(const stim::DetectorErrorModel& dem);
 
 // Returns a copy of the given error model with any zero-probability DEM_ERROR
 // instructions removed.

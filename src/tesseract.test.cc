@@ -105,7 +105,7 @@ TEST(tesseract, Tesseract_simplex_test) {
         for (bool merge_errors : {true, false}) {
           stim::DetectorErrorModel new_dem = dem;
           if (merge_errors) {
-            new_dem = common::merge_identical_errors(dem);
+            new_dem = common::merge_indistinguishable_errors(dem);
           }
           std::vector<stim::SparseShot> shots;
           sample_shots(test_data_seed, circuit, num_shots, shots);

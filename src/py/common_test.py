@@ -59,10 +59,10 @@ def test_error_from_dem_instruction():
     assert str(error) == "Error{cost=1.945910, symptom=Symptom{}}"
 
 
-def test_merge_identical_errors():
+def test_merge_indistinguishable_errors():
     dem = stim.DetectorErrorModel()
     assert isinstance(
-        tesseract_decoder.common.merge_identical_errors(dem), stim.DetectorErrorModel
+        tesseract_decoder.common.merge_indistinguishable_errors(dem), stim.DetectorErrorModel
     )
 
 

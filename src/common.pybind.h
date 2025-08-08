@@ -137,10 +137,10 @@ void add_common_module(py::module &root) {
            )pbdoc");
 
   m.def(
-      "merge_identical_errors",
+      "merge_indistinguishable_errors",
       [](py::object dem) {
         auto input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
-        auto res = common::merge_identical_errors(input_dem);
+        auto res = common::merge_indistinguishable_errors(input_dem);
         return make_py_object(res, "DetectorErrorModel");
       },
       py::arg("dem"), R"pbdoc(

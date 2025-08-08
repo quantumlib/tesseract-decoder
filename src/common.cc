@@ -71,7 +71,8 @@ std::vector<stim::DemTarget> common::Symptom::as_dem_instruction_targets() const
   return targets;
 }
 
-stim::DetectorErrorModel common::merge_identical_errors(const stim::DetectorErrorModel& dem) {
+stim::DetectorErrorModel common::merge_indistinguishable_errors(
+    const stim::DetectorErrorModel& dem) {
   stim::DetectorErrorModel out_dem;
 
   // Map to track the distinct symptoms
