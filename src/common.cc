@@ -26,7 +26,7 @@ std::string common::Symptom::str() {
 
 common::Error::Error(const stim::DemInstruction& error) {
   assert(error.type == stim::DemInstructionType::DEM_ERROR);
-  probability = error.arg_data[0];
+  double probability = error.arg_data[0];
   assert(probability >= 0 && probability <= 1);
 
   std::set<int> detectors_set;
@@ -71,6 +71,13 @@ std::vector<stim::DemTarget> common::Symptom::as_dem_instruction_targets() const
   return targets;
 }
 
+double common::merge_weights(double a, double b) {
+  auto sgn = std::copysign(1, a) * std::copysign(1, b);
+  auto signed_min = sgn * std::min(std::abs(a), std::abs(b));
+  return signed_min + std::log(1 + std::exp(-std::abs(a + b))) -
+         std::log(1 + std::exp(-std::abs(a - b)));
+}
+
 stim::DetectorErrorModel common::merge_indistinguishable_errors(
     const stim::DetectorErrorModel& dem) {
   stim::DetectorErrorModel out_dem;
@@ -82,12 +89,13 @@ stim::DetectorErrorModel common::merge_indistinguishable_errors(
       case stim::DemInstructionType::DEM_ERROR: {
         Error error(instruction);
         assert(error.symptom.detectors.size());
-        // Merge with existing error with the same symptom (if applicable)
+        error.likelihood_cost =
+            -1 * std::log(instruction.arg_data[0] / (1 - instruction.arg_data[0]));
+
         if (errors_by_symptom.find(error.symptom) != errors_by_symptom.end()) {
-          double p0 = errors_by_symptom[error.symptom].probability;
-          error.probability = p0 * (1 - error.probability) + (1 - p0) * error.probability;
+          double existing_cost = errors_by_symptom[error.symptom].likelihood_cost;
+          error.likelihood_cost = -merge_weights(-existing_cost, -error.likelihood_cost);
         }
-        error.likelihood_cost = -1 * std::log(error.probability / (1 - error.probability));
         errors_by_symptom[error.symptom] = error;
         break;
       }
@@ -104,8 +112,9 @@ stim::DetectorErrorModel common::merge_indistinguishable_errors(
     }
   }
   for (const auto& it : errors_by_symptom) {
-    out_dem.append_error_instruction(it.second.probability,
-                                     it.second.symptom.as_dem_instruction_targets(),
+    // Recalculate probability from the final merged cost for the output DEM.
+    double final_p = 1 / (1 + std::exp(it.second.likelihood_cost));
+    out_dem.append_error_instruction(final_p, it.second.symptom.as_dem_instruction_targets(),
                                      /*tag=*/"");
   }
   return out_dem;

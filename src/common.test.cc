@@ -95,3 +95,35 @@ TEST(common, RemoveZeroProbabilityErrors) {
   ASSERT_EQ(flat.instructions[1].type, stim::DemInstructionType::DEM_ERROR);
   EXPECT_NEAR(flat.instructions[1].arg_data[0], 0.2, 1e-9);
 }
+
+// Helper function to compare the two methods.
+void assert_merged_probabilities_are_equal(double p1, double p2) {
+  // Method 1: Merge probabilities directly using the exclusive OR formula.
+  double merged_p_direct = p1 + p2 - 2 * p1 * p2;
+
+  // Method 2: Convert to likelihood costs, merge them, then convert back.
+  double cost1 = -1 * std::log(p1 / (1 - p1));
+  double cost2 = -1 * std::log(p2 / (1 - p2));
+  double merged_cost = common::merge_weights(-cost1, -cost2);
+  double merged_p_via_costs = 1 / (1 + std::exp(merged_cost));
+
+  // The two methods should produce nearly identical results.
+  ASSERT_NEAR(merged_p_direct, merged_p_via_costs, 1e-12);
+}
+
+TEST(CommonTest, merge_weights_is_equivalent_to_probability_xor) {
+  // Test with small probabilities
+  assert_merged_probabilities_are_equal(0.001, 0.002);
+
+  // Test with larger probabilities
+  assert_merged_probabilities_are_equal(0.1, 0.25);
+
+  // Test with a mix of small and large probabilities
+  assert_merged_probabilities_are_equal(0.05, 0.8);
+
+  // Test with a probability close to 0.5, where the formula is sensitive
+  assert_merged_probabilities_are_equal(0.49, 0.51);
+
+  // Test with identical probabilities
+  assert_merged_probabilities_are_equal(0.01, 0.01);
+}

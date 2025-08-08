@@ -48,19 +48,10 @@ struct Symptom {
 // Represents an error / weighted hyperedge
 struct Error {
   double likelihood_cost;
-  double probability;
   Symptom symptom;
-  std::vector<bool> dets_array;
   Error() = default;
-  Error(double likelihood_cost, std::vector<int>& detectors, std::vector<int> observables,
-        std::vector<bool>& dets_array)
-      : likelihood_cost(likelihood_cost), symptom{detectors, observables}, dets_array(dets_array) {}
-  Error(double likelihood_cost, double probability, std::vector<int>& detectors,
-        std::vector<int> observables, std::vector<bool>& dets_array)
-      : likelihood_cost(likelihood_cost),
-        probability(probability),
-        symptom{detectors, observables},
-        dets_array(dets_array) {}
+  Error(double likelihood_cost, std::vector<int>& detectors, std::vector<int> observables)
+      : likelihood_cost(likelihood_cost), symptom{detectors, observables} {}
   Error(const stim::DemInstruction& error);
   std::string str();
 };
@@ -79,6 +70,8 @@ stim::DetectorErrorModel remove_zero_probability_errors(const stim::DetectorErro
 // call remove_zero_probability_errors first.
 stim::DetectorErrorModel dem_from_counts(stim::DetectorErrorModel& orig_dem,
                                          const std::vector<size_t>& error_counts, size_t num_shots);
+
+double merge_weights(double a, double b);
 
 }  // namespace common
 

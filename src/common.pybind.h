@@ -72,23 +72,20 @@ void add_common_module(py::module &root) {
       )pbdoc");
 
   py::class_<common::Error>(m, "Error", R"pbdoc(
-        Represents an error, including its cost, probability, and symptom.
+        Represents an error, including its cost, and symptom.
 
         An error is a physical event (or set of indistinguishable physical events)
         defined by the detectors and observables that it flips in the circuit.
     )pbdoc")
       .def_readwrite("likelihood_cost", &common::Error::likelihood_cost,
                      "The cost of this error (often log((1 - probability) / probability)).")
-      .def_readwrite("probability", &common::Error::probability,
-                     "The probability of this error occurring.")
       .def_readwrite("symptom", &common::Error::symptom, "The symptom associated with this error.")
       .def("__str__", &common::Error::str)
       .def(py::init<>(), R"pbdoc(
         Default constructor for the `Error` class.
       )pbdoc")
-      .def(py::init<double, std::vector<int> &, std::vector<int>, std::vector<bool> &>(),
-           py::arg("likelihood_cost"), py::arg("detectors"), py::arg("observables"),
-           py::arg("dets_array"), R"pbdoc(
+      .def(py::init<double, std::vector<int> &, std::vector<int>>(), py::arg("likelihood_cost"),
+           py::arg("detectors"), py::arg("observables"), R"pbdoc(
             Constructor for the `Error` class.
 
             Parameters
@@ -100,27 +97,8 @@ void add_common_module(py::module &root) {
                 A list of indices of the detectors flipped by this error.
             observables : list[int]
                 A list of indices of the observables flipped by this error.
-            dets_array : list[bool]
-                A boolean array representing the detectors affected.
            )pbdoc")
-      .def(py::init<double, double, std::vector<int> &, std::vector<int>, std::vector<bool> &>(),
-           py::arg("likelihood_cost"), py::arg("probability"), py::arg("detectors"),
-           py::arg("observables"), py::arg("dets_array"), R"pbdoc(
-            Constructor with both likelihood cost and probability.
 
-            Parameters
-            ----------
-            likelihood_cost : float
-                The cost of this error, usually log((1 - probability) / probability)
-            probability : float
-                The probability of this error occurring.
-            detectors : list[int]
-                A list of detector indices affected by this error.
-            observables : list[int]
-                A list of observable indices flipped by this error.
-            dets_array : list[bool]
-                A boolean array representing the detectors affected.
-           )pbdoc")
       .def(py::init([](py::object edi) {
              std::vector<double> args;
              std::vector<stim::DemTarget> targets;
