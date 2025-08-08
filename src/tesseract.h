@@ -15,6 +15,7 @@
 #ifndef TESSERACT_DECODER_H
 #define TESSERACT_DECODER_H
 
+#include <boost/dynamic_bitset.hpp>
 #include <queue>
 #include <string>
 #include <unordered_map>
@@ -76,19 +77,24 @@ struct TesseractDecoder {
 
   // Returns the bitwise XOR of all the observables bitmasks of all errors in
   // the predicted errors buffer.
-  common::ObservablesMask mask_from_errors(const std::vector<size_t>& predicted_errors);
+  std::vector<int> get_flipped_observables(const std::vector<size_t>& predicted_errors);
 
   // Returns the sum of the likelihood costs (minus-log-likelihood-ratios) of
   // all errors in the predicted errors buffer.
   double cost_from_errors(const std::vector<size_t>& predicted_errors);
 
-  common::ObservablesMask decode(const std::vector<uint64_t>& detections);
+  std::vector<int> decode(const std::vector<uint64_t>& detections);
   void decode_shots(std::vector<stim::SparseShot>& shots,
-                    std::vector<common::ObservablesMask>& obs_predicted);
+                    std::vector<std::vector<int>>& obs_predicted);
 
   bool low_confidence_flag = false;
   std::vector<size_t> predicted_errors_buffer;
   std::vector<common::Error> errors;
+  size_t num_observables;
+
+  std::vector<std::vector<int>>& get_eneighbors() {
+    return eneighbors;
+  }
 
  private:
   std::vector<std::vector<int>> d2e;
@@ -101,7 +107,7 @@ struct TesseractDecoder {
   void initialize_structures(size_t num_detectors);
   double get_detcost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const;
   void flip_detectors_and_block_errors(size_t detector_order, const std::vector<size_t>& errors,
-                                       std::vector<char>& detectors,
+                                       boost::dynamic_bitset<>& detectors,
                                        std::vector<DetectorCostTuple>& detector_cost_tuples) const;
 };
 

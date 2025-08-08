@@ -15,8 +15,18 @@
 import math
 import pytest
 import stim
+import numpy as np
 
 from src import tesseract_decoder
+from src.py.shared_decoding_tests import (
+    shared_test_decode,
+    shared_test_decode_batch_with_invalid_dimensions,
+    shared_test_decode_batch_with_complex_model,
+    shared_test_decoder_predicts_various_observable_flips,
+    shared_test_decode_complex_dem,
+    shared_test_decode_batch,
+    shared_test_decode_from_detection_events,
+)
 
 _DETECTOR_ERROR_MODEL = stim.DetectorErrorModel(
     """
@@ -48,10 +58,62 @@ def test_create_decoder():
     decoder = tesseract_decoder.tesseract.TesseractDecoder(config)
     decoder.decode_to_errors([0])
     decoder.decode_to_errors(detections=[0], det_order=0, det_beam=0)
-    assert decoder.mask_from_errors([1]) == 0
+    assert decoder.get_observables_from_errors([1]) == []
     assert decoder.cost_from_errors([1]) == pytest.approx(0.5108256237659907)
-    assert decoder.decode([0]) == 0
 
+@pytest.mark.parametrize(
+    "decoder_class, config_class",
+    [(tesseract_decoder.tesseract.TesseractDecoder, tesseract_decoder.tesseract.TesseractConfig)]
+)
+def test_tesseract_decoder_predicts_various_observable_flips(decoder_class, config_class):
+    shared_test_decoder_predicts_various_observable_flips(decoder_class, config_class)
+
+
+@pytest.mark.parametrize(
+    "decoder_class, config_class",
+    [(tesseract_decoder.tesseract.TesseractDecoder, tesseract_decoder.tesseract.TesseractConfig)]
+)
+def test_tesseract_decode(decoder_class, config_class):
+    shared_test_decode(decoder_class, config_class)
+
+
+@pytest.mark.parametrize(
+    "decoder_class, config_class",
+    [(tesseract_decoder.tesseract.TesseractDecoder, tesseract_decoder.tesseract.TesseractConfig)]
+)
+def test_tesseract_decode_complex_dem(decoder_class, config_class):
+    shared_test_decode_complex_dem(decoder_class, config_class)
+
+
+@pytest.mark.parametrize(
+    "decoder_class, config_class",
+    [(tesseract_decoder.tesseract.TesseractDecoder, tesseract_decoder.tesseract.TesseractConfig)]
+)
+def test_tesseract_decode_batch_with_invalid_dimensions(decoder_class, config_class):
+    shared_test_decode_batch_with_invalid_dimensions(decoder_class, config_class)
+
+
+@pytest.mark.parametrize(
+    "decoder_class, config_class",
+    [(tesseract_decoder.tesseract.TesseractDecoder, tesseract_decoder.tesseract.TesseractConfig)]
+)
+def test_tesseract_decode_batch(decoder_class, config_class):
+    shared_test_decode_batch(decoder_class, config_class)
+
+
+@pytest.mark.parametrize(
+    "decoder_class, config_class",
+    [(tesseract_decoder.tesseract.TesseractDecoder, tesseract_decoder.tesseract.TesseractConfig)]
+)
+def test_tesseract_decode_batch_with_complex_model(decoder_class, config_class):
+    shared_test_decode_batch_with_complex_model(decoder_class, config_class)
+
+@pytest.mark.parametrize(
+    "decoder_class, config_class",
+    [(tesseract_decoder.tesseract.TesseractDecoder, tesseract_decoder.tesseract.TesseractConfig)]
+)
+def test_tesseract_decode_from_detection_events(decoder_class, config_class):
+    shared_test_decode_from_detection_events(decoder_class, config_class)
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))

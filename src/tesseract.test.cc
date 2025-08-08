@@ -216,3 +216,113 @@ TEST(tesseract, DecodersStripZeroProbabilityErrors) {
   EXPECT_EQ(s_dec.config.dem.count_errors(), 2);
   EXPECT_EQ(s_dec.errors.size(), 2);
 }
+
+TEST(tesseract, EneighborsCorrectness_MoreErrors) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 D1
+        error(0.1) D1 D2
+        error(0.1) D2 D3
+        error(0.1) D4 D5
+        error(0.1) D0 D2 D4
+        detector(0, 0, 0) D0
+        detector(1, 0, 0) D1
+        detector(2, 0, 0) D2
+        detector(3, 0, 0) D3
+        detector(4, 0, 0) D4
+        detector(5, 0, 0) D5
+    )DEM");
+
+  TesseractConfig t_config{dem};
+  TesseractDecoder t_dec(t_config);
+
+  // Manually calculated expected neighbors
+  std::vector<int> expected_e0_neighbors = {2, 4};
+  std::vector<int> expected_e1_neighbors = {0, 3, 4};
+  std::vector<int> expected_e2_neighbors = {0, 1, 4};
+  std::vector<int> expected_e3_neighbors = {0, 2};
+  std::vector<int> expected_e4_neighbors = {1, 3, 5};
+
+  // Sort the actual vectors for reliable comparison
+  for (size_t i = 0; i < t_dec.get_eneighbors().size(); ++i) {
+    std::sort(t_dec.get_eneighbors()[i].begin(), t_dec.get_eneighbors()[i].end());
+  }
+
+  std::sort(expected_e0_neighbors.begin(), expected_e0_neighbors.end());
+  std::sort(expected_e1_neighbors.begin(), expected_e1_neighbors.end());
+  std::sort(expected_e2_neighbors.begin(), expected_e2_neighbors.end());
+  std::sort(expected_e3_neighbors.begin(), expected_e3_neighbors.end());
+  std::sort(expected_e4_neighbors.begin(), expected_e4_neighbors.end());
+
+  EXPECT_EQ(t_dec.get_eneighbors()[0], expected_e0_neighbors);
+  EXPECT_EQ(t_dec.get_eneighbors()[1], expected_e1_neighbors);
+  EXPECT_EQ(t_dec.get_eneighbors()[2], expected_e2_neighbors);
+  EXPECT_EQ(t_dec.get_eneighbors()[3], expected_e3_neighbors);
+  EXPECT_EQ(t_dec.get_eneighbors()[4], expected_e4_neighbors);
+}
+
+TEST(tesseract, EneighborsCorrectness_ComplexGrid) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 D1
+        error(0.1) D1 D2
+        error(0.1) D3 D4
+        error(0.1) D4 D5
+        error(0.1) D6 D7
+        error(0.1) D7 D8
+        error(0.1) D1 D4 D7
+        error(0.1) D0 D3 D6
+        detector(0, 0, 0) D0
+        detector(1, 0, 0) D1
+        detector(2, 0, 0) D2
+        detector(3, 0, 0) D3
+        detector(4, 0, 0) D4
+        detector(5, 0, 0) D5
+        detector(6, 0, 0) D6
+        detector(7, 0, 0) D7
+        detector(8, 0, 0) D8
+    )DEM");
+
+  TesseractConfig t_config{dem};
+  TesseractDecoder t_dec(t_config);
+
+  // Manually calculated expected neighbors for all 8 errors
+  // e0 (D0,D1) neighbors are D2,D3,D4,D6,D7
+  std::vector<int> expected_e0_neighbors = {2, 3, 4, 6, 7};
+  // e1 (D1,D2) neighbors are D0,D4,D7
+  std::vector<int> expected_e1_neighbors = {0, 4, 7};
+  // e2 (D3,D4) neighbors are D0,D1,D5,D6,D7
+  std::vector<int> expected_e2_neighbors = {0, 1, 5, 6, 7};
+  // e3 (D4,D5) neighbors are D1,D3,D7
+  std::vector<int> expected_e3_neighbors = {1, 3, 7};
+  // e4 (D6,D7) neighbors are D0,D1,D3,D4,D8
+  std::vector<int> expected_e4_neighbors = {0, 1, 3, 4, 8};
+  // e5 (D7,D8) neighbors are D1,D4,D6
+  std::vector<int> expected_e5_neighbors = {1, 4, 6};
+  // e6 (D1,D4,D7) neighbors are D0,D2,D3,D5,D6,D8
+  std::vector<int> expected_e6_neighbors = {0, 2, 3, 5, 6, 8};
+  // e7 (D0,D3,D6) neighbors are D1,D4,D7
+  std::vector<int> expected_e7_neighbors = {1, 4, 7};
+
+  // Sort the actual vectors for reliable comparison
+  for (size_t i = 0; i < t_dec.get_eneighbors().size(); ++i) {
+    std::sort(t_dec.get_eneighbors()[i].begin(), t_dec.get_eneighbors()[i].end());
+  }
+
+  // Sort the expected vectors as well
+  std::sort(expected_e0_neighbors.begin(), expected_e0_neighbors.end());
+  std::sort(expected_e1_neighbors.begin(), expected_e1_neighbors.end());
+  std::sort(expected_e2_neighbors.begin(), expected_e2_neighbors.end());
+  std::sort(expected_e3_neighbors.begin(), expected_e3_neighbors.end());
+  std::sort(expected_e4_neighbors.begin(), expected_e4_neighbors.end());
+  std::sort(expected_e5_neighbors.begin(), expected_e5_neighbors.end());
+  std::sort(expected_e6_neighbors.begin(), expected_e6_neighbors.end());
+  std::sort(expected_e7_neighbors.begin(), expected_e7_neighbors.end());
+
+  EXPECT_EQ(t_dec.get_eneighbors()[0], expected_e0_neighbors);
+  EXPECT_EQ(t_dec.get_eneighbors()[1], expected_e1_neighbors);
+  EXPECT_EQ(t_dec.get_eneighbors()[2], expected_e2_neighbors);
+  EXPECT_EQ(t_dec.get_eneighbors()[3], expected_e3_neighbors);
+  EXPECT_EQ(t_dec.get_eneighbors()[4], expected_e4_neighbors);
+  EXPECT_EQ(t_dec.get_eneighbors()[5], expected_e5_neighbors);
+  EXPECT_EQ(t_dec.get_eneighbors()[6], expected_e6_neighbors);
+  EXPECT_EQ(t_dec.get_eneighbors()[7], expected_e7_neighbors);
+}
