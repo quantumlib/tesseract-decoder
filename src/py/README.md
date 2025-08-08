@@ -323,7 +323,6 @@ dem = stim.DetectorErrorModel("""
 errors = utils.get_errors_from_dem(dem)
 print("Errors extracted from DEM:")
 for error in errors:
-    print(f"Error probability: {error.probability}")
     print(f"Error likelihood cost: {error.likelihood_cost}")
     print(f"Error symptom detectors: {error.symptom.detectors}")
 ```
@@ -368,8 +367,7 @@ print(f"s != s3: {s != s3}")
 A Python class representing a complete error mechanism.
 
 * `Error()`
-* `Error(likelihood_cost: float, detectors: list[int], observables: list[int], dets_array: list[bool])`
-* `Error(likelihood_cost: float, probability: float, detectors: list[int], observables: list[int], dets_array: list[bool])`
+* `Error(likelihood_cost: float, detectors: list[int], observables: list[int])`
 * `Error(error: stim.DemInstruction)`
 * `__str__()`
 
@@ -382,26 +380,21 @@ import math
 
 # Create an empty Error
 error = common.Error()
-print(f"Error probability: {error.probability}")
 print(f"Error likelihood cost: {error.likelihood_cost}")
 print(f"Error symptom detectors: {error.symptom.detectors}")
 
 # Create an Error from a stim.DemInstruction
 dem_instruction = stim.DemInstruction(type='error', arg_data=[0.1], target_data=[stim.DemTarget(is_relative_detector_id=True, val=1)])
 error2 = common.Error(error=dem_instruction)
-print(f"Error probability: {error2.probability}")
 print(f"Error likelihood cost: {error2.likelihood_cost}")
 print(f"Error symptom detectors: {error2.symptom.detectors}")
 
 # Create an Error with explicit parameters
 error3 = common.Error(
     likelihood_cost=-math.log(0.2 / (1 - 0.2)),
-    probability=0.2,
     detectors=[1, 2],
     observables=[0],
-    dets_array=[False, True, True, False]
 )
-print(f"Error probability: {error3.probability}")
 print(f"Error likelihood cost: {error3.likelihood_cost}")
 print(f"Error symptom detectors: {error3.symptom.detectors}")
 ```
