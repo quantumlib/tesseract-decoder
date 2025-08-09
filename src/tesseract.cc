@@ -128,8 +128,8 @@ TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
   initialize_structures(config.dem.count_detectors());
   if (config.create_visualization) {
     auto detectors = get_detector_coords(config.dem);
-    visualizer.add_detector_coords(detectors);
-    visualizer.add_errors(errors);
+    // visualizer.add_detector_coords(detectors);
+    // visualizer.add_errors(errors);
   }
 }
 
