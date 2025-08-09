@@ -109,12 +109,10 @@ stim::DetectorErrorModel common::merge_indistinguishable_errors(
         if (error.symptom.detectors.size() == 0) {
           throw std::invalid_argument("Errors that do not flip any detectors are not supported.");
         }
-        error.likelihood_cost =
-            -1 * std::log(instruction.arg_data[0] / (1 - instruction.arg_data[0]));
 
         if (errors_by_symptom.find(error.symptom) != errors_by_symptom.end()) {
-          double existing_cost = errors_by_symptom[error.symptom].likelihood_cost;
-          error.likelihood_cost = merge_weights(existing_cost, error.likelihood_cost);
+          error.likelihood_cost = merge_weights(error.likelihood_cost,
+                                                errors_by_symptom[error.symptom].likelihood_cost);
         }
         errors_by_symptom[error.symptom] = error;
         break;

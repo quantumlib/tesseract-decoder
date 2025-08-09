@@ -127,3 +127,57 @@ TEST(CommonTest, merge_weights_is_equivalent_to_probability_xor) {
   // Test with identical probabilities
   assert_merged_probabilities_are_equal(0.01, 0.01);
 }
+
+// Helper function to create a simple DEM with two identical errors.
+stim::DetectorErrorModel create_dem_with_two_errors(double p1, double p2) {
+  stim::DetectorErrorModel dem;
+
+  std::vector<stim::DemTarget> targets = {stim::DemTarget::relative_detector_id(0)};
+
+  dem.append_error_instruction(p1, targets, "");
+  dem.append_error_instruction(p2, targets, "");
+  return dem;
+}
+
+// Function to get the probability from a merged DEM.
+double get_merged_probability(const stim::DetectorErrorModel& merged_dem) {
+  if (merged_dem.instructions.size() != 1 ||
+      merged_dem.instructions[0].type != stim::DemInstructionType::DEM_ERROR) {
+    throw std::runtime_error("Expected a single DEM_ERROR instruction in the merged model.");
+  }
+  return merged_dem.instructions[0].arg_data[0];
+}
+
+TEST(CommonTest, merge_indistinguishable_errors_two_errors) {
+  // Case 1: Both probabilities are low.
+  double p1 = 0.1;
+  double p2 = 0.2;
+  double expected_merged_p = p1 * (1 - p2) + p2 * (1 - p1);
+  auto dem1 = create_dem_with_two_errors(p1, p2);
+  auto merged_dem1 = common::merge_indistinguishable_errors(dem1);
+  ASSERT_NEAR(get_merged_probability(merged_dem1), expected_merged_p, 1e-9);
+
+  // Case 2: One low, one high probability.
+  p1 = 0.1;
+  p2 = 0.8;
+  expected_merged_p = p1 * (1 - p2) + p2 * (1 - p1);
+  auto dem2 = create_dem_with_two_errors(p1, p2);
+  auto merged_dem2 = common::merge_indistinguishable_errors(dem2);
+  ASSERT_NEAR(get_merged_probability(merged_dem2), expected_merged_p, 1e-9);
+
+  // Case 3: One high, one low probability.
+  p1 = 0.8;
+  p2 = 0.1;
+  expected_merged_p = p1 * (1 - p2) + p2 * (1 - p1);
+  auto dem3 = create_dem_with_two_errors(p1, p2);
+  auto merged_dem3 = common::merge_indistinguishable_errors(dem3);
+  ASSERT_NEAR(get_merged_probability(merged_dem3), expected_merged_p, 1e-9);
+
+  // Case 4: Both probabilities are high.
+  p1 = 0.8;
+  p2 = 0.9;
+  expected_merged_p = p1 * (1 - p2) + p2 * (1 - p1);
+  auto dem4 = create_dem_with_two_errors(p1, p2);
+  auto merged_dem4 = common::merge_indistinguishable_errors(dem4);
+  ASSERT_NEAR(get_merged_probability(merged_dem4), expected_merged_p, 1e-9);
+}
