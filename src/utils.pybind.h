@@ -74,6 +74,8 @@ void add_utils_module(py::module &root) {
             An adjacency list representation of the detector graph.
             Each inner list contains the indices of detectors connected
             to the detector at the corresponding index.
+            Here we say that two detectors are connected if there exists at
+            least one error in the DEM which flips both detectors.
     )pbdoc");
   m.def(
       "build_det_orders",

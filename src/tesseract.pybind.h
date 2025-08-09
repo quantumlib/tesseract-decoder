@@ -225,8 +225,8 @@ void add_tesseract_module(py::module& root) {
            )pbdoc")
       .def("cost_from_errors", &TesseractDecoder::cost_from_errors, py::arg("predicted_errors"),
            R"pbdoc(
-            Calculates the total logarithmic probability cost for a given set of
-            predicted errors.
+            Calculates the sum of the likelihood costs of the predicted errors.
+            The likelihood cost of an error with probability p is log((1 - p) / p).
 
             Parameters
             ----------
@@ -236,7 +236,8 @@ void add_tesseract_module(py::module& root) {
             Returns
             -------
             float
-                A float representing the total logarithmic probability cost.
+                A float representing the sum of the likelihood costs of the
+                predicted errors.
            )pbdoc")
       .def(
           "decode_from_detection_events",
