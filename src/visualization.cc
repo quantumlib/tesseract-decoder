@@ -46,7 +46,7 @@ void Visualizer::write(const char* fpath) {
 
   for (std::string& line : lines) {
     fprintf(fout, line.c_str());
-    fputs("", fout);
+    fputs("\n", fout);
   }
 
   fclose(fout);
