@@ -116,8 +116,9 @@ TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
   errors = get_errors_from_dem(config.dem.flattened());
   if (config.verbose) {
     for (auto& error : errors) {
-      std::cout << error.str() << std::endl;
+      std::cout << error.str() << "\n";
     }
+    std::cout << std::flush;
   }
   num_detectors = config.dem.count_detectors();
   num_errors = config.dem.count_errors();
