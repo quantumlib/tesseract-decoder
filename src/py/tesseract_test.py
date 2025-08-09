@@ -43,7 +43,7 @@ error(0.25) D1
 def test_create_config():
     assert (
         str(tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL))
-        == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=65535, no_revisit_dets=0, at_most_two_errors_per_detector=0, verbose=0, pqlimit=18446744073709551615, det_orders=[], det_penalty=0)"
+        == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=65535, no_revisit_dets=0, at_most_two_errors_per_detector=0, verbose=0, pqlimit=18446744073709551615, det_orders=[], det_penalty=0, create_visualization=0)"
     )
     assert (
         tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL).dem

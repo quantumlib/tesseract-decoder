@@ -37,11 +37,11 @@ TesseractConfig tesseract_config_maker(
     bool no_revisit_dets = false, bool at_most_two_errors_per_detector = false,
     bool verbose = false, size_t pqlimit = std::numeric_limits<size_t>::max(),
     std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
-    double det_penalty = 0.0) {
+    double det_penalty = 0.0, bool create_visualization = false) {
   stim::DetectorErrorModel input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
   return TesseractConfig({input_dem, det_beam, beam_climbing, no_revisit_dets,
                           at_most_two_errors_per_detector, verbose, pqlimit, det_orders,
-                          det_penalty});
+                          det_penalty, create_visualization});
 }
 };  // namespace
 void add_tesseract_module(py::module& root) {
@@ -61,6 +61,7 @@ void add_tesseract_module(py::module& root) {
            py::arg("at_most_two_errors_per_detector") = false, py::arg("verbose") = false,
            py::arg("pqlimit") = std::numeric_limits<size_t>::max(),
            py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0,
+           py::arg("create_visualization") = false,
            R"pbdoc(
             The constructor for the `TesseractConfig` class.
 
@@ -86,6 +87,8 @@ void add_tesseract_module(py::module& root) {
                 will generate its own orderings.
             det_penalty : float, default=0.0
                 A penalty value added to the cost of each detector visited.
+            create_visualization: bool, defualt=False
+                Whether to record the information needed to create a visualization or not.
            )pbdoc")
       .def_property("dem", &dem_getter<TesseractConfig>, &dem_setter<TesseractConfig>,
                     "The `stim.DetectorErrorModel` that defines the error channels and detectors.")
@@ -106,6 +109,8 @@ void add_tesseract_module(py::module& root) {
                      "A list of pre-specified detector orderings.")
       .def_readwrite("det_penalty", &TesseractConfig::det_penalty,
                      "The penalty cost added for each detector.")
+      .def_readwrite("create_visualization", &TesseractConfig::create_visualization,
+                     "If True, records necessary information to create visualization.")
       .def("__str__", &TesseractConfig::str)
       .def("compile_decoder", &_compile_tesseract_decoder_helper,
            py::return_value_policy::take_ownership,
@@ -374,7 +379,10 @@ void add_tesseract_module(py::module& root) {
       .def_readwrite("errors", &TesseractDecoder::errors,
                      "The list of all errors in the detector error model.")
       .def_readwrite("num_observables", &TesseractDecoder::num_observables,
-                     "The total number of logical observables in the detector error model.");
+                     "The total number of logical observables in the detector error model.")
+      .def_readonly("visualizer", &TesseractDecoder::visualizer,
+                    "An object that can (if config.create_visualization=True) be used to generate "
+                    "visualization of the algorithm");
 }
 
 #endif

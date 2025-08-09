@@ -14,7 +14,7 @@
 
 #include "common.h"
 
-std::string common::Symptom::str() {
+std::string common::Symptom::str() const {
   std::string s = "Symptom{";
   for (size_t d : detectors) {
     s += "D" + std::to_string(d);
@@ -63,7 +63,7 @@ common::Error::Error(const stim::DemInstruction& error) {
   symptom.observables = observables;
 }
 
-std::string common::Error::str() {
+std::string common::Error::str() const {
   return "Error{cost=" + std::to_string(likelihood_cost) + ", symptom=" + symptom.str() + "}";
 }
 
