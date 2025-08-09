@@ -112,6 +112,30 @@ void add_common_module(py::module &root) {
             ----------
             error : stim.DemInstruction
                 The instruction to convert into an `Error` object.
+           )pbdoc")
+      .def("get_probability", &common::Error::get_probability,
+           R"pbdoc(
+            Gets the probability associated with the likelihood cost.
+
+            Returns
+            -------
+            float
+                The probability of the error, calculated from the likelihood cost.
+           )pbdoc")
+      .def("set_with_probability", &common::Error::set_with_probability, py::arg("probability"),
+           R"pbdoc(
+            Sets the likelihood cost based on a given probability.
+
+            Parameters
+            ----------
+            probability : float
+                The probability to use for setting the likelihood cost.
+                Must be between 0 and 1 (exclusive).
+
+            Raises
+            ------
+            ValueError
+                If the provided probability is not between 0 and 1.
            )pbdoc");
 
   m.def(

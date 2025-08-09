@@ -67,6 +67,17 @@ std::string common::Error::str() {
   return "Error{cost=" + std::to_string(likelihood_cost) + ", symptom=" + symptom.str() + "}";
 }
 
+double common::Error::get_probability() const {
+  return 1.0 / (1.0 + std::exp(likelihood_cost));
+}
+
+void common::Error::set_with_probability(double p) {
+  if (p <= 0 || p >= 1) {
+    throw std::invalid_argument("Probability must be between 0 and 1.");
+  }
+  likelihood_cost = -std::log(p / (1.0 - p));
+}
+
 std::vector<stim::DemTarget> common::Symptom::as_dem_instruction_targets() const {
   std::vector<stim::DemTarget> targets;
   for (int d : detectors) {
@@ -121,9 +132,8 @@ stim::DetectorErrorModel common::merge_indistinguishable_errors(
     }
   }
   for (const auto& it : errors_by_symptom) {
-    // Recalculate probability from the final merged cost for the output DEM.
-    double final_p = 1 / (1 + std::exp(it.second.likelihood_cost));
-    out_dem.append_error_instruction(final_p, it.second.symptom.as_dem_instruction_targets(),
+    out_dem.append_error_instruction(it.second.get_probability(),
+                                     it.second.symptom.as_dem_instruction_targets(),
                                      /*tag=*/"");
   }
   return out_dem;

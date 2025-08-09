@@ -102,9 +102,9 @@ void assert_merged_probabilities_are_equal(double p1, double p2) {
   double merged_p_direct = p1 + p2 - 2 * p1 * p2;
 
   // Method 2: Convert to likelihood costs, merge them, then convert back.
-  double cost1 = -1 * std::log(p1 / (1 - p1));
-  double cost2 = -1 * std::log(p2 / (1 - p2));
-  double merged_cost = common::merge_weights(-cost1, -cost2);
+  double cost1 = std::log(p1 / (1 - p1));
+  double cost2 = std::log(p2 / (1 - p2));
+  double merged_cost = common::merge_weights(cost1, cost2);
   double merged_p_via_costs = 1 / (1 + std::exp(merged_cost));
 
   // The two methods should produce nearly identical results.

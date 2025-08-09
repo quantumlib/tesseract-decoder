@@ -54,6 +54,12 @@ struct Error {
       : likelihood_cost(likelihood_cost), symptom{detectors, observables} {}
   Error(const stim::DemInstruction& error);
   std::string str();
+
+  // Get/calculate the probability from the likelihood cost.
+  double get_probability() const;
+
+  // Set/calculate the likelihood cost from a probability.
+  void set_with_probability(double p);
 };
 
 // Makes a new (flattened) dem where identical error mechanisms have been

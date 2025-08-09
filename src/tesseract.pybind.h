@@ -322,6 +322,7 @@ void add_tesseract_module(py::module& root) {
 
             // Allocate the result array.
             py::array_t<bool> result({num_shots, self.num_observables});
+            result.attr("fill")(0);
             auto result_unchecked = result.mutable_unchecked<2>();
 
             // Process and decode each shot.
@@ -333,12 +334,6 @@ void add_tesseract_module(py::module& root) {
                 }
               }
               self.decode(detections);
-
-              // Note: I must do this if I want to modify the results
-              // on the 'result_unchecked' itself.
-              for (size_t k = 0; k < self.num_observables; ++k) {
-                result_unchecked(i, k) = 0;
-              }
 
               // Collect results for the current shot being decoded.
               for (size_t ei : self.predicted_errors_buffer) {
