@@ -147,6 +147,7 @@ cc_binary(
     linkopts = OPT_LINKOPTS,
     deps = [
         ":libtesseract",
+        ":libviz",
         "@argparse",
         "@nlohmann_json//:json",
         "@stim//:stim_lib",
