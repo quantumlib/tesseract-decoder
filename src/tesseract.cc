@@ -61,7 +61,9 @@ std::string TesseractConfig::str() {
   ss << "verbose=" << config.verbose << ", ";
   ss << "pqlimit=" << config.pqlimit << ", ";
   ss << "det_orders=" << config.det_orders << ", ";
-  ss << "det_penalty=" << config.det_penalty << ")";
+  ss << "det_penalty=" << config.det_penalty << ",";
+  ss << "create_visualization=" << config.create_visualization;
+  ss << ")";
   return ss.str();
 }
 
@@ -124,6 +126,11 @@ TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
   num_errors = config.dem.count_errors();
   num_observables = config.dem.count_observables();
   initialize_structures(config.dem.count_detectors());
+  if (config.create_visualization) {
+    auto detectors = get_detector_coords(config.dem);
+    visualizer.add_detector_coords(detectors);
+    visualizer.add_errors(errors);
+  }
 }
 
 void TesseractDecoder::initialize_structures(size_t num_detectors) {
@@ -294,6 +301,10 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
     flip_detectors_and_block_errors(detector_order, node.errors, detectors, detector_cost_tuples);
 
     if (node.num_detectors == 0) {
+      if (config.create_visualization) {
+        visualizer.add_activated_errors(node.errors);
+        visualizer.add_activated_detectors(detectors, num_detectors);
+      }
       if (config.verbose) {
         std::cout << "activated_errors = ";
         for (size_t oei : node.errors) {
@@ -318,6 +329,10 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
     if (config.no_revisit_dets && !visited_detectors[node.num_detectors].insert(detectors).second)
       continue;
 
+    if (config.create_visualization) {
+      visualizer.add_activated_errors(node.errors);
+      visualizer.add_activated_detectors(detectors, num_detectors);
+    }
     if (config.verbose) {
       std::cout.precision(13);
       std::cout << "len(pq) = " << pq.size() << " num_pq_pushed = " << num_pq_pushed << std::endl;

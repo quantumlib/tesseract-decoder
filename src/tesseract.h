@@ -25,6 +25,7 @@
 #include "common.h"
 #include "stim.h"
 #include "utils.h"
+#include "visualization.h"
 
 constexpr size_t INF_DET_BEAM = std::numeric_limits<uint16_t>::max();
 
@@ -38,6 +39,7 @@ struct TesseractConfig {
   size_t pqlimit = std::numeric_limits<size_t>::max();
   std::vector<std::vector<size_t>> det_orders;
   double det_penalty = 0;
+  bool create_visualization = false;
 
   std::string str();
 };
@@ -64,6 +66,8 @@ struct ErrorCost {
 
 struct TesseractDecoder {
   TesseractConfig config;
+  Visualizer visualizer;
+
   explicit TesseractDecoder(TesseractConfig config);
 
   // Clears the predicted_errors_buffer and fills it with the decoded errors for

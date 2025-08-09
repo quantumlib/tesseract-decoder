@@ -42,7 +42,7 @@ struct Symptom {
   bool operator==(const Symptom& other) const {
     return detectors == other.detectors && observables == other.observables;
   }
-  std::string str();
+  std::string str() const;
 };
 
 // Represents an error / weighted hyperedge
@@ -53,7 +53,7 @@ struct Error {
   Error(double likelihood_cost, std::vector<int>& detectors, std::vector<int> observables)
       : likelihood_cost(likelihood_cost), symptom{detectors, observables} {}
   Error(const stim::DemInstruction& error);
-  std::string str();
+  std::string str() const;
 
   // Get/calculate the probability from the likelihood cost.
   double get_probability() const;

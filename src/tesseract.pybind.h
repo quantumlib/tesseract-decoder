@@ -106,6 +106,8 @@ void add_tesseract_module(py::module& root) {
                      "A list of pre-specified detector orderings.")
       .def_readwrite("det_penalty", &TesseractConfig::det_penalty,
                      "The penalty cost added for each detector.")
+      .def_readwrite("create_visualization", &TesseractConfig::create_visualization,
+                     "If True, records necessary information to create visualization.")
       .def("__str__", &TesseractConfig::str)
       .def("compile_decoder", &_compile_tesseract_decoder_helper,
            py::return_value_policy::take_ownership,
@@ -374,7 +376,10 @@ void add_tesseract_module(py::module& root) {
       .def_readwrite("errors", &TesseractDecoder::errors,
                      "The list of all errors in the detector error model.")
       .def_readwrite("num_observables", &TesseractDecoder::num_observables,
-                     "The total number of logical observables in the detector error model.");
+                     "The total number of logical observables in the detector error model.")
+      .def_readonly("visualizer", &TesseractDecoder::visualizer,
+                    "An object that can (if config.create_visualization=True) be used to generate "
+                    "visualization of the algorithm");
 }
 
 #endif
