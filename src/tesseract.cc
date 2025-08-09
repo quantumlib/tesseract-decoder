@@ -61,7 +61,7 @@ std::string TesseractConfig::str() {
   ss << "verbose=" << config.verbose << ", ";
   ss << "pqlimit=" << config.pqlimit << ", ";
   ss << "det_orders=" << config.det_orders << ", ";
-  ss << "det_penalty=" << config.det_penalty << ",";
+  ss << "det_penalty=" << config.det_penalty << ", ";
   ss << "create_visualization=" << config.create_visualization;
   ss << ")";
   return ss.str();
