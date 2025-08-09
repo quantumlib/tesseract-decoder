@@ -48,26 +48,23 @@ struct Symptom {
 // Represents an error / weighted hyperedge
 struct Error {
   double likelihood_cost;
-  double probability;
   Symptom symptom;
-  std::vector<bool> dets_array;
   Error() = default;
-  Error(double likelihood_cost, std::vector<int>& detectors, std::vector<int> observables,
-        std::vector<bool>& dets_array)
-      : likelihood_cost(likelihood_cost), symptom{detectors, observables}, dets_array(dets_array) {}
-  Error(double likelihood_cost, double probability, std::vector<int>& detectors,
-        std::vector<int> observables, std::vector<bool>& dets_array)
-      : likelihood_cost(likelihood_cost),
-        probability(probability),
-        symptom{detectors, observables},
-        dets_array(dets_array) {}
+  Error(double likelihood_cost, std::vector<int>& detectors, std::vector<int> observables)
+      : likelihood_cost(likelihood_cost), symptom{detectors, observables} {}
   Error(const stim::DemInstruction& error);
   std::string str();
+
+  // Get/calculate the probability from the likelihood cost.
+  double get_probability() const;
+
+  // Set/calculate the likelihood cost from a probability.
+  void set_with_probability(double p);
 };
 
 // Makes a new (flattened) dem where identical error mechanisms have been
 // merged.
-stim::DetectorErrorModel merge_identical_errors(const stim::DetectorErrorModel& dem);
+stim::DetectorErrorModel merge_indistinguishable_errors(const stim::DetectorErrorModel& dem);
 
 // Returns a copy of the given error model with any zero-probability DEM_ERROR
 // instructions removed.
@@ -79,6 +76,12 @@ stim::DetectorErrorModel remove_zero_probability_errors(const stim::DetectorErro
 // call remove_zero_probability_errors first.
 stim::DetectorErrorModel dem_from_counts(stim::DetectorErrorModel& orig_dem,
                                          const std::vector<size_t>& error_counts, size_t num_shots);
+
+/// Computes the weight of an edge resulting from merging edges with weight `a' and weight `b',
+/// assuming each edge weight is a log-likelihood ratio log((1-p)/p) associated with the probability
+/// p of an error occurring on the edge, and that the error mechanisms associated with the two edges
+/// being merged are independent.
+double merge_weights(double a, double b);
 
 }  // namespace common
 

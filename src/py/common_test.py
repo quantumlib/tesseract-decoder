@@ -37,6 +37,17 @@ def get_set_bits(n):
         i += 1
     return bits
 
+def test_error_from_direct_constructor():
+    # Test the new constructor with likelihood_cost, detectors, and observables
+    likelihood_cost = 1.945910
+    detectors = [1, 2]
+    observables = get_set_bits(4324)
+    error = tesseract_decoder.common.Error(likelihood_cost, detectors, observables)
+
+    assert error.likelihood_cost == pytest.approx(likelihood_cost)
+    assert error.symptom.detectors == detectors
+    assert error.symptom.observables == observables
+
 
 def test_as_dem_instruction_targets():
     s = tesseract_decoder.common.Symptom([1, 2], get_set_bits(4324))
@@ -58,11 +69,41 @@ def test_error_from_dem_instruction():
 
     assert str(error) == "Error{cost=1.945910, symptom=Symptom{}}"
 
+def test_error_get_set_probability():
+    error = tesseract_decoder.common.Error()
+    probability = 0.125
+    expected_cost = 1.9459101490553132
 
-def test_merge_identical_errors():
+    error.set_with_probability(probability)
+    assert error.likelihood_cost == pytest.approx(expected_cost)
+    assert error.get_probability() == pytest.approx(probability)
+
+    probability = 0.5
+    expected_cost = 0.0
+
+    error.set_with_probability(probability)
+    assert error.likelihood_cost == pytest.approx(expected_cost)
+    assert error.get_probability() == pytest.approx(probability)
+
+def test_error_set_with_probability_invalid_input():
+    error = tesseract_decoder.common.Error()
+
+    with pytest.raises(ValueError):
+        error.set_with_probability(0.0)
+
+    with pytest.raises(ValueError):
+        error.set_with_probability(1.0)
+    
+    with pytest.raises(ValueError):
+        error.set_with_probability(-0.1)
+
+    with pytest.raises(ValueError):
+        error.set_with_probability(1.1)
+
+def test_merge_indistinguishable_errors():
     dem = stim.DetectorErrorModel()
     assert isinstance(
-        tesseract_decoder.common.merge_identical_errors(dem), stim.DetectorErrorModel
+        tesseract_decoder.common.merge_indistinguishable_errors(dem), stim.DetectorErrorModel
     )
 
 

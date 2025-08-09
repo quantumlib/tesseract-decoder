@@ -25,9 +25,16 @@ std::string common::Symptom::str() {
 }
 
 common::Error::Error(const stim::DemInstruction& error) {
+  if (error.type != stim::DemInstructionType::DEM_ERROR) {
+    throw std::invalid_argument(
+        "Error must be loaded from an error dem instruction, but received: " + error.str());
+  }
   assert(error.type == stim::DemInstructionType::DEM_ERROR);
-  probability = error.arg_data[0];
-  assert(probability >= 0 && probability <= 1);
+  double probability = error.arg_data[0];
+  if (probability < 0 || probability > 1) {
+    throw std::invalid_argument("Probability must be between 0 and 1, but received: " +
+                                std::to_string(probability));
+  }
 
   std::set<int> detectors_set;
   std::set<int> observables_set;
@@ -60,6 +67,17 @@ std::string common::Error::str() {
   return "Error{cost=" + std::to_string(likelihood_cost) + ", symptom=" + symptom.str() + "}";
 }
 
+double common::Error::get_probability() const {
+  return 1.0 / (1.0 + std::exp(likelihood_cost));
+}
+
+void common::Error::set_with_probability(double p) {
+  if (p <= 0 || p >= 1) {
+    throw std::invalid_argument("Probability must be between 0 and 1.");
+  }
+  likelihood_cost = -std::log(p / (1.0 - p));
+}
+
 std::vector<stim::DemTarget> common::Symptom::as_dem_instruction_targets() const {
   std::vector<stim::DemTarget> targets;
   for (int d : detectors) {
@@ -71,7 +89,15 @@ std::vector<stim::DemTarget> common::Symptom::as_dem_instruction_targets() const
   return targets;
 }
 
-stim::DetectorErrorModel common::merge_identical_errors(const stim::DetectorErrorModel& dem) {
+double common::merge_weights(double a, double b) {
+  auto sgn = std::copysign(1, a) * std::copysign(1, b);
+  auto signed_min = sgn * std::min(std::abs(a), std::abs(b));
+  return signed_min + std::log(1 + std::exp(-std::abs(a + b))) -
+         std::log(1 + std::exp(-std::abs(a - b)));
+}
+
+stim::DetectorErrorModel common::merge_indistinguishable_errors(
+    const stim::DetectorErrorModel& dem) {
   stim::DetectorErrorModel out_dem;
 
   // Map to track the distinct symptoms
@@ -80,13 +106,14 @@ stim::DetectorErrorModel common::merge_identical_errors(const stim::DetectorErro
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_ERROR: {
         Error error(instruction);
-        assert(error.symptom.detectors.size());
-        // Merge with existing error with the same symptom (if applicable)
-        if (errors_by_symptom.find(error.symptom) != errors_by_symptom.end()) {
-          double p0 = errors_by_symptom[error.symptom].probability;
-          error.probability = p0 * (1 - error.probability) + (1 - p0) * error.probability;
+        if (error.symptom.detectors.size() == 0) {
+          throw std::invalid_argument("Errors that do not flip any detectors are not supported.");
         }
-        error.likelihood_cost = -1 * std::log(error.probability / (1 - error.probability));
+
+        if (errors_by_symptom.find(error.symptom) != errors_by_symptom.end()) {
+          error.likelihood_cost = merge_weights(error.likelihood_cost,
+                                                errors_by_symptom[error.symptom].likelihood_cost);
+        }
         errors_by_symptom[error.symptom] = error;
         break;
       }
@@ -103,7 +130,7 @@ stim::DetectorErrorModel common::merge_identical_errors(const stim::DetectorErro
     }
   }
   for (const auto& it : errors_by_symptom) {
-    out_dem.append_error_instruction(it.second.probability,
+    out_dem.append_error_instruction(it.second.get_probability(),
                                      it.second.symptom.as_dem_instruction_targets(),
                                      /*tag=*/"");
   }
