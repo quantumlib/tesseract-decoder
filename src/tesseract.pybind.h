@@ -236,7 +236,8 @@ void add_tesseract_module(py::module& root) {
             Returns
             -------
             float
-                A float representing the total logarithmic probability cost.
+                A float representing the sum of the likelihood costs of the
+                predicted errors.
            )pbdoc")
       .def(
           "decode_from_detection_events",
