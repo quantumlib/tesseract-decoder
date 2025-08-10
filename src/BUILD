@@ -90,12 +90,20 @@ pybind_extension(
     ],
 )
 
+pybind_extension(
+    name = "tesseract_sinter_compat",
+    srcs = ["tesseract_sinter_compat.pybind.cpp"],
+    deps = [
+        ":libtesseract",
+    ],
+)
 
 py_library(
     name="lib_tesseract_decoder",
     imports=["src"],
     deps=[
         ":tesseract_decoder",
+        ":tesseract_sinter_compat",
     ],
 )
 
