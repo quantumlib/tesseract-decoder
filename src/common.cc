@@ -29,7 +29,6 @@ common::Error::Error(const stim::DemInstruction& error) {
     throw std::invalid_argument(
         "Error must be loaded from an error dem instruction, but received: " + error.str());
   }
-  assert(error.type == stim::DemInstructionType::DEM_ERROR);
   double probability = error.arg_data[0];
   if (probability < 0 || probability > 1) {
     throw std::invalid_argument("Probability must be between 0 and 1, but received: " +
