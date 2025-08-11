@@ -92,7 +92,7 @@ pybind_extension(
 
 pybind_extension(
     name = "tesseract_sinter_compat",
-    srcs = ["tesseract_sinter_compat.pybind.cpp"],
+    srcs = ["tesseract_sinter_compat.pybind.cc"],
     deps = [
         ":libtesseract",
     ],
