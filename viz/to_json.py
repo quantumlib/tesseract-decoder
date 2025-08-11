@@ -23,7 +23,7 @@ def parse_logfile(filepath):
     while i < len(lines):
         line = lines[i].strip()
 
-        if not any(line.startswith(s) for s in ['Error', 'Detector', 'activated_errors', 'activated_dets']):
+        if not any(line.startswith(s) for s in ['Error', 'Detector', 'activated_errors', 'activated_detectors']):
           continue
 
         if line.startswith("Detector D"):
@@ -46,7 +46,7 @@ def parse_logfile(filepath):
                 det_line = lines[i + 1].strip()
 
                 activated_errors = parse_implicit_list(error_line, "activated_errors =")
-                activated_dets = parse_implicit_list(det_line, "activated_dets =")
+                activated_dets = parse_implicit_list(det_line, "activated_detectors =")
 
                 frame = {
                     "activated": activated_dets,
