@@ -164,10 +164,7 @@ struct Args {
           /*block_decomposition_from_introducing_remnant_edges=*/false);
     }
 
-    if (!no_merge_errors) {
-      config.dem = common::merge_indistinguishable_errors(config.dem);
-    }
-    config.dem = common::remove_zero_probability_errors(config.dem);
+    config.merge_errors = !no_merge_errors;
 
     // Sample orientations of the error model to use for the det priority
     {

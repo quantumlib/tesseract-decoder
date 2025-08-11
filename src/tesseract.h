@@ -35,7 +35,8 @@ struct TesseractConfig {
   bool beam_climbing = false;
   bool no_revisit_dets = false;
   bool at_most_two_errors_per_detector = false;
-  bool verbose;
+  bool verbose = false;
+  bool merge_errors = true;
   size_t pqlimit = std::numeric_limits<size_t>::max();
   std::vector<std::vector<size_t>> det_orders;
   double det_penalty = 0;
@@ -95,6 +96,7 @@ struct TesseractDecoder {
   std::vector<size_t> predicted_errors_buffer;
   std::vector<common::Error> errors;
   size_t num_observables;
+  size_t num_detectors;
 
   std::vector<std::vector<int>>& get_eneighbors() {
     return eneighbors;
@@ -104,7 +106,6 @@ struct TesseractDecoder {
   std::vector<std::vector<int>> d2e;
   std::vector<std::vector<int>> eneighbors;
   std::vector<std::vector<int>> edets;
-  size_t num_detectors;
   size_t num_errors;
   std::vector<ErrorCost> error_costs;
 

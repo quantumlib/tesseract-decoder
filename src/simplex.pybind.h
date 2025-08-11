@@ -35,9 +35,10 @@ std::unique_ptr<SimplexDecoder> _compile_simplex_decoder_helper(const SimplexCon
 
 SimplexConfig simplex_config_maker(py::object dem, bool parallelize = false,
                                    size_t window_length = 0, size_t window_slide_length = 0,
-                                   bool verbose = false) {
+                                   bool verbose = false, bool merge_errors = true) {
   stim::DetectorErrorModel input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
-  return SimplexConfig({input_dem, parallelize, window_length, window_slide_length, verbose});
+  return SimplexConfig(
+      {input_dem, parallelize, window_length, window_slide_length, verbose, merge_errors});
 }
 
 };  // namespace
@@ -55,7 +56,7 @@ void add_simplex_module(py::module& root) {
     )pbdoc")
       .def(py::init(&simplex_config_maker), py::arg("dem"), py::arg("parallelize") = false,
            py::arg("window_length") = 0, py::arg("window_slide_length") = 0,
-           py::arg("verbose") = false, R"pbdoc(
+           py::arg("verbose") = false, py::arg("merge_errors") = true, R"pbdoc(
             The constructor for the `SimplexConfig` class.
 
             Parameters
@@ -71,6 +72,8 @@ void add_simplex_module(py::module& root) {
                 disables windowing.
             verbose : bool, default=False
                 If True, enables verbose logging from the decoder.
+            merge_errors : bool, default=True
+                If True, merges error channels that have identical syndrome patterns.
            )pbdoc")
       .def_property("dem", &dem_getter<SimplexConfig>, &dem_setter<SimplexConfig>,
                     "The `stim.DetectorErrorModel` that defines the error channels and detectors.")
@@ -82,6 +85,8 @@ void add_simplex_module(py::module& root) {
                      "The number of time steps the window slides after each decode.")
       .def_readwrite("verbose", &SimplexConfig::verbose,
                      "If True, the decoder will print verbose output.")
+      .def_readwrite("merge_errors", &SimplexConfig::merge_errors,
+                     "If True, identical error mechanisms will be merged.")
       .def("windowing_enabled", &SimplexConfig::windowing_enabled,
            "Returns True if windowing is enabled (i.e., `window_length > 0`).")
       .def("__str__", &SimplexConfig::str)
@@ -222,6 +227,14 @@ void add_simplex_module(py::module& root) {
       .def(
           "decode",
           [](SimplexDecoder& self, const py::array_t<bool>& syndrome) {
+            if (syndrome.size() != self.num_detectors) {
+              std::ostringstream msg;
+              msg << "Syndrome array size (" << syndrome.size()
+                  << ") does not match the number of detectors in the decoder ("
+                  << self.num_detectors << ").";
+              throw std::invalid_argument(msg.str());
+            }
+
             std::vector<uint64_t> detections;
             auto syndrome_unchecked = syndrome.unchecked<1>();
             for (size_t i = 0; i < syndrome_unchecked.size(); i++) {
@@ -272,6 +285,14 @@ void add_simplex_module(py::module& root) {
             auto syndromes_unchecked = syndromes.unchecked<2>();
             size_t num_shots = syndromes_unchecked.shape(0);
             size_t num_detectors = syndromes_unchecked.shape(1);
+
+            if (num_detectors != self.num_detectors) {
+              std::ostringstream msg;
+              msg << "The number of detectors in the input array (" << num_detectors
+                  << ") does not match the number of detectors in the decoder ("
+                  << self.num_detectors << ").";
+              throw std::invalid_argument(msg.str());
+            }
 
             // Allocate the result array.
             py::array_t<bool> result({num_shots, self.num_observables});

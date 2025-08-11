@@ -98,16 +98,16 @@ TEST(common, RemoveZeroProbabilityErrors) {
 
 // Helper function to compare the two methods.
 void assert_merged_probabilities_are_equal(double p1, double p2) {
-  // Method 1: Merge probabilities directly using the exclusive OR formula.
+  // Merge probabilities using the exclusive OR formula.
   double merged_p_direct = p1 + p2 - 2 * p1 * p2;
 
-  // Method 2: Convert to likelihood costs, merge them, then convert back.
+  // Convert to likelihood costs, merge, and then convert back.
   double cost1 = std::log(p1 / (1 - p1));
   double cost2 = std::log(p2 / (1 - p2));
   double merged_cost = common::merge_weights(cost1, cost2);
   double merged_p_via_costs = 1 / (1 + std::exp(merged_cost));
 
-  // The two methods should produce nearly identical results.
+  // The two methods should produce nearly same results.
   ASSERT_NEAR(merged_p_direct, merged_p_via_costs, 1e-12);
 }
 
@@ -131,7 +131,6 @@ TEST(CommonTest, merge_weights_is_equivalent_to_probability_xor) {
 // Helper function to create a simple DEM with two identical errors.
 stim::DetectorErrorModel create_dem_with_two_errors(double p1, double p2) {
   stim::DetectorErrorModel dem;
-
   std::vector<stim::DemTarget> targets = {stim::DemTarget::relative_detector_id(0)};
 
   dem.append_error_instruction(p1, targets, "");

@@ -164,10 +164,7 @@ struct Args {
           /*block_decomposition_from_introducing_remnant_edges=*/false);
     }
 
-    if (!no_merge_errors) {
-      config.dem = common::merge_indistinguishable_errors(config.dem);
-    }
-    config.dem = common::remove_zero_probability_errors(config.dem);
+    config.merge_errors = !no_merge_errors;
 
     if (sample_num_shots > 0) {
       assert(!circuit_path.empty());

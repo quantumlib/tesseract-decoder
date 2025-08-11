@@ -35,13 +35,14 @@ std::unique_ptr<TesseractDecoder> _compile_tesseract_decoder_helper(const Tesser
 TesseractConfig tesseract_config_maker(
     py::object dem, int det_beam = INF_DET_BEAM, bool beam_climbing = false,
     bool no_revisit_dets = false, bool at_most_two_errors_per_detector = false,
-    bool verbose = false, size_t pqlimit = std::numeric_limits<size_t>::max(),
+    bool verbose = false, bool merge_errors = true,
+    size_t pqlimit = std::numeric_limits<size_t>::max(),
     std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
     double det_penalty = 0.0, bool create_visualization = false) {
   stim::DetectorErrorModel input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
   return TesseractConfig({input_dem, det_beam, beam_climbing, no_revisit_dets,
-                          at_most_two_errors_per_detector, verbose, pqlimit, det_orders,
-                          det_penalty, create_visualization});
+                          at_most_two_errors_per_detector, verbose, merge_errors, pqlimit,
+                          det_orders, det_penalty, create_visualization});
 }
 };  // namespace
 void add_tesseract_module(py::module& root) {
@@ -59,7 +60,7 @@ void add_tesseract_module(py::module& root) {
       .def(py::init(&tesseract_config_maker), py::arg("dem"), py::arg("det_beam") = INF_DET_BEAM,
            py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = false,
            py::arg("at_most_two_errors_per_detector") = false, py::arg("verbose") = false,
-           py::arg("pqlimit") = std::numeric_limits<size_t>::max(),
+           py::arg("merge_errors") = true, py::arg("pqlimit") = std::numeric_limits<size_t>::max(),
            py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0,
            py::arg("create_visualization") = false,
            R"pbdoc(
@@ -80,6 +81,8 @@ void add_tesseract_module(py::module& root) {
                 are correlated with each detector.
             verbose : bool, default=False
                 If True, enables verbose logging from the decoder.
+             merge_errors : bool, default=True
+                If True, merges error channels that have identical syndrome patterns.
             pqlimit : int, default=max_size_t
                 The maximum size of the priority queue.
             det_orders : list[list[int]], default=empty
@@ -103,6 +106,8 @@ void add_tesseract_module(py::module& root) {
                      "Whether to assume at most two errors per detector for optimization.")
       .def_readwrite("verbose", &TesseractConfig::verbose,
                      "If True, the decoder will print verbose output.")
+      .def_readwrite("merge_errors", &TesseractConfig::merge_errors,
+                     "If True, merges error channels that have identical syndrome patterns.")
       .def_readwrite("pqlimit", &TesseractConfig::pqlimit,
                      "The maximum size of the priority queue.")
       .def_readwrite("det_orders", &TesseractConfig::det_orders,
@@ -276,6 +281,14 @@ void add_tesseract_module(py::module& root) {
       .def(
           "decode",
           [](TesseractDecoder& self, const py::array_t<bool>& syndrome) {
+            if (syndrome.size() != self.num_detectors) {
+              std::ostringstream msg;
+              msg << "Syndrome array size (" << syndrome.size()
+                  << ") does not match the number of detectors in the decoder ("
+                  << self.num_detectors << ").";
+              throw std::invalid_argument(msg.str());
+            }
+
             std::vector<uint64_t> detections;
             auto syndrome_unchecked = syndrome.unchecked<1>();
             for (size_t i = 0; i < syndrome_unchecked.size(); ++i) {
@@ -325,6 +338,14 @@ void add_tesseract_module(py::module& root) {
             auto syndromes_unchecked = syndromes.unchecked<2>();
             size_t num_shots = syndromes_unchecked.shape(0);
             size_t num_detectors = syndromes_unchecked.shape(1);
+
+            if (num_detectors != self.num_detectors) {
+              std::ostringstream msg;
+              msg << "The number of detectors in the input array (" << num_detectors
+                  << ") does not match the number of detectors in the decoder ("
+                  << self.num_detectors << ").";
+              throw std::invalid_argument(msg.str());
+            }
 
             // Allocate the result array.
             py::array_t<bool> result({num_shots, self.num_observables});
@@ -380,6 +401,8 @@ void add_tesseract_module(py::module& root) {
                      "The list of all errors in the detector error model.")
       .def_readwrite("num_observables", &TesseractDecoder::num_observables,
                      "The total number of logical observables in the detector error model.")
+      .def_readwrite("num_detectors", &TesseractDecoder::num_detectors,
+                     "The total number of detectors in the detector error model.")
       .def_readonly("visualizer", &TesseractDecoder::visualizer,
                     "An object that can (if config.create_visualization=True) be used to generate "
                     "visualization of the algorithm");
