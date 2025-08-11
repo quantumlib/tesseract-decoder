@@ -100,7 +100,14 @@ struct TesseractSinterCompiledDecoder {
 // a decoder for a specific Detector Error Model (DEM).
 //--------------------------------------------------------------------------------------------------
 struct TesseractSinterDecoder {
-  TesseractSinterDecoder() {}
+  // Use TesseractConfig as an integrated property.
+  TesseractConfig config;
+
+  // Default constructor
+  TesseractSinterDecoder() : config(TesseractConfig()) {}
+
+  // Constructor with TesseractConfig parameter
+  TesseractSinterDecoder(const TesseractConfig& config_in) : config(config_in) {}
 
   bool operator==(const TesseractSinterDecoder& other) const {
     return true;
@@ -114,10 +121,9 @@ struct TesseractSinterDecoder {
   TesseractSinterCompiledDecoder compile_decoder_for_dem(const py::object& dem) {
     const stim::DetectorErrorModel stim_dem(py::cast<std::string>(py::str(dem)).c_str());
 
-    TesseractConfig config;
-    config.dem = stim_dem;
-
-    auto decoder = std::make_unique<TesseractDecoder>(config);
+    TesseractConfig local_config = config;
+    local_config.dem = stim_dem;
+    auto decoder = std::make_unique<TesseractDecoder>(local_config);
 
     return TesseractSinterCompiledDecoder{
         .decoder = std::move(decoder),
@@ -145,10 +151,10 @@ struct TesseractSinterDecoder {
     dem_file.close();
 
     // Construct TesseractDecoder.
+    TesseractConfig local_config = config;
     const stim::DetectorErrorModel stim_dem(dem_content_str.c_str());
-    TesseractConfig config;
-    config.dem = stim_dem;
-    TesseractDecoder decoder(config);
+    local_config.dem = stim_dem;
+    TesseractDecoder decoder(local_config);
 
     // Calculate expected number of bytes per shot for detectors and observables.
     const uint64_t num_detector_bytes = (num_dets + 7) / 8;
@@ -203,11 +209,11 @@ struct TesseractSinterDecoder {
 //--------------------------------------------------------------------------------------------------
 // Expose C++ classes to the Python interpreter.
 //--------------------------------------------------------------------------------------------------
-void pybind_sinter_compat(py::module& m) {
-  m.doc() = R"pbdoc(
+void pybind_sinter_compat(py::module& root) {
+  auto m = root.def_submodule("tesseract_sinter_compat", R"pbdoc(
         This module provides Python bindings for the Tesseract quantum error
         correction decoder, designed for compatibility with the Sinter library.
-    )pbdoc";
+    )pbdoc");
 
   // Bind the TesseractSinterCompiledDecoder.
   py::class_<TesseractSinterCompiledDecoder>(m, "TesseractSinterCompiledDecoder", R"pbdoc(
@@ -232,13 +238,30 @@ void pybind_sinter_compat(py::module& m) {
                      R"pbdoc(The number of detectors in the decoder's underlying DEM.)pbdoc")
       .def_readwrite(
           "num_observables", &TesseractSinterCompiledDecoder::num_observables,
-          R"pbdoc(The number of logical observables in the decoder's underlying DEM.)pbdoc");
+          R"pbdoc(The number of logical observables in the decoder's underlying DEM.)pbdoc")
+      .def_property_readonly(
+          "decoder",
+          [](const TesseractSinterCompiledDecoder& self) -> const TesseractDecoder& {
+            return *self.decoder;
+          },
+          py::return_value_policy::reference_internal,
+          R"pbdoc(The internal TesseractDecoder instance.)pbdoc");
 
   // Bind the TesseractSinterDecoder.
   py::class_<TesseractSinterDecoder>(m, "TesseractSinterDecoder", R"pbdoc(
             A factory for creating Tesseract decoders compatible with `sinter`.
         )pbdoc")
-      .def(py::init<>(), R"pbdoc(Initializes a new TesseractSinterDecoder instance.)pbdoc")
+      .def(py::init<>(), R"pbdoc(
+            Initializes a new TesseractSinterDecoder instance with a default TesseractConfig.
+          )pbdoc")
+      .def(py::init<const TesseractConfig&>(), py::kw_only(), py::arg("config"),
+           R"pbdoc(
+            Initializes a new TesseractSinterDecoder instance with a custom TesseractConfig object.
+
+            :param config: A `TesseractConfig` object to configure the decoder.
+          )pbdoc")
+      .def_readwrite("config", &TesseractSinterDecoder::config,
+                     R"pbdoc(The TesseractConfig object for the decoder.)pbdoc")
       .def("compile_decoder_for_dem", &TesseractSinterDecoder::compile_decoder_for_dem,
            py::kw_only(), py::arg("dem"),
            R"pbdoc(
@@ -267,26 +290,4 @@ void pybind_sinter_compat(py::module& m) {
            R"pbdoc(Checks if two TesseractSinterDecoder instances are equal.)pbdoc")
       .def(py::self != py::self,
            R"pbdoc(Checks if two TesseractSinterDecoder instances are not equal.)pbdoc");
-
-  // Define the sinter_decoders function, which is the entry point for sinter.
-  m.def(
-      "sinter_decoders",
-      []() {
-        py::dict result;
-        result["tesseract"] = TesseractSinterDecoder();
-        return result;
-      },
-      R"pbdoc(
-        Returns a dictionary of available Sinter-compatible decoders.
-
-        This function is the main entry point for the Sinter library's custom decoder
-        integration. It returns a dictionary where keys are decoder names (e.g., "tesseract")
-        and values are corresponding `sinter.Decoder` objects.
-    )pbdoc");
-}
-
-// Node: I need this macro, which will create the entry point function that
-// Python interpreter call when I import this module.
-PYBIND11_MODULE(tesseract_sinter_compat, m) {
-  pybind_sinter_compat(m);
 }

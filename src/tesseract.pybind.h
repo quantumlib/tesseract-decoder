@@ -57,6 +57,10 @@ void add_tesseract_module(py::module& root) {
         This class holds all the parameters needed to initialize and configure a
         Tesseract decoder instance.
     )pbdoc")
+      .def(py::init<>(), R"pbdoc(
+        Default constructor for TesseractConfig.
+        Creates a new instance with default parameter values.
+    )pbdoc")
       .def(py::init(&tesseract_config_maker), py::arg("dem"), py::arg("det_beam") = INF_DET_BEAM,
            py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = false,
            py::arg("at_most_two_errors_per_detector") = false, py::arg("verbose") = false,

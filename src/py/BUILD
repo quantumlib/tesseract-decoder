@@ -65,6 +65,7 @@ py_test(
     deps = [
         "@pypi//pytest",
         "@pypi//stim",
+        "@pypi//sinter",
         "//src:lib_tesseract_decoder",
     ],
 )

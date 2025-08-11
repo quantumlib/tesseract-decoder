@@ -17,8 +17,10 @@ import pytest
 import numpy as np
 import stim
 import shutil
+from sinter._decoding._decoding import sample_decode
 
-from src import tesseract_sinter_compat as tesseract_module
+from src.tesseract_decoder import tesseract_sinter_compat as tesseract_module
+from src import tesseract_decoder
 
 
 def test_tesseract_sinter_obj_exists():
@@ -30,11 +32,12 @@ def test_tesseract_sinter_obj_exists():
     assert hasattr(decoder, 'compile_decoder_for_dem')
     assert hasattr(decoder, 'decode_via_files')
 
-def test_compile_decoder_for_dem():
+@pytest.mark.parametrize("use_custom_config", [False, True])
+def test_compile_decoder_for_dem(use_custom_config):
     """
-    Test the 'compile_decoder_for_dem' method with a specific DEM.
+    Test the 'compile_decoder_for_dem' method with and without a custom config.
     """
-    
+
     dem = stim.DetectorErrorModel("""
         detector(0, 0, 0) D0
         detector(0, 0, 1) D1
@@ -44,17 +47,26 @@ def test_compile_decoder_for_dem():
         error(0.1) D1 D2 L1
         error(0.1) D2 D3 L0
     """)
+
+    if use_custom_config:
+        config = tesseract_decoder.tesseract.TesseractConfig()
+        config.verbose = True
+        decoder = tesseract_module.TesseractSinterDecoder(config=config)
+    else:
+        decoder = tesseract_module.TesseractSinterDecoder()
     
-    decoder = tesseract_module.TesseractSinterDecoder()
     compiled_decoder = decoder.compile_decoder_for_dem(dem=dem)
-    
+
     assert compiled_decoder is not None
     assert hasattr(compiled_decoder, 'decode_shots_bit_packed')
-    
+
     # Verify the detector and observable counts are correct
     assert compiled_decoder.num_detectors == dem.num_detectors
     assert compiled_decoder.num_observables == dem.num_observables
     
+    # Verify the config was correctly applied
+    assert compiled_decoder.decoder.config.verbose == use_custom_config
+
 def test_decode_shots_bit_packed():
     """
     Tests the 'decode_shots_bit_packed' method with a specific DEM and detection event.
@@ -176,7 +188,8 @@ def test_decode_via_files_sanity_check():
     if temp_dir.exists():
         shutil.rmtree(temp_dir)
 
-def test_decode_via_files():
+@pytest.mark.parametrize("use_custom_config", [False, True])
+def test_decode_via_files(use_custom_config):
     """
     Tests the 'decode_via_files' method with a specific DEM and detection event.
     """
@@ -222,7 +235,14 @@ def test_decode_via_files():
     with open(dets_in_path, 'wb') as f:
         f.write(detection_events_np.tobytes())
 
-    tesseract_module.TesseractSinterDecoder().decode_via_files(
+    if use_custom_config:
+        config = tesseract_decoder.tesseract.TesseractConfig()
+        config.verbose = True
+        decoder = tesseract_module.TesseractSinterDecoder(config=config)
+    else:
+        decoder = tesseract_module.TesseractSinterDecoder()
+
+    decoder.decode_via_files(
         num_shots=num_shots,
         num_dets=num_detectors,
         num_obs=dem.num_observables,
@@ -248,6 +268,9 @@ def test_decode_via_files():
     # Clean up temporary files
     if temp_dir.exists():
         shutil.rmtree(temp_dir)
+
+    assert decoder.config.verbose == use_custom_config
+
             
 def test_decode_via_files_multi_shot():
     """
@@ -324,6 +347,153 @@ def test_decode_via_files_multi_shot():
     # Clean up temporary files
     if temp_dir.exists():
         shutil.rmtree(temp_dir)
+
+def construct_tesseract_decoder_for_sinter():
+    return {"tesseract": tesseract_module.TesseractSinterDecoder()}
+
+
+def test_sinter_decode_repetition_code():
+    """
+    Tests the 'tesseract' decoder on a repetition code circuit.
+    """
+    circuit = stim.Circuit.generated('repetition_code:memory',
+                                     rounds=3,
+                                     distance=3,
+                                     after_clifford_depolarization=0.05)
+    
+    result = sample_decode(
+        circuit_obj=circuit,
+        circuit_path=None,
+        dem_obj=circuit.detector_error_model(decompose_errors=True),
+        dem_path=None,
+        num_shots=1000,
+        decoder="tesseract",
+        custom_decoders=construct_tesseract_decoder_for_sinter(),
+    )
+    assert result.discards == 0
+    assert 0 <= result.errors <= 100
+    assert result.shots == 1000
+
+
+def test_sinter_decode_surface_code():
+    """
+    Tests the 'tesseract' decoder on a more complex surface code circuit.
+    """
+    circuit = stim.Circuit.generated(
+        "surface_code:rotated_memory_x",
+        distance=3,
+        rounds=15,
+        after_clifford_depolarization=0.001,
+    )
+    result = sample_decode(
+        num_shots=1000,
+        circuit_obj=circuit,
+        circuit_path=None,
+        dem_obj=circuit.detector_error_model(decompose_errors=True),
+        dem_path=None,
+        decoder="tesseract",
+        custom_decoders=construct_tesseract_decoder_for_sinter(),
+    )
+    assert result.discards == 0
+    assert 0 <= result.errors <= 50
+    assert result.shots == 1000
+
+def test_sinter_empty():
+    """
+    Tests the 'tesseract' decoder on an empty circuit.
+    """
+    circuit = stim.Circuit()
+    result = sample_decode(
+        circuit_obj=circuit,
+        circuit_path=None,
+        dem_obj=circuit.detector_error_model(decompose_errors=True),
+        dem_path=None,
+        num_shots=1000,
+        decoder="tesseract",
+        custom_decoders=construct_tesseract_decoder_for_sinter(),
+    )
+    assert result.discards == 0
+    assert result.shots == 1000
+    assert result.errors == 0
+
+def test_sinter_no_observables():
+    """
+    Tests the decoder on a circuit with detectors but no logical observables.
+    """
+    circuit = stim.Circuit("""
+        X_ERROR(0.1) 0
+        M 0
+        DETECTOR rec[-1]
+    """)
+    result = sample_decode(
+        circuit_obj=circuit,
+        circuit_path=None,
+        dem_obj=circuit.detector_error_model(decompose_errors=True),
+        dem_path=None,
+        num_shots=1000,
+        decoder="tesseract",
+        custom_decoders=construct_tesseract_decoder_for_sinter(),
+    )
+    assert result.discards == 0
+    assert result.shots == 1000
+    assert result.errors == 0
+
+def test_sinter_invincible_observables():
+    """
+    Tests the decoder on a circuit where an observable is not affected by errors.
+    """
+    circuit = stim.Circuit("""
+        X_ERROR(0.1) 0
+        M 0 1
+        DETECTOR rec[-2]
+        OBSERVABLE_INCLUDE(1) rec[-1]
+    """)
+    result = sample_decode(
+        circuit_obj=circuit,
+        circuit_path=None,
+        dem_obj=circuit.detector_error_model(decompose_errors=True),
+        dem_path=None,
+        num_shots=1000,
+        decoder="tesseract",
+        custom_decoders=construct_tesseract_decoder_for_sinter(),
+    )
+    assert result.discards == 0
+    assert result.shots == 1000
+    assert result.errors == 0
+
+
+
+def test_sinter_detector_counting():
+    """
+    Tests 'that the decoder's detector count is correctly reported via Sinter'.
+    """
+    circuit = stim.Circuit("""
+        X_ERROR(0.1) 0
+        X_ERROR(0.2) 1
+        M 0 1
+        DETECTOR rec[-1]
+        DETECTOR rec[-2]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        OBSERVABLE_INCLUDE(1) rec[-1] rec[-2]
+    """)
+    result = sample_decode(
+        circuit_obj=circuit,
+        circuit_path=None,
+        dem_obj=circuit.detector_error_model(decompose_errors=True),
+        dem_path=None,
+        post_mask=None,
+        num_shots=10000,
+        decoder="tesseract",
+        count_detection_events=True,
+        custom_decoders=construct_tesseract_decoder_for_sinter(),
+    )
+    assert result.discards == 0
+    assert result.custom_counts['detectors_checked'] == 20000
+    assert 0.3 * 10000 * 0.5 <= result.custom_counts['detection_events'] <= 0.3 * 10000 * 2.0
+    assert set(result.custom_counts.keys()) == {'detectors_checked', 'detection_events'}
+
+
+
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))
