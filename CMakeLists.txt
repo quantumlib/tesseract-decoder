@@ -73,10 +73,15 @@ target_include_directories(utils PUBLIC ${TESSERACT_SRC_DIR})
 target_compile_options(utils PRIVATE ${OPT_COPTS})
 target_link_libraries(utils PUBLIC common libstim Threads::Threads)
 
+add_library(visualization ${TESSERACT_SRC_DIR}/visualization.cc ${TESSERACT_SRC_DIR}/visualization.h)
+target_include_directories(visualization PUBLIC ${TESSERACT_SRC_DIR})
+target_compile_options(visualization PRIVATE ${OPT_COPTS})
+target_link_libraries(visualization PUBLIC common boost_headers)
+
 add_library(tesseract_lib ${TESSERACT_SRC_DIR}/tesseract.cc ${TESSERACT_SRC_DIR}/tesseract.h)
 target_include_directories(tesseract_lib PUBLIC ${TESSERACT_SRC_DIR})
 target_compile_options(tesseract_lib PRIVATE ${OPT_COPTS})
-target_link_libraries(tesseract_lib PUBLIC utils boost_headers)
+target_link_libraries(tesseract_lib PUBLIC utils boost_headers visualization)
 
 add_library(simplex ${TESSERACT_SRC_DIR}/simplex.cc ${TESSERACT_SRC_DIR}/simplex.h)
 target_include_directories(simplex PUBLIC ${TESSERACT_SRC_DIR})
