@@ -227,7 +227,7 @@ void add_simplex_module(py::module& root) {
       .def(
           "decode",
           [](SimplexDecoder& self, const py::array_t<bool>& syndrome) {
-            if (syndrome.size() != self.num_detectors) {
+            if ((size_t) syndrome.size() != self.num_detectors) {
               std::ostringstream msg;
               msg << "Syndrome array size (" << syndrome.size()
                   << ") does not match the number of detectors in the decoder ("
@@ -237,7 +237,7 @@ void add_simplex_module(py::module& root) {
 
             std::vector<uint64_t> detections;
             auto syndrome_unchecked = syndrome.unchecked<1>();
-            for (size_t i = 0; i < syndrome_unchecked.size(); i++) {
+            for (size_t i = 0; i < (size_t) syndrome_unchecked.size(); i++) {
               if (syndrome_unchecked(i)) {
                 detections.push_back(i);
               }
