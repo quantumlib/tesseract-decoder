@@ -481,3 +481,91 @@ print("\nEstimated DEM:")
 print(estimated_dem)
 # Expected probabilities: D0 -> 100/1000 = 0.1, D1 -> 250/1000 = 0.25, D2 -> 40/1000 = 0.04
 ```
+
+### Sinter Integration
+The Tesseract Python interface is compatible with the Sinter framework, which is a powerful tool for large-scale decoding, benchmarking, and error-rate estimation.
+
+#### The TesseractSinterDecoder Object
+All Sinter examples rely on this utility function to provide the Sinter-compatible Tesseract decoder.
+
+```python
+import sinter
+import stim
+from sinter._decoding._decoding import sample_decode
+
+from src.tesseract_decoder import tesseract_sinter_compat as tesseract_module
+from src import tesseract_decoder
+
+# Define a function that returns a dictionary mapping a decoder name to its
+# Sinter-compatible decoder object.
+def get_tesseract_decoder_for_sinter():
+    return {"tesseract": tesseract_module.TesseractSinterDecoder()}
+```
+
+#### Decoding with `sinter.collect`
+`sinter.collect` is a powerful function for running many decoding jobs in parallel and collecting the results for large-scale benchmarking.
+
+```python
+# Create a repetition code circuit to test the decoder.
+circuit = stim.Circuit.generated(
+    'repetition_code:memory',
+    distance=3,
+    rounds=3,
+    after_clifford_depolarization=0.01
+)
+
+# Use sinter.collect to run the decoding task.
+results, = sinter.collect(
+    num_workers=1,
+    tasks=[sinter.Task(circuit=circuit)],
+    decoders=["tesseract"],
+    max_shots=1000,
+    custom_decoders=get_tesseract_decoder_for_sinter(),
+)
+
+# Print a summary of the decoding results.
+print("Basic Repetition Code Decoding Results:")
+print(f"Shots run: {results.shots}")
+print(f"Observed errors: {results.errors}")
+print(f"Logical error rate: {results.errors / results.shots}")
+```
+
+#### Running with multiple workers
+This example demonstrates how to use multiple worker threads to speed up the simulation.
+```python
+# Use sinter.collect with multiple workers for faster decoding.
+results, = sinter.collect(
+    num_workers=4,
+    tasks=[sinter.Task(circuit=circuit)],
+    decoders=["tesseract"],
+    max_shots=10000,
+    custom_decoders=get_tesseract_decoder_for_sinter(),
+)
+
+print("\nDecoding with 4 worker threads:")
+print(f"Shots run: {results.shots}")
+print(f"Observed errors: {results.errors}")
+print(f"Logical error rate: {results.errors / results.shots}")
+```
+
+#### Decoding with `sinter.sample_decode`
+`sinter.sample_decode` is a simpler, non-parallel function for directly decoding a single circuit. It's useful for quick tests and debugging without the overhead of the `sinter.collect` framework.
+
+```python
+# Create a repetition code circuit.
+circuit = stim.Circuit.generated('repetition_code:memory', distance=5, rounds=5)
+
+# Use sinter.sample_decode for a direct decoding run.
+result = sample_decode(
+    circuit_obj=circuit,
+    dem_obj=circuit.detector_error_model(),
+    num_shots=1000,
+    decoder="tesseract",
+    custom_decoders=get_tesseract_decoder_for_sinter(),
+)
+
+print("Basic sample_decode Results:")
+print(f"Shots run: {result.shots}")
+print(f"Observed errors: {result.errors}")
+print(f"Logical error rate: {result.errors / result.shots}")
+```
