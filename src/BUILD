@@ -70,6 +70,7 @@ pybind_library(
         "common.pybind.h",
         "utils.pybind.h",
         "simplex.pybind.h",
+        "visualization.pybind.h",
         "tesseract.pybind.h",
     ],
     deps = [
@@ -114,6 +115,19 @@ cc_library(
 )
 
 cc_library(
+    name = "libviz",
+    srcs = ["visualization.cc"],
+    hdrs = ["visualization.h"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    deps = [
+        ":libutils",
+        "@boost//:dynamic_bitset",
+    ],
+
+)
+
+cc_library(
     name = "libtesseract",
     srcs = ["tesseract.cc"],
     hdrs = ["tesseract.h"],
@@ -121,6 +135,7 @@ cc_library(
     linkopts = OPT_LINKOPTS,
     deps = [
         ":libutils",
+        ":libviz",
         "@boost//:dynamic_bitset",
     ],
 )
@@ -193,6 +208,7 @@ cc_library(
     linkopts = OPT_LINKOPTS,
     deps = [
         ":libcommon",
+        ":libutils",
         "@highs",
         "@stim//:stim_lib",
     ],

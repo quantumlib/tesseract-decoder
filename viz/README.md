@@ -1,4 +1,4 @@
-#Visualization
+# Visualization
 
 This tool displays the detectors and errors from a Tesseract decoding run in 3D.
 
@@ -13,7 +13,7 @@ bazel build src:all && \
   --sample-num-shots 1 --det-order-seed 13267562 --pqlimit 10000 --beam 1 --num-det-orders 20 \
   --circuit testdata/colorcodes/r\=9\,d\=9\,p\=0.002\,noise\=si1000\,c\=superdense_color_code_X\,q\=121\,gates\=cz.stim \
   --sample-seed 717347 --threads 1 --verbose | \
-  grep -E 'Error|Detector|activated_errors|activated_dets' > logfile.txt
+  grep -E 'Error|Detector|activated_errors|activated_detectors' > logfile.txt
 
 python viz/to_json.py logfile.txt -o logfile.json
 ```

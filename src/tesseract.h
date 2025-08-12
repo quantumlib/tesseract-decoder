@@ -25,6 +25,7 @@
 #include "common.h"
 #include "stim.h"
 #include "utils.h"
+#include "visualization.h"
 
 constexpr size_t INF_DET_BEAM = std::numeric_limits<uint16_t>::max();
 
@@ -34,10 +35,12 @@ struct TesseractConfig {
   bool beam_climbing = false;
   bool no_revisit_dets = false;
   bool at_most_two_errors_per_detector = false;
-  bool verbose;
+  bool verbose = false;
+  bool merge_errors = true;
   size_t pqlimit = std::numeric_limits<size_t>::max();
   std::vector<std::vector<size_t>> det_orders;
   double det_penalty = 0;
+  bool create_visualization = false;
 
   bool cache_and_trim_detcost = false;
   size_t detcost_cache_threshold = 0;
@@ -103,6 +106,8 @@ class CachingDetectorCostCalculator : public DetectorCostCalculator {
 
 struct TesseractDecoder {
   TesseractConfig config;
+  Visualizer visualizer;
+
   explicit TesseractDecoder(TesseractConfig config);
 
   // Clears the predicted_errors_buffer and fills it with the decoded errors for
@@ -116,25 +121,30 @@ struct TesseractDecoder {
 
   // Returns the bitwise XOR of all the observables bitmasks of all errors in
   // the predicted errors buffer.
-  common::ObservablesMask mask_from_errors(const std::vector<size_t>& predicted_errors);
+  std::vector<int> get_flipped_observables(const std::vector<size_t>& predicted_errors);
 
   // Returns the sum of the likelihood costs (minus-log-likelihood-ratios) of
   // all errors in the predicted errors buffer.
   double cost_from_errors(const std::vector<size_t>& predicted_errors);
 
-  common::ObservablesMask decode(const std::vector<uint64_t>& detections);
+  std::vector<int> decode(const std::vector<uint64_t>& detections);
   void decode_shots(std::vector<stim::SparseShot>& shots,
-                    std::vector<common::ObservablesMask>& obs_predicted);
+                    std::vector<std::vector<int>>& obs_predicted);
 
   bool low_confidence_flag = false;
   std::vector<size_t> predicted_errors_buffer;
   std::vector<common::Error> errors;
+  size_t num_observables;
+  size_t num_detectors;
+
+  std::vector<std::vector<int>>& get_eneighbors() {
+    return eneighbors;
+  }
 
  private:
   std::vector<std::vector<int>> d2e;
   std::vector<std::vector<int>> eneighbors;
   std::vector<std::vector<int>> edets;
-  size_t num_detectors;
   size_t num_errors;
 
   std::unique_ptr<DetectorCostCalculator> detector_cost_calculator;

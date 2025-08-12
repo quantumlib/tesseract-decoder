@@ -28,20 +28,27 @@ std::string SimplexConfig::str() {
   ss << "dem=" << "DetectorErrorModel_Object" << ", ";
   ss << "window_length=" << self.window_length << ", ";
   ss << "window_slide_length=" << self.window_slide_length << ", ";
-  ss << "verbose=" << self.verbose << ")";
+  ss << "verbose=" << self.verbose << ", ";
+  ss << "merge_errors=" << self.merge_errors << ")";
   return ss.str();
 }
 
 SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
+  if (config.merge_errors) {
+    config.dem = common::merge_indistinguishable_errors(config.dem);
+  }
   config.dem = common::remove_zero_probability_errors(config.dem);
+
   std::vector<double> detector_t_coords(config.dem.count_detectors());
   for (const stim::DemInstruction& instruction : config.dem.flattened().instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_SHIFT_DETECTORS:
-        assert(false && "unreachable");
+        throw std::runtime_error("DEM_SHIFT_DETECTORS instruction is not supported.");
         break;
       case stim::DemInstructionType::DEM_ERROR: {
-        assert(instruction.arg_data[0] > 0);
+        if (!(instruction.arg_data[0] > 0)) {
+          throw std::invalid_argument("Error instruction probability must be greater than zero.");
+        }
         errors.emplace_back(instruction);
         break;
       }
@@ -49,7 +56,7 @@ SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
         detector_t_coords[instruction.target_data[0].val()] = instruction.arg_data[T_COORD];
         break;
       default:
-        assert(false && "unreachable");
+        throw std::runtime_error("Unsupported instruction type encountered.");
     }
   }
   std::map<double, std::vector<size_t>> start_time_to_errors_map, end_time_to_errors_map;
@@ -159,7 +166,9 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
   predicted_errors_buffer.clear();
   // Adjust the constraints for the detection events
   for (size_t d : detections) {
-    assert(d < num_detectors && "invalid detector");
+    if (!(d < num_detectors)) {
+      throw std::out_of_range("invalid detector");
+    }
     model->lp_.row_lower_[d] = 1;
     model->lp_.row_upper_[d] = 1;
   }
@@ -206,8 +215,8 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
       if (*return_status != HighsStatus::kOk) {
         std::cerr << "Error: passModel failed with status: " << highsStatusToString(*return_status)
                   << std::endl;
+        throw std::runtime_error("HighsStatus::kOk expected");
       }
-      assert(*return_status == HighsStatus::kOk);
 
       // Set the feasible solution, if one is known
       if (!solution_empty) {
@@ -215,8 +224,8 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
         if (*return_status != HighsStatus::kOk) {
           std::cerr << "Error: setSolution failed with status: "
                     << highsStatusToString(*return_status) << std::endl;
+          throw std::runtime_error("HighsStatus::kOk expected");
         }
-        assert(*return_status == HighsStatus::kOk);
       }
 
       // Solve the model
@@ -230,10 +239,12 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
                             /*free_format=*/true);
         std::cerr << "Write return had status: " << highsStatusToString(write_return_status)
                   << std::endl;
-        assert(write_return_status == HighsStatus::kOk or
-               write_return_status == HighsStatus::kWarning);
+        if (!(write_return_status == HighsStatus::kOk or
+              write_return_status == HighsStatus::kWarning)) {
+          throw std::runtime_error("Write model failed with unexpected status.");
+        }
+        throw std::runtime_error("HighsStatus::kOk expected");
       }
-      assert(*return_status == HighsStatus::kOk);
 
       if (config.verbose) {
         // Get the solution information
@@ -252,12 +263,14 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
       if (model_status != HighsModelStatus::kOptimal) {
         std::cerr << "Error: Model did not reach an optimal solution. Status: "
                   << highs->modelStatusToString(model_status) << std::endl;
+        throw std::runtime_error("HighsModelStatus::kOptimal expected.");
       }
-      assert(model_status == HighsModelStatus::kOptimal);
 
       // Extract the used errors
       solution = highs->getSolution();
-      assert(!solution.hasUndefined());
+      if (solution.hasUndefined()) {
+        throw std::runtime_error("Solution is undefined.");
+      }
       solution_empty = false;
 
       for (size_t step = 0; step < config.window_slide_length && t0 < end_time_to_errors.size();
@@ -280,11 +293,15 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
   } else {
     // Pass the model to HiGHS
     *return_status = highs->passModel(*model);
-    assert(*return_status == HighsStatus::kOk);
+    if (*return_status != HighsStatus::kOk) {
+      throw std::runtime_error("HighsStatus::kOk expected");
+    }
 
     // Solve the model
     *return_status = highs->run();
-    assert(*return_status == HighsStatus::kOk);
+    if (*return_status != HighsStatus::kOk) {
+      throw std::runtime_error("HighsStatus::kOk expected");
+    }
 
     if (config.verbose) {
       // Get the solution information
@@ -300,7 +317,9 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
 
     // Get the model status
     [[maybe_unused]] const HighsModelStatus& model_status = highs->getModelStatus();
-    assert(model_status == HighsModelStatus::kOptimal);
+    if (model_status != HighsModelStatus::kOptimal) {
+      throw std::runtime_error("HighsModelStatus::kOptimal expected.");
+    }
   }
 
   // Extract the used errors
@@ -326,23 +345,41 @@ double SimplexDecoder::cost_from_errors(const std::vector<size_t>& predicted_err
   return total_cost;
 }
 
-common::ObservablesMask SimplexDecoder::mask_from_errors(
+std::vector<int> SimplexDecoder::get_flipped_observables(
     const std::vector<size_t>& predicted_errors) {
-  common::ObservablesMask mask = 0;
-  // Iterate over all errors and add to the mask
-  for (size_t ei : predicted_errors_buffer) {
-    mask ^= errors[ei].symptom.observables;
+  std::unordered_set<int> flipped_observables_set;
+
+  // Iterate over all predicted errors
+  for (size_t ei : predicted_errors) {
+    // Iterate over the observables associated with each error
+    for (int obs_index : errors[ei].symptom.observables) {
+      // Perform an XOR-like sum using a set.
+      // If the observable is already in the set, it means we've seen it an
+      // even number of times, so we remove it.
+      // If it's not, we add it, which means we've seen it an odd number of times.
+      if (flipped_observables_set.count(obs_index)) {
+        flipped_observables_set.erase(obs_index);
+      } else {
+        flipped_observables_set.insert(obs_index);
+      }
+    }
   }
-  return mask;
+
+  // Convert the set to a vector and return it.
+  std::vector<int> flipped_observables(flipped_observables_set.begin(),
+                                       flipped_observables_set.end());
+  // Sort observables
+  std::sort(flipped_observables.begin(), flipped_observables.end());
+  return flipped_observables;
 }
 
-common::ObservablesMask SimplexDecoder::decode(const std::vector<uint64_t>& detections) {
+std::vector<int> SimplexDecoder::decode(const std::vector<uint64_t>& detections) {
   decode_to_errors(detections);
-  return mask_from_errors(predicted_errors_buffer);
+  return get_flipped_observables(predicted_errors_buffer);
 }
 
 void SimplexDecoder::decode_shots(std::vector<stim::SparseShot>& shots,
-                                  std::vector<common::ObservablesMask>& obs_predicted) {
+                                  std::vector<std::vector<int>>& obs_predicted) {
   obs_predicted.resize(shots.size());
   for (size_t i = 0; i < shots.size(); ++i) {
     obs_predicted[i] = decode(shots[i].hits);

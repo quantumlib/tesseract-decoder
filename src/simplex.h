@@ -14,6 +14,7 @@
 
 #ifndef SIMPLEX_HPP
 #define SIMPLEX_HPP
+#include <unordered_set>
 #include <vector>
 
 #include "common.h"
@@ -29,6 +30,7 @@ struct SimplexConfig {
   size_t window_length = 0;
   size_t window_slide_length = 0;
   bool verbose = false;
+  bool merge_errors = true;
   bool windowing_enabled() {
     return (window_length != 0);
   }
@@ -41,7 +43,7 @@ struct SimplexDecoder {
   size_t num_detectors = 0;
   size_t num_observables = 0;
   std::vector<size_t> predicted_errors_buffer;
-  std::vector<common::ObservablesMask> error_masks;
+  std::vector<std::vector<int>> error_masks;
   std::vector<std::vector<size_t>> start_time_to_errors;
   std::vector<std::vector<size_t>> end_time_to_errors;
 
@@ -55,23 +57,22 @@ struct SimplexDecoder {
 
   SimplexDecoder(SimplexConfig config);
 
-  void init_ilp();
-
   // Clears the predicted_errors_buffer and fills it with the decoded errors for
   // these detection events.
   void decode_to_errors(const std::vector<uint64_t>& detections);
   // Returns the bitwise XOR of all the observables bitmasks of all errors in
   // the predicted errors buffer.
-  common::ObservablesMask mask_from_errors(const std::vector<size_t>& predicted_errors);
+  std::vector<int> get_flipped_observables(const std::vector<size_t>& predicted_errors);
   // Returns the sum of the likelihood costs (minus-log-likelihood-ratios) of
   // all errors in the predicted errors buffer.
   double cost_from_errors(const std::vector<size_t>& predicted_errors);
-  common::ObservablesMask decode(const std::vector<uint64_t>& detections);
+  std::vector<int> decode(const std::vector<uint64_t>& detections);
 
   void decode_shots(std::vector<stim::SparseShot>& shots,
-                    std::vector<common::ObservablesMask>& obs_predicted);
+                    std::vector<std::vector<int>>& obs_predicted);
 
   ~SimplexDecoder();
+  void init_ilp();
 };
 
 #endif  // SIMPLEX_HPP

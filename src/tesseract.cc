@@ -59,9 +59,12 @@ std::string TesseractConfig::str() {
   ss << "no_revisit_dets=" << config.no_revisit_dets << ", ";
   ss << "at_most_two_errors_per_detector=" << config.at_most_two_errors_per_detector << ", ";
   ss << "verbose=" << config.verbose << ", ";
+  ss << "merge_errors=" << config.merge_errors << ", ";
   ss << "pqlimit=" << config.pqlimit << ", ";
   ss << "det_orders=" << config.det_orders << ", ";
-  ss << "det_penalty=" << config.det_penalty << ")";
+  ss << "det_penalty=" << config.det_penalty << ", ";
+  ss << "create_visualization=" << config.create_visualization;
+  ss << ")";
   return ss.str();
 }
 
@@ -144,25 +147,41 @@ double CachingDetectorCostCalculator::compute_cost(
 }
 
 TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
+  if (config.merge_errors) {
+    config.dem = common::merge_indistinguishable_errors(config.dem);
+  }
   config.dem = common::remove_zero_probability_errors(config.dem);
+
   if (config.det_orders.empty()) {
     config.det_orders.emplace_back(config.dem.count_detectors());
     std::iota(config.det_orders[0].begin(), config.det_orders[0].end(), 0);
   } else {
     for (size_t i = 0; i < config.det_orders.size(); ++i) {
-      assert(config.det_orders[i].size() == config.dem.count_detectors());
+      if (config.det_orders[i].size() != config.dem.count_detectors()) {
+        throw std::invalid_argument(
+            "Each detector order list must have a size equal to the number of detectors.");
+      }
     }
   }
-  assert(config.det_orders.size());
+  if (config.det_orders.empty()) {
+    throw std::runtime_error("After initialization, detector orders list must not be empty.");
+  }
   errors = get_errors_from_dem(config.dem.flattened());
   if (config.verbose) {
     for (auto& error : errors) {
-      std::cout << error.str() << std::endl;
+      std::cout << error.str() << "\n";
     }
+    std::cout << std::flush;
   }
   num_detectors = config.dem.count_detectors();
   num_errors = config.dem.count_errors();
+  num_observables = config.dem.count_observables();
   initialize_structures(config.dem.count_detectors());
+  if (config.create_visualization) {
+    auto detectors = get_detector_coords(config.dem);
+    visualizer.add_detector_coords(detectors);
+    visualizer.add_errors(errors);
+  }
 }
 
 void TesseractDecoder::initialize_structures(size_t num_detectors) {
@@ -210,29 +229,39 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
   }
 
   eneighbors.resize(num_errors);
-  std::vector<std::unordered_set<size_t>> edets_sets(edets.size());
-  for (size_t ei = 0; ei < edets.size(); ++ei) {
-    edets_sets[ei] = std::unordered_set<size_t>(edets[ei].begin(), edets[ei].end());
-  }
+
+  std::vector<boost::dynamic_bitset<>> edets_bitsets(num_errors,
+                                                     boost::dynamic_bitset<>(num_detectors));
   for (size_t ei = 0; ei < num_errors; ++ei) {
-    std::set<int> neighbor_set;
+    for (int d : edets[ei]) {
+      edets_bitsets[ei][d] = 1;
+    }
+  }
+
+  for (size_t ei = 0; ei < num_errors; ++ei) {
+    boost::dynamic_bitset<> neighbor_set(num_detectors, false);
     for (int d : edets[ei]) {
       for (int oei : d2e[d]) {
-        for (int od : edets[oei]) {
-          if (!edets_sets[ei].contains(od)) {
-            neighbor_set.insert(od);
-          }
-        }
+        // Unify detectors from neighboring errors
+        neighbor_set |= edets_bitsets[oei];
       }
     }
-    eneighbors[ei] = std::vector<int>(neighbor_set.begin(), neighbor_set.end());
+    // Remove detectors from error's own set
+    neighbor_set &= ~edets_bitsets[ei];
+
+    for (size_t d = neighbor_set.find_first(); d != boost::dynamic_bitset<>::npos;
+         d = neighbor_set.find_next(d)) {
+      eneighbors[ei].push_back(d);
+    }
   }
 }
 
 void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
   std::vector<size_t> best_errors;
   double best_cost = std::numeric_limits<double>::max();
-  assert(config.det_orders.size());
+  if (config.det_orders.empty()) {
+    throw std::runtime_error("Detector orders list must not be empty before decoding.");
+  }
 
   if (config.beam_climbing) {
     for (int beam = config.det_beam; beam >= 0; --beam) {
@@ -246,7 +275,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections)
       if (config.verbose) {
         std::cout << "for detector_order " << detector_order << " beam " << beam
                   << " got low confidence " << low_confidence_flag << " and cost " << local_cost
-                  << " and obs_mask " << mask_from_errors(predicted_errors_buffer)
+                  << " and obs_mask " << get_flipped_observables(predicted_errors_buffer)
                   << ". Best cost so far: " << best_cost << std::endl;
       }
     }
@@ -261,7 +290,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections)
       if (config.verbose) {
         std::cout << "for detector_order " << detector_order << " beam " << config.det_beam
                   << " got low confidence " << low_confidence_flag << " and cost " << local_cost
-                  << " and obs_mask " << mask_from_errors(predicted_errors_buffer)
+                  << " and obs_mask " << get_flipped_observables(predicted_errors_buffer)
                   << ". Best cost so far: " << best_cost << std::endl;
       }
     }
@@ -350,6 +379,10 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
     flip_detectors_and_block_errors(detector_order, node.errors, detectors, detector_cost_tuples);
 
     if (node.num_detectors == 0) {
+      if (config.create_visualization) {
+        visualizer.add_activated_errors(node.errors);
+        visualizer.add_activated_detectors(detectors, num_detectors);
+      }
       if (config.verbose) {
         std::cout << "activated_errors = ";
         for (size_t oei : node.errors) {
@@ -374,6 +407,10 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
     if (config.no_revisit_dets && !visited_detectors[node.num_detectors].insert(detectors).second)
       continue;
 
+    if (config.create_visualization) {
+      visualizer.add_activated_errors(node.errors);
+      visualizer.add_activated_detectors(detectors, num_detectors);
+    }
     if (config.verbose) {
       std::cout.precision(13);
       std::cout << "len(pq) = " << pq.size() << " num_pq_pushed = " << num_pq_pushed << std::endl;
@@ -518,7 +555,9 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
     }
   }
 
-  assert(pq.empty());
+  if (!pq.empty()) {
+    throw std::runtime_error("Priority queue should be empty after decoding failure.");
+  }
   if (config.verbose) {
     std::cout << "Decoding failed to converge within beam limit." << std::endl;
   }
@@ -534,23 +573,39 @@ double TesseractDecoder::cost_from_errors(const std::vector<size_t>& predicted_e
   return total_cost;
 }
 
-common::ObservablesMask TesseractDecoder::mask_from_errors(
+std::vector<int> TesseractDecoder::get_flipped_observables(
     const std::vector<size_t>& predicted_errors) {
-  common::ObservablesMask mask = 0;
-  // Iterate over all errors and compute the mask
+  std::unordered_set<int> flipped_observables_set;
+
+  // Iterate over all errors and compute the mask.
+  // We use a set to perform an XOR-like sum.
+  // If an observable is already in the set, we remove it (XORing with itself).
+  // If it's not, we add it.
   for (size_t ei : predicted_errors) {
-    mask ^= errors[ei].symptom.observables;
+    for (int obs_index : errors[ei].symptom.observables) {
+      if (flipped_observables_set.count(obs_index)) {
+        flipped_observables_set.erase(obs_index);
+      } else {
+        flipped_observables_set.insert(obs_index);
+      }
+    }
   }
-  return mask;
+
+  // Convert the set to a vector and return it.
+  std::vector<int> flipped_observables(flipped_observables_set.begin(),
+                                       flipped_observables_set.end());
+  // Sort observables
+  std::sort(flipped_observables.begin(), flipped_observables.end());
+  return flipped_observables;
 }
 
-common::ObservablesMask TesseractDecoder::decode(const std::vector<uint64_t>& detections) {
+std::vector<int> TesseractDecoder::decode(const std::vector<uint64_t>& detections) {
   decode_to_errors(detections);
-  return mask_from_errors(predicted_errors_buffer);
+  return get_flipped_observables(predicted_errors_buffer);
 }
 
 void TesseractDecoder::decode_shots(std::vector<stim::SparseShot>& shots,
-                                    std::vector<common::ObservablesMask>& obs_predicted) {
+                                    std::vector<std::vector<int>>& obs_predicted) {
   obs_predicted.resize(shots.size());
   for (size_t i = 0; i < shots.size(); ++i) {
     obs_predicted[i] = decode(shots[i].hits);
