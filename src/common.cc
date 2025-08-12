@@ -84,7 +84,7 @@ common::Error::Error(const stim::DemInstruction& error) {
 std::string common::Error::str() const {
   std::stringstream ss;
   ss << std::fixed << std::setprecision(6) << likelihood_cost;
-  return "Error{cost=" + std::to_string(likelihood_cost) + ", symptom=" + symptom.str() + "}";
+  return "Error{cost=" + ss.str() + ", symptom=" + symptom.str() + "}";
 }
 
 double common::Error::get_probability() const {
