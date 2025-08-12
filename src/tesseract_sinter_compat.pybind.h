@@ -289,5 +289,31 @@ void pybind_sinter_compat(py::module& root) {
       .def(py::self == py::self,
            R"pbdoc(Checks if two TesseractSinterDecoder instances are equal.)pbdoc")
       .def(py::self != py::self,
-           R"pbdoc(Checks if two TesseractSinterDecoder instances are not equal.)pbdoc");
+           R"pbdoc(Checks if two TesseractSinterDecoder instances are not equal.)pbdoc")
+      .def(py::pickle(
+          [](const TesseractSinterDecoder& self) -> py::tuple {  // __getstate__
+            return py::make_tuple(
+                std::string(self.config.dem.str()), self.config.det_beam, self.config.beam_climbing,
+                self.config.no_revisit_dets, self.config.at_most_two_errors_per_detector,
+                self.config.verbose, self.config.merge_errors, self.config.pqlimit,
+                self.config.det_orders, self.config.det_penalty, self.config.create_visualization);
+          },
+          [](py::tuple t) {  // __setstate__
+            if (t.size() != 11) {
+              throw std::runtime_error("Invalid state for TesseractSinterDecoder!");
+            }
+            TesseractConfig config;
+            config.dem = stim::DetectorErrorModel(t[0].cast<std::string>());
+            config.det_beam = t[1].cast<int>();
+            config.beam_climbing = t[2].cast<bool>();
+            config.no_revisit_dets = t[3].cast<bool>();
+            config.at_most_two_errors_per_detector = t[4].cast<bool>();
+            config.verbose = t[5].cast<bool>();
+            config.merge_errors = t[6].cast<bool>();
+            config.pqlimit = t[7].cast<size_t>();
+            config.det_orders = t[8].cast<std::vector<std::vector<size_t>>>();
+            config.det_penalty = t[9].cast<double>();
+            config.create_visualization = t[10].cast<bool>();
+            return TesseractSinterDecoder(config);
+          }));
 }

@@ -21,6 +21,7 @@ from sinter._decoding._decoding import sample_decode
 
 from src.tesseract_decoder import tesseract_sinter_compat as tesseract_module
 from src import tesseract_decoder
+import sinter
 
 
 def test_tesseract_sinter_obj_exists():
@@ -492,6 +493,18 @@ def test_sinter_detector_counting():
     assert 0.3 * 10000 * 0.5 <= result.custom_counts['detection_events'] <= 0.3 * 10000 * 2.0
     assert set(result.custom_counts.keys()) == {'detectors_checked', 'detection_events'}
 
+
+def test_full_scale():
+    result, = sinter.collect(
+        num_workers=2,
+        tasks=[sinter.Task(circuit=stim.Circuit())],
+        decoders=["tesseract"],
+        max_shots=1000,
+        custom_decoders=construct_tesseract_decoder_for_sinter(),
+    )
+    assert result.discards == 0
+    assert result.shots == 1000
+    assert result.errors == 0
 
 
 
