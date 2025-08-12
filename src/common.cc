@@ -19,7 +19,6 @@
 #include <string>
 #include <vector>
 
-
 std::string vector_to_string(const std::vector<int>& vec) {
   std::stringstream ss;
   ss << "[";
