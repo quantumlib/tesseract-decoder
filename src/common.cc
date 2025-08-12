@@ -20,7 +20,7 @@
 #include <vector>
 
 
-std::string vector_to_string(const std::vector<size_t>& vec) {
+std::string vector_to_string(const std::vector<int>& vec) {
   std::stringstream ss;
   ss << "[";
   for (size_t i = 0; i < vec.size(); ++i) {
