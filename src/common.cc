@@ -14,12 +14,31 @@
 
 #include "common.h"
 
-std::string common::Symptom::str() const {
-  std::string s = "Symptom{";
-  for (size_t d : detectors) {
-    s += "D" + std::to_string(d);
-    s += " ";
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
+
+
+std::string vector_to_string(const std::vector<size_t>& vec) {
+  std::stringstream ss;
+  ss << "[";
+  for (size_t i = 0; i < vec.size(); ++i) {
+    ss << vec[i];
+    if (i < vec.size() - 1) {
+      ss << " ";
+    }
   }
+
+  ss << "]";
+  return ss.str();
+}
+
+std::string common::Symptom::str() const {
+  std::string s = "Symptom{detectors=";
+  s += vector_to_string(detectors);
+  s += ", observables=";
+  s += vector_to_string(observables);
   s += "}";
   return s;
 }

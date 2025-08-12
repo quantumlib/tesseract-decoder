@@ -49,6 +49,16 @@ def test_error_from_direct_constructor():
     assert error.symptom.observables == observables
 
 
+def test_error_str():
+    # Test the new constructor with likelihood_cost, detectors, and observables
+    likelihood_cost = 5.5
+    detectors = [1, 2]
+    observables = [5, 10]
+    error = tesseract_decoder.common.Error(likelihood_cost, detectors, observables)
+
+    assert str(error) == "Error{cost=5.5, symptom=Symptom{detectors=[1, 2], observables=[5, 10]}}"
+
+
 def test_as_dem_instruction_targets():
     s = tesseract_decoder.common.Symptom([1, 2], get_set_bits(4324))
     dits = s.as_dem_instruction_targets()
@@ -119,6 +129,9 @@ def test_dem_from_counts():
     assert isinstance(
         tesseract_decoder.common.dem_from_counts(dem, [], 3), stim.DetectorErrorModel
     )
+
+
+
 
 
 if __name__ == "__main__":
