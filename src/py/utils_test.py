@@ -57,7 +57,7 @@ def test_build_det_orders_no_bfs():
 
 
 def test_get_errors_from_dem():
-    expected = "Error{cost=1.945910, symptom=Symptom{D0 }}, Error{cost=0.510826, symptom=Symptom{D0 D1 }}, Error{cost=1.098612, symptom=Symptom{D1 }}"
+    expected = "Error{cost=1.95, symptom=Symptom{detectors=[0], observables=[]}}, Error{cost=0.51, symptom=Symptom{detectors=[0 1], observables=[]}}, Error{cost=1.10, symptom=Symptom{detectors=[1], observables=[]}}"
     assert (
         ", ".join(
             map(str, tesseract_decoder.utils.get_errors_from_dem(_DETECTOR_ERROR_MODEL))
