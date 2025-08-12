@@ -14,6 +14,7 @@
 
 #include "common.h"
 
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -81,7 +82,9 @@ common::Error::Error(const stim::DemInstruction& error) {
 }
 
 std::string common::Error::str() const {
-  return "Error{cost=" + std::to_string(likelihood_cost) + ", symptom=" + symptom.str() + "}";
+  std::stringstream ss;
+  ss << std::fixed << std::setprecision(2) << likelihood_cost;
+  return "Error{cost=" + ss.str() + ", symptom=" + symptom.str() + "}";
 }
 
 double common::Error::get_probability() const {
