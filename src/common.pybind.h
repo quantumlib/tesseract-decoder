@@ -26,7 +26,7 @@
 
 namespace py = pybind11;
 
-void add_common_module(py::module &root) {
+void add_common_module(py::module& root) {
   auto m = root.def_submodule("common", "classes commonly used by the decoder");
 
   py::class_<common::Symptom>(m, "Symptom", R"pbdoc(
@@ -58,7 +58,7 @@ void add_common_module(py::module &root) {
           "as_dem_instruction_targets",
           [](common::Symptom s) {
             std::vector<py::object> ret;
-            for (auto &t : s.as_dem_instruction_targets())
+            for (auto& t : s.as_dem_instruction_targets())
               ret.push_back(make_py_object(t, "DemTarget"));
             return ret;
           },
@@ -84,7 +84,7 @@ void add_common_module(py::module &root) {
       .def(py::init<>(), R"pbdoc(
         Default constructor for the `Error` class.
       )pbdoc")
-      .def(py::init<double, std::vector<int> &, std::vector<int>>(), py::arg("likelihood_cost"),
+      .def(py::init<double, std::vector<int>&, std::vector<int>>(), py::arg("likelihood_cost"),
            py::arg("detectors"), py::arg("observables"), R"pbdoc(
             Constructor for the `Error` class.
 

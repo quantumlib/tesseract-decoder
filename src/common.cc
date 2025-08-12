@@ -14,12 +14,31 @@
 
 #include "common.h"
 
-std::string common::Symptom::str() const {
-  std::string s = "Symptom{";
-  for (size_t d : detectors) {
-    s += "D" + std::to_string(d);
-    s += " ";
+#include <iomanip>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
+
+std::string vector_to_string(const std::vector<int>& vec) {
+  std::stringstream ss;
+  ss << "[";
+  for (size_t i = 0; i < vec.size(); ++i) {
+    ss << vec[i];
+    if (i < vec.size() - 1) {
+      ss << " ";
+    }
   }
+
+  ss << "]";
+  return ss.str();
+}
+
+std::string common::Symptom::str() const {
+  std::string s = "Symptom{detectors=";
+  s += vector_to_string(detectors);
+  s += ", observables=";
+  s += vector_to_string(observables);
   s += "}";
   return s;
 }
@@ -63,7 +82,9 @@ common::Error::Error(const stim::DemInstruction& error) {
 }
 
 std::string common::Error::str() const {
-  return "Error{cost=" + std::to_string(likelihood_cost) + ", symptom=" + symptom.str() + "}";
+  std::stringstream ss;
+  ss << std::fixed << std::setprecision(2) << likelihood_cost;
+  return "Error{cost=" + ss.str() + ", symptom=" + symptom.str() + "}";
 }
 
 double common::Error::get_probability() const {
