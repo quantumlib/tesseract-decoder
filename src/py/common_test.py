@@ -56,7 +56,7 @@ def test_error_str():
     observables = [5, 10]
     error = tesseract_decoder.common.Error(likelihood_cost, detectors, observables)
 
-    assert str(error) == "Error{cost=5.50, symptom=Symptom{detectors=[1 2], observables=[5 10]}}"
+    assert str(error) == "Error{cost=5.500000, symptom=Symptom{detectors=[1 2], observables=[5 10]}}"
 
 
 def test_as_dem_instruction_targets():
@@ -76,7 +76,7 @@ def test_as_dem_instruction_targets():
 def test_error_from_dem_instruction():
     di = stim.DemInstruction("error", [0.125], [stim.target_logical_observable_id(3)])
     error = tesseract_decoder.common.Error(di)
-    assert str(error) == "Error{cost=1.95, symptom=Symptom{detectors=[], observables=[3]}}"
+    assert str(error) == "Error{cost=1.945910, symptom=Symptom{detectors=[], observables=[3]}}"
 
 def test_error_get_set_probability():
     error = tesseract_decoder.common.Error()
