@@ -170,13 +170,15 @@ This repository contains the C++ implementation of the Tesseract quantum error c
 The following example demonstrates how to create and use the Tesseract decoder using the Python interface.
 
 ```python
-import tesseract_decoder.tesseract as tesseract
+from tesseract_decoder import tesseract
 import stim
+import numpy as np
+
 
 # 1. Define a detector error model (DEM)
 dem = stim.DetectorErrorModel("""
-    error(0.1) D0 D1
-    error(0.2) D1 D2 L0
+    error(0.1) D0 D1 L0
+    error(0.2) D1 D2 L1
     detector(0, 0, 0) D0
     detector(1, 0, 0) D1
     detector(2, 0, 0) D2
@@ -185,15 +187,24 @@ dem = stim.DetectorErrorModel("""
 # 2. Create the decoder configuration
 config = tesseract.TesseractConfig(dem=dem, det_beam=50)
 
-# 3. Configure and create a decoder instance
-decoder = tesseract.TesseractDecoder(config)
+# 3. Create a decoder instance
+decoder = config.compile_decoder()
 
-# 4. Simulate detection events and decode it
-detections = [1, 2]
-flipped_observables = decoder.decode(detections)
+# 4. Simulate detection events
+syndrome = [0, 1, 1]
 
-print(f"Detections: {detections}")
+# 5a. Decode to observables
+flipped_observables = decoder.decode(syndrome)
 print(f"Flipped observables: {flipped_observables}")
+
+# 5b. Alternatively, decode to errors
+decoder.decode_to_errors(np.where(syndrome)[0])
+predicted_errors = decoder.predicted_errors_buffer
+# Indices of predicted errors
+print(f"Predicted errors indices: {predicted_errors}")
+# Print properties of predicted errors
+for i in predicted_errors:
+    print(f"    {i}: {decoder.errors[i]}")
 ```
 
 
