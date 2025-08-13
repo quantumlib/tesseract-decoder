@@ -349,8 +349,6 @@ def test_decode_via_files_multi_shot():
     if temp_dir.exists():
         shutil.rmtree(temp_dir)
 
-def construct_tesseract_decoder_for_sinter():
-    return {"tesseract": tesseract_module.TesseractSinterDecoder()}
 
 
 def test_sinter_decode_repetition_code():
@@ -369,7 +367,7 @@ def test_sinter_decode_repetition_code():
         dem_path=None,
         num_shots=1000,
         decoder="tesseract",
-        custom_decoders=construct_tesseract_decoder_for_sinter(),
+        custom_decoders=tesseract_module.make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert 0 <= result.errors <= 100
@@ -393,7 +391,7 @@ def test_sinter_decode_surface_code():
         dem_obj=circuit.detector_error_model(decompose_errors=True),
         dem_path=None,
         decoder="tesseract",
-        custom_decoders=construct_tesseract_decoder_for_sinter(),
+        custom_decoders=tesseract_module.make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert 0 <= result.errors <= 50
@@ -411,7 +409,7 @@ def test_sinter_empty():
         dem_path=None,
         num_shots=1000,
         decoder="tesseract",
-        custom_decoders=construct_tesseract_decoder_for_sinter(),
+        custom_decoders=tesseract_module.make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert result.shots == 1000
@@ -433,7 +431,7 @@ def test_sinter_no_observables():
         dem_path=None,
         num_shots=1000,
         decoder="tesseract",
-        custom_decoders=construct_tesseract_decoder_for_sinter(),
+        custom_decoders=tesseract_module.make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert result.shots == 1000
@@ -456,7 +454,7 @@ def test_sinter_invincible_observables():
         dem_path=None,
         num_shots=1000,
         decoder="tesseract",
-        custom_decoders=construct_tesseract_decoder_for_sinter(),
+        custom_decoders=tesseract_module.make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert result.shots == 1000
@@ -486,7 +484,7 @@ def test_sinter_detector_counting():
         num_shots=10000,
         decoder="tesseract",
         count_detection_events=True,
-        custom_decoders=construct_tesseract_decoder_for_sinter(),
+        custom_decoders=tesseract_module.make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert result.custom_counts['detectors_checked'] == 20000
@@ -500,7 +498,7 @@ def test_full_scale():
         tasks=[sinter.Task(circuit=stim.Circuit())],
         decoders=["tesseract"],
         max_shots=1000,
-        custom_decoders=construct_tesseract_decoder_for_sinter(),
+        custom_decoders=tesseract_module.make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert result.shots == 1000
@@ -521,7 +519,7 @@ def test_full_scale_one_worker():
         tasks=[sinter.Task(circuit=circuit)],
         decoders=["tesseract"],
         max_shots=1000,
-        custom_decoders=construct_tesseract_decoder_for_sinter(),
+        custom_decoders=tesseract_module.make_tesseract_sinter_decoders_dict(),
     )
 
     assert result.discards == 0

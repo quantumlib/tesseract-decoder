@@ -499,7 +499,7 @@ from src import tesseract_decoder
 # Define a function that returns a dictionary mapping a decoder name to its
 # Sinter-compatible decoder object.
 def get_tesseract_decoder_for_sinter():
-    return {"tesseract": tesseract_module.TesseractSinterDecoder()}
+    return tesseract_module.make_tesseract_sinter_decoders_dict()
 ```
 
 #### Decoding with `sinter.collect`
