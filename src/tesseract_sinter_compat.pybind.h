@@ -316,4 +316,17 @@ void pybind_sinter_compat(py::module& root) {
             config.create_visualization = t[10].cast<bool>();
             return TesseractSinterDecoder(config);
           }));
+
+  // Add a function to create a dictionary of custom decoders
+  m.def(
+      "make_tesseract_sinter_decoders_dict",
+      []() -> py::object {
+        auto result = py::dict();
+        result["tesseract"] = TesseractSinterDecoder{};
+        return result;
+      },
+      R"pbdoc(
+        Returns a dictionary mapping decoder names to sinter.Decoder-style objects.
+        This allows Sinter to easily discover and use Tesseract as a custom decoder.
+      )pbdoc");
 }
