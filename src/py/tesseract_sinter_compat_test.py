@@ -516,7 +516,7 @@ def test_full_scale_one_worker():
     )
 
     # Use sinter.collect to run the decoding task.
-    results, = sinter.collect(
+    result, = sinter.collect(
         num_workers=1,
         tasks=[sinter.Task(circuit=circuit)],
         decoders=["tesseract"],
@@ -524,11 +524,8 @@ def test_full_scale_one_worker():
         custom_decoders=construct_tesseract_decoder_for_sinter(),
     )
 
-    # Print a summary of the decoding results.
-    print("Basic Repetition Code Decoding Results:")
-    print(f"Shots run: {results.shots}")
-    print(f"Observed errors: {results.errors}")
-    print(f"Logical error rate: {results.errors / results.shots}")
+    assert result.discards == 0
+    assert result.shots == 1000
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))
