@@ -525,5 +525,65 @@ def test_full_scale_one_worker():
     assert result.discards == 0
     assert result.shots == 1000
 
+
+@pytest.mark.parametrize(
+    "det_beam, beam_climbing, no_revisit_dets, merge_errors",
+    [
+        # Some standard values
+        (20, False, False, True),
+        # Beam climbing enabled
+        (20, True, False, True),
+        # No revisit detectors enabled
+        (20, False, True, True),
+        # Merge errors disabled
+        (20, False, False, False),
+    ]
+)
+def test_decode_shots_bit_packed_vs_decode_batch(det_beam, beam_climbing, no_revisit_dets, merge_errors):
+    """
+    Compares the output of the Sinter decoder interface against the raw Tesseract decoder
+    to ensure they produce identical results across different configurations.
+    """
+
+    # 1. Set up the quantum circuit and detector error model.
+    circuit = stim.Circuit.generated(
+        "color_code:memory_xyz",
+        distance=3,
+        rounds=3,
+        after_clifford_depolarization=0.02
+    )
+    dem = circuit.detector_error_model()
+    
+    # 2. Create the Tesseract configuration object with the parameterized values.
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        dem=dem,
+    )
+    config.det_beam = 100
+    config.beam_climbing = beam_climbing
+    config.no_revisit_dets = no_revisit_dets
+    config.merge_errors = merge_errors
+
+    # 3. Compile the Sinter-compatible decoder.
+    sinter_decoder = tesseract_module.TesseractSinterDecoder(config=config)
+    compiled_sinter_decoder = sinter_decoder.compile_decoder_for_dem(dem=dem)
+    
+    # 4. Compile the raw Tesseract decoder directly from the config.
+    decoder = config.compile_decoder()
+    
+    # 5. Generate a batch of shots and unpack them for comparison.
+    sampler = circuit.compile_detector_sampler()
+    bitpacked_shots, _ = sampler.sample(shots=1000, separate_observables=True, bit_packed=True)
+    unpacked_shots = np.unpackbits(bitpacked_shots, bitorder='little', axis=1)
+    
+    # 6. Decode the shots using both methods.
+    predictions_sinter = compiled_sinter_decoder.decode_shots_bit_packed(
+        bit_packed_detection_event_data=bitpacked_shots)
+    
+    predictions_decode_batch = decoder.decode_batch(unpacked_shots[:, :dem.num_detectors])
+    
+    # 7. Assert that the predictions from both decoders are identical.
+    assert np.array_equal(predictions_sinter, predictions_decode_batch)
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))
