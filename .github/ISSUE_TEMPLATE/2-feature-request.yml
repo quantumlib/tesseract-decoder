@@ -9,7 +9,7 @@ body:
 
   - type: textarea
     attributes:
-      label: Is your feature request related to a use case or problem?
+      label: What is your feature request?
       description: >-
         Please tell us the context of your request. Is it to help you do
         something that you currently cannot due to limitations in the software,
@@ -23,8 +23,8 @@ body:
       label: What solution or approach do you envision?
       description: >-
         If you have ideas or preferences for the solution, you can let us know
-        here. If you are aware of other similar or related work, please let us
-        know about it here.
+        here. If you are aware of other similar or related work, please also
+        let us know about it here.
     validations:
       required: false
 
