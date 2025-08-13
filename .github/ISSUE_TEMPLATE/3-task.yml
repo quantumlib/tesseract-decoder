@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you for taking the time to fill out this feature request form!
+        Thank you for taking the time to fill out this task form!
 
   - type: textarea
     attributes:
