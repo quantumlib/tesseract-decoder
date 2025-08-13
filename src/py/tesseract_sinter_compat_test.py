@@ -558,7 +558,7 @@ def test_decode_shots_bit_packed_vs_decode_batch(det_beam, beam_climbing, no_rev
     config = tesseract_decoder.tesseract.TesseractConfig(
         dem=dem,
     )
-    config.det_beam = 100
+    config.det_beam = det_beam
     config.beam_climbing = beam_climbing
     config.no_revisit_dets = no_revisit_dets
     config.merge_errors = merge_errors
