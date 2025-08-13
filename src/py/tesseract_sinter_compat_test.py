@@ -506,7 +506,29 @@ def test_full_scale():
     assert result.shots == 1000
     assert result.errors == 0
 
+def test_full_scale_one_worker():
+    # Create a repetition code circuit to test the decoder.
+    circuit = stim.Circuit.generated(
+        'repetition_code:memory',
+        distance=3,
+        rounds=3,
+        after_clifford_depolarization=0.01
+    )
 
+    # Use sinter.collect to run the decoding task.
+    results, = sinter.collect(
+        num_workers=1,
+        tasks=[sinter.Task(circuit=circuit)],
+        decoders=["tesseract"],
+        max_shots=1000,
+        custom_decoders=construct_tesseract_decoder_for_sinter(),
+    )
+
+    # Print a summary of the decoding results.
+    print("Basic Repetition Code Decoding Results:")
+    print(f"Shots run: {results.shots}")
+    print(f"Observed errors: {results.errors}")
+    print(f"Logical error rate: {results.errors / results.shots}")
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))
