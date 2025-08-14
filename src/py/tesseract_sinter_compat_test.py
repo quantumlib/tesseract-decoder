@@ -33,6 +33,7 @@ def test_tesseract_sinter_obj_exists():
     assert hasattr(decoder, 'compile_decoder_for_dem')
     assert hasattr(decoder, 'decode_via_files')
 
+
 @pytest.mark.parametrize("use_custom_config", [False, True])
 def test_compile_decoder_for_dem(use_custom_config):
     """
@@ -55,7 +56,7 @@ def test_compile_decoder_for_dem(use_custom_config):
         decoder = tesseract_module.TesseractSinterDecoder(config=config)
     else:
         decoder = tesseract_module.TesseractSinterDecoder()
-    
+
     compiled_decoder = decoder.compile_decoder_for_dem(dem=dem)
 
     assert compiled_decoder is not None
@@ -64,9 +65,10 @@ def test_compile_decoder_for_dem(use_custom_config):
     # Verify the detector and observable counts are correct
     assert compiled_decoder.num_detectors == dem.num_detectors
     assert compiled_decoder.num_observables == dem.num_observables
-    
+
     # Verify the config was correctly applied
     assert compiled_decoder.decoder.config.verbose == use_custom_config
+
 
 def test_decode_shots_bit_packed():
     """
@@ -80,27 +82,29 @@ def test_decode_shots_bit_packed():
         error(0.1) D0 D1 L0
         error(0.1) D1 D2 L1
     """)
-    
+
     decoder = tesseract_module.TesseractSinterDecoder()
     compiled_decoder = decoder.compile_decoder_for_dem(dem=dem)
-    
-    num_shots = 1    
-    detections_array = np.zeros((num_shots, (dem.num_detectors + 7) // 8), dtype=np.uint8)
-    
+
+    num_shots = 1
+    detections_array = np.zeros(
+        (num_shots, (dem.num_detectors + 7) // 8), dtype=np.uint8)
+
     # Set bits for detectors D0 and D1
     # This should cause a logical flip on L0.
-    detections_array[0][0] |= (1 << 0) # D0
-    detections_array[0][0] |= (1 << 1) # D1
+    detections_array[0][0] |= (1 << 0)  # D0
+    detections_array[0][0] |= (1 << 1)  # D1
 
-    predictions = compiled_decoder.decode_shots_bit_packed(bit_packed_detection_event_data=detections_array)
-    
+    predictions = compiled_decoder.decode_shots_bit_packed(
+        bit_packed_detection_event_data=detections_array)
+
     # Extract the expected predictions from the DEM
-    expected_predictions = np.zeros((num_shots, (dem.num_observables + 7) // 8), dtype=np.uint8)
-    expected_predictions[0][0] |= (1 << 0) # Logical observable L0 is flipped
-    
+    expected_predictions = np.zeros(
+        (num_shots, (dem.num_observables + 7) // 8), dtype=np.uint8)
+    expected_predictions[0][0] |= (1 << 0)  # Logical observable L0 is flipped
+
     # Compare the results
     assert np.array_equal(predictions, expected_predictions)
-    
 
 
 def test_decode_shots_bit_packed_multi_shot():
@@ -114,28 +118,31 @@ def test_decode_shots_bit_packed_multi_shot():
         error(0.1) D0 D1 L0
         error(0.1) D1 D2 L1
     """)
-    
+
     decoder = tesseract_module.TesseractSinterDecoder()
     compiled_decoder = decoder.compile_decoder_for_dem(dem=dem)
-    
+
     num_shots = 3
-    detections_array = np.zeros((num_shots, (dem.num_detectors + 7) // 8), dtype=np.uint8)
-    
+    detections_array = np.zeros(
+        (num_shots, (dem.num_detectors + 7) // 8), dtype=np.uint8)
+
     # Shot 0: D0 and D1 fire. Expect L0 to flip.
-    detections_array[0][0] |= (1 << 0) # D0
-    detections_array[0][0] |= (1 << 1) # D1
+    detections_array[0][0] |= (1 << 0)  # D0
+    detections_array[0][0] |= (1 << 1)  # D1
 
     # Shot 1: D1 and D2 fire. Expect L1 to flip.
-    detections_array[1][0] |= (1 << 1) # D1
-    detections_array[1][0] |= (1 << 2) # D2
-    
-    # Shot 2: D0 and D2 fire. Expect L0 and L1 to flip.
-    detections_array[2][0] |= (1 << 0) # D0
-    detections_array[2][0] |= (1 << 2) # D2
+    detections_array[1][0] |= (1 << 1)  # D1
+    detections_array[1][0] |= (1 << 2)  # D2
 
-    predictions = compiled_decoder.decode_shots_bit_packed(bit_packed_detection_event_data=detections_array)
-    
-    expected_predictions = np.zeros((num_shots, (dem.num_observables + 7) // 8), dtype=np.uint8)
+    # Shot 2: D0 and D2 fire. Expect L0 and L1 to flip.
+    detections_array[2][0] |= (1 << 0)  # D0
+    detections_array[2][0] |= (1 << 2)  # D2
+
+    predictions = compiled_decoder.decode_shots_bit_packed(
+        bit_packed_detection_event_data=detections_array)
+
+    expected_predictions = np.zeros(
+        (num_shots, (dem.num_observables + 7) // 8), dtype=np.uint8)
     # Expected flip for shot 0 is L0
     expected_predictions[0][0] |= (1 << 0)
     # Expected flip for shot 1 is L1
@@ -143,7 +150,7 @@ def test_decode_shots_bit_packed_multi_shot():
     # Expected flip for shot 2 is L0 and L1
     expected_predictions[2][0] |= (1 << 0)
     expected_predictions[2][0] |= (1 << 1)
-    
+
     assert np.array_equal(predictions, expected_predictions)
 
 
@@ -152,7 +159,7 @@ def test_decode_via_files_sanity_check():
     Tests the 'decode_via_files' method by simulating a small circuit and
     checking for output files.
     """
-    
+
     # Create a temporary directory for test files
     temp_dir = pathlib.Path("./temp_test_files")
     if temp_dir.exists():
@@ -164,7 +171,8 @@ def test_decode_via_files_sanity_check():
     obs_out_path = temp_dir / "test.out.b8"
 
     # Create a small circuit and DEM file
-    circuit = stim.Circuit.generated("repetition_code:memory", distance=3, rounds=2)
+    circuit = stim.Circuit.generated(
+        "repetition_code:memory", distance=3, rounds=2)
     dem = circuit.detector_error_model()
     with open(dem_path, 'w') as f:
         f.write(str(dem))
@@ -189,12 +197,13 @@ def test_decode_via_files_sanity_check():
     if temp_dir.exists():
         shutil.rmtree(temp_dir)
 
+
 @pytest.mark.parametrize("use_custom_config", [False, True])
 def test_decode_via_files(use_custom_config):
     """
     Tests the 'decode_via_files' method with a specific DEM and detection event.
     """
-    
+
     # Create a temporary directory for test files
     temp_dir = pathlib.Path("./temp_test_files")
     if temp_dir.exists():
@@ -204,7 +213,7 @@ def test_decode_via_files(use_custom_config):
     dem_path = temp_dir / "test.dem"
     dets_in_path = temp_dir / "test.b8"
     obs_out_path = temp_dir / "test.out.b8"
-    
+
     # Create a specific DEM
     dem_string = """
         detector(0, 0, 0) D0
@@ -216,19 +225,20 @@ def test_decode_via_files(use_custom_config):
         error(0.1) D2 D3 L0
     """
     dem = stim.DetectorErrorModel(dem_string)
-    
+
     # Write the DEM string to a file
     with open(dem_path, 'w') as f:
         f.write(dem_string)
 
     detections = [0, 1]
     expected_predictions = np.zeros(dem.num_observables, dtype=np.uint8)
-    expected_predictions[0] = 1 # Flip on L0
-    
+    expected_predictions[0] = 1  # Flip on L0
+
     # Pack the detection events into a bit-packed NumPy array
     num_shots = 1
     num_detectors = dem.num_detectors
-    detection_events_np = np.zeros(num_shots * ((num_detectors + 7) // 8), dtype=np.uint8)
+    detection_events_np = np.zeros(
+        num_shots * ((num_detectors + 7) // 8), dtype=np.uint8)
     for d_idx in detections:
         detection_events_np[d_idx // 8] ^= (1 << (d_idx % 8))
 
@@ -252,11 +262,11 @@ def test_decode_via_files(use_custom_config):
         obs_predictions_b8_out_path=str(obs_out_path),
         tmp_dir=str(temp_dir)
     )
-    
+
     # Read the output file and unpack the results
     with open(obs_out_path, 'rb') as f:
         predictions_bytes = f.read()
-    
+
     # Convert bytes to a numpy array for easy comparison
     predictions_np = np.frombuffer(predictions_bytes, dtype=np.uint8)
     unpacked_predictions = np.zeros(dem.num_observables, dtype=np.uint8)
@@ -265,14 +275,14 @@ def test_decode_via_files(use_custom_config):
             unpacked_predictions[i] = 1
 
     assert np.array_equal(unpacked_predictions, expected_predictions)
-            
+
     # Clean up temporary files
     if temp_dir.exists():
         shutil.rmtree(temp_dir)
 
     assert decoder.config.verbose == use_custom_config
 
-            
+
 def test_decode_via_files_multi_shot():
     """
     Tests the 'decode_via_files' method with multiple shots and a specific DEM.
@@ -286,7 +296,7 @@ def test_decode_via_files_multi_shot():
     dem_path = temp_dir / "test.dem"
     dets_in_path = temp_dir / "test.b8"
     obs_out_path = temp_dir / "test.out.b8"
-    
+
     # Create a specific DEM
     dem_string = """
         detector(0, 0, 0) D0
@@ -296,14 +306,15 @@ def test_decode_via_files_multi_shot():
         error(0.1) D1 D2 L1
     """
     dem = stim.DetectorErrorModel(dem_string)
-    
+
     # Write the DEM string to a file
     with open(dem_path, 'w') as f:
         f.write(dem_string)
 
     num_shots = 3
     num_detectors = dem.num_detectors
-    detection_events_np = np.zeros(num_shots * ((num_detectors + 7) // 8), dtype=np.uint8)
+    detection_events_np = np.zeros(
+        num_shots * ((num_detectors + 7) // 8), dtype=np.uint8)
 
     # Shot 0: D0 and D1 fire. Expected L0 flip.
     detection_events_np[0] |= (1 << 0)
@@ -330,14 +341,15 @@ def test_decode_via_files_multi_shot():
         obs_predictions_b8_out_path=str(obs_out_path),
         tmp_dir=str(temp_dir)
     )
-    
+
     # Read the output file and unpack the results
     with open(obs_out_path, 'rb') as f:
         predictions_bytes = f.read()
 
     predictions_np = np.frombuffer(predictions_bytes, dtype=np.uint8)
-    
-    expected_predictions_np = np.zeros(num_shots * ((dem.num_observables + 7) // 8), dtype=np.uint8)
+
+    expected_predictions_np = np.zeros(
+        num_shots * ((dem.num_observables + 7) // 8), dtype=np.uint8)
     expected_predictions_np[0] |= (1 << 0)
     expected_predictions_np[1] |= (1 << 1)
     expected_predictions_np[2] |= (1 << 0)
@@ -350,7 +362,6 @@ def test_decode_via_files_multi_shot():
         shutil.rmtree(temp_dir)
 
 
-
 def test_sinter_decode_repetition_code():
     """
     Tests the 'tesseract' decoder on a repetition code circuit.
@@ -359,7 +370,7 @@ def test_sinter_decode_repetition_code():
                                      rounds=3,
                                      distance=3,
                                      after_clifford_depolarization=0.05)
-    
+
     result = sample_decode(
         circuit_obj=circuit,
         circuit_path=None,
@@ -397,6 +408,7 @@ def test_sinter_decode_surface_code():
     assert 0 <= result.errors <= 50
     assert result.shots == 1000
 
+
 def test_sinter_empty():
     """
     Tests the 'tesseract' decoder on an empty circuit.
@@ -414,6 +426,7 @@ def test_sinter_empty():
     assert result.discards == 0
     assert result.shots == 1000
     assert result.errors == 0
+
 
 def test_sinter_no_observables():
     """
@@ -437,6 +450,7 @@ def test_sinter_no_observables():
     assert result.shots == 1000
     assert result.errors == 0
 
+
 def test_sinter_invincible_observables():
     """
     Tests the decoder on a circuit where an observable is not affected by errors.
@@ -459,7 +473,6 @@ def test_sinter_invincible_observables():
     assert result.discards == 0
     assert result.shots == 1000
     assert result.errors == 0
-
 
 
 def test_sinter_detector_counting():
@@ -488,8 +501,10 @@ def test_sinter_detector_counting():
     )
     assert result.discards == 0
     assert result.custom_counts['detectors_checked'] == 20000
-    assert 0.3 * 10000 * 0.5 <= result.custom_counts['detection_events'] <= 0.3 * 10000 * 2.0
-    assert set(result.custom_counts.keys()) == {'detectors_checked', 'detection_events'}
+    assert 0.3 * 10000 * \
+        0.5 <= result.custom_counts['detection_events'] <= 0.3 * 10000 * 2.0
+    assert set(result.custom_counts.keys()) == {
+        'detectors_checked', 'detection_events'}
 
 
 def test_full_scale():
@@ -503,6 +518,7 @@ def test_full_scale():
     assert result.discards == 0
     assert result.shots == 1000
     assert result.errors == 0
+
 
 def test_full_scale_one_worker():
     # Create a repetition code circuit to test the decoder.
@@ -526,6 +542,27 @@ def test_full_scale_one_worker():
     assert result.shots == 1000
 
 
+def relabel_logical_observables(
+    circuit: stim.Circuit,
+    relabel_dict: dict[int, int]
+) -> stim.Circuit:
+    new_circuit = stim.Circuit()
+    for inst in circuit:
+        if inst.name == "OBSERVABLE_INCLUDE":
+            args = inst.gate_args_copy()
+            new_args = [relabel_dict[args[0]]]
+            new_inst = stim.CircuitInstruction(
+                name=inst.name,
+                targets=inst.targets_copy(
+                ),
+                gate_args=new_args,
+                tag=inst.tag
+            )
+            inst = new_inst
+        new_circuit.append(inst)
+    return new_circuit
+
+
 @pytest.mark.parametrize(
     "det_beam, beam_climbing, no_revisit_dets, merge_errors",
     [
@@ -546,14 +583,19 @@ def test_decode_shots_bit_packed_vs_decode_batch(det_beam, beam_climbing, no_rev
     """
 
     # 1. Set up the quantum circuit and detector error model.
+    p = 0.02
     circuit = stim.Circuit.generated(
         "color_code:memory_xyz",
         distance=3,
         rounds=3,
-        after_clifford_depolarization=0.02
+        after_clifford_depolarization=p,
+        before_measure_flip_probability=p,
+        before_round_data_depolarization=p,
+        after_reset_flip_probability=p
     )
+    circuit = relabel_logical_observables(circuit=circuit, relabel_dict={0: 3})
     dem = circuit.detector_error_model()
-    
+
     # 2. Create the Tesseract configuration object with the parameterized values.
     config = tesseract_decoder.tesseract.TesseractConfig(
         dem=dem,
@@ -566,21 +608,24 @@ def test_decode_shots_bit_packed_vs_decode_batch(det_beam, beam_climbing, no_rev
     # 3. Compile the Sinter-compatible decoder.
     sinter_decoder = tesseract_module.TesseractSinterDecoder(config=config)
     compiled_sinter_decoder = sinter_decoder.compile_decoder_for_dem(dem=dem)
-    
+
     # 4. Compile the raw Tesseract decoder directly from the config.
     decoder = config.compile_decoder()
-    
+
     # 5. Generate a batch of shots and unpack them for comparison.
     sampler = circuit.compile_detector_sampler()
-    bitpacked_shots, _ = sampler.sample(shots=1000, separate_observables=True, bit_packed=True)
+    bitpacked_shots, _ = sampler.sample(
+        shots=1000, separate_observables=True, bit_packed=True)
     unpacked_shots = np.unpackbits(bitpacked_shots, bitorder='little', axis=1)
-    
+
     # 6. Decode the shots using both methods.
-    predictions_sinter = compiled_sinter_decoder.decode_shots_bit_packed(
+    predictions_sinter_bitpacked = compiled_sinter_decoder.decode_shots_bit_packed(
         bit_packed_detection_event_data=bitpacked_shots)
-    
-    predictions_decode_batch = decoder.decode_batch(unpacked_shots[:, :dem.num_detectors])
-    
+    predictions_sinter = np.unpackbits(
+        predictions_sinter_bitpacked, bitorder='little', axis=1)[:, :dem.num_observables]
+
+    predictions_decode_batch = decoder.decode_batch(
+        unpacked_shots[:, :dem.num_detectors])
     # 7. Assert that the predictions from both decoders are identical.
     assert np.array_equal(predictions_sinter, predictions_decode_batch)
 
