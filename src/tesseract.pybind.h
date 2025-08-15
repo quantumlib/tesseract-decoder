@@ -33,12 +33,12 @@ std::unique_ptr<TesseractDecoder> _compile_tesseract_decoder_helper(const Tesser
   return std::make_unique<TesseractDecoder>(self);
 }
 
-TesseractConfig tesseract_config_maker_no_dem(int det_beam, bool beam_climbing,
-                                              bool no_revisit_dets,
-                                              bool at_most_two_errors_per_detector, bool verbose,
-                                              bool merge_errors, size_t pqlimit,
-                                              std::vector<std::vector<size_t>> det_orders,
-                                              double det_penalty, bool create_visualization) {
+TesseractConfig tesseract_config_maker_no_dem(
+    int det_beam = INF_DET_BEAM, bool beam_climbing = false, bool no_revisit_dets = false,
+    bool at_most_two_errors_per_detector = false, bool verbose = false, bool merge_errors = true,
+    size_t pqlimit = std::numeric_limits<size_t>::max(),
+    std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
+    double det_penalty = 0.0, bool create_visualization = false) {
   stim::DetectorErrorModel empty_dem;
   if (det_orders.empty()) {
     det_orders = build_det_orders(empty_dem, 20, true, 2384753);
@@ -48,12 +48,14 @@ TesseractConfig tesseract_config_maker_no_dem(int det_beam, bool beam_climbing,
                           det_orders, det_penalty, create_visualization});
 }
 
-TesseractConfig tesseract_config_maker(py::object dem_obj, int det_beam, bool beam_climbing,
-                                       bool no_revisit_dets, bool at_most_two_errors_per_detector,
-                                       bool verbose, bool merge_errors, size_t pqlimit,
-                                       std::vector<std::vector<size_t>> det_orders,
-                                       double det_penalty, bool create_visualization) {
-  stim::DetectorErrorModel input_dem = parse_py_object<stim::DetectorErrorModel>(dem_obj);
+TesseractConfig tesseract_config_maker(
+    py::object dem, int det_beam = INF_DET_BEAM, bool beam_climbing = false,
+    bool no_revisit_dets = false, bool at_most_two_errors_per_detector = false,
+    bool verbose = false, bool merge_errors = true,
+    size_t pqlimit = std::numeric_limits<size_t>::max(),
+    std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
+    double det_penalty = 0.0, bool create_visualization = false) {
+  stim::DetectorErrorModel input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
   if (det_orders.empty()) {
     det_orders = build_det_orders(input_dem, 20, true, 2384753);
   }
