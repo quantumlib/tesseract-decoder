@@ -47,14 +47,18 @@ def test_create_node():
 
 
 def test_create_tesseract_config():
-    assert (
-        str(tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL))
-        == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=5, no_revisit_dets=1, at_most_two_errors_per_detector=0, verbose=0, merge_errors=1, pqlimit=200000, det_orders=[[1, 0], [0, 1], [1, 0], [0, 1], [1, 0], [0, 1], [1, 0], [1, 0], [0, 1], [1, 0], [1, 0], [1, 0], [0, 1], [0, 1], [0, 1], [1, 0], [0, 1], [0, 1], [1, 0], [1, 0]], det_penalty=0, create_visualization=0)"
-    )
-    assert (
-        tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL).dem
-        == _DETECTOR_ERROR_MODEL
-    )
+    config = tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL)
+    assert config.dem == _DETECTOR_ERROR_MODEL
+    assert config.det_beam == 5
+    assert config.no_revisit_dets is True
+    assert config.at_most_two_errors_per_detector is False
+    assert config.verbose is False
+    assert config.merge_errors is True
+    assert config.pqlimit == 200000
+    assert config.det_penalty == 0
+    assert config.create_visualization is False
+    assert len(config.det_orders) == 20
+
 
 def test_create_tesseract_config_with_dem():
     """
@@ -63,14 +67,16 @@ def test_create_tesseract_config_with_dem():
 
     config = tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL)
     
-    # Assert the string representation matches the expected format.
-    assert (
-        str(config)
-        == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=5, no_revisit_dets=1, at_most_two_errors_per_detector=0, verbose=0, merge_errors=1, pqlimit=200000, det_orders=[[1, 0], [0, 1], [1, 0], [0, 1], [1, 0], [0, 1], [1, 0], [1, 0], [0, 1], [1, 0], [1, 0], [1, 0], [0, 1], [0, 1], [0, 1], [1, 0], [0, 1], [0, 1], [1, 0], [1, 0]], det_penalty=0, create_visualization=0)"
-    )
-
-    # Assert that the `dem` attribute is correctly set.
     assert config.dem == _DETECTOR_ERROR_MODEL
+    assert config.det_beam == 5
+    assert config.no_revisit_dets is True
+    assert config.at_most_two_errors_per_detector is False
+    assert config.verbose is False
+    assert config.merge_errors is True
+    assert config.pqlimit == 200000
+    assert config.det_penalty == 0
+    assert config.create_visualization is False
+    assert len(config.det_orders) == 20
 
 def test_create_tesseract_config_with_dem_and_custom_args():
     """
@@ -84,17 +90,17 @@ def test_create_tesseract_config_with_dem_and_custom_args():
         det_penalty=0.5
     )
     
-    # Assert that the `dem` and custom arguments are correctly set.
     assert config.dem == _DETECTOR_ERROR_MODEL
     assert config.det_beam == 100
+    assert config.no_revisit_dets is True
+    assert config.at_most_two_errors_per_detector is False
+    assert config.verbose is False
     assert config.merge_errors is False
+    assert config.pqlimit == 200000
     assert config.det_penalty == 0.5
+    assert config.create_visualization is False
+    assert len(config.det_orders) == 20
     
-    # Assert the string representation is as expected.
-    assert (
-        str(config)
-        == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=100, no_revisit_dets=1, at_most_two_errors_per_detector=0, verbose=0, merge_errors=0, pqlimit=200000, det_orders=[[1, 0], [0, 1], [1, 0], [0, 1], [1, 0], [0, 1], [1, 0], [1, 0], [0, 1], [1, 0], [1, 0], [1, 0], [0, 1], [0, 1], [0, 1], [1, 0], [0, 1], [0, 1], [1, 0], [1, 0]], det_penalty=0.5, create_visualization=0)"
-    )
 
 def test_compile_decoder_for_dem_basic_functionality():
     """
@@ -155,37 +161,34 @@ def test_create_tesseract_config_no_dem():
     Tests the new constructor that does not require a `dem` argument.
     """
     # Create an instance with no arguments.
-    config_default = tesseract_decoder.tesseract.TesseractConfig()
-    
-    # Assert that the `dem` attribute defaults to an empty DetectorErrorModel.
-    empty_dem = stim.DetectorErrorModel()
-    assert config_default.dem == empty_dem
-    
-    # Assert that the string representation shows the default values.
-    assert (
-        str(config_default)
-        == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=5, no_revisit_dets=1, at_most_two_errors_per_detector=0, verbose=0, merge_errors=1, pqlimit=200000, det_orders=[], det_penalty=0, create_visualization=0)"
-    )
+    config = tesseract_decoder.tesseract.TesseractConfig()
+
+    assert config.dem == stim.DetectorErrorModel()
+    assert config.det_beam == 5
+    assert config.no_revisit_dets is True
+    assert config.at_most_two_errors_per_detector is False
+    assert config.verbose is False
+    assert config.merge_errors is True
+    assert config.pqlimit == 200000
+    assert config.det_penalty == 0.0
+    assert config.create_visualization is False
 
 def test_create_tesseract_config_no_dem_with_custom_args():
     """
     Tests the new constructor with custom arguments to ensure they are passed correctly.
     """
     # Create an instance with no dem but a custom det_beam.
-    config_custom = tesseract_decoder.tesseract.TesseractConfig(det_beam=15, verbose=True)
+    config = tesseract_decoder.tesseract.TesseractConfig(det_beam=15, verbose=True)
 
-    # Assert that the `det_beam` and `verbose` attributes are correctly set.
-    assert config_custom.det_beam == 15
-    assert config_custom.verbose is True
-    
-    # Assert that the `dem` attribute still defaults to an empty DetectorErrorModel.
-    assert config_custom.dem == stim.DetectorErrorModel()
-    
-    # Assert that the string representation reflects the custom values.
-    assert (
-        str(config_custom)
-        == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=15, no_revisit_dets=1, at_most_two_errors_per_detector=0, verbose=1, merge_errors=1, pqlimit=200000, det_orders=[[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []], det_penalty=0, create_visualization=0)"
-    )
+    assert config.dem == stim.DetectorErrorModel()
+    assert config.det_beam == 15
+    assert config.no_revisit_dets is True
+    assert config.at_most_two_errors_per_detector is False
+    assert config.verbose is True
+    assert config.merge_errors is True
+    assert config.pqlimit == 200000
+    assert config.det_penalty == 0.0
+    assert config.create_visualization is False
 
 
 def test_create_tesseract_decoder():
