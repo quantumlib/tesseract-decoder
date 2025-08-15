@@ -49,7 +49,7 @@ def test_create_node():
 def test_create_tesseract_config():
     assert (
         str(tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL))
-        == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=65535, no_revisit_dets=0, at_most_two_errors_per_detector=0, verbose=0, merge_errors=1, pqlimit=18446744073709551615, det_orders=[], det_penalty=0, create_visualization=0)"
+        == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=5, no_revisit_dets=1, at_most_two_errors_per_detector=0, verbose=0, merge_errors=1, pqlimit=200000, det_orders=[[1, 0], [0, 1], [1, 0], [0, 1], [1, 0], [0, 1], [1, 0], [1, 0], [0, 1], [1, 0], [1, 0], [1, 0], [0, 1], [0, 1], [0, 1], [1, 0], [0, 1], [0, 1], [1, 0], [1, 0]], det_penalty=0, create_visualization=0)"
     )
     assert (
         tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL).dem
@@ -66,7 +66,7 @@ def test_create_tesseract_config_with_dem():
     # Assert the string representation matches the expected format.
     assert (
         str(config)
-        == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=65535, no_revisit_dets=0, at_most_two_errors_per_detector=0, verbose=0, merge_errors=1, pqlimit=18446744073709551615, det_orders=[], det_penalty=0, create_visualization=0)"
+        == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=5, no_revisit_dets=1, at_most_two_errors_per_detector=0, verbose=0, merge_errors=1, pqlimit=200000, det_orders=[[1, 0], [0, 1], [1, 0], [0, 1], [1, 0], [0, 1], [1, 0], [1, 0], [0, 1], [1, 0], [1, 0], [1, 0], [0, 1], [0, 1], [0, 1], [1, 0], [0, 1], [0, 1], [1, 0], [1, 0]], det_penalty=0, create_visualization=0)"
     )
 
     # Assert that the `dem` attribute is correctly set.
@@ -93,7 +93,7 @@ def test_create_tesseract_config_with_dem_and_custom_args():
     # Assert the string representation is as expected.
     assert (
         str(config)
-        == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=100, no_revisit_dets=0, at_most_two_errors_per_detector=0, verbose=0, merge_errors=0, pqlimit=18446744073709551615, det_orders=[], det_penalty=0.5, create_visualization=0)"
+        == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=100, no_revisit_dets=1, at_most_two_errors_per_detector=0, verbose=0, merge_errors=0, pqlimit=200000, det_orders=[[1, 0], [0, 1], [1, 0], [0, 1], [1, 0], [0, 1], [1, 0], [1, 0], [0, 1], [1, 0], [1, 0], [1, 0], [0, 1], [0, 1], [0, 1], [1, 0], [0, 1], [0, 1], [1, 0], [1, 0]], det_penalty=0.5, create_visualization=0)"
     )
 
 def test_compile_decoder_for_dem_basic_functionality():
@@ -164,7 +164,7 @@ def test_create_tesseract_config_no_dem():
     # Assert that the string representation shows the default values.
     assert (
         str(config_default)
-        == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=65535, no_revisit_dets=0, at_most_two_errors_per_detector=0, verbose=0, merge_errors=1, pqlimit=18446744073709551615, det_orders=[], det_penalty=0, create_visualization=0)"
+        == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=5, no_revisit_dets=1, at_most_two_errors_per_detector=0, verbose=0, merge_errors=1, pqlimit=200000, det_orders=[], det_penalty=0, create_visualization=0)"
     )
 
 def test_create_tesseract_config_no_dem_with_custom_args():
@@ -184,7 +184,7 @@ def test_create_tesseract_config_no_dem_with_custom_args():
     # Assert that the string representation reflects the custom values.
     assert (
         str(config_custom)
-        == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=15, no_revisit_dets=0, at_most_two_errors_per_detector=0, verbose=1, merge_errors=1, pqlimit=18446744073709551615, det_orders=[], det_penalty=0, create_visualization=0)"
+        == "TesseractConfig(dem=DetectorErrorModel_Object, det_beam=15, no_revisit_dets=1, at_most_two_errors_per_detector=0, verbose=1, merge_errors=1, pqlimit=200000, det_orders=[[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []], det_penalty=0, create_visualization=0)"
     )
 
 

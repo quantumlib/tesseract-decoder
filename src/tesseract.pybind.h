@@ -23,6 +23,7 @@
 
 #include "stim_utils.pybind.h"
 #include "tesseract.h"
+#include "utils.h"
 
 namespace py = pybind11;
 
@@ -32,30 +33,35 @@ std::unique_ptr<TesseractDecoder> _compile_tesseract_decoder_helper(const Tesser
   return std::make_unique<TesseractDecoder>(self);
 }
 
-TesseractConfig tesseract_config_maker_no_dem(
-    int det_beam = INF_DET_BEAM, bool beam_climbing = false, bool no_revisit_dets = false,
-    bool at_most_two_errors_per_detector = false, bool verbose = false, bool merge_errors = true,
-    size_t pqlimit = std::numeric_limits<size_t>::max(),
-    std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
-    double det_penalty = 0.0, bool create_visualization = false) {
+TesseractConfig tesseract_config_maker_no_dem(int det_beam, bool beam_climbing,
+                                              bool no_revisit_dets,
+                                              bool at_most_two_errors_per_detector, bool verbose,
+                                              bool merge_errors, size_t pqlimit,
+                                              std::vector<std::vector<size_t>> det_orders,
+                                              double det_penalty, bool create_visualization) {
   stim::DetectorErrorModel empty_dem;
+  if (det_orders.empty()) {
+    det_orders = build_det_orders(empty_dem, 20, true, 2384753);
+  }
   return TesseractConfig({empty_dem, det_beam, beam_climbing, no_revisit_dets,
                           at_most_two_errors_per_detector, verbose, merge_errors, pqlimit,
                           det_orders, det_penalty, create_visualization});
 }
 
-TesseractConfig tesseract_config_maker(
-    py::object dem, int det_beam = INF_DET_BEAM, bool beam_climbing = false,
-    bool no_revisit_dets = false, bool at_most_two_errors_per_detector = false,
-    bool verbose = false, bool merge_errors = true,
-    size_t pqlimit = std::numeric_limits<size_t>::max(),
-    std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
-    double det_penalty = 0.0, bool create_visualization = false) {
-  stim::DetectorErrorModel input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
+TesseractConfig tesseract_config_maker(py::object dem_obj, int det_beam, bool beam_climbing,
+                                       bool no_revisit_dets, bool at_most_two_errors_per_detector,
+                                       bool verbose, bool merge_errors, size_t pqlimit,
+                                       std::vector<std::vector<size_t>> det_orders,
+                                       double det_penalty, bool create_visualization) {
+  stim::DetectorErrorModel input_dem = parse_py_object<stim::DetectorErrorModel>(dem_obj);
+  if (det_orders.empty()) {
+    det_orders = build_det_orders(input_dem, 20, true, 2384753);
+  }
   return TesseractConfig({input_dem, det_beam, beam_climbing, no_revisit_dets,
                           at_most_two_errors_per_detector, verbose, merge_errors, pqlimit,
                           det_orders, det_penalty, create_visualization});
 }
+
 };  // namespace
 void add_tesseract_module(py::module& root) {
   auto m = root.def_submodule("tesseract", "Module containing the tesseract algorithm");
@@ -73,10 +79,10 @@ void add_tesseract_module(py::module& root) {
         Default constructor for TesseractConfig.
         Creates a new instance with default parameter values.
     )pbdoc")
-      .def(py::init(&tesseract_config_maker_no_dem), py::arg("det_beam") = INF_DET_BEAM,
-           py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = false,
+      .def(py::init(&tesseract_config_maker_no_dem), py::arg("det_beam") = 5,
+           py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = true,
            py::arg("at_most_two_errors_per_detector") = false, py::arg("verbose") = false,
-           py::arg("merge_errors") = true, py::arg("pqlimit") = std::numeric_limits<size_t>::max(),
+           py::arg("merge_errors") = true, py::arg("pqlimit") = 200000,
            py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0,
            py::arg("create_visualization") = false,
            R"pbdoc(
@@ -108,10 +114,10 @@ void add_tesseract_module(py::module& root) {
               create_visualization: bool, defualt=False
                  Whether to record the information needed to create a visualization or not.
              )pbdoc")
-      .def(py::init(&tesseract_config_maker), py::arg("dem"), py::arg("det_beam") = INF_DET_BEAM,
-           py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = false,
+      .def(py::init(&tesseract_config_maker), py::arg("dem"), py::arg("det_beam") = 5,
+           py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = true,
            py::arg("at_most_two_errors_per_detector") = false, py::arg("verbose") = false,
-           py::arg("merge_errors") = true, py::arg("pqlimit") = std::numeric_limits<size_t>::max(),
+           py::arg("merge_errors") = true, py::arg("pqlimit") = 200000,
            py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0,
            py::arg("create_visualization") = false,
            R"pbdoc(
