@@ -47,7 +47,7 @@ identifiers:
   - description: Publication about Tesseract Decoder
     value: 10.48550/arXiv.2503.10988
     type: doi
-  - description: GitHub repository for Tesseract description
+  - description: GitHub repository for Tesseract Decoder
     value: https://github.com/quantumlib/tesseract-decoder
     type: url
 keywords:
