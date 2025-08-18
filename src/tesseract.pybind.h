@@ -32,6 +32,18 @@ std::unique_ptr<TesseractDecoder> _compile_tesseract_decoder_helper(const Tesser
   return std::make_unique<TesseractDecoder>(self);
 }
 
+TesseractConfig tesseract_config_maker_no_dem(
+    int det_beam = INF_DET_BEAM, bool beam_climbing = false, bool no_revisit_dets = false,
+    bool at_most_two_errors_per_detector = false, bool verbose = false, bool merge_errors = true,
+    size_t pqlimit = std::numeric_limits<size_t>::max(),
+    std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
+    double det_penalty = 0.0, bool create_visualization = false) {
+  stim::DetectorErrorModel empty_dem;
+  return TesseractConfig({empty_dem, det_beam, beam_climbing, no_revisit_dets,
+                          at_most_two_errors_per_detector, verbose, merge_errors, pqlimit,
+                          det_orders, det_penalty, create_visualization});
+}
+
 TesseractConfig tesseract_config_maker(
     py::object dem, int det_beam = INF_DET_BEAM, bool beam_climbing = false,
     bool no_revisit_dets = false, bool at_most_two_errors_per_detector = false,
@@ -57,6 +69,45 @@ void add_tesseract_module(py::module& root) {
         This class holds all the parameters needed to initialize and configure a
         Tesseract decoder instance.
     )pbdoc")
+      .def(py::init<>(), R"pbdoc(
+        Default constructor for TesseractConfig.
+        Creates a new instance with default parameter values.
+    )pbdoc")
+      .def(py::init(&tesseract_config_maker_no_dem), py::arg("det_beam") = INF_DET_BEAM,
+           py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = false,
+           py::arg("at_most_two_errors_per_detector") = false, py::arg("verbose") = false,
+           py::arg("merge_errors") = true, py::arg("pqlimit") = std::numeric_limits<size_t>::max(),
+           py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0,
+           py::arg("create_visualization") = false,
+           R"pbdoc(
+             The constructor for the `TesseractConfig` class without a `dem` argument.
+             This creates an empty `DetectorErrorModel` by default.
+
+             Parameters
+             ----------
+             det_beam : int, default=INF_DET_BEAM
+                 Beam cutoff that specifies the maximum number of detection events a search state can have.
+             beam_climbing : bool, default=False
+                 If True, enables a beam climbing heuristic.
+             no_revisit_dets : bool, default=False
+                 If True, prevents the decoder from revisiting a syndrome pattern more than once.
+             at_most_two_errors_per_detector : bool, default=False
+                 If True, an optimization is enabled that assumes at most two errors
+                 are correlated with each detector.
+             verbose : bool, default=False
+                 If True, enables verbose logging from the decoder.
+              merge_errors : bool, default=True
+                 If True, merges error channels that have identical syndrome patterns.
+              pqlimit : int, default=max_size_t
+                 The maximum size of the priority queue.
+              det_orders : list[list[int]], default=empty
+                 A list of detector orderings to use for decoding. If empty, the decoder
+                 will generate its own orderings.
+              det_penalty : float, default=0.0
+                 A penalty value added to the cost of each detector visited.
+              create_visualization: bool, defualt=False
+                 Whether to record the information needed to create a visualization or not.
+             )pbdoc")
       .def(py::init(&tesseract_config_maker), py::arg("dem"), py::arg("det_beam") = INF_DET_BEAM,
            py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = false,
            py::arg("at_most_two_errors_per_detector") = false, py::arg("verbose") = false,
@@ -127,7 +178,29 @@ void add_tesseract_module(py::module& root) {
           TesseractDecoder
               A new `TesseractDecoder` instance configured with the current
               settings.
-      )pbdoc");
+      )pbdoc")
+      .def(
+          "compile_decoder_for_dem",
+          [](TesseractConfig& self, py::object dem) {
+            self.dem = parse_py_object<stim::DetectorErrorModel>(dem);
+            return std::make_unique<TesseractDecoder>(self);
+          },
+          py::arg("dem"), py::return_value_policy::take_ownership, R"pbdoc(
+            Compiles the configuration into a new `TesseractDecoder` instance
+            for a given `dem` object.
+
+            Parameters
+            ----------
+            dem : stim.DetectorErrorModel
+                The detector error model to use for the decoder.
+
+            Returns
+            -------
+            TesseractDecoder
+                A new `TesseractDecoder` instance configured with the
+                provided `dem` and the other settings from this
+                `TesseractConfig` object.
+            )pbdoc");
 
   py::class_<Node>(m, "Node", R"pbdoc(
         A class representing a node in the Tesseract search graph.

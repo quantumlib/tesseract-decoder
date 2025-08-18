@@ -20,6 +20,7 @@
 #include "common.pybind.h"
 #include "pybind11/detail/common.h"
 #include "simplex.pybind.h"
+#include "tesseract_sinter_compat.pybind.h"
 #include "utils.pybind.h"
 #include "visualization.pybind.h"
 
@@ -31,6 +32,7 @@ PYBIND11_MODULE(tesseract_decoder, tesseract) {
   add_simplex_module(tesseract);
   add_tesseract_module(tesseract);
   add_visualization_module(tesseract);
+  pybind_sinter_compat(tesseract);
 
   // Adds a context manager to the python library that can be used to redirect C++'s stdout/stderr
   // to python's stdout/stderr at run time like

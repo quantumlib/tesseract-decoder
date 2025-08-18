@@ -72,6 +72,18 @@ py_test(
         ":shared_decoding_tests",
     ],
 )
+py_test(
+    name = "tesseract_sinter_compat_test",
+    srcs = ["tesseract_sinter_compat_test.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//stim",
+        "@pypi//sinter",
+        "//src:lib_tesseract_decoder",
+    ],
+)
+
 
 compile_pip_requirements(
     name = "requirements",
