@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import pytest
+import numpy as np
 import stim
 
 from src import tesseract_decoder
@@ -56,7 +57,7 @@ def test_create_simplex_decoder():
     decoder = tesseract_decoder.simplex.SimplexDecoder(
         tesseract_decoder.simplex.SimplexConfig(_DETECTOR_ERROR_MODEL, window_length=5)
     )
-    decoder.decode_to_errors([1])
+    decoder.decode_to_errors(np.array([False, True], dtype=bool))
     assert decoder.get_observables_from_errors([1]) == []
     assert decoder.cost_from_errors([2]) == pytest.approx(1.0986123)
 
