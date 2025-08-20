@@ -103,4 +103,11 @@ pybind11_add_module(tesseract_decoder MODULE ${TESSERACT_SRC_DIR}/tesseract.pybi
 target_compile_options(tesseract_decoder PRIVATE ${OPT_COPTS})
 target_include_directories(tesseract_decoder PRIVATE ${TESSERACT_SRC_DIR})
 target_link_libraries(tesseract_decoder PRIVATE common utils simplex tesseract_lib)
+set_target_properties(tesseract_decoder PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/src
+    LIBRARY_OUTPUT_DIRECTORY_DEBUG ${PROJECT_SOURCE_DIR}/src
+    LIBRARY_OUTPUT_DIRECTORY_RELEASE ${PROJECT_SOURCE_DIR}/src
+    LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL ${PROJECT_SOURCE_DIR}/src
+    LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO ${PROJECT_SOURCE_DIR}/src
+)
 
