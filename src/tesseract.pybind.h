@@ -21,8 +21,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include <sstream>
-
 #include "stim_utils.pybind.h"
 #include "tesseract.h"
 
@@ -249,15 +247,10 @@ void add_tesseract_module(py::module& root) {
           "decode_to_errors",
           [](TesseractDecoder& self, const py::array_t<bool>& syndrome) {
             if ((size_t)syndrome.size() != self.num_detectors) {
-              std::ostringstream msg;
-              msg << "Syndrome array size (" << syndrome.size()
-                  << ") does not match the number of detectors in the decoder ("
-                  << self.num_detectors << ").";
-              std::string msg = "Syndrome array size (" +
-                                std
-                  : to_string(syndrome.size()) +
-                    ") does not match the number of detectors in the decoder (" +
-                    std::to_string(self.num_detectors) + ")." throw std::invalid_argument(msg);
+              std::string msg = "Syndrome array size (" + std::to_string(syndrome.size()) +
+                                ") does not match the number of detectors in the decoder (" +
+                                std::to_string(self.num_detectors) + ").";
+              throw std::invalid_argument(msg);
             }
 
             std::vector<uint64_t> detections;
@@ -291,11 +284,10 @@ void add_tesseract_module(py::module& root) {
           [](TesseractDecoder& self, const py::array_t<bool>& syndrome, size_t det_order,
              size_t det_beam) {
             if ((size_t)syndrome.size() != self.num_detectors) {
-              std::ostringstream msg;
-              msg << "Syndrome array size (" << syndrome.size()
-                  << ") does not match the number of detectors in the decoder ("
-                  << self.num_detectors << ").";
-              throw std::invalid_argument(msg.str());
+              std::string msg = "Syndrome array size (" + std::to_string(syndrome.size()) +
+                                ") does not match the number of detectors in the decoder (" +
+                                std::to_string(self.num_detectors) + ").";
+              throw std::invalid_argument(msg);
             }
 
             std::vector<uint64_t> detections;
@@ -403,11 +395,10 @@ void add_tesseract_module(py::module& root) {
           "decode",
           [](TesseractDecoder& self, const py::array_t<bool>& syndrome) {
             if ((size_t)syndrome.size() != self.num_detectors) {
-              std::ostringstream msg;
-              msg << "Syndrome array size (" << syndrome.size()
-                  << ") does not match the number of detectors in the decoder ("
-                  << self.num_detectors << ").";
-              throw std::invalid_argument(msg.str());
+              std::string msg = "Syndrome array size (" + std::to_string(syndrome.size()) +
+                                ") does not match the number of detectors in the decoder (" +
+                                std::to_string(self.num_detectors) + ").";
+              throw std::invalid_argument(msg);
             }
 
             std::vector<uint64_t> detections;
@@ -461,11 +452,11 @@ void add_tesseract_module(py::module& root) {
             size_t num_detectors = syndromes_unchecked.shape(1);
 
             if (num_detectors != self.num_detectors) {
-              std::ostringstream msg;
-              msg << "The number of detectors in the input array (" << num_detectors
-                  << ") does not match the number of detectors in the decoder ("
-                  << self.num_detectors << ").";
-              throw std::invalid_argument(msg.str());
+              std::string msg = "The number of detectors in the input array (" +
+                                std::to_string(num_detectors) +
+                                ") does not match the number of detectors in the decoder (" +
+                                std::to_string(self.num_detectors) + ").";
+              throw std::invalid_argument(msg);
             }
 
             // Allocate the result array.
