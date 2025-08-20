@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import pytest
+import numpy as np
 import stim
 
 from src import tesseract_decoder
@@ -60,8 +61,10 @@ def test_create_tesseract_config():
 def test_create_tesseract_decoder():
     config = tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL)
     decoder = tesseract_decoder.tesseract.TesseractDecoder(config)
-    decoder.decode_to_errors([0])
-    decoder.decode_to_errors(detections=[0], det_order=0, det_beam=0)
+    decoder.decode_to_errors(np.array([True, False], dtype=bool))
+    decoder.decode_to_errors(
+        syndrome=np.array([True, False], dtype=bool), det_order=0, det_beam=0
+    )
     assert decoder.get_observables_from_errors([1]) == []
     assert decoder.cost_from_errors([1]) == pytest.approx(0.5108256237659907)
 

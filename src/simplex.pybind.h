@@ -20,6 +20,7 @@
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <sstream>
 
 #include "common.h"
 #include "simplex.h"
@@ -140,20 +141,43 @@ void add_simplex_module(py::module& root) {
 
         This method must be called before decoding.
       )pbdoc")
-      .def("decode_to_errors", &SimplexDecoder::decode_to_errors, py::arg("detections"),
-           py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>(), R"pbdoc(
+      .def(
+          "decode_to_errors",
+          [](SimplexDecoder& self, const py::array_t<bool>& syndrome) {
+            if ((size_t)syndrome.size() != self.num_detectors) {
+              std::ostringstream msg;
+              msg << "Syndrome array size (" << syndrome.size()
+                  << ") does not match the number of detectors in the decoder ("
+                  << self.num_detectors << ").";
+              throw std::invalid_argument(msg.str());
+            }
+
+            std::vector<uint64_t> detections;
+            auto syndrome_unchecked = syndrome.unchecked<1>();
+            for (size_t i = 0; i < (size_t)syndrome_unchecked.size(); ++i) {
+              if (syndrome_unchecked(i)) {
+                detections.push_back(i);
+              }
+            }
+            self.decode_to_errors(detections);
+            return self.predicted_errors_buffer;
+          },
+          py::arg("syndrome"),
+          py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>(),
+          R"pbdoc(
             Decodes a single shot to a list of error indices.
 
             Parameters
             ----------
-            detections : list[int]
-                A list of indices of the detectors that have fired.
+            syndrome : np.ndarray
+                A 1D NumPy array of booleans representing the detector outcomes for a single shot.
+                The length of the array should match the number of detectors in the DEM.
 
             Returns
             -------
             list[int]
                 A list of predicted error indices.
-           )pbdoc")
+          )pbdoc")
       .def(
           "get_observables_from_errors",
           [](SimplexDecoder& self, const std::vector<size_t>& predicted_errors) {
