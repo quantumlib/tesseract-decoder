@@ -253,7 +253,10 @@ void add_tesseract_module(py::module& root) {
               msg << "Syndrome array size (" << syndrome.size()
                   << ") does not match the number of detectors in the decoder ("
                   << self.num_detectors << ").";
-              throw std::invalid_argument(msg.str());
+             std::string msg = "Syndrome array size (" + std:to_string(syndrome.size())
+                  + ") does not match the number of detectors in the decoder ("
+                   +  std::to_string(self.num_detectors) + ")."
+              throw std::invalid_argument(msg);
             }
 
             std::vector<uint64_t> detections;
