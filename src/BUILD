@@ -72,6 +72,7 @@ pybind_library(
         "simplex.pybind.h",
         "visualization.pybind.h",
         "tesseract.pybind.h",
+        "tesseract_sinter_compat.pybind.h",
     ],
     deps = [
         ":libcommon",
@@ -90,7 +91,6 @@ pybind_extension(
         ":tesseract_decoder_pybind",
     ],
 )
-
 
 py_library(
     name="lib_tesseract_decoder",
