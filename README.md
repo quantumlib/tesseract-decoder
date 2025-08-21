@@ -190,15 +190,15 @@ config = tesseract.TesseractConfig(dem=dem, det_beam=50)
 # 3. Create a decoder instance
 decoder = config.compile_decoder()
 
-# 4. Simulate detection events
-syndrome = [0, 1, 1]
+# 4. Simulate detector outcomes
+syndrome = np.array([0, 1, 1], dtype=bool)
 
 # 5a. Decode to observables
 flipped_observables = decoder.decode(syndrome)
 print(f"Flipped observables: {flipped_observables}")
 
 # 5b. Alternatively, decode to errors
-decoder.decode_to_errors(np.where(syndrome)[0])
+decoder.decode_to_errors(syndrome)
 predicted_errors = decoder.predicted_errors_buffer
 # Indices of predicted errors
 print(f"Predicted errors indices: {predicted_errors}")

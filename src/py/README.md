@@ -64,28 +64,28 @@ print(f"Custom configuration detection penalty: {config2.det_beam}")
 #### Class `tesseract.TesseractDecoder`
 This is the main class that implements the Tesseract decoding logic.
 * `TesseractDecoder(config: tesseract.TesseractConfig)`
-* `decode_to_errors(detections: list[int])`
-* `decode_to_errors(detections: list[int], det_order: int, det_beam: int)`
+* `decode_to_errors(syndrome: np.ndarray)`
+* `decode_to_errors(syndrome: np.ndarray, det_order: int, det_beam: int)`
 * `get_observables_from_errors(predicted_errors: list[int]) -> list[bool]`
 * `cost_from_errors(predicted_errors: list[int]) -> float`
-* `decode(detections: list[int]) -> list[bool]`
+* `decode(syndrome: np.ndarray) -> np.ndarray`
 
 Explanation of each method:
-#### `decode_to_errors(detections: list[int])`
+#### `decode_to_errors(syndrome: np.ndarray)`
 
 Decodes a single measurement shot to predict a list of errors.
 
-* **Parameters:** `detections` is a list of integers that represent the indices of the detectors that have fired in a single shot.
+* **Parameters:** `syndrome` is a 1D NumPy array of booleans representing the detector outcomes for a single shot.
 
 * **Returns:** A list of integers, where each integer is the index of a predicted error.
 
-#### `decode_to_errors(detections: list[int], det_order: int, det_beam: int)`
+#### `decode_to_errors(syndrome: np.ndarray, det_order: int, det_beam: int)`
 
 An overloaded version of the `decode_to_errors` method that allows for a different decoding strategy.
 
 * **Parameters:**
 
-  * `detections` is a list of integers representing the indices of the fired detectors.
+  * `syndrome` is a 1D NumPy array of booleans representing the detector outcomes for a single shot.
 
   * `det_order` is an integer that specifies a different ordering of detectors to use for the decoding.
 
@@ -219,10 +219,10 @@ print(f"Configuration verbose enabled: {config.verbose}")
 This is the main class for performing decoding using the Simplex algorithm.
 * `SimplexDecoder(config: simplex.SimplexConfig)`
 * `init_ilp()`
-* `decode_to_errors(detections: list[int])`
+* `decode_to_errors(syndrome: np.ndarray)`
 * `get_observables_from_errors(predicted_errors: list[int]) -> list[bool]`
 * `cost_from_errors(predicted_errors: list[int]) -> float`
-* `decode(detections: list[int]) -> list[bool]`
+* `decode(syndrome: np.ndarray) -> np.ndarray`
 
 **Example Usage**:
 
@@ -230,6 +230,7 @@ This is the main class for performing decoding using the Simplex algorithm.
 import tesseract_decoder.simplex as simplex
 import stim
 import tesseract_decoder.common as common
+import numpy as np
 
 # Create a DEM and a configuration
 dem = stim.DetectorErrorModel("""
@@ -245,9 +246,9 @@ decoder = simplex.SimplexDecoder(config)
 decoder.init_ilp()
 
 # Decode a shot where detector D1 fired
-detections = [1]
-flipped_observables = decoder.decode(detections)
-print(f"Flipped observables for detections {detections}: {flipped_observables}")
+syndrome = np.array([0, 1], dtype=bool)
+flipped_observables = decoder.decode(syndrome)
+print(f"Flipped observables for syndrome {syndrome.tolist()}: {flipped_observables}")
 
 # Access predicted errors
 predicted_error_indices = decoder.predicted_errors_buffer
