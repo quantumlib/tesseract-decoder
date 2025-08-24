@@ -32,3 +32,6 @@ eclipse-*bin/
 /.sass-cache
 # User-specific .bazelrc
 user.bazelrc
+ 
+# Ignore python extension module produced by CMake.
+src/tesseract_decoder*.so
