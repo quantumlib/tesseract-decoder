@@ -83,7 +83,7 @@ struct TesseractSinterCompiledDecoder {
       // Store predictions into the output buffer
       uint8_t* single_result_buffer = result_buffer + shot * num_observable_bytes;
       std::fill(single_result_buffer, single_result_buffer + num_observable_bytes, 0);
-      for (int obs_index : predictions) {
+      for (size_t obs_index : predictions) {
         if (obs_index >= 0 && obs_index < num_observables) {
           single_result_buffer[obs_index / 8] ^= (1 << (obs_index % 8));
         }
@@ -191,7 +191,7 @@ struct TesseractSinterDecoder {
 
       // Pack the predictions back into a bit-packed format.
       std::fill(single_result_data.begin(), single_result_data.end(), 0);
-      for (int obs_index : predictions) {
+      for (size_t obs_index : predictions) {
         if (obs_index >= 0 && obs_index < num_obs) {
           single_result_data[obs_index / 8] ^= (1 << (obs_index % 8));
         }

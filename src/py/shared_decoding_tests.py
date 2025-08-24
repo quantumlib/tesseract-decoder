@@ -316,16 +316,16 @@ def shared_test_merge_errors_affects_cost(decoder_class, config_class):
         error(0.01) D0
         """
     )
-    detections = [0]
+    syndrome = np.array([True], dtype=bool)
     
     config_no_merge = config_class(dem, merge_errors=False)
     decoder_no_merge = decoder_class(config_no_merge)
-    predicted_errors_no_merge = decoder_no_merge.decode_to_errors(detections)
+    predicted_errors_no_merge = decoder_no_merge.decode_to_errors(syndrome)
     cost_no_merge = decoder_no_merge.cost_from_errors(decoder_no_merge.predicted_errors_buffer)
         
     config_merge = config_class(dem, merge_errors=True)
     decoder_merge = decoder_class(config_merge)
-    predicted_errors_merge = decoder_merge.decode_to_errors(detections)
+    predicted_errors_merge = decoder_merge.decode_to_errors(syndrome)
     cost_merge = decoder_merge.cost_from_errors(decoder_merge.predicted_errors_buffer)
     
     p_merged = 0.1 * (1 - 0.01) + 0.01 * (1 - 0.1)
