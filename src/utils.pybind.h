@@ -32,6 +32,12 @@ void add_utils_module(py::module& root) {
   m.attr("INF") = INF;
   m.doc() = "A representation of infinity for floating point numbers.";
 
+  py::enum_<DetOrder>(m, "DetOrder", "Detector ordering methods")
+      .value("DetBFS", DetOrder::DetBFS)
+      .value("DetIndex", DetOrder::DetIndex)
+      .value("DetCoordinate", DetOrder::DetCoordinate)
+      .export_values();
+
   m.def(
       "get_detector_coords",
       [](py::object dem) {
@@ -79,11 +85,11 @@ void add_utils_module(py::module& root) {
     )pbdoc");
   m.def(
       "build_det_orders",
-      [](py::object dem, size_t num_det_orders, bool det_order_bfs, uint64_t seed) {
+      [](py::object dem, size_t num_det_orders, DetOrder method, uint64_t seed) {
         auto input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
-        return build_det_orders(input_dem, num_det_orders, det_order_bfs, seed);
+        return build_det_orders(input_dem, num_det_orders, method, seed);
       },
-      py::arg("dem"), py::arg("num_det_orders"), py::arg("det_order_bfs") = true,
+      py::arg("dem"), py::arg("num_det_orders"), py::arg("method") = DetOrder::DetBFS,
       py::arg("seed") = 0, R"pbdoc(
         Generates various detector orderings for decoding.
 
@@ -93,17 +99,19 @@ void add_utils_module(py::module& root) {
             The detector error model to generate orders for.
         num_det_orders : int
             The number of detector orderings to generate.
-        det_order_bfs : bool, default=True
-            If True, uses a Breadth-First Search (BFS) to generate
-            the orders. If False, uses a randomized ordering.
+        method : tesseract_decoder.utils.DetOrder, default=tesseract_decoder.utils.DetOrder.DetBFS
+            Strategy for ordering detectors. ``DetBFS`` performs a breadth-first
+            traversal, ``DetCoordinate`` uses randomized geometric orientations,
+            and ``DetIndex`` chooses either increasing or decreasing detector
+            index order at random.
         seed : int, default=0
             A seed for the random number generator.
 
         Returns
         -------
         list[list[int]]
-            A list of detector orderings. Each inner list is a
-            permutation of the detector indices.
+            A list of detector orderings. Each inner list maps a detector index
+            to its position in the ordering.
     )pbdoc");
   m.def(
       "get_errors_from_dem",

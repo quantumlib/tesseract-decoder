@@ -83,7 +83,7 @@ std::vector<std::vector<size_t>> build_detector_graph(const stim::DetectorErrorM
 }
 
 std::vector<std::vector<size_t>> build_det_orders(const stim::DetectorErrorModel& dem,
-                                                  size_t num_det_orders, bool det_order_bfs,
+                                                  size_t num_det_orders, DetOrder method,
                                                   uint64_t seed) {
   std::vector<std::vector<size_t>> det_orders(num_det_orders);
   std::mt19937_64 rng(seed);
@@ -91,7 +91,7 @@ std::vector<std::vector<size_t>> build_det_orders(const stim::DetectorErrorModel
 
   auto detector_coords = get_detector_coords(dem);
 
-  if (det_order_bfs) {
+  if (method == DetOrder::DetBFS) {
     auto graph = build_detector_graph(dem);
     std::uniform_int_distribution<size_t> dist_det(0, graph.size() - 1);
     for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
@@ -131,7 +131,7 @@ std::vector<std::vector<size_t>> build_det_orders(const stim::DetectorErrorModel
       }
       det_orders[det_order] = inv_perm;
     }
-  } else {
+  } else if (method == DetOrder::DetCoordinate) {
     std::vector<double> inner_products(dem.count_detectors());
     if (!detector_coords.size() || !detector_coords.at(0).size()) {
       for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
@@ -161,6 +161,19 @@ std::vector<std::vector<size_t>> build_det_orders(const stim::DetectorErrorModel
           inv_perm[perm[i]] = i;
         }
         det_orders[det_order] = inv_perm;
+      }
+    }
+  } else if (method == DetOrder::DetIndex) {
+    std::uniform_int_distribution<int> dist_bool(0, 1);
+    size_t n = dem.count_detectors();
+    for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
+      det_orders[det_order].resize(n);
+      if (dist_bool(rng)) {
+        for (size_t i = 0; i < n; ++i) {
+          det_orders[det_order][i] = n - 1 - i;
+        }
+      } else {
+        std::iota(det_orders[det_order].begin(), det_orders[det_order].end(), 0);
       }
     }
   }

@@ -50,10 +50,23 @@ def test_build_det_orders():
     ) == [[0, 1]]
 
 
-def test_build_det_orders_no_bfs():
+def test_build_det_orders_coordinate():
     assert tesseract_decoder.utils.build_det_orders(
-        _DETECTOR_ERROR_MODEL, num_det_orders=1, det_order_bfs=False, seed=0
+        _DETECTOR_ERROR_MODEL,
+        num_det_orders=1,
+        method=tesseract_decoder.utils.DetOrder.DetCoordinate,
+        seed=0,
     ) == [[0, 1]]
+
+
+def test_build_det_orders_index():
+    res = tesseract_decoder.utils.build_det_orders(
+        _DETECTOR_ERROR_MODEL,
+        num_det_orders=1,
+        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        seed=0,
+    )
+    assert res == [[0, 1]] or res == [[1, 0]]
 
 
 def test_get_errors_from_dem():
