@@ -201,8 +201,10 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections)
   }
 
   if (config.beam_climbing) {
-    for (int beam = config.det_beam; beam >= 0; --beam) {
-      size_t detector_order = beam % config.det_orders.size();
+    int beam = 0;
+    int detector_order = 0;
+    for (int trial = 0; trial < std::max(config.det_beam + 1, int(config.det_orders.size()));
+         ++trial) {
       decode_to_errors(detections, detector_order, beam);
       double local_cost = cost_from_errors(predicted_errors_buffer);
       if (!low_confidence_flag && local_cost < best_cost) {
@@ -215,6 +217,10 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections)
                   << " and obs_mask " << get_flipped_observables(predicted_errors_buffer)
                   << ". Best cost so far: " << best_cost << std::endl;
       }
+      beam += 1;
+      detector_order += 1;
+      beam %= (config.det_beam + 1);
+      detector_order %= config.det_orders.size();
     }
   } else {
     for (size_t detector_order = 0; detector_order < config.det_orders.size(); ++detector_order) {
