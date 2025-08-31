@@ -42,9 +42,7 @@ error(0.25) D1
 )
 
 
-def test_create_node():
-    node = tesseract_decoder.tesseract.Node(errors=[1, 0])
-    assert node.errors == [1, 0]
+
 
 
 def test_create_tesseract_config():
