@@ -218,8 +218,7 @@ void add_tesseract_module(py::module& root) {
                 The list of error indices this search node has.
            )pbdoc")
       .def_readwrite("cost", &Node::cost, "The cost of the node.")
-      .def_readwrite("num_dets", &Node::num_dets,
-                     "The number of detectors this search node has.")
+      .def_readwrite("num_dets", &Node::num_dets, "The number of detectors this search node has.")
       .def_readwrite("errors", &Node::errors, "The list of error indices this search node has.")
       .def(py::self > py::self,
            "Comparison operator for nodes based on cost. This is necessary to prioritize "

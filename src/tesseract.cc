@@ -349,9 +349,8 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
     if (config.verbose) {
       std::cout.precision(13);
       std::cout << "len(pq) = " << pq.size() << " num_pq_pushed = " << num_pq_pushed << std::endl;
-      std::cout << "num_dets = " << node.num_dets
-                << " max_num_dets = " << max_num_dets << " cost = " << node.cost
-                << std::endl;
+      std::cout << "num_dets = " << node.num_dets << " max_num_dets = " << max_num_dets
+                << " cost = " << node.cost << std::endl;
       std::cout << "activated_errors = ";
       for (size_t oei : node.errors) {
         std::cout << oei << ", ";
