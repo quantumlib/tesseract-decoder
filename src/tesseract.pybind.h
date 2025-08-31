@@ -205,21 +205,20 @@ void add_tesseract_module(py::module& root) {
         This is used internally by the decoder to track decoding progress.
     )pbdoc")
       .def(py::init<double, size_t, std::vector<size_t>>(), py::arg("cost") = 0.0,
-           py::arg("num_detectors") = 0, py::arg("errors") = std::vector<size_t>(), R"pbdoc(
+           py::arg("num_dets") = 0, py::arg("errors") = std::vector<size_t>(), R"pbdoc(
             The constructor for the `Node` class.
 
             Parameters
             ----------
             cost : float, default=0.0
                 The cost of the path to this node.
-            num_detectors : int, default=0
+            num_dets : int, default=0
                 The number of detectors this search node has.
             errors : list[int], default=empty
                 The list of error indices this search node has.
            )pbdoc")
       .def_readwrite("cost", &Node::cost, "The cost of the node.")
-      .def_readwrite("num_detectors", &Node::num_detectors,
-                     "The number of detectors this search node has.")
+      .def_readwrite("num_dets", &Node::num_dets, "The number of detectors this search node has.")
       .def_readwrite("errors", &Node::errors, "The list of error indices this search node has.")
       .def(py::self > py::self,
            "Comparison operator for nodes based on cost. This is necessary to prioritize "

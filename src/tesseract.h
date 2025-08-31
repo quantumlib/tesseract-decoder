@@ -50,7 +50,8 @@ struct TesseractConfig {
 class Node {
  public:
   double cost;
-  size_t num_detectors;
+  // The number of activated detectors (dets for short) at this node
+  size_t num_dets;
   std::vector<size_t> errors;
 
   bool operator>(const Node& other) const;
