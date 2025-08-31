@@ -235,7 +235,7 @@ tesseract_config = tesseract.TesseractConfig(
     no_revisit_dets=True,
 )
 ```
-
+These values balance decoding speed and accuracy across the benchmarks reported in the paper and can be adjusted for specific use cases.
 ## Help
 
 *   Do you have a feature request or want to report a bug? [Open an issue on
