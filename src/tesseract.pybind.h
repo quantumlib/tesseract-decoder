@@ -199,31 +199,7 @@ void add_tesseract_module(py::module& root) {
                 `TesseractConfig` object.
             )pbdoc");
 
-  py::class_<Node>(m, "Node", R"pbdoc(
-        A class representing a node in the Tesseract search graph.
-
-        This is used internally by the decoder to track decoding progress.
-    )pbdoc")
-      .def(py::init<double, size_t, std::vector<size_t>>(), py::arg("cost") = 0.0,
-           py::arg("num_dets") = 0, py::arg("errors") = std::vector<size_t>(), R"pbdoc(
-            The constructor for the `Node` class.
-
-            Parameters
-            ----------
-            cost : float, default=0.0
-                The cost of the path to this node.
-            num_dets : int, default=0
-                The number of detectors this search node has.
-            errors : list[int], default=empty
-                The list of error indices this search node has.
-           )pbdoc")
-      .def_readwrite("cost", &Node::cost, "The cost of the node.")
-      .def_readwrite("num_dets", &Node::num_dets, "The number of detectors this search node has.")
-      .def_readwrite("errors", &Node::errors, "The list of error indices this search node has.")
-      .def(py::self > py::self,
-           "Comparison operator for nodes based on cost. This is necessary to prioritize "
-           "lower-cost nodes during the search.")
-      .def("__str__", &Node::str);
+  
 
   py::class_<TesseractDecoder>(m, "TesseractDecoder", R"pbdoc(
         A class that implements the Tesseract decoding algorithm.
