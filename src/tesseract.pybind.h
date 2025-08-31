@@ -199,8 +199,6 @@ void add_tesseract_module(py::module& root) {
                 `TesseractConfig` object.
             )pbdoc");
 
-  
-
   py::class_<TesseractDecoder>(m, "TesseractDecoder", R"pbdoc(
         A class that implements the Tesseract decoding algorithm.
 
