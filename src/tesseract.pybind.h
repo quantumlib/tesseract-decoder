@@ -35,7 +35,7 @@ std::unique_ptr<TesseractDecoder> _compile_tesseract_decoder_helper(const Tesser
 
 TesseractConfig tesseract_config_maker_no_dem(
     int det_beam = INF_DET_BEAM, bool beam_climbing = false, bool no_revisit_dets = false,
-    bool at_most_two_errors_per_detector = false, bool verbose = false, bool merge_errors = true,
+    bool verbose = false, bool merge_errors = true,
     size_t pqlimit = std::numeric_limits<size_t>::max(),
     std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
     double det_penalty = 0.0, bool create_visualization = false) {
@@ -43,15 +43,13 @@ TesseractConfig tesseract_config_maker_no_dem(
   if (det_orders.empty()) {
     det_orders = build_det_orders(empty_dem, 20, DetOrder::DetBFS, 2384753);
   }
-  return TesseractConfig({empty_dem, det_beam, beam_climbing, no_revisit_dets,
-                          at_most_two_errors_per_detector, verbose, merge_errors, pqlimit,
-                          det_orders, det_penalty, create_visualization});
+  return TesseractConfig({empty_dem, det_beam, beam_climbing, no_revisit_dets, verbose,
+                          merge_errors, pqlimit, det_orders, det_penalty, create_visualization});
 }
 
 TesseractConfig tesseract_config_maker(
     py::object dem, int det_beam = INF_DET_BEAM, bool beam_climbing = false,
-    bool no_revisit_dets = false, bool at_most_two_errors_per_detector = false,
-    bool verbose = false, bool merge_errors = true,
+    bool no_revisit_dets = false, bool verbose = false, bool merge_errors = true,
     size_t pqlimit = std::numeric_limits<size_t>::max(),
     std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
     double det_penalty = 0.0, bool create_visualization = false) {
@@ -59,9 +57,8 @@ TesseractConfig tesseract_config_maker(
   if (det_orders.empty()) {
     det_orders = build_det_orders(input_dem, 20, DetOrder::DetBFS, 2384753);
   }
-  return TesseractConfig({input_dem, det_beam, beam_climbing, no_revisit_dets,
-                          at_most_two_errors_per_detector, verbose, merge_errors, pqlimit,
-                          det_orders, det_penalty, create_visualization});
+  return TesseractConfig({input_dem, det_beam, beam_climbing, no_revisit_dets, verbose,
+                          merge_errors, pqlimit, det_orders, det_penalty, create_visualization});
 }
 
 };  // namespace
@@ -83,8 +80,7 @@ void add_tesseract_module(py::module& root) {
     )pbdoc")
       .def(py::init(&tesseract_config_maker_no_dem), py::arg("det_beam") = 5,
            py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = true,
-           py::arg("at_most_two_errors_per_detector") = false, py::arg("verbose") = false,
-           py::arg("merge_errors") = true, py::arg("pqlimit") = 200000,
+           py::arg("verbose") = false, py::arg("merge_errors") = true, py::arg("pqlimit") = 200000,
            py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0,
            py::arg("create_visualization") = false,
            R"pbdoc(
@@ -99,9 +95,7 @@ void add_tesseract_module(py::module& root) {
                  If True, enables a beam climbing heuristic.
              no_revisit_dets : bool, default=False
                  If True, prevents the decoder from revisiting a syndrome pattern more than once.
-             at_most_two_errors_per_detector : bool, default=False
-                 If True, an optimization is enabled that assumes at most two errors
-                 are correlated with each detector.
+             
              verbose : bool, default=False
                  If True, enables verbose logging from the decoder.
               merge_errors : bool, default=True
@@ -118,8 +112,7 @@ void add_tesseract_module(py::module& root) {
              )pbdoc")
       .def(py::init(&tesseract_config_maker), py::arg("dem"), py::arg("det_beam") = 5,
            py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = true,
-           py::arg("at_most_two_errors_per_detector") = false, py::arg("verbose") = false,
-           py::arg("merge_errors") = true, py::arg("pqlimit") = 200000,
+           py::arg("verbose") = false, py::arg("merge_errors") = true, py::arg("pqlimit") = 200000,
            py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0,
            py::arg("create_visualization") = false,
            R"pbdoc(
@@ -135,9 +128,7 @@ void add_tesseract_module(py::module& root) {
                 If True, enables a beam climbing heuristic.
             no_revisit_dets : bool, default=False
                 If True, prevents the decoder from revisiting a syndrome pattern more than once.
-            at_most_two_errors_per_detector : bool, default=False
-                If True, an optimization is enabled that assumes at most two errors
-                are correlated with each detector.
+            
             verbose : bool, default=False
                 If True, enables verbose logging from the decoder.
              merge_errors : bool, default=True
@@ -160,9 +151,7 @@ void add_tesseract_module(py::module& root) {
                      "Whether to use a beam climbing heuristic.")
       .def_readwrite("no_revisit_dets", &TesseractConfig::no_revisit_dets,
                      "Whether to prevent revisiting same syndrome patterns during decoding.")
-      .def_readwrite("at_most_two_errors_per_detector",
-                     &TesseractConfig::at_most_two_errors_per_detector,
-                     "Whether to assume at most two errors per detector for optimization.")
+
       .def_readwrite("verbose", &TesseractConfig::verbose,
                      "If True, the decoder will print verbose output.")
       .def_readwrite("merge_errors", &TesseractConfig::merge_errors,

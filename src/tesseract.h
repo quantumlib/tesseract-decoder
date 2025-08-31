@@ -36,7 +36,7 @@ struct TesseractConfig {
   int det_beam = DEFAULT_DET_BEAM;
   bool beam_climbing = false;
   bool no_revisit_dets = true;
-  bool at_most_two_errors_per_detector = false;
+
   bool verbose = false;
   bool merge_errors = true;
   size_t pqlimit = DEFAULT_PQLIMIT;
