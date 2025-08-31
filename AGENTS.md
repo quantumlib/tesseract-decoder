@@ -11,6 +11,19 @@ When building with CMake, use parallel flags to speed up the process.
 - When using `cmake --build`, add the `--parallel` flag.
 - When using `make`, add the `-j` flag (e.g., `make -j$(nproc)`).
 
+## Running Tests with CMake
+
+To run the tests, execute the following commands from the root of the repository:
+
+```bash
+mkdir -p build
+cd build
+cmake ..
+cmake --build . --parallel
+ctest
+```
+
+
 
 ## Building the Python Wheel
 
