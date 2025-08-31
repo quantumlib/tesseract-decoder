@@ -57,7 +57,7 @@ std::string TesseractConfig::str() {
   ss << "dem=DetectorErrorModel_Object" << ", ";
   ss << "det_beam=" << config.det_beam << ", ";
   ss << "no_revisit_dets=" << config.no_revisit_dets << ", ";
-  ss << "at_most_two_errors_per_detector=" << config.at_most_two_errors_per_detector << ", ";
+
   ss << "verbose=" << config.verbose << ", ";
   ss << "merge_errors=" << config.merge_errors << ", ";
   ss << "pqlimit=" << config.pqlimit << ", ";
@@ -256,16 +256,11 @@ void TesseractDecoder::flip_detectors_and_block_errors(
 
     for (int oei : d2e[min_detector]) {
       detector_cost_tuples[oei].error_blocked = 1;
-      if (!config.at_most_two_errors_per_detector && oei == ei) break;
+      if (oei == ei) break;
     }
 
     for (int d : edets[ei]) {
       detectors[d] = !detectors[d];
-      if (!detectors[d] && config.at_most_two_errors_per_detector) {
-        for (int oei : d2e[d]) {
-          detector_cost_tuples[oei].error_blocked = 1;
-        }
-      }
     }
   }
 }
@@ -398,12 +393,6 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
       }
     }
 
-    if (config.at_most_two_errors_per_detector) {
-      for (int ei : d2e[min_detector]) {
-        next_detector_cost_tuples[ei].error_blocked = 1;
-      }
-    }
-
     size_t prev_ei = std::numeric_limits<size_t>::max();
     std::vector<double> detector_cost_cache(num_detectors, -1);
 
@@ -415,11 +404,6 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
           int fired = detectors[d] ? 1 : -1;
           for (int oei : d2e[d]) {
             next_detector_cost_tuples[oei].detectors_count += fired;
-
-            if (config.at_most_two_errors_per_detector &&
-                next_detector_cost_tuples[oei].error_blocked == 2) {
-              next_detector_cost_tuples[oei].error_blocked = 0;
-            }
           }
         }
       }
@@ -439,17 +423,6 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
         next_num_detectors += fired;
         for (int oei : d2e[d]) {
           next_detector_cost_tuples[oei].detectors_count += fired;
-        }
-
-        if (!next_detectors[d] && config.at_most_two_errors_per_detector) {
-          for (int oei : d2e[d]) {
-            next_detector_cost_tuples[oei].error_blocked =
-                next_detector_cost_tuples[oei].error_blocked == 1
-                    ? 1
-                    : 2;  // we store '2' value to indicate an error that was blocked due to the
-                          // '--at-most-two-error-per-detector' heuristic, in order to revert it in
-                          // the next decoding iteration
-          }
         }
       }
 

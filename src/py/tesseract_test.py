@@ -52,7 +52,7 @@ def test_create_tesseract_config():
     assert config.dem == _DETECTOR_ERROR_MODEL
     assert config.det_beam == 5
     assert config.no_revisit_dets is True
-    assert config.at_most_two_errors_per_detector is False
+
     assert config.verbose is False
     assert config.merge_errors is True
     assert config.pqlimit == 200000
@@ -71,7 +71,7 @@ def test_create_tesseract_config_with_dem():
     assert config.dem == _DETECTOR_ERROR_MODEL
     assert config.det_beam == 5
     assert config.no_revisit_dets is True
-    assert config.at_most_two_errors_per_detector is False
+
     assert config.verbose is False
     assert config.merge_errors is True
     assert config.pqlimit == 200000
@@ -94,7 +94,7 @@ def test_create_tesseract_config_with_dem_and_custom_args():
     assert config.dem == _DETECTOR_ERROR_MODEL
     assert config.det_beam == 100
     assert config.no_revisit_dets is True
-    assert config.at_most_two_errors_per_detector is False
+
     assert config.verbose is False
     assert config.merge_errors is False
     assert config.pqlimit == 200000
@@ -167,7 +167,7 @@ def test_create_tesseract_config_no_dem():
     assert config.dem == stim.DetectorErrorModel()
     assert config.det_beam == 5
     assert config.no_revisit_dets is True
-    assert config.at_most_two_errors_per_detector is False
+
     assert config.verbose is False
     assert config.merge_errors is True
     assert config.pqlimit == 200000
@@ -184,7 +184,7 @@ def test_create_tesseract_config_no_dem_with_custom_args():
     assert config.dem == stim.DetectorErrorModel()
     assert config.det_beam == 15
     assert config.no_revisit_dets is True
-    assert config.at_most_two_errors_per_detector is False
+
     assert config.verbose is True
     assert config.merge_errors is True
     assert config.pqlimit == 200000
