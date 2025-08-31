@@ -4,6 +4,14 @@
 - A bug in some LLM coding environments makes Bazel difficult to use, so agents should rely on CMake.
 - Keep both the CMake and Bazel builds working at all times.
 
+## Building with CMake
+
+When building with CMake, use parallel flags to speed up the process.
+
+- When using `cmake --build`, add the `--parallel` flag.
+- When using `make`, add the `-j` flag (e.g., `make -j$(nproc)`).
+
+
 ## Building the Python Wheel
 
 To build the Python wheel for `tesseract_decoder` locally, you will need to use the `bazel build` command and provide the version and Python target version as command-line arguments. This is because the `py_wheel` rule in the `BUILD` file uses "Make" variable substitution, which expects these values to be defined at build time.

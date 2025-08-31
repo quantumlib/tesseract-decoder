@@ -58,6 +58,15 @@ FetchContent_Declare(
 set(PYBIND11_TEST OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(pybind11)
 
+# Google Test
+FetchContent_Declare(
+  googletest
+  GIT_REPOSITORY https://github.com/google/googletest.git
+  GIT_TAG release-1.12.1
+)
+FetchContent_MakeAvailable(googletest)
+
+
 set(OPT_COPTS -Ofast -fno-fast-math -march=native)
 
 set(TESSERACT_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -110,4 +119,15 @@ set_target_properties(tesseract_decoder PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL ${PROJECT_SOURCE_DIR}/src
     LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO ${PROJECT_SOURCE_DIR}/src
 )
+
+# === Tests ===
+enable_testing()
+
+add_executable(common_test ${TESSERACT_SRC_DIR}/common.test.cc)
+target_link_libraries(common_test PRIVATE common GTest::gtest_main)
+add_test(NAME common_test COMMAND common_test)
+
+add_executable(tesseract_test ${TESSERACT_SRC_DIR}/tesseract.test.cc)
+target_link_libraries(tesseract_test PRIVATE tesseract_lib simplex GTest::gtest_main)
+add_test(NAME tesseract_test COMMAND tesseract_test)
 
