@@ -235,6 +235,7 @@ tesseract_config = tesseract.TesseractConfig(
     no_revisit_dets=True,
 )
 ```
+For `det_order`, you can use two other options of `DetIndex` and `DetCoordinate` as well.
 These values balance decoding speed and accuracy across the benchmarks reported in the paper and can be adjusted for specific use cases.
 ## Help
 
