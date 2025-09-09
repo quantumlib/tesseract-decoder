@@ -39,6 +39,7 @@ py_wheel(
     summary="A search-based decoder for quantum error correction (QEC).",
     author="The Tesseract Decoder Authors.",
     homepage="https://github.com/quantumlib/tesseract-decoder",
+    license="Apache 2",
 )
 
 config_setting(
