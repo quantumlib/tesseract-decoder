@@ -23,6 +23,7 @@
 
 #include "stim_utils.pybind.h"
 #include "tesseract.h"
+#include "utils.h"
 
 namespace py = pybind11;
 
@@ -34,28 +35,32 @@ std::unique_ptr<TesseractDecoder> _compile_tesseract_decoder_helper(const Tesser
 
 TesseractConfig tesseract_config_maker_no_dem(
     int det_beam = INF_DET_BEAM, bool beam_climbing = false, bool no_revisit_dets = false,
-    bool at_most_two_errors_per_detector = false, bool verbose = false, bool merge_errors = true,
-    size_t pqlimit = std::numeric_limits<size_t>::max(),
-    std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
-    double det_penalty = 0.0, bool create_visualization = false) {
-  stim::DetectorErrorModel empty_dem;
-  return TesseractConfig({empty_dem, det_beam, beam_climbing, no_revisit_dets,
-                          at_most_two_errors_per_detector, verbose, merge_errors, pqlimit,
-                          det_orders, det_penalty, create_visualization});
-}
-
-TesseractConfig tesseract_config_maker(
-    py::object dem, int det_beam = INF_DET_BEAM, bool beam_climbing = false,
-    bool no_revisit_dets = false, bool at_most_two_errors_per_detector = false,
     bool verbose = false, bool merge_errors = true,
     size_t pqlimit = std::numeric_limits<size_t>::max(),
     std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
     double det_penalty = 0.0, bool create_visualization = false) {
-  stim::DetectorErrorModel input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
-  return TesseractConfig({input_dem, det_beam, beam_climbing, no_revisit_dets,
-                          at_most_two_errors_per_detector, verbose, merge_errors, pqlimit,
-                          det_orders, det_penalty, create_visualization});
+  stim::DetectorErrorModel empty_dem;
+  if (det_orders.empty()) {
+    det_orders = build_det_orders(empty_dem, 20, DetOrder::DetBFS, 2384753);
+  }
+  return TesseractConfig({empty_dem, det_beam, beam_climbing, no_revisit_dets, verbose,
+                          merge_errors, pqlimit, det_orders, det_penalty, create_visualization});
 }
+
+TesseractConfig tesseract_config_maker(
+    py::object dem, int det_beam = INF_DET_BEAM, bool beam_climbing = false,
+    bool no_revisit_dets = false, bool verbose = false, bool merge_errors = true,
+    size_t pqlimit = std::numeric_limits<size_t>::max(),
+    std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
+    double det_penalty = 0.0, bool create_visualization = false) {
+  stim::DetectorErrorModel input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
+  if (det_orders.empty()) {
+    det_orders = build_det_orders(input_dem, 20, DetOrder::DetBFS, 2384753);
+  }
+  return TesseractConfig({input_dem, det_beam, beam_climbing, no_revisit_dets, verbose,
+                          merge_errors, pqlimit, det_orders, det_penalty, create_visualization});
+}
+
 };  // namespace
 void add_tesseract_module(py::module& root) {
   auto m = root.def_submodule("tesseract", "Module containing the tesseract algorithm");
@@ -73,10 +78,9 @@ void add_tesseract_module(py::module& root) {
         Default constructor for TesseractConfig.
         Creates a new instance with default parameter values.
     )pbdoc")
-      .def(py::init(&tesseract_config_maker_no_dem), py::arg("det_beam") = INF_DET_BEAM,
-           py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = false,
-           py::arg("at_most_two_errors_per_detector") = false, py::arg("verbose") = false,
-           py::arg("merge_errors") = true, py::arg("pqlimit") = std::numeric_limits<size_t>::max(),
+      .def(py::init(&tesseract_config_maker_no_dem), py::arg("det_beam") = 5,
+           py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = true,
+           py::arg("verbose") = false, py::arg("merge_errors") = true, py::arg("pqlimit") = 200000,
            py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0,
            py::arg("create_visualization") = false,
            R"pbdoc(
@@ -91,9 +95,7 @@ void add_tesseract_module(py::module& root) {
                  If True, enables a beam climbing heuristic.
              no_revisit_dets : bool, default=False
                  If True, prevents the decoder from revisiting a syndrome pattern more than once.
-             at_most_two_errors_per_detector : bool, default=False
-                 If True, an optimization is enabled that assumes at most two errors
-                 are correlated with each detector.
+             
              verbose : bool, default=False
                  If True, enables verbose logging from the decoder.
               merge_errors : bool, default=True
@@ -108,10 +110,9 @@ void add_tesseract_module(py::module& root) {
               create_visualization: bool, defualt=False
                  Whether to record the information needed to create a visualization or not.
              )pbdoc")
-      .def(py::init(&tesseract_config_maker), py::arg("dem"), py::arg("det_beam") = INF_DET_BEAM,
-           py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = false,
-           py::arg("at_most_two_errors_per_detector") = false, py::arg("verbose") = false,
-           py::arg("merge_errors") = true, py::arg("pqlimit") = std::numeric_limits<size_t>::max(),
+      .def(py::init(&tesseract_config_maker), py::arg("dem"), py::arg("det_beam") = 5,
+           py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = true,
+           py::arg("verbose") = false, py::arg("merge_errors") = true, py::arg("pqlimit") = 200000,
            py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0,
            py::arg("create_visualization") = false,
            R"pbdoc(
@@ -127,9 +128,7 @@ void add_tesseract_module(py::module& root) {
                 If True, enables a beam climbing heuristic.
             no_revisit_dets : bool, default=False
                 If True, prevents the decoder from revisiting a syndrome pattern more than once.
-            at_most_two_errors_per_detector : bool, default=False
-                If True, an optimization is enabled that assumes at most two errors
-                are correlated with each detector.
+            
             verbose : bool, default=False
                 If True, enables verbose logging from the decoder.
              merge_errors : bool, default=True
@@ -152,9 +151,7 @@ void add_tesseract_module(py::module& root) {
                      "Whether to use a beam climbing heuristic.")
       .def_readwrite("no_revisit_dets", &TesseractConfig::no_revisit_dets,
                      "Whether to prevent revisiting same syndrome patterns during decoding.")
-      .def_readwrite("at_most_two_errors_per_detector",
-                     &TesseractConfig::at_most_two_errors_per_detector,
-                     "Whether to assume at most two errors per detector for optimization.")
+
       .def_readwrite("verbose", &TesseractConfig::verbose,
                      "If True, the decoder will print verbose output.")
       .def_readwrite("merge_errors", &TesseractConfig::merge_errors,
@@ -201,33 +198,6 @@ void add_tesseract_module(py::module& root) {
                 provided `dem` and the other settings from this
                 `TesseractConfig` object.
             )pbdoc");
-
-  py::class_<Node>(m, "Node", R"pbdoc(
-        A class representing a node in the Tesseract search graph.
-
-        This is used internally by the decoder to track decoding progress.
-    )pbdoc")
-      .def(py::init<double, size_t, std::vector<size_t>>(), py::arg("cost") = 0.0,
-           py::arg("num_detectors") = 0, py::arg("errors") = std::vector<size_t>(), R"pbdoc(
-            The constructor for the `Node` class.
-
-            Parameters
-            ----------
-            cost : float, default=0.0
-                The cost of the path to this node.
-            num_detectors : int, default=0
-                The number of detectors this search node has.
-            errors : list[int], default=empty
-                The list of error indices this search node has.
-           )pbdoc")
-      .def_readwrite("cost", &Node::cost, "The cost of the node.")
-      .def_readwrite("num_detectors", &Node::num_detectors,
-                     "The number of detectors this search node has.")
-      .def_readwrite("errors", &Node::errors, "The list of error indices this search node has.")
-      .def(py::self > py::self,
-           "Comparison operator for nodes based on cost. This is necessary to prioritize "
-           "lower-cost nodes during the search.")
-      .def("__str__", &Node::str);
 
   py::class_<TesseractDecoder>(m, "TesseractDecoder", R"pbdoc(
         A class that implements the Tesseract decoding algorithm.

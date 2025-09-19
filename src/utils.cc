@@ -82,89 +82,122 @@ std::vector<std::vector<size_t>> build_detector_graph(const stim::DetectorErrorM
   return neighbors;
 }
 
-std::vector<std::vector<size_t>> build_det_orders(const stim::DetectorErrorModel& dem,
-                                                  size_t num_det_orders, bool det_order_bfs,
-                                                  uint64_t seed) {
+static std::vector<std::vector<size_t>> build_det_orders_bfs(const stim::DetectorErrorModel& dem,
+                                                             size_t num_det_orders,
+                                                             std::mt19937_64& rng) {
   std::vector<std::vector<size_t>> det_orders(num_det_orders);
-  std::mt19937_64 rng(seed);
-  std::normal_distribution<double> dist(0, 1);
-
-  auto detector_coords = get_detector_coords(dem);
-
-  if (det_order_bfs) {
-    auto graph = build_detector_graph(dem);
-    std::uniform_int_distribution<size_t> dist_det(0, graph.size() - 1);
-    for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
-      std::vector<size_t> perm;
-      perm.reserve(graph.size());
-      std::vector<char> visited(graph.size(), false);
-      std::queue<size_t> q;
-      size_t start = dist_det(rng);
-      while (perm.size() < graph.size()) {
-        if (!visited[start]) {
-          visited[start] = true;
-          q.push(start);
-          perm.push_back(start);
-        }
-        while (!q.empty()) {
-          size_t cur = q.front();
-          q.pop();
-          auto neigh = graph[cur];
-          std::shuffle(neigh.begin(), neigh.end(), rng);
-          for (size_t n : neigh) {
-            if (!visited[n]) {
-              visited[n] = true;
-              q.push(n);
-              perm.push_back(n);
-            }
+  auto graph = build_detector_graph(dem);
+  std::uniform_int_distribution<size_t> dist_det(0, graph.size() - 1);
+  for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
+    std::vector<size_t> perm;
+    perm.reserve(graph.size());
+    std::vector<char> visited(graph.size(), false);
+    std::queue<size_t> q;
+    size_t start = dist_det(rng);
+    while (perm.size() < graph.size()) {
+      if (!visited[start]) {
+        visited[start] = true;
+        q.push(start);
+        perm.push_back(start);
+      }
+      while (!q.empty()) {
+        size_t cur = q.front();
+        q.pop();
+        auto neigh = graph[cur];
+        std::shuffle(neigh.begin(), neigh.end(), rng);
+        for (size_t n : neigh) {
+          if (!visited[n]) {
+            visited[n] = true;
+            q.push(n);
+            perm.push_back(n);
           }
         }
-        if (perm.size() < graph.size()) {
-          do {
-            start = dist_det(rng);
-          } while (visited[start]);
-        }
       }
-      std::vector<size_t> inv_perm(graph.size());
-      for (size_t i = 0; i < perm.size(); ++i) {
-        inv_perm[perm[i]] = i;
+      if (perm.size() < graph.size()) {
+        do {
+          start = dist_det(rng);
+        } while (visited[start]);
       }
-      det_orders[det_order] = inv_perm;
     }
-  } else {
-    std::vector<double> inner_products(dem.count_detectors());
-    if (!detector_coords.size() || !detector_coords.at(0).size()) {
-      for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
-        det_orders[det_order].resize(dem.count_detectors());
-        std::iota(det_orders[det_order].begin(), det_orders[det_order].end(), 0);
+    std::vector<size_t> inv_perm(graph.size());
+    for (size_t i = 0; i < perm.size(); ++i) {
+      inv_perm[perm[i]] = i;
+    }
+    det_orders[det_order] = inv_perm;
+  }
+  return det_orders;
+}
+
+static std::vector<std::vector<size_t>> build_det_orders_coordinate(
+    const stim::DetectorErrorModel& dem, size_t num_det_orders, std::mt19937_64& rng) {
+  std::vector<std::vector<size_t>> det_orders(num_det_orders);
+  auto detector_coords = get_detector_coords(dem);
+  std::vector<double> inner_products(dem.count_detectors());
+  std::normal_distribution<double> dist(0, 1);
+  if (detector_coords.empty() || detector_coords.at(0).empty()) {
+    for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
+      det_orders[det_order].resize(dem.count_detectors());
+      std::iota(det_orders[det_order].begin(), det_orders[det_order].end(), 0);
+    }
+    return det_orders;
+  }
+  for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
+    std::vector<double> orientation_vector;
+    for (size_t i = 0; i < detector_coords.at(0).size(); ++i) {
+      orientation_vector.push_back(dist(rng));
+    }
+    for (size_t i = 0; i < detector_coords.size(); ++i) {
+      inner_products[i] = 0;
+      for (size_t j = 0; j < orientation_vector.size(); ++j) {
+        inner_products[i] += detector_coords[i][j] * orientation_vector[j];
+      }
+    }
+    std::vector<size_t> perm(dem.count_detectors());
+    std::iota(perm.begin(), perm.end(), 0);
+    std::sort(perm.begin(), perm.end(), [&](const size_t& i, const size_t& j) {
+      return inner_products[i] > inner_products[j];
+    });
+    std::vector<size_t> inv_perm(dem.count_detectors());
+    for (size_t i = 0; i < perm.size(); ++i) {
+      inv_perm[perm[i]] = i;
+    }
+    det_orders[det_order] = inv_perm;
+  }
+  return det_orders;
+}
+
+static std::vector<std::vector<size_t>> build_det_orders_index(const stim::DetectorErrorModel& dem,
+                                                               size_t num_det_orders,
+                                                               std::mt19937_64& rng) {
+  std::vector<std::vector<size_t>> det_orders(num_det_orders);
+  std::uniform_int_distribution<int> dist_bool(0, 1);
+  size_t n = dem.count_detectors();
+  for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
+    det_orders[det_order].resize(n);
+    if (dist_bool(rng)) {
+      for (size_t i = 0; i < n; ++i) {
+        det_orders[det_order][i] = n - 1 - i;
       }
     } else {
-      for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
-        std::vector<double> orientation_vector;
-        for (size_t i = 0; i < detector_coords.at(0).size(); ++i) {
-          orientation_vector.push_back(dist(rng));
-        }
-
-        for (size_t i = 0; i < detector_coords.size(); ++i) {
-          inner_products[i] = 0;
-          for (size_t j = 0; j < orientation_vector.size(); ++j) {
-            inner_products[i] += detector_coords[i][j] * orientation_vector[j];
-          }
-        }
-        std::vector<size_t> perm(dem.count_detectors());
-        std::iota(perm.begin(), perm.end(), 0);
-        std::sort(perm.begin(), perm.end(), [&](const size_t& i, const size_t& j) {
-          return inner_products[i] > inner_products[j];
-        });
-        std::vector<size_t> inv_perm(dem.count_detectors());
-        for (size_t i = 0; i < perm.size(); ++i) {
-          inv_perm[perm[i]] = i;
-        }
-        det_orders[det_order] = inv_perm;
-      }
+      std::iota(det_orders[det_order].begin(), det_orders[det_order].end(), 0);
     }
   }
   return det_orders;
+}
+
+std::vector<std::vector<size_t>> build_det_orders(const stim::DetectorErrorModel& dem,
+                                                  size_t num_det_orders, DetOrder method,
+                                                  uint64_t seed) {
+  std::mt19937_64 rng(seed);
+  switch (method) {
+    case DetOrder::DetBFS:
+      return build_det_orders_bfs(dem, num_det_orders, rng);
+    case DetOrder::DetCoordinate:
+      return build_det_orders_coordinate(dem, num_det_orders, rng);
+    case DetOrder::DetIndex:
+      return build_det_orders_index(dem, num_det_orders, rng);
+  }
+  throw std::invalid_argument("Unknown det order method");
 }
 
 bool sampling_from_dem(uint64_t seed, size_t num_shots, stim::DetectorErrorModel dem,

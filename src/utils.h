@@ -34,8 +34,11 @@ std::vector<std::vector<double>> get_detector_coords(const stim::DetectorErrorMo
 // in the model activates them both.
 std::vector<std::vector<size_t>> build_detector_graph(const stim::DetectorErrorModel& dem);
 
+enum class DetOrder { DetBFS, DetIndex, DetCoordinate };
+
 std::vector<std::vector<size_t>> build_det_orders(const stim::DetectorErrorModel& dem,
-                                                  size_t num_det_orders, bool det_order_bfs = true,
+                                                  size_t num_det_orders,
+                                                  DetOrder method = DetOrder::DetBFS,
                                                   uint64_t seed = 0);
 
 const double INF = std::numeric_limits<double>::infinity();

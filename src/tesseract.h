@@ -28,16 +28,18 @@
 #include "visualization.h"
 
 constexpr size_t INF_DET_BEAM = std::numeric_limits<uint16_t>::max();
+constexpr int DEFAULT_DET_BEAM = 5;
+constexpr size_t DEFAULT_PQLIMIT = 200000;
 
 struct TesseractConfig {
   stim::DetectorErrorModel dem;
-  int det_beam = INF_DET_BEAM;
+  int det_beam = DEFAULT_DET_BEAM;
   bool beam_climbing = false;
-  bool no_revisit_dets = false;
-  bool at_most_two_errors_per_detector = false;
+  bool no_revisit_dets = true;
+
   bool verbose = false;
   bool merge_errors = true;
-  size_t pqlimit = std::numeric_limits<size_t>::max();
+  size_t pqlimit = DEFAULT_PQLIMIT;
   std::vector<std::vector<size_t>> det_orders;
   double det_penalty = 0;
   bool create_visualization = false;
@@ -48,7 +50,8 @@ struct TesseractConfig {
 class Node {
  public:
   double cost;
-  size_t num_detectors;
+  // The number of activated detectors (dets for short) at this node
+  size_t num_dets;
   std::vector<size_t> errors;
 
   bool operator>(const Node& other) const;

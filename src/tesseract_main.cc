@@ -34,7 +34,9 @@ struct Args {
   // Manifold orientation options
   uint64_t det_order_seed;
   size_t num_det_orders = 10;
-  bool det_order_bfs = true;
+  bool det_order_bfs = false;
+  bool det_order_index = false;
+  bool det_order_coordinate = false;
 
   // Sampling options
   size_t sample_num_shots = 0;
@@ -73,7 +75,7 @@ struct Args {
   double det_penalty = 0;
   bool beam_climbing = false;
   bool no_revisit_dets = false;
-  bool at_most_two_errors_per_detector = false;
+
   size_t pqlimit;
 
   bool verbose = false;
@@ -86,6 +88,12 @@ struct Args {
   void validate() {
     if (circuit_path.empty() and dem_path.empty()) {
       throw std::invalid_argument("Must provide at least one of --circuit or --dem");
+    }
+
+    int det_order_flags = int(det_order_bfs) + int(det_order_index) + int(det_order_coordinate);
+    if (det_order_flags > 1) {
+      throw std::invalid_argument(
+          "Only one of --det-order-bfs, --det-order-index, or --det-order-coordinate may be set.");
     }
 
     int num_data_sources = int(sample_num_shots > 0) + int(!in_fname.empty());
@@ -180,8 +188,13 @@ struct Args {
           std::cout << ")" << std::endl;
         }
       }
-      config.det_orders =
-          build_det_orders(config.dem, num_det_orders, det_order_bfs, det_order_seed);
+      DetOrder order = DetOrder::DetBFS;
+      if (det_order_index) {
+        order = DetOrder::DetIndex;
+      } else if (det_order_coordinate) {
+        order = DetOrder::DetCoordinate;
+      }
+      config.det_orders = build_det_orders(config.dem, num_det_orders, order, det_order_seed);
     }
 
     if (sample_num_shots > 0) {
@@ -276,7 +289,7 @@ struct Args {
     config.det_penalty = det_penalty;
     config.beam_climbing = beam_climbing;
     config.no_revisit_dets = no_revisit_dets;
-    config.at_most_two_errors_per_detector = at_most_two_errors_per_detector;
+
     config.pqlimit = pqlimit;
     config.verbose = verbose;
   }
@@ -296,21 +309,18 @@ int main(int argc, char* argv[]) {
       .metavar("N")
       .default_value(size_t(1))
       .store_into(args.num_det_orders);
-  program.add_argument("--no-det-order-bfs")
-      .help("Disable BFS-based detector ordering and use geometric orientation")
-      .default_value(true)
-      .implicit_value(false)
-      .store_into(args.det_order_bfs);
   program.add_argument("--det-order-bfs")
-      .action([&](auto const&) {
-        std::cout << "BFS-based detector ordering is the default now; "
-                     "--det-order-bfs is ignored."
-                  << std::endl;
-      })
-      .default_value(true)
-      .implicit_value(true)
-      .store_into(args.det_order_bfs)
-      .hidden();
+      .help("Use BFS-based detector ordering (default if no method specified)")
+      .flag()
+      .store_into(args.det_order_bfs);
+  program.add_argument("--det-order-index")
+      .help("Randomly choose increasing or decreasing detector index order")
+      .flag()
+      .store_into(args.det_order_index);
+  program.add_argument("--det-order-coordinate")
+      .help("Random geometric detector orientation ordering")
+      .flag()
+      .store_into(args.det_order_coordinate);
   program.add_argument("--det-order-seed")
       .help(
           "Seed used when initializing the random detector traversal "
@@ -435,10 +445,7 @@ int main(int argc, char* argv[]) {
       .help("Use no-revisit-dets heuristic")
       .flag()
       .store_into(args.no_revisit_dets);
-  program.add_argument("--at-most-two-errors-per-detector")
-      .help("Use heuristic limitation of at most 2 errors per detector")
-      .flag()
-      .store_into(args.at_most_two_errors_per_detector);
+
   program.add_argument("--pqlimit")
       .help("Maximum size of the priority queue (default = infinity)")
       .metavar("N")
@@ -584,25 +591,24 @@ int main(int argc, char* argv[]) {
 
   bool print_final_stats = true;
   if (!args.stats_out_fname.empty()) {
-    nlohmann::json stats_json = {
-        {"circuit_path", args.circuit_path},
-        {"dem_path", args.dem_path},
-        {"max_errors", args.max_errors},
-        {"sample_seed", args.sample_seed},
-        {"at_most_two_errors_per_detector", args.at_most_two_errors_per_detector},
-        {"det_beam", args.det_beam},
-        {"det_penalty", args.det_penalty},
-        {"beam_climbing", args.beam_climbing},
-        {"no_revisit_dets", args.no_revisit_dets},
-        {"pqlimit", args.pqlimit},
-        {"num_det_orders", args.num_det_orders},
-        {"det_order_seed", args.det_order_seed},
-        {"total_time_seconds", total_time_seconds},
-        {"num_errors", num_errors},
-        {"num_low_confidence", num_low_confidence},
-        {"num_shots", shot},
-        {"num_threads", args.num_threads},
-        {"sample_num_shots", args.sample_num_shots}};
+    nlohmann::json stats_json = {{"circuit_path", args.circuit_path},
+                                 {"dem_path", args.dem_path},
+                                 {"max_errors", args.max_errors},
+                                 {"sample_seed", args.sample_seed},
+
+                                 {"det_beam", args.det_beam},
+                                 {"det_penalty", args.det_penalty},
+                                 {"beam_climbing", args.beam_climbing},
+                                 {"no_revisit_dets", args.no_revisit_dets},
+                                 {"pqlimit", args.pqlimit},
+                                 {"num_det_orders", args.num_det_orders},
+                                 {"det_order_seed", args.det_order_seed},
+                                 {"total_time_seconds", total_time_seconds},
+                                 {"num_errors", num_errors},
+                                 {"num_low_confidence", num_low_confidence},
+                                 {"num_shots", shot},
+                                 {"num_threads", args.num_threads},
+                                 {"sample_num_shots", args.sample_num_shots}};
 
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;

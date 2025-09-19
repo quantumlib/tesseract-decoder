@@ -27,6 +27,10 @@ error(0.25) D1
 """
 )
 
+_DETECTOR_ERROR_MODEL_10 = stim.DetectorErrorModel(
+    "\n".join(f"error(0.1) D{i}" for i in range(10))
+)
+
 
 def test_module_has_global_constants():
     assert tesseract_decoder.utils.EPSILON <= 1e-7
@@ -44,16 +48,31 @@ def test_build_detector_graph():
     ]
 
 
-def test_build_det_orders():
+def test_build_det_orders_bfs():
     assert tesseract_decoder.utils.build_det_orders(
         _DETECTOR_ERROR_MODEL, num_det_orders=1, seed=0
     ) == [[0, 1]]
 
 
-def test_build_det_orders_no_bfs():
+def test_build_det_orders_coordinate():
     assert tesseract_decoder.utils.build_det_orders(
-        _DETECTOR_ERROR_MODEL, num_det_orders=1, det_order_bfs=False, seed=0
+        _DETECTOR_ERROR_MODEL,
+        num_det_orders=1,
+        method=tesseract_decoder.utils.DetOrder.DetCoordinate,
+        seed=0,
     ) == [[0, 1]]
+
+
+def test_build_det_orders_index():
+    res = tesseract_decoder.utils.build_det_orders(
+        _DETECTOR_ERROR_MODEL_10,
+        num_det_orders=1,
+        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        seed=0,
+    )
+    expected_asc = list(range(10))
+    expected_desc = list(range(9, -1, -1))
+    assert res == [expected_asc] or res == [expected_desc]
 
 
 def test_get_errors_from_dem():
