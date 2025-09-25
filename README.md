@@ -168,6 +168,11 @@ Here are some tips for improving performance:
 
 This repository contains the C++ implementation of the Tesseract quantum error correction decoder, along with a Python wrapper. The Python wrapper/interface exposes the decoding algorithms and helper utilities, allowing Python users to leverage this high-performance decoding algorithm.
 
+For installation:
+```bash
+pip install tesseract-decoder
+```
+
 The following example demonstrates how to create and use the Tesseract decoder using the Python interface.
 
 ```python
