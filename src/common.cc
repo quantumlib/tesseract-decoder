@@ -127,7 +127,8 @@ stim::DetectorErrorModel common::merge_indistinguishable_errors(
       case stim::DemInstructionType::DEM_ERROR: {
         Error error(instruction);
         if (error.symptom.detectors.size() == 0) {
-          throw std::invalid_argument("Errors that do not flip any detectors are not supported.");
+          // TODO: For errors without detectors, the observables should be included if p>0.5
+          std::cout << "Warning: the circuit has errors that do not flip any detectors \n";
         }
 
         if (errors_by_symptom.find(error.symptom) != errors_by_symptom.end()) {
