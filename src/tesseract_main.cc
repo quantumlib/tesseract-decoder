@@ -326,7 +326,7 @@ int main(int argc, char* argv[]) {
           "Seed used when initializing the random detector traversal "
           "orderings.")
       .metavar("N")
-      .default_value(static_cast<uint64_t>(std::random_device()()))
+      .default_value(static_cast<uint64_t>(518278944))
       .store_into(args.det_order_seed);
   program.add_argument("--sample-num-shots")
       .help(
