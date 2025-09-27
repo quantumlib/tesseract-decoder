@@ -45,7 +45,7 @@ void Visualizer::write(const char* fpath) {
   FILE* fout = fopen(fpath, "w");
 
   for (std::string& line : lines) {
-    fprintf(fout, line.c_str());
+    fprintf(fout, "%s", line.c_str());
     fputs("\n", fout);
   }
 
