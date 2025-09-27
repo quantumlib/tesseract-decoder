@@ -17,6 +17,7 @@ A Search-Based Decoder for Quantum Error Correction.
 
 </div>
 
+
 Tesseract is a Most Likely Error decoder designed for Low Density Parity Check (LDPC) quantum
 error-correcting codes. It applies pruning heuristics and manifold orientation techniques during a
 search over the error subsets to identify the most likely error configuration consistent with the
@@ -167,6 +168,11 @@ Here are some tips for improving performance:
 
 This repository contains the C++ implementation of the Tesseract quantum error correction decoder, along with a Python wrapper. The Python wrapper/interface exposes the decoding algorithms and helper utilities, allowing Python users to leverage this high-performance decoding algorithm.
 
+For installation:
+```bash
+pip install tesseract-decoder
+```
+
 The following example demonstrates how to create and use the Tesseract decoder using the Python interface.
 
 ```python
@@ -206,8 +212,37 @@ print(f"Predicted errors indices: {predicted_errors}")
 for i in predicted_errors:
     print(f"    {i}: {decoder.errors[i]}")
 ```
+## Good Starting Points for Tesseract Configurations:
+ The [Tesseract paper](https://arxiv.org/pdf/2503.10988) recommends two setup for starting your exploration with tesseract:
 
 
+(1) Long-beam setup:
+```
+tesseract_config = tesseract.TesseractConfig(
+    dem=dem,
+    pqlimit=1_000_000,
+    det_beam=20,
+    beam_climbing=True,
+    num_det_orders=21,
+    det_order=tesseract_decoder.utils.DetOrder.DetIndex,
+    no_revisit_dets=True,
+)
+```
+(2) Short-beam setup:
+
+```
+tesseract_config = tesseract.TesseractConfig(
+    dem=dem,
+    pqlimit=200_000,
+    det_beam=15,
+    beam_climbing=True,
+    num_det_orders=16,
+    det_order=tesseract_decoder.utils.DetOrder.DetIndex,
+    no_revisit_dets=True,
+)
+```
+For `det_order`, you can use two other options of `DetIndex` and `DetCoordinate` as well.
+These values balance decoding speed and accuracy across the benchmarks reported in the paper and can be adjusted for specific use cases.
 ## Help
 
 *   Do you have a feature request or want to report a bug? [Open an issue on
