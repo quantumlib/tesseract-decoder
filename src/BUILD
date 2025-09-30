@@ -27,21 +27,19 @@ OPT_COPTS = select({
     "//conditions:default": [
         "-Ofast",
         "-fno-fast-math",
-        "-march=native",
     ],
     ":debug": ["-Og"],
 }) + select({
         "//conditions:default": ["-std=c++20"],
 }) + select({
-    "@platforms//os:macos": ["-mmacosx-version-min=10.15"],
-    "//conditions:default": [],
+    "@platforms//os:macos": ["-mmacosx-version-min=10.15",],
+    "//conditions:default": ["-march=native",],
 })
 
 OPT_LINKOPTS = select({
     "//conditions:default": [
         "-Ofast",
         "-fno-fast-math",
-        "-march=native",
     ],
     ":debug": [],
 }) + [
