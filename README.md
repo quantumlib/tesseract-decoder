@@ -212,6 +212,66 @@ print(f"Predicted errors indices: {predicted_errors}")
 for i in predicted_errors:
     print(f"    {i}: {decoder.errors[i]}")
 ```
+## Using Tesseract with Sinter
+
+Tesseract can be easily integrated into [Sinter](https://github.com/quantumlib/Sinter) workflows. Sinter is a tool for running and organizing quantum error correction simulations. The `tesseract_sinter_compat` module provides the necessary interface.
+
+Here's an example of how to use Tesseract as a decoder for multiple Sinter tasks:
+
+```python
+import stim
+import sinter
+from tesseract_decoder import tesseract_sinter_compat
+
+# Define a list of Sinter task(s) with different circuits/decoders.
+tasks = []
+# These are the sensible defaults given by tesseract_module.make_tesseract_sinter_decoders_dict().
+decoders = ['tesseract', 'tesseract-long-beam', 'tesseract-short-beam']
+for i, distance in enumerate([3, 5, 7]):
+    circuit = stim.Circuit.generated(
+        "repetition_code:memory",
+        distance=distance,
+        rounds=3,
+        after_clifford_depolarization=0.1
+    )
+    tasks.append(sinter.Task(
+        circuit=circuit,
+        decoder=decoders[i],
+        json_metadata={"d": distance, "decoder": decoders[i]},
+    ))
+
+# Collect decoding outcomes per task from Sinter.
+results = sinter.collect(
+    num_workers=2,
+    tasks=tasks,
+    max_shots=10000,
+    decoders=decoders,
+    custom_decoders=tesseract_module.make_tesseract_sinter_decoders_dict(),
+)
+
+for result in results:
+    print(f"task metadata = {result.json_metadata}")
+    print(f" Shots run: {result.shots}")
+    print(f" Observed errors: {result.errors}")
+    print(f" Logical error rate: {result.errors / result.shots}")
+
+# Should get something like:
+# task metadata = {'d': 5, 'decoder': 'tesseract-long-beam'}
+#  Shots run: 10000
+#  Observed errors: 315
+#  Logical error rate: 0.0315
+# task metadata = {'d': 3, 'decoder': 'tesseract'}
+#  Shots run: 10000
+#  Observed errors: 654
+#  Logical error rate: 0.0654
+# task metadata = {'d': 7, 'decoder': 'tesseract-short-beam'}
+#  Shots run: 10000
+#  Observed errors: 153
+#  Logical error rate: 0.0153
+```
+
+This example runs simulations for a repetition code with different distances [3, 5, 7] with different Tesseract default decoders. Sinter efficiently manages the execution of these tasks, and Tesseract is used for decoding. For more usage examples, see the tests in `src/py/tesseract_sinter_compat_test.py`.
+
 ## Good Starting Points for Tesseract Configurations:
  The [Tesseract paper](https://arxiv.org/pdf/2503.10988) recommends two setup for starting your exploration with tesseract:
 

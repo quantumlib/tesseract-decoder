@@ -100,17 +100,59 @@ struct TesseractSinterCompiledDecoder {
 // a decoder for a specific Detector Error Model (DEM).
 //--------------------------------------------------------------------------------------------------
 struct TesseractSinterDecoder {
-  // Use TesseractConfig as an integrated property.
-  TesseractConfig config;
+  // Parameters for TesseractConfig
+  int det_beam;
+  bool beam_climbing;
+  bool no_revisit_dets;
+  bool verbose;
+  bool merge_errors;
+  size_t pqlimit;
+  double det_penalty;
+  bool create_visualization;
+
+  // Parameters for build_det_orders
+  size_t num_det_orders;
+  DetOrder det_order_method;
+  uint64_t seed;
 
   // Default constructor
-  TesseractSinterDecoder() : config(TesseractConfig()) {}
+  TesseractSinterDecoder()
+      : det_beam(DEFAULT_DET_BEAM),
+        beam_climbing(false),
+        no_revisit_dets(true),
+        verbose(false),
+        merge_errors(true),
+        pqlimit(DEFAULT_PQLIMIT),
+        det_penalty(0.0),
+        create_visualization(false),
+        num_det_orders(0),
+        det_order_method(DetOrder::DetBFS),
+        seed(2384753) {}
 
-  // Constructor with TesseractConfig parameter
-  TesseractSinterDecoder(const TesseractConfig& config_in) : config(config_in) {}
+  // Constructor with parameters
+  TesseractSinterDecoder(int det_beam, bool beam_climbing, bool no_revisit_dets, bool verbose,
+                         bool merge_errors, size_t pqlimit, double det_penalty,
+                         bool create_visualization, size_t num_det_orders,
+                         DetOrder det_order_method, uint64_t seed)
+      : det_beam(det_beam),
+        beam_climbing(beam_climbing),
+        no_revisit_dets(no_revisit_dets),
+        verbose(verbose),
+        merge_errors(merge_errors),
+        pqlimit(pqlimit),
+        det_penalty(det_penalty),
+        create_visualization(create_visualization),
+        num_det_orders(num_det_orders),
+        det_order_method(det_order_method),
+        seed(seed) {}
 
   bool operator==(const TesseractSinterDecoder& other) const {
-    return true;
+    return det_beam == other.det_beam && beam_climbing == other.beam_climbing &&
+           no_revisit_dets == other.no_revisit_dets && verbose == other.verbose &&
+           merge_errors == other.merge_errors && pqlimit == other.pqlimit &&
+           det_penalty == other.det_penalty && create_visualization == other.create_visualization &&
+           num_det_orders == other.num_det_orders && det_order_method == other.det_order_method &&
+           seed == other.seed;
   }
 
   bool operator!=(const TesseractSinterDecoder& other) const {
@@ -121,8 +163,12 @@ struct TesseractSinterDecoder {
   TesseractSinterCompiledDecoder compile_decoder_for_dem(const py::object& dem) {
     const stim::DetectorErrorModel stim_dem(py::cast<std::string>(py::str(dem)).c_str());
 
-    TesseractConfig local_config = config;
-    local_config.dem = stim_dem;
+    std::vector<std::vector<size_t>> det_orders =
+        build_det_orders(stim_dem, num_det_orders, det_order_method, seed);
+
+    TesseractConfig local_config = {
+        stim_dem,     det_beam, beam_climbing, no_revisit_dets, verbose,
+        merge_errors, pqlimit,  det_orders,    det_penalty,     create_visualization};
     auto decoder = std::make_unique<TesseractDecoder>(local_config);
 
     return TesseractSinterCompiledDecoder{
@@ -151,9 +197,13 @@ struct TesseractSinterDecoder {
     dem_file.close();
 
     // Construct TesseractDecoder.
-    TesseractConfig local_config = config;
     const stim::DetectorErrorModel stim_dem(dem_content_str.c_str());
-    local_config.dem = stim_dem;
+    std::vector<std::vector<size_t>> det_orders =
+        build_det_orders(stim_dem, num_det_orders, det_order_method, seed);
+
+    TesseractConfig local_config = {
+        stim_dem,     det_beam, beam_climbing, no_revisit_dets, verbose,
+        merge_errors, pqlimit,  det_orders,    det_penalty,     create_visualization};
     TesseractDecoder decoder(local_config);
 
     // Calculate expected number of bytes per shot for detectors and observables.
@@ -254,14 +304,17 @@ void pybind_sinter_compat(py::module& root) {
       .def(py::init<>(), R"pbdoc(
             Initializes a new TesseractSinterDecoder instance with a default TesseractConfig.
           )pbdoc")
-      .def(py::init<const TesseractConfig&>(), py::kw_only(), py::arg("config"),
-           R"pbdoc(
-            Initializes a new TesseractSinterDecoder instance with a custom TesseractConfig object.
-
-            :param config: A `TesseractConfig` object to configure the decoder.
-          )pbdoc")
-      .def_readwrite("config", &TesseractSinterDecoder::config,
-                     R"pbdoc(The TesseractConfig object for the decoder.)pbdoc")
+      .def(
+          py::init<int, bool, bool, bool, bool, size_t, double, bool, size_t, DetOrder, uint64_t>(),
+          py::arg("det_beam") = DEFAULT_DET_BEAM, py::arg("beam_climbing") = false,
+          py::arg("no_revisit_dets") = true, py::arg("verbose") = false,
+          py::arg("merge_errors") = true, py::arg("pqlimit") = DEFAULT_PQLIMIT,
+          py::arg("det_penalty") = 0.0, py::arg("create_visualization") = false,
+          py::arg("num_det_orders") = 0, py::arg("det_order_method") = DetOrder::DetBFS,
+          py::arg("seed") = 2384753,
+          R"pbdoc(
+            Initializes a new TesseractSinterDecoder instance with custom TesseractConfig parameters.
+           )pbdoc")
       .def("compile_decoder_for_dem", &TesseractSinterDecoder::compile_decoder_for_dem,
            py::kw_only(), py::arg("dem"),
            R"pbdoc(
@@ -286,34 +339,36 @@ void pybind_sinter_compat(py::module& root) {
                     bit-packed observable predictions will be written.
                 :param tmp_dir: A temporary directory path. (Currently unused, but required by API)
             )pbdoc")
+      .def_readwrite("det_beam", &TesseractSinterDecoder::det_beam)
+      .def_readwrite("beam_climbing", &TesseractSinterDecoder::beam_climbing)
+      .def_readwrite("no_revisit_dets", &TesseractSinterDecoder::no_revisit_dets)
+      .def_readwrite("verbose", &TesseractSinterDecoder::verbose)
+      .def_readwrite("merge_errors", &TesseractSinterDecoder::merge_errors)
+      .def_readwrite("pqlimit", &TesseractSinterDecoder::pqlimit)
+      .def_readwrite("det_penalty", &TesseractSinterDecoder::det_penalty)
+      .def_readwrite("create_visualization", &TesseractSinterDecoder::create_visualization)
+      .def_readwrite("num_det_orders", &TesseractSinterDecoder::num_det_orders)
+      .def_readwrite("det_order_method", &TesseractSinterDecoder::det_order_method)
+      .def_readwrite("seed", &TesseractSinterDecoder::seed)
       .def(py::self == py::self,
            R"pbdoc(Checks if two TesseractSinterDecoder instances are equal.)pbdoc")
       .def(py::self != py::self,
            R"pbdoc(Checks if two TesseractSinterDecoder instances are not equal.)pbdoc")
       .def(py::pickle(
           [](const TesseractSinterDecoder& self) -> py::tuple {  // __getstate__
-            return py::make_tuple(std::string(self.config.dem.str()), self.config.det_beam,
-                                  self.config.beam_climbing, self.config.no_revisit_dets,
-                                  self.config.verbose, self.config.merge_errors,
-                                  self.config.pqlimit, self.config.det_orders,
-                                  self.config.det_penalty, self.config.create_visualization);
+            return py::make_tuple(self.det_beam, self.beam_climbing, self.no_revisit_dets,
+                                  self.verbose, self.merge_errors, self.pqlimit, self.det_penalty,
+                                  self.create_visualization, self.num_det_orders,
+                                  self.det_order_method, self.seed);
           },
           [](py::tuple t) {  // __setstate__
-            if (t.size() != 10) {
+            if (t.size() != 11) {
               throw std::runtime_error("Invalid state for TesseractSinterDecoder!");
             }
-            TesseractConfig config;
-            config.dem = stim::DetectorErrorModel(t[0].cast<std::string>());
-            config.det_beam = t[1].cast<int>();
-            config.beam_climbing = t[2].cast<bool>();
-            config.no_revisit_dets = t[3].cast<bool>();
-            config.verbose = t[4].cast<bool>();
-            config.merge_errors = t[5].cast<bool>();
-            config.pqlimit = t[6].cast<size_t>();
-            config.det_orders = t[7].cast<std::vector<std::vector<size_t>>>();
-            config.det_penalty = t[8].cast<double>();
-            config.create_visualization = t[9].cast<bool>();
-            return TesseractSinterDecoder(config);
+            return TesseractSinterDecoder(
+                t[0].cast<int>(), t[1].cast<bool>(), t[2].cast<bool>(), t[3].cast<bool>(),
+                t[4].cast<bool>(), t[5].cast<size_t>(), t[6].cast<double>(), t[7].cast<bool>(),
+                t[8].cast<size_t>(), t[9].cast<DetOrder>(), t[10].cast<uint64_t>());
           }));
 
   // Add a function to create a dictionary of custom decoders
@@ -322,6 +377,16 @@ void pybind_sinter_compat(py::module& root) {
       []() -> py::object {
         auto result = py::dict();
         result["tesseract"] = TesseractSinterDecoder{};
+        result["tesseract-short-beam"] = TesseractSinterDecoder(
+            /*det_beam=*/10, /*beam_climbing=*/false, /*no_revisit_dets=*/true,
+            /*verbose=*/false, /*merge_errors=*/true, /*pqlimit=*/DEFAULT_PQLIMIT,
+            /*det_penalty=*/0.0, /*create_visualization=*/false,
+            /*num_det_orders=*/0, /*det_order_method=*/DetOrder::DetBFS, /*seed=*/2384753);
+        result["tesseract-long-beam"] = TesseractSinterDecoder(
+            /*det_beam=*/1000, /*beam_climbing=*/false, /*no_revisit_dets=*/true,
+            /*verbose=*/false, /*merge_errors=*/true, /*pqlimit=*/DEFAULT_PQLIMIT,
+            /*det_penalty=*/0.0, /*create_visualization=*/false,
+            /*num_det_orders=*/0, /*det_order_method=*/DetOrder::DetBFS, /*seed=*/2384753);
         return result;
       },
       R"pbdoc(
