@@ -25,7 +25,8 @@ updates:
       - "area/health"
 
   - package-ecosystem: "pip"
-    directory: "/"
+    directories:
+      - "**/*"
     schedule:
       interval: "monthly"
     versioning-strategy: "increase-if-necessary"
