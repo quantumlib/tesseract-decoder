@@ -377,20 +377,24 @@ void pybind_sinter_compat(py::module& root) {
       []() -> py::object {
         auto result = py::dict();
         result["tesseract"] = TesseractSinterDecoder{};
-        result["tesseract-short-beam"] = TesseractSinterDecoder(
-            /*det_beam=*/10, /*beam_climbing=*/false, /*no_revisit_dets=*/true,
-            /*verbose=*/false, /*merge_errors=*/true, /*pqlimit=*/DEFAULT_PQLIMIT,
-            /*det_penalty=*/0.0, /*create_visualization=*/false,
-            /*num_det_orders=*/0, /*det_order_method=*/DetOrder::DetBFS, /*seed=*/2384753);
         result["tesseract-long-beam"] = TesseractSinterDecoder(
-            /*det_beam=*/1000, /*beam_climbing=*/false, /*no_revisit_dets=*/true,
-            /*verbose=*/false, /*merge_errors=*/true, /*pqlimit=*/DEFAULT_PQLIMIT,
+            /*det_beam=*/20, /*beam_climbing=*/true, /*no_revisit_dets=*/true,
+            /*verbose=*/false, /*merge_errors=*/true, /*pqlimit=*/1000000,
             /*det_penalty=*/0.0, /*create_visualization=*/false,
-            /*num_det_orders=*/0, /*det_order_method=*/DetOrder::DetBFS, /*seed=*/2384753);
+            /*num_det_orders=*/21, /*det_order_method=*/DetOrder::DetIndex, /*seed=*/2384753);
+        result["tesseract-short-beam"] = TesseractSinterDecoder(
+            /*det_beam=*/15, /*beam_climbing=*/true, /*no_revisit_dets=*/true,
+            /*verbose=*/false, /*merge_errors=*/true, /*pqlimit=*/200000,
+            /*det_penalty=*/0.0, /*create_visualization=*/false,
+            /*num_det_orders=*/16, /*det_order_method=*/DetOrder::DetIndex, /*seed=*/2384753);
         return result;
       },
       R"pbdoc(
         Returns a dictionary mapping decoder names to sinter.Decoder-style objects.
         This allows Sinter to easily discover and use Tesseract as a custom decoder.
       )pbdoc");
+
+  // Aliases that are visible from the root module.
+  root.attr("TesseractSinterDecoder") = m.attr("TesseractSinterDecoder");
+  root.attr("make_tesseract_sinter_decoders_dict") = m.attr("make_tesseract_sinter_decoders_dict");
 }

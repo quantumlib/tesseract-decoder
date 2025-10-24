@@ -214,18 +214,18 @@ for i in predicted_errors:
 ```
 ## Using Tesseract with Sinter
 
-Tesseract can be easily integrated into [Sinter](https://github.com/quantumlib/Sinter) workflows. Sinter is a tool for running and organizing quantum error correction simulations. The `tesseract_sinter_compat` module provides the necessary interface.
+Tesseract can be easily integrated into [Sinter](https://github.com/quantumlib/Stim/tree/main/glue/sample) workflows. Sinter is a tool for running and organizing quantum error correction simulations.
 
 Here's an example of how to use Tesseract as a decoder for multiple Sinter tasks:
 
 ```python
 import stim
 import sinter
-from tesseract_decoder import tesseract_sinter_compat
+from tesseract_decoder import make_tesseract_sinter_decoders_dict
 
 # Define a list of Sinter task(s) with different circuits/decoders.
 tasks = []
-# These are the sensible defaults given by tesseract_module.make_tesseract_sinter_decoders_dict().
+# These are the sensible defaults given by make_tesseract_sinter_decoders_dict().
 decoders = ['tesseract', 'tesseract-long-beam', 'tesseract-short-beam']
 for i, distance in enumerate([3, 5, 7]):
     circuit = stim.Circuit.generated(
@@ -270,7 +270,22 @@ for result in results:
 #  Logical error rate: 0.0153
 ```
 
-This example runs simulations for a repetition code with different distances [3, 5, 7] with different Tesseract default decoders. Sinter efficiently manages the execution of these tasks, and Tesseract is used for decoding. For more usage examples, see the tests in `src/py/tesseract_sinter_compat_test.py`.
+This example runs simulations for a repetition code with different distances [3, 5, 7] with different Tesseract default decoders. 
+
+Sinter can also be used at the command line. Here is an example of this using Tesseract:
+
+```bash
+sinter collect \
+    --circuits "example_circuit.stim" \
+    --decoders tesseract \
+    --custom_decoders_module_function "tesseract_decoder:make_tesseract_sinter_decoders_dict" \
+    --max_shots 100_000 \
+    --max_errors 100
+    --processes auto \
+    --save_resume_filepath "stats.csv" \
+```
+
+Sinter efficiently manages the execution of these tasks, and Tesseract is used for decoding. For more usage examples, see the tests in `src/py/tesseract_sinter_compat_test.py`.
 
 ## Good Starting Points for Tesseract Configurations:
  The [Tesseract paper](https://arxiv.org/pdf/2503.10988) recommends two setup for starting your exploration with tesseract:
