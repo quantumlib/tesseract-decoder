@@ -212,6 +212,103 @@ print(f"Predicted errors indices: {predicted_errors}")
 for i in predicted_errors:
     print(f"    {i}: {decoder.errors[i]}")
 ```
+## Using Tesseract with Sinter
+
+Tesseract can be easily integrated into [Sinter](https://github.com/quantumlib/Stim/tree/main/glue/sample) workflows. Sinter is a tool for running and organizing quantum error correction simulations.
+
+Here's an example of how to use Tesseract as a decoder for multiple Sinter tasks:
+
+```python
+import stim
+import sinter
+from tesseract_decoder import make_tesseract_sinter_decoders_dict, TesseractSinterDecoder
+import tesseract_decoder
+
+if __name__ == "__main__":  
+    # Define a list of Sinter task(s) with different circuits/decoders.
+    tasks = []
+    # Depolarizing noise probability.
+    p = 0.005
+    # These are the sensible defaults given by make_tesseract_sinter_decoders_dict().
+    # Note that `tesseract-short-beam` and `tesseract-long-beam` are the two sets of parameters used in the [Tesseract paper](https://arxiv.org/pdf/2503.10988).
+    decoders = ['tesseract', 'tesseract-long-beam', 'tesseract-short-beam']
+    decoder_dict = make_tesseract_sinter_decoders_dict()
+    # You can also make your own custom Tesseract Decoder to-be-used with Sinter.
+    decoders.append('custom-tesseract-decoder')
+    decoder_dict['custom-tesseract-decoder'] = TesseractSinterDecoder(
+        det_beam=10,
+        beam_climbing=True,
+        no_revisit_dets=True,
+        merge_errors=True,
+        pqlimit=1_000,
+        num_det_orders=5,
+        det_order_method=tesseract_decoder.utils.DetOrder.DetIndex,
+        seed=2384753,
+    )
+
+    for distance in [3, 5, 7]:
+        for decoder in decoders:
+            circuit = stim.Circuit.generated(
+                "surface_code:rotated_memory_x",
+                distance=distance,
+                rounds=3,
+                after_clifford_depolarization=p
+            )
+            tasks.append(sinter.Task(
+                circuit=circuit,
+                decoder=decoder,
+                json_metadata={"d": distance, "decoder": decoder},
+            ))
+
+    # Collect decoding outcomes per task from Sinter.
+    results = sinter.collect(
+        num_workers=8,
+        tasks=tasks,
+        max_shots=10_000,
+        decoders=decoders,
+        custom_decoders=decoder_dict,
+        print_progress=True,
+    )
+
+    # Print samples as CSV data.
+    print(sinter.CSV_HEADER)
+    for sample in results:
+        print(sample.to_csv_line())
+```
+should get something like:
+```
+    shots,    errors,  discards, seconds,decoder,strong_id,json_metadata,custom_counts  
+    10000,        42,         0,   0.071,tesseract,1b3fce6286e438f38c00c8f6a5005947373515ab08e6446a7dd9ecdbef12d4cc,"{""d"":3,""decoder"":""tesseract""}",  
+    10000,        49,         0,   0.546,custom-tesseract-decoder,7b082bec7541be858e239d7828a432e329cd448356bbdf051b8b8aa76c86625a,"{""d"":3,""decoder"":""custom-tesseract-decoder""}", 
+    10000,        13,         0,    7.64,tesseract-long-beam,217a3542f56319924576658a6da7081ea2833f5167cf6d77fbc7071548e386a9,"{""d"":5,""decoder"":""tesseract-long-beam""}",  
+    10000,        42,         0,   0.743,tesseract-short-beam,cf4a4b0ce0e4c7beec1171f58eddffe403ed7359db5016fca2e16174ea577057,"{""d"":3,""decoder"":""tesseract-short-beam""}",  
+    10000,        34,         0,   0.924,tesseract-long-beam,8cfa0f2e4061629e13bc98fe213285dc00eb90f21bba36e08c76bcdf213a1c09,"{""d"":3,""decoder"":""tesseract-long-beam""}",  
+    10000,        10,         0,   0.439,tesseract,8274ea5ffec15d6e71faed5ee1057cdd7e497cbaee4c6109784f8a74669d7f96,"{""d"":5,""decoder"":""tesseract""}",  
+    10000,         8,         0,    3.93,custom-tesseract-decoder,8e4f5ab5dde00fec74127eea39ea52d5a98ae6ccfc277b5d9be450f78acc1c45,"{""d"":5,""decoder"":""custom-tesseract-decoder""}",  
+    10000,        10,         0,    5.74,tesseract-short-beam,bf696535d62a25720c3a0c624ec5624002efe3f6cb0468963eee702efb48abc1,"{""d"":5,""decoder"":""tesseract-short-beam""}",  
+    10000,         5,         0,    1.27,tesseract,3f94c61f1503844df6cf0d200b74ac01bfbc5e29e70cedbfc2faad67047e7887,"{""d"":7,""decoder"":""tesseract""}",  
+    10000,         4,         0,    25.0,tesseract-long-beam,4d510f0acf511e24a833a93c956b683346696d8086866fadc73063fb09014c23,"{""d"":7,""decoder"":""tesseract-long-beam""}",  
+    10000,         1,         0,    18.6,tesseract-short-beam,75782ce4593022fcedad4c73104711f05c9c635db92869531f78da336945b121,"{""d"":7,""decoder"":""tesseract-short-beam""}",  
+    10000,         4,         0,    11.6,custom-tesseract-decoder,48f256a28fff47c58af7bffdf98fdee1d41a721751ee965c5d3c5712ac795dc8,"{""d"":7,""decoder"":""custom-tesseract-decoder""}",  
+```
+
+This example runs simulations for a repetition code with different distances [3, 5, 7] with different Tesseract default decoders. 
+
+Sinter can also be used at the command line. Here is an example of this using Tesseract:
+
+```bash
+sinter collect \
+    --circuits "example_circuit.stim" \
+    --decoders tesseract \
+    --custom_decoders_module_function "tesseract_decoder:make_tesseract_sinter_decoders_dict" \
+    --max_shots 100_000 \
+    --max_errors 100
+    --processes auto \
+    --save_resume_filepath "stats.csv" \
+```
+
+Sinter efficiently manages the execution of these tasks, and Tesseract is used for decoding. For more usage examples, see the tests in `src/py/tesseract_sinter_compat_test.py`.
+
 ## Good Starting Points for Tesseract Configurations:
  The [Tesseract paper](https://arxiv.org/pdf/2503.10988) recommends two setup for starting your exploration with tesseract:
 
