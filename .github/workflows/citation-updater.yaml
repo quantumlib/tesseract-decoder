@@ -55,7 +55,7 @@ jobs:
     steps:
       - if: ${{!env.version_tag || !env.pub_date}}
         name: Quit if the release tag or publication date is empty
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v7
         with:
           script: |
             core.setFailed('The release version and/or date could not be read')
@@ -71,7 +71,7 @@ jobs:
 
       - if: steps.check.outputs.has_cff_file == 'false'
         name: Quit if there is no CITATION.cff file
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v7
         with:
           script: |
             core.setFailed('Could not find a CITATION.cff file')
@@ -103,7 +103,7 @@ jobs:
 
       - if: steps.update.outputs.success == 'false'
         name: Quit if CITATION.cff update failed
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v7
         with:
           script: |
             core.setFailed('CITATION.cff update failed or the file is not valid')
