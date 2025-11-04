@@ -34,7 +34,7 @@ jobs:
           mkdir version
           echo "$(python _version.py)" > version/version.txt
           cat version/version.txt
-      - uses: actions/upload-artifact@master
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: version-file
           path: version
@@ -55,13 +55,13 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    - uses: actions/download-artifact@master
+    - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
       with:
         name: version-file
         path: version
 
     - name: Set up Bazel
-      uses: bazel-contrib/setup-bazel@0.14.0
+      uses: bazel-contrib/setup-bazel@e8776f58fb6a6e9055cbaf1b38c52ccc5247e9c4 # 0.14.0
       with:
         bazelisk-cache: true
         disk-cache: ${{ github.workflow }}
@@ -72,7 +72,7 @@ jobs:
         TARGET_PYTHON: ${{ matrix.python-version }}
       run: |
         echo "set version to ${TARGET_PYTHON}"
-        python _update_bazel_py_version.py $TARGET_PYTHON 
+        python _update_bazel_py_version.py $TARGET_PYTHON
 
     - name: Build package
       env:
@@ -84,7 +84,7 @@ jobs:
         sed "s/^MANYLINUX_VERSION.*/MANYLINUX_VERSION=\"manylinux_${GLIBC_VERSION}_x86_64.manylinux2014_x86_64\"/" BUILD -i || true
         bazel build --define TARGET_VERSION="$(python -c "print(\"py${TARGET_PYTHON}\".replace(\".\", \"\"))")" --define VERSION="$(cat version/version.txt)"  :tesseract_decoder_wheel
 
-    - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v4
+    - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
       with:
         name: python-wheels-${{ matrix.os }}-${{ matrix.python-version }}
         path: ./bazel-bin/*.whl
@@ -96,7 +96,7 @@ jobs:
 
     steps:
     - name: Download build artifacts
-      uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+      uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
       with:
         pattern: python-wheels-*
         merge-multiple: true
