@@ -19,7 +19,7 @@ import stim
 import shutil
 from sinter._decoding._decoding import sample_decode
 
-from src.tesseract_decoder import tesseract_sinter_compat as tesseract_module
+from src.tesseract_decoder import TesseractSinterDecoder, make_tesseract_sinter_decoders_dict
 from src import tesseract_decoder
 import sinter
 
@@ -29,7 +29,7 @@ def test_tesseract_sinter_obj_exists():
     Sanity check to ensure the decoder object exists and has the required methods.
     """
 
-    decoder = tesseract_module.TesseractSinterDecoder()
+    decoder = TesseractSinterDecoder()
     assert hasattr(decoder, 'compile_decoder_for_dem')
     assert hasattr(decoder, 'decode_via_files')
 
@@ -51,11 +51,11 @@ def test_compile_decoder_for_dem(use_custom_config):
     """)
 
     if use_custom_config:
-        config = tesseract_decoder.tesseract.TesseractConfig()
-        config.verbose = True
-        decoder = tesseract_module.TesseractSinterDecoder(config=config)
+        decoder = TesseractSinterDecoder(
+            verbose=True,
+        )
     else:
-        decoder = tesseract_module.TesseractSinterDecoder()
+        decoder = TesseractSinterDecoder()
 
     compiled_decoder = decoder.compile_decoder_for_dem(dem=dem)
 
@@ -83,7 +83,7 @@ def test_decode_shots_bit_packed():
         error(0.1) D1 D2 L1
     """)
 
-    decoder = tesseract_module.TesseractSinterDecoder()
+    decoder = TesseractSinterDecoder()
     compiled_decoder = decoder.compile_decoder_for_dem(dem=dem)
 
     num_shots = 1
@@ -119,7 +119,7 @@ def test_decode_shots_bit_packed_multi_shot():
         error(0.1) D1 D2 L1
     """)
 
-    decoder = tesseract_module.TesseractSinterDecoder()
+    decoder = TesseractSinterDecoder()
     compiled_decoder = decoder.compile_decoder_for_dem(dem=dem)
 
     num_shots = 3
@@ -184,7 +184,7 @@ def test_decode_via_files_sanity_check():
     with open(dets_in_path, 'wb') as f:
         f.write(detection_events.tobytes())
 
-    tesseract_module.TesseractSinterDecoder().decode_via_files(
+    TesseractSinterDecoder().decode_via_files(
         num_shots=num_shots,
         num_dets=dem.num_detectors,
         num_obs=dem.num_observables,
@@ -247,11 +247,11 @@ def test_decode_via_files(use_custom_config):
         f.write(detection_events_np.tobytes())
 
     if use_custom_config:
-        config = tesseract_decoder.tesseract.TesseractConfig()
-        config.verbose = True
-        decoder = tesseract_module.TesseractSinterDecoder(config=config)
+        decoder = TesseractSinterDecoder(
+            verbose=True,
+        )
     else:
-        decoder = tesseract_module.TesseractSinterDecoder()
+        decoder = TesseractSinterDecoder()
 
     decoder.decode_via_files(
         num_shots=num_shots,
@@ -280,7 +280,7 @@ def test_decode_via_files(use_custom_config):
     if temp_dir.exists():
         shutil.rmtree(temp_dir)
 
-    assert decoder.config.verbose == use_custom_config
+    assert decoder.verbose == use_custom_config
 
 
 def test_decode_via_files_multi_shot():
@@ -332,7 +332,7 @@ def test_decode_via_files_multi_shot():
     with open(dets_in_path, 'wb') as f:
         f.write(detection_events_np.tobytes())
 
-    tesseract_module.TesseractSinterDecoder().decode_via_files(
+    TesseractSinterDecoder().decode_via_files(
         num_shots=num_shots,
         num_dets=num_detectors,
         num_obs=dem.num_observables,
@@ -378,7 +378,7 @@ def test_sinter_decode_repetition_code():
         dem_path=None,
         num_shots=1000,
         decoder="tesseract",
-        custom_decoders=tesseract_module.make_tesseract_sinter_decoders_dict(),
+        custom_decoders=make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert 0 <= result.errors <= 100
@@ -402,7 +402,7 @@ def test_sinter_decode_surface_code():
         dem_obj=circuit.detector_error_model(decompose_errors=True),
         dem_path=None,
         decoder="tesseract",
-        custom_decoders=tesseract_module.make_tesseract_sinter_decoders_dict(),
+        custom_decoders=make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert 0 <= result.errors <= 50
@@ -421,7 +421,7 @@ def test_sinter_empty():
         dem_path=None,
         num_shots=1000,
         decoder="tesseract",
-        custom_decoders=tesseract_module.make_tesseract_sinter_decoders_dict(),
+        custom_decoders=make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert result.shots == 1000
@@ -444,7 +444,7 @@ def test_sinter_no_observables():
         dem_path=None,
         num_shots=1000,
         decoder="tesseract",
-        custom_decoders=tesseract_module.make_tesseract_sinter_decoders_dict(),
+        custom_decoders=make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert result.shots == 1000
@@ -468,7 +468,7 @@ def test_sinter_invincible_observables():
         dem_path=None,
         num_shots=1000,
         decoder="tesseract",
-        custom_decoders=tesseract_module.make_tesseract_sinter_decoders_dict(),
+        custom_decoders=make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert result.shots == 1000
@@ -497,7 +497,7 @@ def test_sinter_detector_counting():
         num_shots=10000,
         decoder="tesseract",
         count_detection_events=True,
-        custom_decoders=tesseract_module.make_tesseract_sinter_decoders_dict(),
+        custom_decoders=make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert result.custom_counts['detectors_checked'] == 20000
@@ -513,7 +513,7 @@ def test_full_scale():
         tasks=[sinter.Task(circuit=stim.Circuit())],
         decoders=["tesseract"],
         max_shots=1000,
-        custom_decoders=tesseract_module.make_tesseract_sinter_decoders_dict(),
+        custom_decoders=make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert result.shots == 1000
@@ -535,7 +535,7 @@ def test_full_scale_one_worker():
         tasks=[sinter.Task(circuit=circuit)],
         decoders=["tesseract"],
         max_shots=1000,
-        custom_decoders=tesseract_module.make_tesseract_sinter_decoders_dict(),
+        custom_decoders=make_tesseract_sinter_decoders_dict(),
     )
 
     assert result.discards == 0
@@ -596,20 +596,25 @@ def test_decode_shots_bit_packed_vs_decode_batch(det_beam, beam_climbing, no_rev
     circuit = relabel_logical_observables(circuit=circuit, relabel_dict={0: 3})
     dem = circuit.detector_error_model()
 
-    # 2. Create the Tesseract configuration object with the parameterized values.
-    config = tesseract_decoder.tesseract.TesseractConfig(
-        dem=dem,
+    # 2. Compile the Sinter-compatible decoder with the parameterized values for the DEM.
+    sinter_decoder = TesseractSinterDecoder(
+        det_beam=det_beam,
+        beam_climbing=beam_climbing,
+        no_revisit_dets=no_revisit_dets,
+        merge_errors=merge_errors,
     )
-    config.det_beam = det_beam
-    config.beam_climbing = beam_climbing
-    config.no_revisit_dets = no_revisit_dets
-    config.merge_errors = merge_errors
 
     # 3. Compile the Sinter-compatible decoder.
-    sinter_decoder = tesseract_module.TesseractSinterDecoder(config=config)
     compiled_sinter_decoder = sinter_decoder.compile_decoder_for_dem(dem=dem)
 
-    # 4. Compile the raw Tesseract decoder directly from the config.
+    # 4. Obtain the compiled decoder from the config.
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        dem=dem,
+        det_beam=det_beam,
+        beam_climbing=beam_climbing,
+        no_revisit_dets=no_revisit_dets,
+        merge_errors=merge_errors,
+    )
     decoder = config.compile_decoder()
 
     # 5. Generate a batch of shots and unpack them for comparison.
@@ -628,6 +633,41 @@ def test_decode_shots_bit_packed_vs_decode_batch(det_beam, beam_climbing, no_rev
         unpacked_shots[:, :dem.num_detectors])
     # 7. Assert that the predictions from both decoders are identical.
     assert np.array_equal(predictions_sinter, predictions_decode_batch)
+
+
+def test_sinter_collect_different_dems():
+    """
+    Ensures that Sinter tasks compile with different DEMs before collection.
+    """
+    # Create a repetition code circuit to test the decoder.
+    min_distance = 3
+    max_distance = 7
+    tasks = [
+        sinter.Task(
+            circuit=stim.Circuit.generated(
+                "repetition_code:memory",
+                distance=d,
+                rounds=3,
+                after_clifford_depolarization=0.1,
+            ),
+            json_metadata={"d": d},
+        )
+        for d in range(min_distance, max_distance + 1, 2)
+    ]
+
+    # Use sinter.collect to run the decoding task.
+    all_results = sinter.collect(
+        num_workers=1,
+        tasks=tasks,
+        decoders=["tesseract-long-beam"],
+        max_shots=100,  # Reduced max_shots for testing
+        custom_decoders=make_tesseract_sinter_decoders_dict()
+    )
+
+    assert len(all_results) == len(tasks)
+    expected_distances = [3,5,7]
+    for i, results in enumerate(all_results):
+        assert results.json_metadata['d'] == expected_distances[i]
 
 
 if __name__ == "__main__":
