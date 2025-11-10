@@ -30,6 +30,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+# Declare default workflow permissions as read only.
+permissions: read-all
+
 jobs:
   clang-format-check:
     name: Clang code formatting
@@ -37,7 +40,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
 
     - name: Install clang-format
       run: |
@@ -59,10 +62,10 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
 
     - name: Set up Bazel
-      uses: bazel-contrib/setup-bazel@0.14.0
+      uses: bazel-contrib/setup-bazel@e8776f58fb6a6e9055cbaf1b38c52ccc5247e9c4 # 0.14.0
       with:
         bazelisk-cache: true
         disk-cache: ${{ github.workflow }}
