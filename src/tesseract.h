@@ -52,7 +52,8 @@ class Node {
   double cost;
   // The number of activated detectors (dets for short) at this node
   size_t num_dets;
-  std::vector<size_t> errors;
+  size_t depth;
+  int64_t error_chain_idx = -1;
 
   bool operator>(const Node& other) const;
   std::string str();
@@ -111,10 +112,11 @@ struct TesseractDecoder {
   std::vector<std::vector<int>> edets;
   size_t num_errors;
   std::vector<ErrorCost> error_costs;
+  std::vector<common::ErrorChainNode> error_chain_arena;
 
   void initialize_structures(size_t num_detectors);
   double get_detcost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const;
-  void flip_detectors_and_block_errors(size_t detector_order, const std::vector<size_t>& errors,
+  void flip_detectors_and_block_errors(size_t detector_order, int64_t error_chain_idx,
                                        boost::dynamic_bitset<>& detectors,
                                        std::vector<DetectorCostTuple>& detector_cost_tuples) const;
 };
