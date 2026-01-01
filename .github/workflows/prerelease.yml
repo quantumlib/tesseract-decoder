@@ -61,7 +61,7 @@ jobs:
         path: version
 
     - name: Set up Bazel
-      uses: bazel-contrib/setup-bazel@e8776f58fb6a6e9055cbaf1b38c52ccc5247e9c4 # 0.14.0
+      uses: bazel-contrib/setup-bazel@43d7d5ceab59a307da44fc7585faa2a2fff4f88d # 0.16.0
       with:
         bazelisk-cache: true
         disk-cache: ${{ github.workflow }}
