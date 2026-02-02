@@ -29,20 +29,9 @@ on:
     types: [opened, synchronize]
     branches:
       - main
-      - master
-
-  # Support merge queues.
-  merge_group:
-    types:
-      - checks_requested
 
   # Allow manual invocation.
   workflow_dispatch:
-    inputs:
-      debug:
-        description: 'Run with debugging options'
-        type: boolean
-        default: true
 
 concurrency:
   # Cancel any previously-started but still active runs on the same branch.
@@ -60,10 +49,10 @@ jobs:
     permissions:
       security-events: write
       id-token: write
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - name: Check out a copy of the git repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
 
@@ -79,25 +68,16 @@ jobs:
 
       - name: Upload results to code-scanning dashboard
         # yamllint disable rule:line-length
-        uses: github/codeql-action/upload-sarif@51f77329afa6477de8c49fc9c7046c15b9a4e79d # v3.29.5
+        uses: github/codeql-action/upload-sarif@25a224b8085c21d4d61b7fc051468805fc3ac490 # codeql-bundle-v2.24.0
         with:
           sarif_file: scorecard-results.sarif
-
-      - if: github.event.inputs.debug == true
-        name: Upload results as artifacts to the workflow Summary page
-        # yamllint disable rule:line-length
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: Scorecard SARIF file
-          path: scorecard-results.sarif
-          retention-days: 5
 
   # Scorecard currently (ver. 2.4.x) doesn't allow submissions from jobs having
   # steps that use "run:". To print to the summary, we need to use another job.
   write-summary:
     name: Scorecard results
     needs: run-scorecard
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-slim
     timeout-minutes: 5
     steps:
       - name: Write the Scorecard report page link to the workflow summary
