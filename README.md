@@ -320,8 +320,11 @@ tesseract_config = tesseract.TesseractConfig(
     pqlimit=1_000_000,
     det_beam=20,
     beam_climbing=True,
-    num_det_orders=21,
-    det_order=tesseract_decoder.utils.DetOrder.DetIndex,
+    det_orders=tesseract_decoder.utils.build_det_orders(
+        dem=dem,
+        num_det_orders=21,
+        method=tesseract_decoder.utils.DetOrder.DetIndex,
+    ),
     no_revisit_dets=True,
 )
 ```
@@ -333,8 +336,11 @@ tesseract_config = tesseract.TesseractConfig(
     pqlimit=200_000,
     det_beam=15,
     beam_climbing=True,
-    num_det_orders=16,
-    det_order=tesseract_decoder.utils.DetOrder.DetIndex,
+    det_orders=tesseract_decoder.utils.build_det_orders(
+        dem=dem,
+        num_det_orders=16,
+        method=tesseract_decoder.utils.DetOrder.DetIndex,
+    ),
     no_revisit_dets=True,
 )
 ```
