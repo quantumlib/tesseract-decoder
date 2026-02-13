@@ -1,2 +1,5 @@
 common --enable_bzlmod --enable_workspace
 build --cxxopt='-std=c++20'
+build --copt=-ffunction-sections
+build --copt=-fdata-sections
+build --linkopt=-Wl,--gc-sections
