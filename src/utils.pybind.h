@@ -19,6 +19,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include "stim_utils.pybind.h"
 #include "utils.h"
 
 namespace py = pybind11;

@@ -26,7 +26,7 @@ TEST(common, ErrorsStructFromDemInstruction) {
   EXPECT_EQ(ES.symptom.observables, std::vector<int>{0});
 }
 
-TEST(common, DemFromCountsRejectsZeroProbabilityErrors) {
+TEST(common, DemFromCountsHandlesZeroProbabilityErrors) {
   stim::DetectorErrorModel dem(R"DEM(
         error(0.1) D0
         error(0) D1
@@ -38,20 +38,16 @@ TEST(common, DemFromCountsRejectsZeroProbabilityErrors) {
 
   std::vector<size_t> counts{1, 7, 4};
   size_t num_shots = 10;
-  EXPECT_THROW({ common::dem_from_counts(dem, counts, num_shots); }, std::invalid_argument);
-
-  stim::DetectorErrorModel cleaned = common::remove_zero_probability_errors(dem);
-  stim::DetectorErrorModel out_dem =
-      common::dem_from_counts(cleaned, std::vector<size_t>{1, 4}, num_shots);
+  stim::DetectorErrorModel out_dem = common::dem_from_counts(dem, counts, num_shots);
 
   auto flat = out_dem.flattened();
-  ASSERT_EQ(out_dem.count_errors(), 2);
-  ASSERT_GE(flat.instructions.size(), 2);
+  ASSERT_EQ(out_dem.count_errors(), 3);
+  ASSERT_GE(flat.instructions.size(), 3);
 
   EXPECT_EQ(flat.instructions[0].type, stim::DemInstructionType::DEM_ERROR);
   EXPECT_NEAR(flat.instructions[0].arg_data[0], 0.1, 1e-9);
   ASSERT_EQ(flat.instructions[1].type, stim::DemInstructionType::DEM_ERROR);
-  EXPECT_NEAR(flat.instructions[1].arg_data[0], 0.4, 1e-9);
+  EXPECT_NEAR(flat.instructions[1].arg_data[0], 0.7, 1e-9);
 }
 
 TEST(common, DemFromCountsSimpleTwoErrors) {
@@ -86,9 +82,11 @@ TEST(common, RemoveZeroProbabilityErrors) {
         detector(0, 0, 0) D2
       )DEM");
 
-  stim::DetectorErrorModel cleaned = common::remove_zero_probability_errors(dem);
+  std::vector<size_t> mapping{0, 1, 2};
+  stim::DetectorErrorModel cleaned = common::remove_zero_probability_errors(dem, mapping);
 
   EXPECT_EQ(cleaned.count_errors(), 2);
+  EXPECT_EQ(mapping, (std::vector<size_t>{0, 2}));
   auto flat = cleaned.flattened();
   ASSERT_EQ(flat.instructions[0].type, stim::DemInstructionType::DEM_ERROR);
   EXPECT_NEAR(flat.instructions[0].arg_data[0], 0.1, 1e-9);
@@ -153,30 +151,38 @@ TEST(CommonTest, merge_indistinguishable_errors_two_errors) {
   double p2 = 0.2;
   double expected_merged_p = p1 * (1 - p2) + p2 * (1 - p1);
   auto dem1 = create_dem_with_two_errors(p1, p2);
-  auto merged_dem1 = common::merge_indistinguishable_errors(dem1);
+  std::vector<size_t> mapping1{0, 1};
+  auto merged_dem1 = common::merge_indistinguishable_errors(dem1, mapping1);
   ASSERT_NEAR(get_merged_probability(merged_dem1), expected_merged_p, 1e-9);
+  EXPECT_EQ(mapping1, std::vector<size_t>{0});
 
   // Case 2: One low, one high probability.
   p1 = 0.1;
   p2 = 0.8;
   expected_merged_p = p1 * (1 - p2) + p2 * (1 - p1);
   auto dem2 = create_dem_with_two_errors(p1, p2);
-  auto merged_dem2 = common::merge_indistinguishable_errors(dem2);
+  std::vector<size_t> mapping2{0, 1};
+  auto merged_dem2 = common::merge_indistinguishable_errors(dem2, mapping2);
   ASSERT_NEAR(get_merged_probability(merged_dem2), expected_merged_p, 1e-9);
+  EXPECT_EQ(mapping2, std::vector<size_t>{0});
 
   // Case 3: One high, one low probability.
   p1 = 0.8;
   p2 = 0.1;
   expected_merged_p = p1 * (1 - p2) + p2 * (1 - p1);
   auto dem3 = create_dem_with_two_errors(p1, p2);
-  auto merged_dem3 = common::merge_indistinguishable_errors(dem3);
+  std::vector<size_t> mapping3{0, 1};
+  auto merged_dem3 = common::merge_indistinguishable_errors(dem3, mapping3);
   ASSERT_NEAR(get_merged_probability(merged_dem3), expected_merged_p, 1e-9);
+  EXPECT_EQ(mapping3, std::vector<size_t>{0});
 
   // Case 4: Both probabilities are high.
   p1 = 0.8;
   p2 = 0.9;
   expected_merged_p = p1 * (1 - p2) + p2 * (1 - p1);
   auto dem4 = create_dem_with_two_errors(p1, p2);
-  auto merged_dem4 = common::merge_indistinguishable_errors(dem4);
+  std::vector<size_t> mapping4{0, 1};
+  auto merged_dem4 = common::merge_indistinguishable_errors(dem4, mapping4);
   ASSERT_NEAR(get_merged_probability(merged_dem4), expected_merged_p, 1e-9);
+  EXPECT_EQ(mapping4, std::vector<size_t>{0});
 }

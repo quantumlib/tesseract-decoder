@@ -106,10 +106,22 @@ double TesseractDecoder::get_detcost(
 }
 
 TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
+  original_dem = config.dem.flattened();
+  original_error_indices.resize(original_dem.count_errors());
+  std::iota(original_error_indices.begin(), original_error_indices.end(), 0);
+
   if (config.merge_errors) {
-    config.dem = common::merge_indistinguishable_errors(config.dem);
+    config.dem = common::merge_indistinguishable_errors(original_dem, original_error_indices);
+  } else {
+    config.dem = original_dem;
   }
-  config.dem = common::remove_zero_probability_errors(config.dem);
+  config.dem = common::remove_zero_probability_errors(config.dem, original_error_indices);
+
+  // Build inverse map
+  original_to_internal.assign(original_dem.count_errors(), std::numeric_limits<size_t>::max());
+  for (size_t i = 0; i < original_error_indices.size(); ++i) {
+    original_to_internal[original_error_indices[i]] = i;
+  }
 
   if (config.det_orders.empty()) {
     config.det_orders.emplace_back(config.dem.count_detectors());
@@ -238,14 +250,16 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections)
       }
     }
   }
+
   predicted_errors_buffer = best_errors;
   low_confidence_flag = best_cost == std::numeric_limits<double>::max();
 }
 
 void TesseractDecoder::flip_detectors_and_block_errors(
-    size_t detector_order, const std::vector<size_t>& errors, boost::dynamic_bitset<>& detectors,
+    size_t detector_order, const std::vector<size_t>& errors_internal,
+    boost::dynamic_bitset<>& detectors,
     std::vector<DetectorCostTuple>& detector_cost_tuples) const {
-  for (size_t ei : errors) {
+  for (size_t ei : errors_internal) {
     size_t min_detector = std::numeric_limits<size_t>::max();
     for (size_t d = 0; d < num_detectors; ++d) {
       if (detectors[config.det_orders[detector_order][d]]) {
@@ -256,7 +270,7 @@ void TesseractDecoder::flip_detectors_and_block_errors(
 
     for (int oei : d2e[min_detector]) {
       detector_cost_tuples[oei].error_blocked = 1;
-      if (oei == ei) break;
+      if (static_cast<size_t>(oei) == ei) break;
     }
 
     for (int d : edets[ei]) {
@@ -475,9 +489,8 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
   low_confidence_flag = true;
 }
 
-double TesseractDecoder::cost_from_errors(const std::vector<size_t>& predicted_errors) {
+double TesseractDecoder::cost_from_errors(const std::vector<size_t>& predicted_errors) const {
   double total_cost = 0;
-  // Iterate over all errors and compute the cost
   for (size_t ei : predicted_errors) {
     total_cost += errors[ei].likelihood_cost;
   }
@@ -485,13 +498,9 @@ double TesseractDecoder::cost_from_errors(const std::vector<size_t>& predicted_e
 }
 
 std::vector<int> TesseractDecoder::get_flipped_observables(
-    const std::vector<size_t>& predicted_errors) {
+    const std::vector<size_t>& predicted_errors) const {
   std::unordered_set<int> flipped_observables_set;
 
-  // Iterate over all errors and compute the mask.
-  // We use a set to perform an XOR-like sum.
-  // If an observable is already in the set, we remove it (XORing with itself).
-  // If it's not, we add it.
   for (size_t ei : predicted_errors) {
     for (int obs_index : errors[ei].symptom.observables) {
       if (flipped_observables_set.count(obs_index)) {

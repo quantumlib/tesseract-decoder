@@ -75,7 +75,7 @@ struct TesseractDecoder {
   explicit TesseractDecoder(TesseractConfig config);
 
   // Clears the predicted_errors_buffer and fills it with the decoded errors for
-  // these detection events.
+  // these detection events. Indices are internal to the decoder's errors vector.
   void decode_to_errors(const std::vector<uint64_t>& detections);
 
   // Clears the predicted_errors_buffer and fills it with the decoded errors for
@@ -84,32 +84,53 @@ struct TesseractDecoder {
                         size_t detector_beam);
 
   // Returns the bitwise XOR of all the observables bitmasks of all errors in
-  // the predicted errors buffer.
-  std::vector<int> get_flipped_observables(const std::vector<size_t>& predicted_errors);
+  // the provided buffer (interpreted as internal indices).
+  std::vector<int> get_flipped_observables(const std::vector<size_t>& predicted_errors) const;
 
   // Returns the sum of the likelihood costs (minus-log-likelihood-ratios) of
-  // all errors in the predicted errors buffer.
-  double cost_from_errors(const std::vector<size_t>& predicted_errors);
+  // all errors in the provided buffer (interpreted as internal indices).
+  double cost_from_errors(const std::vector<size_t>& predicted_errors) const;
 
   std::vector<int> decode(const std::vector<uint64_t>& detections);
   void decode_shots(std::vector<stim::SparseShot>& shots,
                     std::vector<std::vector<int>>& obs_predicted);
 
   bool low_confidence_flag = false;
+  // A buffer containing the predicted errors from the most recent decode
+  // operation. Indices correspond to the internal optimized 'errors' vector.
   std::vector<size_t> predicted_errors_buffer;
+  // The list of errors used internally by the decoder (merged/filtered).
+  // These correspond to the indices in predicted_errors_buffer.
   std::vector<common::Error> errors;
   size_t num_observables;
   size_t num_detectors;
+  size_t num_errors;
 
   std::vector<std::vector<int>>& get_eneighbors() {
     return eneighbors;
+  }
+
+  // Maps internal optimized error index to the original flattened DEM's error index.
+  std::vector<size_t> original_error_indices;
+  // Maps original error index to internal optimized error index.
+  std::vector<size_t> original_to_internal;
+  stim::DetectorErrorModel original_dem;
+
+  // Returns the index of this error in the original flattened DEM.
+  size_t get_original_error_index(size_t internal_index) const {
+    return original_error_indices.at(internal_index);
+  }
+
+  // Returns the internal index of this error if it is the representative,
+  // or size_t::max() if it was merged or removed.
+  size_t get_internal_error_index(size_t original_index) const {
+    return original_to_internal.at(original_index);
   }
 
  private:
   std::vector<std::vector<int>> d2e;
   std::vector<std::vector<int>> eneighbors;
   std::vector<std::vector<int>> edets;
-  size_t num_errors;
   std::vector<ErrorCost> error_costs;
 
   void initialize_structures(size_t num_detectors);

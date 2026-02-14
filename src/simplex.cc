@@ -34,10 +34,22 @@ std::string SimplexConfig::str() {
 }
 
 SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
+  original_dem = config.dem.flattened();
+  original_error_indices.resize(original_dem.count_errors());
+  std::iota(original_error_indices.begin(), original_error_indices.end(), 0);
+
   if (config.merge_errors) {
-    config.dem = common::merge_indistinguishable_errors(config.dem);
+    config.dem = common::merge_indistinguishable_errors(original_dem, original_error_indices);
+  } else {
+    config.dem = original_dem;
   }
-  config.dem = common::remove_zero_probability_errors(config.dem);
+  config.dem = common::remove_zero_probability_errors(config.dem, original_error_indices);
+
+  // Build inverse map
+  original_to_internal.assign(original_dem.count_errors(), std::numeric_limits<size_t>::max());
+  for (size_t i = 0; i < original_error_indices.size(); ++i) {
+    original_to_internal[original_error_indices[i]] = i;
+  }
 
   std::vector<double> detector_t_coords(config.dem.count_detectors());
   for (const stim::DemInstruction& instruction : config.dem.flattened().instructions) {
@@ -322,13 +334,14 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
     }
   }
 
-  // Extract the used errors
+  // Extract the used errors (internal indices)
   const HighsSolution& solution = highs->getSolution();
   for (size_t ei = 0; ei < errors.size(); ++ei) {
     if (std::round(solution.col_value[ei]) == 1) {
       predicted_errors_buffer.push_back(ei);
     }
   }
+
   // Reset the constraints for the detection events
   for (size_t d : detections) {
     model->lp_.row_lower_[d] = 0;
@@ -336,27 +349,20 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
   }
 }
 
-double SimplexDecoder::cost_from_errors(const std::vector<size_t>& predicted_errors) {
+double SimplexDecoder::cost_from_errors(const std::vector<size_t>& predicted_errors) const {
   double total_cost = 0;
-  // Iterate over all errors and add to the mask
-  for (size_t ei : predicted_errors_buffer) {
+  for (size_t ei : predicted_errors) {
     total_cost += errors[ei].likelihood_cost;
   }
   return total_cost;
 }
 
 std::vector<int> SimplexDecoder::get_flipped_observables(
-    const std::vector<size_t>& predicted_errors) {
+    const std::vector<size_t>& predicted_errors) const {
   std::unordered_set<int> flipped_observables_set;
 
-  // Iterate over all predicted errors
   for (size_t ei : predicted_errors) {
-    // Iterate over the observables associated with each error
     for (int obs_index : errors[ei].symptom.observables) {
-      // Perform an XOR-like sum using a set.
-      // If the observable is already in the set, it means we've seen it an
-      // even number of times, so we remove it.
-      // If it's not, we add it, which means we've seen it an odd number of times.
       if (flipped_observables_set.count(obs_index)) {
         flipped_observables_set.erase(obs_index);
       } else {

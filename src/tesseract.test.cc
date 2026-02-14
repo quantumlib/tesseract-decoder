@@ -103,13 +103,15 @@ TEST(tesseract, Tesseract_simplex_test) {
             /*ignore_decomposition_failures=*/false,
             /*block_decomposition_from_introducing_remnant_edges=*/false);
         for (bool merge_errors : {true, false}) {
-          stim::DetectorErrorModel new_dem = dem;
+          stim::DetectorErrorModel test_dem = dem;
           if (merge_errors) {
-            new_dem = common::merge_indistinguishable_errors(dem);
+            std::vector<size_t> mapping(dem.count_errors());
+            std::iota(mapping.begin(), mapping.end(), 0);
+            test_dem = common::merge_indistinguishable_errors(dem, mapping);
           }
           std::vector<stim::SparseShot> shots;
           sample_shots(test_data_seed, circuit, num_shots, shots);
-          ASSERT_TRUE(simplex_test_compare(new_dem, shots));
+          ASSERT_TRUE(simplex_test_compare(test_dem, shots));
         }
       }
     }
@@ -196,7 +198,7 @@ TEST(tesseract, Tesseract_simplex_DEM_exhaustive_test) {
   }
 }
 
-TEST(tesseract, DecodersStripZeroProbabilityErrors) {
+TEST(tesseract, DecodersMapToOriginalIndices) {
   stim::DetectorErrorModel dem(R"DEM(
         error(0.1) D0
         error(0) D1
@@ -208,13 +210,22 @@ TEST(tesseract, DecodersStripZeroProbabilityErrors) {
 
   TesseractConfig t_config{dem};
   TesseractDecoder t_dec(t_config);
-  EXPECT_EQ(t_dec.config.dem.count_errors(), 2);
+  // Internal DEM count should be 2 (zero-prob error removed).
   EXPECT_EQ(t_dec.errors.size(), 2);
+
+  // D2 is originally index 2.
+  t_dec.decode_to_errors({2});
+  // In C++, predicted_errors_buffer contains the internal index (1, since index 1 was removed).
+  ASSERT_EQ(t_dec.predicted_errors_buffer.size(), 1);
+  EXPECT_EQ(t_dec.get_original_error_index(t_dec.predicted_errors_buffer[0]), 2);
 
   SimplexConfig s_config{dem};
   SimplexDecoder s_dec(s_config);
-  EXPECT_EQ(s_dec.config.dem.count_errors(), 2);
   EXPECT_EQ(s_dec.errors.size(), 2);
+
+  s_dec.decode_to_errors({2});
+  ASSERT_EQ(s_dec.predicted_errors_buffer.size(), 1);
+  EXPECT_EQ(s_dec.get_original_error_index(s_dec.predicted_errors_buffer[0]), 2);
 }
 
 TEST(tesseract, EneighborsCorrectness) {

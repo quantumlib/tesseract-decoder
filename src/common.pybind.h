@@ -142,8 +142,10 @@ void add_common_module(py::module& root) {
       "merge_indistinguishable_errors",
       [](py::object dem) {
         auto input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
-        auto res = common::merge_indistinguishable_errors(input_dem);
-        return make_py_object(res, "DetectorErrorModel");
+        std::vector<size_t> mapping(input_dem.count_errors());
+        std::iota(mapping.begin(), mapping.end(), 0);
+        auto res = common::merge_indistinguishable_errors(input_dem, mapping);
+        return py::make_tuple(make_py_object(res, "DetectorErrorModel"), mapping);
       },
       py::arg("dem"), R"pbdoc(
         Merges identical errors in a `stim.DetectorErrorModel`.
@@ -160,15 +162,19 @@ void add_common_module(py::module& root) {
 
         Returns
         -------
-        stim.DetectorErrorModel
-            A new `DetectorErrorModel` with identical errors merged.
+        (stim.DetectorErrorModel, list[int])
+            A tuple containing:
+            1. A new `DetectorErrorModel` with identical errors merged.
+            2. A list mapping each new error index to its original index in the input DEM.
       )pbdoc");
   m.def(
       "remove_zero_probability_errors",
       [](py::object dem) {
-        return make_py_object(
-            common::remove_zero_probability_errors(parse_py_object<stim::DetectorErrorModel>(dem)),
-            "DetectorErrorModel");
+        auto input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
+        std::vector<size_t> mapping(input_dem.count_errors());
+        std::iota(mapping.begin(), mapping.end(), 0);
+        auto res = common::remove_zero_probability_errors(input_dem, mapping);
+        return py::make_tuple(make_py_object(res, "DetectorErrorModel"), mapping);
       },
       py::arg("dem"), R"pbdoc(
         Removes errors with a probability of 0 from a `stim.DetectorErrorModel`.
@@ -180,8 +186,10 @@ void add_common_module(py::module& root) {
 
         Returns
         -------
-        stim.DetectorErrorModel
-            A new `DetectorErrorModel` with zero-probability errors removed.
+        (stim.DetectorErrorModel, list[int])
+            A tuple containing:
+            1. A new `DetectorErrorModel` with zero-probability errors removed.
+            2. A list mapping each new error index to its original index in the input DEM.
       )pbdoc");
   m.def(
       "dem_from_counts",

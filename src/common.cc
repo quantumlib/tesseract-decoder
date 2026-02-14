@@ -117,11 +117,14 @@ double common::merge_weights(double a, double b) {
 }
 
 stim::DetectorErrorModel common::merge_indistinguishable_errors(
-    const stim::DetectorErrorModel& dem) {
+    const stim::DetectorErrorModel& dem, std::vector<size_t>& error_index_mapping) {
   stim::DetectorErrorModel out_dem;
+  std::vector<size_t> new_mapping;
 
-  // Map to track the distinct symptoms
-  std::unordered_map<Symptom, Error, Symptom::hash> errors_by_symptom;
+  std::vector<DemErrorRef> merged_errors;
+  std::unordered_map<Symptom, size_t, Symptom::hash> symptom_to_merged_idx;
+
+  size_t current_error_idx = 0;
   for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_ERROR: {
@@ -130,12 +133,15 @@ stim::DetectorErrorModel common::merge_indistinguishable_errors(
           // TODO: For errors without detectors, the observables should be included if p>0.5
           std::cout << "Warning: the circuit has errors that do not flip any detectors \n";
         }
-
-        if (errors_by_symptom.find(error.symptom) != errors_by_symptom.end()) {
-          error.likelihood_cost = merge_weights(error.likelihood_cost,
-                                                errors_by_symptom[error.symptom].likelihood_cost);
+        auto it = symptom_to_merged_idx.find(error.symptom);
+        if (it == symptom_to_merged_idx.end()) {
+          symptom_to_merged_idx[error.symptom] = merged_errors.size();
+          merged_errors.emplace_back(DemErrorRef{error, error_index_mapping.at(current_error_idx)});
+        } else {
+          merged_errors[it->second].error.likelihood_cost =
+              merge_weights(merged_errors[it->second].error.likelihood_cost, error.likelihood_cost);
         }
-        errors_by_symptom[error.symptom] = error;
+        current_error_idx++;
         break;
       }
       case stim::DemInstructionType::DEM_DETECTOR: {
@@ -150,23 +156,30 @@ stim::DetectorErrorModel common::merge_indistinguishable_errors(
         throw std::invalid_argument("Unrecognized instruction type: " + instruction.str());
     }
   }
-  for (const auto& it : errors_by_symptom) {
-    out_dem.append_error_instruction(it.second.get_probability(),
-                                     it.second.symptom.as_dem_instruction_targets(),
-                                     /*tag=*/"");
+
+  for (const auto& me : merged_errors) {
+    out_dem.append_error_instruction(me.error.get_probability(),
+                                     me.error.symptom.as_dem_instruction_targets(), "");
+    new_mapping.push_back(me.index);
   }
+
+  error_index_mapping = std::move(new_mapping);
   return out_dem;
 }
 
 stim::DetectorErrorModel common::remove_zero_probability_errors(
-    const stim::DetectorErrorModel& dem) {
+    const stim::DetectorErrorModel& dem, std::vector<size_t>& error_index_mapping) {
   stim::DetectorErrorModel out_dem;
+  std::vector<size_t> new_mapping;
+  size_t current_error_idx = 0;
   for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_ERROR:
         if (instruction.arg_data[0] > 0) {
           out_dem.append_dem_instruction(instruction);
+          new_mapping.push_back(error_index_mapping.at(current_error_idx));
         }
+        current_error_idx++;
         break;
       case stim::DemInstructionType::DEM_DETECTOR:
         out_dem.append_dem_instruction(instruction);
@@ -178,6 +191,7 @@ stim::DetectorErrorModel common::remove_zero_probability_errors(
         throw std::invalid_argument("Unrecognized instruction type: " + instruction.str());
     }
   }
+  error_index_mapping = std::move(new_mapping);
   return out_dem;
 }
 
@@ -190,21 +204,13 @@ stim::DetectorErrorModel common::dem_from_counts(stim::DetectorErrorModel& orig_
         "original DEM.");
   }
 
-  for (const stim::DemInstruction& instruction : orig_dem.flattened().instructions) {
-    if (instruction.type == stim::DemInstructionType::DEM_ERROR && instruction.arg_data[0] == 0) {
-      throw std::invalid_argument(
-          "dem_from_counts requires DEMs without zero-probability errors. Use"
-          " remove_zero_probability_errors first.");
-    }
-  }
-
   stim::DetectorErrorModel out_dem;
   size_t ei = 0;
   for (const stim::DemInstruction& instruction : orig_dem.flattened().instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_ERROR: {
         double est_probability = double(error_counts.at(ei)) / double(num_shots);
-        out_dem.append_error_instruction(est_probability, instruction.target_data, /*tag=*/"");
+        out_dem.append_error_instruction(est_probability, instruction.target_data, instruction.tag);
         ++ei;
         break;
       }
