@@ -1,12 +1,29 @@
 # Agent Instructions
 
-- Use the **CMake** build system when interacting with this repository. Humans use Bazel.
-- A bug in some LLM coding environments makes Bazel difficult to use, so agents should rely on CMake.
+- Use the Bazel build system when interacting with this repository.
+- The CMake build system is available to help users who need it.
 - Keep both the CMake and Bazel builds working at all times.
+
+## Building with Bazel
+
+To build all code with bazel:
+```bash
+bazel build src:all
+```
+To build the Tesseract and Simplex main binaries:
+```bash
+bazel build src:tesseract src:simplex
+```
+
+## Running Tests with Bazel
+
+```bash
+bazel test src:all
+```
 
 ## Building with CMake
 
-When building with CMake, use parallel flags to speed up the process.
+In case you need to, when building with CMake, use parallel flags to speed up the process.
 
 - When using `cmake --build`, add the `--parallel` flag.
 - When using `make`, add the `-j` flag (e.g., `make -j$(nproc)`).
