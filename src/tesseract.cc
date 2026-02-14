@@ -475,7 +475,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
   low_confidence_flag = true;
 }
 
-double TesseractDecoder::cost_from_errors(const std::vector<size_t>& predicted_errors) {
+double TesseractDecoder::cost_from_errors(const std::vector<size_t>& predicted_errors) const {
   double total_cost = 0;
   // Iterate over all errors and compute the cost
   for (size_t ei : predicted_errors) {
@@ -485,7 +485,7 @@ double TesseractDecoder::cost_from_errors(const std::vector<size_t>& predicted_e
 }
 
 std::vector<int> TesseractDecoder::get_flipped_observables(
-    const std::vector<size_t>& predicted_errors) {
+    const std::vector<size_t>& predicted_errors) const {
   std::unordered_set<int> flipped_observables_set;
 
   // Iterate over all errors and compute the mask.
