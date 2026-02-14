@@ -71,13 +71,18 @@ struct DemErrorRef {
 
 // Makes a new (flattened) dem where identical error mechanisms have been
 // merged.
-stim::DetectorErrorModel merge_indistinguishable_errors(const stim::DetectorErrorModel& dem,
-                                                        std::vector<size_t>& error_index_mapping);
+// original_indices: Mapping from indices in the resulting DEM back to indices in the
+// original flattened DEM.
+stim::DetectorErrorModel merge_indistinguishable_errors(
+    const stim::DetectorErrorModel& dem, std::vector<size_t>& original_indices);
 
 // Returns a copy of the given error model with any zero-probability DEM_ERROR
 // instructions removed.
-stim::DetectorErrorModel remove_zero_probability_errors(const stim::DetectorErrorModel& dem,
-                                                        std::vector<size_t>& error_index_mapping);
+// original_indices: Mapping from indices in the resulting DEM back to indices in the
+// original flattened DEM.
+stim::DetectorErrorModel remove_zero_probability_errors(
+    const stim::DetectorErrorModel& dem, std::vector<size_t>& original_indices);
+
 
 // Makes a new dem where the probabilities of errors are estimated from the
 // fraction of shots they were used in.

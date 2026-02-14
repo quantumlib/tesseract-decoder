@@ -117,7 +117,7 @@ double common::merge_weights(double a, double b) {
 }
 
 stim::DetectorErrorModel common::merge_indistinguishable_errors(
-    const stim::DetectorErrorModel& dem, std::vector<size_t>& error_index_mapping) {
+    const stim::DetectorErrorModel& dem, std::vector<size_t>& original_indices) {
   stim::DetectorErrorModel out_dem;
   std::vector<size_t> new_mapping;
 
@@ -136,10 +136,10 @@ stim::DetectorErrorModel common::merge_indistinguishable_errors(
         auto it = symptom_to_merged_idx.find(error.symptom);
         if (it == symptom_to_merged_idx.end()) {
           symptom_to_merged_idx[error.symptom] = merged_errors.size();
-          merged_errors.emplace_back(DemErrorRef{error, error_index_mapping.at(current_error_idx)});
+          merged_errors.emplace_back(DemErrorRef{error, original_indices.at(current_error_idx)});
         } else {
-          merged_errors[it->second].error.likelihood_cost =
-              merge_weights(merged_errors[it->second].error.likelihood_cost, error.likelihood_cost);
+          merged_errors[it->second].error.likelihood_cost = merge_weights(
+              merged_errors[it->second].error.likelihood_cost, error.likelihood_cost);
         }
         current_error_idx++;
         break;
@@ -163,12 +163,13 @@ stim::DetectorErrorModel common::merge_indistinguishable_errors(
     new_mapping.push_back(me.index);
   }
 
-  error_index_mapping = std::move(new_mapping);
+  original_indices = std::move(new_mapping);
   return out_dem;
 }
 
+
 stim::DetectorErrorModel common::remove_zero_probability_errors(
-    const stim::DetectorErrorModel& dem, std::vector<size_t>& error_index_mapping) {
+    const stim::DetectorErrorModel& dem, std::vector<size_t>& original_indices) {
   stim::DetectorErrorModel out_dem;
   std::vector<size_t> new_mapping;
   size_t current_error_idx = 0;
@@ -177,7 +178,7 @@ stim::DetectorErrorModel common::remove_zero_probability_errors(
       case stim::DemInstructionType::DEM_ERROR:
         if (instruction.arg_data[0] > 0) {
           out_dem.append_dem_instruction(instruction);
-          new_mapping.push_back(error_index_mapping.at(current_error_idx));
+          new_mapping.push_back(original_indices.at(current_error_idx));
         }
         current_error_idx++;
         break;
@@ -191,7 +192,7 @@ stim::DetectorErrorModel common::remove_zero_probability_errors(
         throw std::invalid_argument("Unrecognized instruction type: " + instruction.str());
     }
   }
-  error_index_mapping = std::move(new_mapping);
+  original_indices = std::move(new_mapping);
   return out_dem;
 }
 

@@ -142,10 +142,10 @@ void add_common_module(py::module& root) {
       "merge_indistinguishable_errors",
       [](py::object dem) {
         auto input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
-        std::vector<size_t> mapping(input_dem.count_errors());
-        std::iota(mapping.begin(), mapping.end(), 0);
-        auto res = common::merge_indistinguishable_errors(input_dem, mapping);
-        return py::make_tuple(make_py_object(res, "DetectorErrorModel"), mapping);
+        std::vector<size_t> original_indices(input_dem.count_errors());
+        std::iota(original_indices.begin(), original_indices.end(), 0);
+        auto res = common::merge_indistinguishable_errors(input_dem, original_indices);
+        return py::make_tuple(make_py_object(res, "DetectorErrorModel"), original_indices);
       },
       py::arg("dem"), R"pbdoc(
         Merges identical errors in a `stim.DetectorErrorModel`.
@@ -165,16 +165,16 @@ void add_common_module(py::module& root) {
         (stim.DetectorErrorModel, list[int])
             A tuple containing:
             1. A new `DetectorErrorModel` with identical errors merged.
-            2. A list mapping each new error index to its original index in the input DEM.
+            2. A list mapping each new error index back to its index in the input DEM.
       )pbdoc");
   m.def(
       "remove_zero_probability_errors",
       [](py::object dem) {
         auto input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
-        std::vector<size_t> mapping(input_dem.count_errors());
-        std::iota(mapping.begin(), mapping.end(), 0);
-        auto res = common::remove_zero_probability_errors(input_dem, mapping);
-        return py::make_tuple(make_py_object(res, "DetectorErrorModel"), mapping);
+        std::vector<size_t> original_indices(input_dem.count_errors());
+        std::iota(original_indices.begin(), original_indices.end(), 0);
+        auto res = common::remove_zero_probability_errors(input_dem, original_indices);
+        return py::make_tuple(make_py_object(res, "DetectorErrorModel"), original_indices);
       },
       py::arg("dem"), R"pbdoc(
         Removes errors with a probability of 0 from a `stim.DetectorErrorModel`.
@@ -189,7 +189,7 @@ void add_common_module(py::module& root) {
         (stim.DetectorErrorModel, list[int])
             A tuple containing:
             1. A new `DetectorErrorModel` with zero-probability errors removed.
-            2. A list mapping each new error index to its original index in the input DEM.
+            2. A list mapping each new error index back to its index in the input DEM.
       )pbdoc");
   m.def(
       "dem_from_counts",
