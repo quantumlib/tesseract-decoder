@@ -336,17 +336,17 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
   }
 }
 
-double SimplexDecoder::cost_from_errors(const std::vector<size_t>& predicted_errors) {
+double SimplexDecoder::cost_from_errors(const std::vector<size_t>& predicted_errors) const {
   double total_cost = 0;
   // Iterate over all errors and add to the mask
-  for (size_t ei : predicted_errors_buffer) {
+  for (size_t ei : predicted_errors) {
     total_cost += errors[ei].likelihood_cost;
   }
   return total_cost;
 }
 
 std::vector<int> SimplexDecoder::get_flipped_observables(
-    const std::vector<size_t>& predicted_errors) {
+    const std::vector<size_t>& predicted_errors) const {
   std::unordered_set<int> flipped_observables_set;
 
   // Iterate over all predicted errors
