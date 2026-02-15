@@ -219,7 +219,6 @@ TEST(tesseract, DecodersStripZeroProbabilityErrors) {
   EXPECT_EQ(s_dec.errors.size(), 2);
 }
 
-
 TEST(tesseract, DecoderErrorIndexMapsAreInOriginalDemCoordinates) {
   stim::DetectorErrorModel dem(R"DEM(
         error(0.1) D0

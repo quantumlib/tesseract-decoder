@@ -167,13 +167,13 @@ void add_common_module(py::module& root) {
   m.def(
       "remove_zero_probability_errors",
       [](py::object dem) {
-        return make_py_object(
-            ([&]() {
-              std::vector<size_t> error_index_map;
-              return common::remove_zero_probability_errors(
-                  parse_py_object<stim::DetectorErrorModel>(dem), error_index_map);
-            })(),
-            "DetectorErrorModel");
+        return make_py_object(([&]() {
+                                std::vector<size_t> error_index_map;
+                                return common::remove_zero_probability_errors(
+                                    parse_py_object<stim::DetectorErrorModel>(dem),
+                                    error_index_map);
+                              })(),
+                              "DetectorErrorModel");
       },
       py::arg("dem"), R"pbdoc(
         Removes errors with a probability of 0 from a `stim.DetectorErrorModel`.

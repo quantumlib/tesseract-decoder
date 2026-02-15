@@ -520,7 +520,7 @@ int main(int argc, char* argv[]) {
       if (instruction.type == stim::DemInstructionType::DEM_ERROR) {
         double est_probability = double(counts.at(error_index)) / double(num_usage_dem_shots);
         est_dem.append_error_instruction(est_probability, instruction.target_data,
-                                 std::string(instruction.tag));
+                                         std::string(instruction.tag));
         ++error_index;
       } else {
         est_dem.append_dem_instruction(instruction);

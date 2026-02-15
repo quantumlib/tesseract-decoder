@@ -11,12 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include <limits>
-
 #include "common.h"
 
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -139,8 +138,8 @@ stim::DetectorErrorModel common::merge_indistinguishable_errors(
         auto it = merged_index_by_symptom.find(error.symptom);
         if (it != merged_index_by_symptom.end()) {
           size_t merged_error_index = it->second;
-          merged_errors[merged_error_index].likelihood_cost =
-              merge_weights(error.likelihood_cost, merged_errors[merged_error_index].likelihood_cost);
+          merged_errors[merged_error_index].likelihood_cost = merge_weights(
+              error.likelihood_cost, merged_errors[merged_error_index].likelihood_cost);
           error_index_map.push_back(merged_error_index);
         } else {
           size_t merged_error_index = merged_errors.size();
@@ -163,7 +162,8 @@ stim::DetectorErrorModel common::merge_indistinguishable_errors(
     }
   }
   for (const auto& error : merged_errors) {
-    out_dem.append_error_instruction(error.get_probability(), error.symptom.as_dem_instruction_targets(),
+    out_dem.append_error_instruction(error.get_probability(),
+                                     error.symptom.as_dem_instruction_targets(),
                                      /*tag=*/"");
   }
   return out_dem;

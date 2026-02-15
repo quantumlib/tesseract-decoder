@@ -171,7 +171,6 @@ TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
   }
 }
 
-
 size_t TesseractDecoder::dem_error_index_to_error_index(size_t dem_error_index) const {
   if (dem_error_index >= dem_error_to_error.size()) {
     throw std::out_of_range("invalid error index");

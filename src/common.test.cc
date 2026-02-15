@@ -41,8 +41,7 @@ TEST(common, DemFromCountsRejectsZeroProbabilityErrors) {
   EXPECT_THROW({ common::dem_from_counts(dem, counts, num_shots); }, std::invalid_argument);
 
   std::vector<size_t> error_index_map;
-  stim::DetectorErrorModel cleaned =
-      common::remove_zero_probability_errors(dem, error_index_map);
+  stim::DetectorErrorModel cleaned = common::remove_zero_probability_errors(dem, error_index_map);
   stim::DetectorErrorModel out_dem =
       common::dem_from_counts(cleaned, std::vector<size_t>{1, 4}, num_shots);
 
@@ -89,8 +88,7 @@ TEST(common, RemoveZeroProbabilityErrors) {
       )DEM");
 
   std::vector<size_t> error_index_map;
-  stim::DetectorErrorModel cleaned =
-      common::remove_zero_probability_errors(dem, error_index_map);
+  stim::DetectorErrorModel cleaned = common::remove_zero_probability_errors(dem, error_index_map);
 
   EXPECT_EQ(cleaned.count_errors(), 2);
   auto flat = cleaned.flattened();
