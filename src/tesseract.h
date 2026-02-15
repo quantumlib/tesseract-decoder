@@ -87,7 +87,7 @@ struct TesseractDecoder {
   // the original flattened DEM error indices.
   std::vector<int> get_flipped_observables(const std::vector<size_t>& predicted_errors) const;
 
-  // Returns the sum of likelihood costs of errors indexed by the original
+  // Returns the sum of likelihood costs of the errors in the given array, indexed by the original
   // flattened DEM error indices.
   double cost_from_errors(const std::vector<size_t>& predicted_errors) const;
 
