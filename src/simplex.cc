@@ -11,10 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 #include "simplex.h"
 
 #include <cassert>
+#include <numeric>
 
 #include "Highs.h"
 #include "io/HMPSIO.h"
@@ -34,10 +34,22 @@ std::string SimplexConfig::str() {
 }
 
 SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
+  // Maps original flattened DEM error indices to currently preprocessed indices.
+  std::vector<size_t> dem_error_map(config.dem.flattened().count_errors());
+  std::iota(dem_error_map.begin(), dem_error_map.end(), 0);
+
   if (config.merge_errors) {
-    config.dem = common::merge_indistinguishable_errors(config.dem);
+    std::vector<size_t> merge_map;
+    config.dem = common::merge_indistinguishable_errors(config.dem, merge_map);
+    common::chain_error_maps(dem_error_map, merge_map);
   }
-  config.dem = common::remove_zero_probability_errors(config.dem);
+
+  std::vector<size_t> nonzero_map;
+  config.dem = common::remove_zero_probability_errors(config.dem, nonzero_map);
+  common::chain_error_maps(dem_error_map, nonzero_map);
+
+  dem_error_to_error = std::move(dem_error_map);
+  error_to_dem_error = common::invert_error_map(dem_error_to_error, config.dem.count_errors());
 
   std::vector<double> detector_t_coords(config.dem.count_detectors());
   for (const stim::DemInstruction& instruction : config.dem.flattened().instructions) {
@@ -326,7 +338,7 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
   const HighsSolution& solution = highs->getSolution();
   for (size_t ei = 0; ei < errors.size(); ++ei) {
     if (std::round(solution.col_value[ei]) == 1) {
-      predicted_errors_buffer.push_back(ei);
+      predicted_errors_buffer.push_back(error_to_dem_error[ei]);
     }
   }
   // Reset the constraints for the detection events
@@ -338,9 +350,12 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
 
 double SimplexDecoder::cost_from_errors(const std::vector<size_t>& predicted_errors) const {
   double total_cost = 0;
-  // Iterate over all errors and add to the mask
-  for (size_t ei : predicted_errors) {
-    total_cost += errors[ei].likelihood_cost;
+  for (size_t dem_error_index : predicted_errors) {
+    size_t error_index = dem_error_to_error.at(dem_error_index);
+    if (error_index == std::numeric_limits<size_t>::max()) {
+      throw std::invalid_argument("error index does not map to a retained decoder error");
+    }
+    total_cost += errors[error_index].likelihood_cost;
   }
   return total_cost;
 }
@@ -349,10 +364,16 @@ std::vector<int> SimplexDecoder::get_flipped_observables(
     const std::vector<size_t>& predicted_errors) const {
   std::unordered_set<int> flipped_observables_set;
 
-  // Iterate over all predicted errors
-  for (size_t ei : predicted_errors) {
-    // Iterate over the observables associated with each error
-    for (int obs_index : errors[ei].symptom.observables) {
+  // Iterate over all errors and compute the mask.
+  // We use a set to perform an XOR-like sum.
+  // If an observable is already in the set, we remove it (XORing with itself).
+  // If it's not, we add it.
+  for (size_t dem_error_index : predicted_errors) {
+    size_t error_index = dem_error_to_error.at(dem_error_index);
+    if (error_index == std::numeric_limits<size_t>::max()) {
+      throw std::invalid_argument("error index does not map to a retained decoder error");
+    }
+    for (int obs_index : errors[error_index].symptom.observables) {
       // Perform an XOR-like sum using a set.
       // If the observable is already in the set, it means we've seen it an
       // even number of times, so we remove it.

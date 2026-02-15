@@ -19,6 +19,7 @@ bazel build src:tesseract src:simplex
 
 ```bash
 bazel test src:all
+bazel test //src/py:all
 ```
 
 ## Building with CMake
