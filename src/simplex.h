@@ -75,9 +75,6 @@ struct SimplexDecoder {
 
   ~SimplexDecoder();
 
- private:
-  size_t dem_error_index_to_error_index(size_t dem_error_index) const;
-
  public:
   void init_ilp();
 };

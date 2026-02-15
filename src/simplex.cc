@@ -114,13 +114,6 @@ SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
   init_ilp();
 }
 
-size_t SimplexDecoder::dem_error_index_to_error_index(size_t dem_error_index) const {
-  if (dem_error_index >= dem_error_to_error.size()) {
-    throw std::out_of_range("invalid error index");
-  }
-  return dem_error_to_error[dem_error_index];
-}
-
 void SimplexDecoder::init_ilp() {
   model = std::make_unique<HighsModel>();
 
@@ -374,7 +367,7 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
 double SimplexDecoder::cost_from_errors(const std::vector<size_t>& predicted_errors) const {
   double total_cost = 0;
   for (size_t dem_error_index : predicted_errors) {
-    size_t error_index = dem_error_index_to_error_index(dem_error_index);
+    size_t error_index = dem_error_to_error.at(dem_error_index);
     if (error_index == std::numeric_limits<size_t>::max()) {
       throw std::invalid_argument("error index does not map to a retained decoder error");
     }
@@ -388,7 +381,7 @@ std::vector<int> SimplexDecoder::get_flipped_observables(
   std::unordered_set<int> flipped_observables_set;
 
   for (size_t dem_error_index : predicted_errors) {
-    size_t error_index = dem_error_index_to_error_index(dem_error_index);
+    size_t error_index = dem_error_to_error.at(dem_error_index);
     if (error_index == std::numeric_limits<size_t>::max()) {
       throw std::invalid_argument("error index does not map to a retained decoder error");
     }
