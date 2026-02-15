@@ -424,8 +424,6 @@ int main(int argc, char* argv[]) {
   const stim::DetectorErrorModel original_dem = config.dem.flattened();
   std::vector<std::atomic<size_t>> error_use_totals(original_dem.count_errors());
   bool has_obs = args.has_observables();
-  // std::cout <<"has_obs = "<<has_obs<<std::endl;
-  // exit(0);
   std::atomic<bool> worker_threads_please_terminate = false;
   std::atomic<size_t> num_worker_threads_active;
   for (size_t t = 0; t < args.num_threads; ++t) {
