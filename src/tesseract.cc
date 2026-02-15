@@ -506,6 +506,10 @@ std::vector<int> TesseractDecoder::get_flipped_observables(
     const std::vector<size_t>& predicted_errors) const {
   std::unordered_set<int> flipped_observables_set;
 
+  // Iterate over all errors and compute the mask.
+  // We use a set to perform an XOR-like sum.
+  // If an observable is already in the set, we remove it (XORing with itself).
+  // If it's not, we add it.
   for (size_t dem_error_index : predicted_errors) {
     size_t error_index = dem_error_to_error.at(dem_error_index);
     if (error_index == std::numeric_limits<size_t>::max()) {
