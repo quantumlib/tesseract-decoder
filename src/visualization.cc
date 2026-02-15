@@ -20,11 +20,15 @@ void Visualizer::add_detector_coords(const std::vector<std::vector<double>>& det
   }
 }
 
-void Visualizer::add_activated_errors(const std::vector<size_t>& activated_errors) {
+void Visualizer::add_activated_errors(int64_t node_idx,
+                                      const std::vector<common::ErrorChainNode>& arena) {
   std::stringstream ss;
   ss << "activated_errors = ";
-  for (size_t oei : activated_errors) {
-    ss << oei << ", ";
+  int64_t walker_idx = node_idx;
+  while (walker_idx != -1) {
+    const auto& node = arena[walker_idx];
+    ss << node.error_index << ", ";
+    walker_idx = node.parent_idx;
   }
   lines.push_back(ss.str());
 }

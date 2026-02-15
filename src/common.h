@@ -45,6 +45,15 @@ struct Symptom {
   std::string str() const;
 };
 
+// Represents a specific subset of errors in the power set of all errors.
+// `parent_idx` is the index of the parent node in the error chain arena, and is
+// used to trace back to the root of the error set.
+struct ErrorChainNode {
+  size_t error_index;
+  size_t min_detector;
+  int64_t parent_idx = -1;
+};
+
 // Represents an error / weighted hyperedge
 struct Error {
   double likelihood_cost;

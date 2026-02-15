@@ -73,7 +73,7 @@ std::string Node::str() {
   std::stringstream ss;
   auto& self = *this;
   ss << "Node(";
-  ss << "errors=" << self.errors << ", ";
+  ss << "error_chain_idx=" << self.error_chain_idx << ", ";
   ss << "cost=" << self.cost << ", ";
   ss << "num_dets=" << self.num_dets << ", ";
   return ss.str();
@@ -255,16 +255,13 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections)
 }
 
 void TesseractDecoder::flip_detectors_and_block_errors(
-    size_t detector_order, const std::vector<size_t>& errors, boost::dynamic_bitset<>& detectors,
+    size_t detector_order, int64_t error_chain_idx, boost::dynamic_bitset<>& detectors,
     std::vector<DetectorCostTuple>& detector_cost_tuples) const {
-  for (size_t ei : errors) {
-    size_t min_detector = std::numeric_limits<size_t>::max();
-    for (size_t d = 0; d < num_detectors; ++d) {
-      if (detectors[config.det_orders[detector_order][d]]) {
-        min_detector = config.det_orders[detector_order][d];
-        break;
-      }
-    }
+  int64_t walker_idx = error_chain_idx;
+  while (walker_idx != -1) {
+    const auto& node = error_chain_arena[walker_idx];
+    size_t ei = node.error_index;
+    size_t min_detector = node.min_detector;
 
     for (int oei : d2e[min_detector]) {
       detector_cost_tuples[oei].error_blocked = 1;
@@ -274,6 +271,7 @@ void TesseractDecoder::flip_detectors_and_block_errors(
     for (int d : edets[ei]) {
       detectors[d] = !detectors[d];
     }
+    walker_idx = node.parent_idx;
   }
 }
 
@@ -281,6 +279,10 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
                                         size_t detector_order, size_t detector_beam) {
   predicted_errors_buffer.clear();
   low_confidence_flag = false;
+  error_chain_arena.clear();
+  // Can technically be larger than pqlimit, but we need an initial guess on how many nodes we
+  // will process from the queue.
+  error_chain_arena.reserve(config.pqlimit);
 
   std::priority_queue<Node, std::vector<Node>, std::greater<Node>> pq;
   std::unordered_map<size_t, std::unordered_set<boost::dynamic_bitset<>>> visited_detectors;
@@ -308,11 +310,10 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
   size_t min_num_dets = detections.size();
   size_t max_num_dets = min_num_dets + detector_beam;
 
-  std::vector<size_t> next_errors;
   boost::dynamic_bitset<> next_detectors;
   std::vector<DetectorCostTuple> next_detector_cost_tuples;
 
-  pq.push({initial_cost, min_num_dets, std::vector<size_t>()});
+  pq.push({initial_cost, min_num_dets, 0, -1});
   size_t num_pq_pushed = 1;
 
   while (!pq.empty()) {
@@ -323,17 +324,20 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
 
     boost::dynamic_bitset<> detectors = initial_detectors;
     std::vector<DetectorCostTuple> detector_cost_tuples(num_errors);
-    flip_detectors_and_block_errors(detector_order, node.errors, detectors, detector_cost_tuples);
+    flip_detectors_and_block_errors(detector_order, node.error_chain_idx, detectors,
+                                    detector_cost_tuples);
 
     if (node.num_dets == 0) {
       if (config.create_visualization) {
-        visualizer.add_activated_errors(node.errors);
+        visualizer.add_activated_errors(node.error_chain_idx, error_chain_arena);
         visualizer.add_activated_detectors(detectors, num_detectors);
       }
       if (config.verbose) {
         std::cout << "activated_errors = ";
-        for (size_t oei : node.errors) {
-          std::cout << oei << ", ";
+        int64_t walker_idx = node.error_chain_idx;
+        while (walker_idx != -1) {
+          std::cout << error_chain_arena[walker_idx].error_index << ", ";
+          walker_idx = error_chain_arena[walker_idx].parent_idx;
         }
         std::cout << std::endl;
         std::cout << "activated_detectors = ";
@@ -347,9 +351,11 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
         std::cout << "Decoding complete. Cost: " << node.cost
                   << " num_pq_pushed = " << num_pq_pushed << std::endl;
       }
-      predicted_errors_buffer.clear();
-      for (size_t error_index : node.errors) {
-        predicted_errors_buffer.push_back(error_to_dem_error[error_index]);
+      predicted_errors_buffer.resize(node.depth);
+      int64_t walker_idx = node.error_chain_idx;
+      for (size_t i = 0; i < node.depth; ++i) {
+        predicted_errors_buffer[node.depth - 1 - i] = error_to_dem_error[error_chain_arena[walker_idx].error_index];
+        walker_idx = error_chain_arena[walker_idx].parent_idx;
       }
       return;
     }
@@ -358,7 +364,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
       continue;
 
     if (config.create_visualization) {
-      visualizer.add_activated_errors(node.errors);
+      visualizer.add_activated_errors(node.error_chain_idx, error_chain_arena);
       visualizer.add_activated_detectors(detectors, num_detectors);
     }
     if (config.verbose) {
@@ -367,8 +373,10 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
       std::cout << "num_dets = " << node.num_dets << " max_num_dets = " << max_num_dets
                 << " cost = " << node.cost << std::endl;
       std::cout << "activated_errors = ";
-      for (size_t oei : node.errors) {
-        std::cout << oei << ", ";
+      int64_t walker_idx = node.error_chain_idx;
+      while (walker_idx != -1) {
+        std::cout << error_chain_arena[walker_idx].error_index << ", ";
+        walker_idx = error_chain_arena[walker_idx].parent_idx;
       }
       std::cout << std::endl;
       std::cout << "activated_detectors = ";
@@ -423,8 +431,13 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
       }
       prev_ei = ei;
 
-      next_errors = node.errors;
-      next_errors.push_back(ei);
+      // Create the error chain node for this candidate.
+      error_chain_arena.emplace_back();
+      auto& next_node = error_chain_arena.back();
+      next_node.error_index = ei;
+      next_node.min_detector = min_detector;
+      next_node.parent_idx = node.error_chain_idx;
+
       next_detectors = detectors;
       next_detector_cost_tuples[ei].error_blocked = 1;
 
@@ -468,7 +481,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
 
       if (next_cost == INF) continue;
 
-      pq.push({next_cost, next_num_dets, next_errors});
+      pq.push({next_cost, next_num_dets, node.depth + 1, (int64_t)(error_chain_arena.size() - 1)});
       ++num_pq_pushed;
 
       if (num_pq_pushed > config.pqlimit) {
