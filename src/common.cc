@@ -218,43 +218,26 @@ std::vector<size_t> common::invert_error_map(const std::vector<size_t>& error_ma
   return inverted_map;
 }
 
-stim::DetectorErrorModel common::dem_from_counts(stim::DetectorErrorModel& orig_dem,
+stim::DetectorErrorModel common::dem_from_counts(const stim::DetectorErrorModel& orig_dem,
                                                  const std::vector<size_t>& error_counts,
                                                  size_t num_shots) {
-  if (orig_dem.count_errors() != error_counts.size()) {
+  stim::DetectorErrorModel flat_dem = orig_dem.flattened();
+  if (flat_dem.count_errors() != error_counts.size()) {
     throw std::invalid_argument(
         "Error hits array must be the same size as the number of errors in the "
         "original DEM.");
   }
 
-  for (const stim::DemInstruction& instruction : orig_dem.flattened().instructions) {
-    if (instruction.type == stim::DemInstructionType::DEM_ERROR && instruction.arg_data[0] == 0) {
-      throw std::invalid_argument(
-          "dem_from_counts requires DEMs without zero-probability errors. Use"
-          " remove_zero_probability_errors first.");
-    }
-  }
-
   stim::DetectorErrorModel out_dem;
-  size_t ei = 0;
-  for (const stim::DemInstruction& instruction : orig_dem.flattened().instructions) {
-    switch (instruction.type) {
-      case stim::DemInstructionType::DEM_ERROR: {
-        double est_probability = double(error_counts.at(ei)) / double(num_shots);
-        out_dem.append_error_instruction(est_probability, instruction.target_data, /*tag=*/"");
-        ++ei;
-        break;
-      }
-      case stim::DemInstructionType::DEM_DETECTOR: {
-        out_dem.append_dem_instruction(instruction);
-        break;
-      }
-      case stim::DemInstructionType::DEM_LOGICAL_OBSERVABLE: {
-        out_dem.append_dem_instruction(instruction);
-        break;
-      }
-      default:
-        throw std::invalid_argument("Unrecognized instruction type: " + instruction.str());
+  size_t error_index = 0;
+  for (const stim::DemInstruction& instruction : flat_dem.instructions) {
+    if (instruction.type == stim::DemInstructionType::DEM_ERROR) {
+      double est_probability = double(error_counts.at(error_index)) / double(num_shots);
+      out_dem.append_error_instruction(est_probability, instruction.target_data,
+                                       std::string(instruction.tag));
+      ++error_index;
+    } else {
+      out_dem.append_dem_instruction(instruction);
     }
   }
   return out_dem;

@@ -581,18 +581,8 @@ int main(int argc, char* argv[]) {
       // When we know the obs, we only count non-error shots.
       num_usage_dem_shots -= num_errors;
     }
-    stim::DetectorErrorModel est_dem;
-    size_t error_index = 0;
-    for (const stim::DemInstruction& instruction : original_dem.flattened().instructions) {
-      if (instruction.type == stim::DemInstructionType::DEM_ERROR) {
-        double est_probability = double(counts.at(error_index)) / double(num_usage_dem_shots);
-        est_dem.append_error_instruction(est_probability, instruction.target_data,
-                                         std::string(instruction.tag));
-        ++error_index;
-      } else {
-        est_dem.append_dem_instruction(instruction);
-      }
-    }
+    stim::DetectorErrorModel est_dem =
+        common::dem_from_counts(original_dem, counts, num_usage_dem_shots);
     std::ofstream out(args.dem_out_fname, std::ofstream::out);
     if (!out.is_open()) {
       throw std::invalid_argument("Failed to open " + args.dem_out_fname);

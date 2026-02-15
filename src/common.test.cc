@@ -26,7 +26,7 @@ TEST(common, ErrorsStructFromDemInstruction) {
   EXPECT_EQ(ES.symptom.observables, std::vector<int>{0});
 }
 
-TEST(common, DemFromCountsRejectsZeroProbabilityErrors) {
+TEST(common, DemFromCountsHandlesZeroProbabilityErrors) {
   stim::DetectorErrorModel dem(R"DEM(
         error(0.1) D0
         error(0) D1
@@ -38,21 +38,32 @@ TEST(common, DemFromCountsRejectsZeroProbabilityErrors) {
 
   std::vector<size_t> counts{1, 7, 4};
   size_t num_shots = 10;
-  EXPECT_THROW({ common::dem_from_counts(dem, counts, num_shots); }, std::invalid_argument);
-
-  std::vector<size_t> error_index_map;
-  stim::DetectorErrorModel cleaned = common::remove_zero_probability_errors(dem, error_index_map);
-  stim::DetectorErrorModel out_dem =
-      common::dem_from_counts(cleaned, std::vector<size_t>{1, 4}, num_shots);
+  stim::DetectorErrorModel out_dem = common::dem_from_counts(dem, counts, num_shots);
 
   auto flat = out_dem.flattened();
-  ASSERT_EQ(out_dem.count_errors(), 2);
-  ASSERT_GE(flat.instructions.size(), 2);
+  ASSERT_EQ(out_dem.count_errors(), 3);
+  ASSERT_GE(flat.instructions.size(), 3);
 
   EXPECT_EQ(flat.instructions[0].type, stim::DemInstructionType::DEM_ERROR);
   EXPECT_NEAR(flat.instructions[0].arg_data[0], 0.1, 1e-9);
-  ASSERT_EQ(flat.instructions[1].type, stim::DemInstructionType::DEM_ERROR);
-  EXPECT_NEAR(flat.instructions[1].arg_data[0], 0.4, 1e-9);
+  EXPECT_EQ(flat.instructions[1].type, stim::DemInstructionType::DEM_ERROR);
+  EXPECT_NEAR(flat.instructions[1].arg_data[0], 0.7, 1e-9);
+  EXPECT_EQ(flat.instructions[2].type, stim::DemInstructionType::DEM_ERROR);
+  EXPECT_NEAR(flat.instructions[2].arg_data[0], 0.4, 1e-9);
+
+  std::vector<size_t> error_index_map;
+  stim::DetectorErrorModel cleaned = common::remove_zero_probability_errors(dem, error_index_map);
+  stim::DetectorErrorModel out_dem_cleaned =
+      common::dem_from_counts(cleaned, std::vector<size_t>{1, 4}, num_shots);
+
+  auto flat_cleaned = out_dem_cleaned.flattened();
+  ASSERT_EQ(out_dem_cleaned.count_errors(), 2);
+  ASSERT_GE(flat_cleaned.instructions.size(), 2);
+
+  EXPECT_EQ(flat_cleaned.instructions[0].type, stim::DemInstructionType::DEM_ERROR);
+  EXPECT_NEAR(flat_cleaned.instructions[0].arg_data[0], 0.1, 1e-9);
+  ASSERT_EQ(flat_cleaned.instructions[1].type, stim::DemInstructionType::DEM_ERROR);
+  EXPECT_NEAR(flat_cleaned.instructions[1].arg_data[0], 0.4, 1e-9);
 }
 
 TEST(common, DemFromCountsSimpleTwoErrors) {

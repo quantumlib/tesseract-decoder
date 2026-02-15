@@ -88,9 +88,7 @@ std::vector<size_t> invert_error_map(const std::vector<size_t>& error_map,
 
 // Makes a new dem where the probabilities of errors are estimated from the
 // fraction of shots they were used in.
-// Throws std::invalid_argument if `orig_dem` contains zero-probability errors;
-// call remove_zero_probability_errors first.
-stim::DetectorErrorModel dem_from_counts(stim::DetectorErrorModel& orig_dem,
+stim::DetectorErrorModel dem_from_counts(const stim::DetectorErrorModel& orig_dem,
                                          const std::vector<size_t>& error_counts, size_t num_shots);
 
 /// Computes the weight of an edge resulting from merging edges with weight `a' and weight `b',
