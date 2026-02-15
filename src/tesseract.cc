@@ -354,7 +354,8 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
       predicted_errors_buffer.resize(node.depth);
       int64_t walker_idx = node.error_chain_idx;
       for (size_t i = 0; i < node.depth; ++i) {
-        predicted_errors_buffer[node.depth - 1 - i] = error_to_dem_error[error_chain_arena[walker_idx].error_index];
+        predicted_errors_buffer[node.depth - 1 - i] =
+            error_to_dem_error[error_chain_arena[walker_idx].error_index];
         walker_idx = error_chain_arena[walker_idx].parent_idx;
       }
       return;

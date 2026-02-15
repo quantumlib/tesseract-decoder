@@ -233,8 +233,7 @@ stim::DetectorErrorModel common::dem_from_counts(const stim::DetectorErrorModel&
   for (const stim::DemInstruction& instruction : flat_dem.instructions) {
     if (instruction.type == stim::DemInstructionType::DEM_ERROR) {
       double est_probability = double(error_counts.at(error_index)) / double(num_shots);
-      out_dem.append_error_instruction(est_probability, instruction.target_data,
-                                       std::string(instruction.tag));
+      out_dem.append_error_instruction(est_probability, instruction.target_data, instruction.tag);
       ++error_index;
     } else {
       out_dem.append_dem_instruction(instruction);
