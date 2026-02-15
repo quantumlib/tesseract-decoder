@@ -19,6 +19,7 @@
 #include <cassert>
 #include <functional>  // For std::hash (though not strictly necessary here, but good practice)
 #include <iostream>
+#include <numeric>
 
 namespace {
 
@@ -106,10 +107,21 @@ double TesseractDecoder::get_detcost(
 }
 
 TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
+  std::vector<size_t> dem_error_map(config.dem.flattened().count_errors());
+  std::iota(dem_error_map.begin(), dem_error_map.end(), 0);
+
   if (config.merge_errors) {
-    config.dem = common::merge_indistinguishable_errors(config.dem);
+    std::vector<size_t> merge_map;
+    config.dem = common::merge_indistinguishable_errors(config.dem, merge_map);
+    common::chain_error_maps(dem_error_map, merge_map);
   }
-  config.dem = common::remove_zero_probability_errors(config.dem);
+
+  std::vector<size_t> nonzero_map;
+  config.dem = common::remove_zero_probability_errors(config.dem, nonzero_map);
+  common::chain_error_maps(dem_error_map, nonzero_map);
+
+  dem_error_to_error = std::move(dem_error_map);
+  error_to_dem_error = common::invert_error_map(dem_error_to_error, config.dem.count_errors());
 
   if (config.det_orders.empty()) {
     config.det_orders.emplace_back(config.dem.count_detectors());
@@ -335,7 +347,10 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
         std::cout << "Decoding complete. Cost: " << node.cost
                   << " num_pq_pushed = " << num_pq_pushed << std::endl;
       }
-      predicted_errors_buffer = node.errors;
+      predicted_errors_buffer.clear();
+      for (size_t error_index : node.errors) {
+        predicted_errors_buffer.push_back(error_to_dem_error[error_index]);
+      }
       return;
     }
 
@@ -477,9 +492,12 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
 
 double TesseractDecoder::cost_from_errors(const std::vector<size_t>& predicted_errors) const {
   double total_cost = 0;
-  // Iterate over all errors and compute the cost
-  for (size_t ei : predicted_errors) {
-    total_cost += errors[ei].likelihood_cost;
+  for (size_t dem_error_index : predicted_errors) {
+    size_t error_index = dem_error_to_error.at(dem_error_index);
+    if (error_index == std::numeric_limits<size_t>::max()) {
+      throw std::invalid_argument("error index does not map to a retained decoder error");
+    }
+    total_cost += errors[error_index].likelihood_cost;
   }
   return total_cost;
 }
@@ -492,8 +510,12 @@ std::vector<int> TesseractDecoder::get_flipped_observables(
   // We use a set to perform an XOR-like sum.
   // If an observable is already in the set, we remove it (XORing with itself).
   // If it's not, we add it.
-  for (size_t ei : predicted_errors) {
-    for (int obs_index : errors[ei].symptom.observables) {
+  for (size_t dem_error_index : predicted_errors) {
+    size_t error_index = dem_error_to_error.at(dem_error_index);
+    if (error_index == std::numeric_limits<size_t>::max()) {
+      throw std::invalid_argument("error index does not map to a retained decoder error");
+    }
+    for (int obs_index : errors[error_index].symptom.observables) {
       if (flipped_observables_set.count(obs_index)) {
         flipped_observables_set.erase(obs_index);
       } else {

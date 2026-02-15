@@ -142,7 +142,8 @@ void add_common_module(py::module& root) {
       "merge_indistinguishable_errors",
       [](py::object dem) {
         auto input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
-        auto res = common::merge_indistinguishable_errors(input_dem);
+        std::vector<size_t> error_index_map;
+        auto res = common::merge_indistinguishable_errors(input_dem, error_index_map);
         return make_py_object(res, "DetectorErrorModel");
       },
       py::arg("dem"), R"pbdoc(
@@ -166,9 +167,13 @@ void add_common_module(py::module& root) {
   m.def(
       "remove_zero_probability_errors",
       [](py::object dem) {
-        return make_py_object(
-            common::remove_zero_probability_errors(parse_py_object<stim::DetectorErrorModel>(dem)),
-            "DetectorErrorModel");
+        return make_py_object(([&]() {
+                                std::vector<size_t> error_index_map;
+                                return common::remove_zero_probability_errors(
+                                    parse_py_object<stim::DetectorErrorModel>(dem),
+                                    error_index_map);
+                              })(),
+                              "DetectorErrorModel");
       },
       py::arg("dem"), R"pbdoc(
         Removes errors with a probability of 0 from a `stim.DetectorErrorModel`.

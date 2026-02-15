@@ -64,17 +64,31 @@ struct Error {
 
 // Makes a new (flattened) dem where identical error mechanisms have been
 // merged.
-stim::DetectorErrorModel merge_indistinguishable_errors(const stim::DetectorErrorModel& dem);
+// `error_index_map[old_error_index]` gives the corresponding merged DEM error
+// index in the returned DEM.
+stim::DetectorErrorModel merge_indistinguishable_errors(const stim::DetectorErrorModel& dem,
+                                                        std::vector<size_t>& error_index_map);
 
 // Returns a copy of the given error model with any zero-probability DEM_ERROR
 // instructions removed.
-stim::DetectorErrorModel remove_zero_probability_errors(const stim::DetectorErrorModel& dem);
+// `error_index_map[old_error_index]` gives the corresponding retained DEM error
+// index in the returned DEM, or `std::numeric_limits<size_t>::max()` if the
+// error was removed.
+stim::DetectorErrorModel remove_zero_probability_errors(const stim::DetectorErrorModel& dem,
+                                                        std::vector<size_t>& error_index_map);
+
+// Updates the base_map by chaining it with next_map.
+// base_map[i] = next_map[base_map[i]]
+void chain_error_maps(std::vector<size_t>& base_map, const std::vector<size_t>& next_map);
+
+// Inverts the error_map to create a mapping from output error indices back to
+// the first original error index that maps to it.
+std::vector<size_t> invert_error_map(const std::vector<size_t>& error_map,
+                                     size_t num_output_errors);
 
 // Makes a new dem where the probabilities of errors are estimated from the
 // fraction of shots they were used in.
-// Throws std::invalid_argument if `orig_dem` contains zero-probability errors;
-// call remove_zero_probability_errors first.
-stim::DetectorErrorModel dem_from_counts(stim::DetectorErrorModel& orig_dem,
+stim::DetectorErrorModel dem_from_counts(const stim::DetectorErrorModel& orig_dem,
                                          const std::vector<size_t>& error_counts, size_t num_shots);
 
 /// Computes the weight of an edge resulting from merging edges with weight `a' and weight `b',

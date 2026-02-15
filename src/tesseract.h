@@ -83,12 +83,12 @@ struct TesseractDecoder {
   void decode_to_errors(const std::vector<uint64_t>& detections, size_t detector_order,
                         size_t detector_beam);
 
-  // Returns the bitwise XOR of all the observables bitmasks of all errors in
-  // the predicted errors buffer.
+  // Returns the bitwise XOR of the observables flipped by the errors in the given array, indexed by
+  // the original flattened DEM error indices.
   std::vector<int> get_flipped_observables(const std::vector<size_t>& predicted_errors) const;
 
-  // Returns the sum of the likelihood costs (minus-log-likelihood-ratios) of
-  // all errors in the predicted errors buffer.
+  // Returns the sum of likelihood costs of the errors in the given array, indexed by the original
+  // flattened DEM error indices.
   double cost_from_errors(const std::vector<size_t>& predicted_errors) const;
 
   std::vector<int> decode(const std::vector<uint64_t>& detections);
@@ -97,6 +97,8 @@ struct TesseractDecoder {
 
   bool low_confidence_flag = false;
   std::vector<size_t> predicted_errors_buffer;
+  std::vector<size_t> dem_error_to_error;
+  std::vector<size_t> error_to_dem_error;
   std::vector<common::Error> errors;
   size_t num_observables;
   size_t num_detectors;
