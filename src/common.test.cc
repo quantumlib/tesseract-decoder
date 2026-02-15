@@ -40,7 +40,9 @@ TEST(common, DemFromCountsRejectsZeroProbabilityErrors) {
   size_t num_shots = 10;
   EXPECT_THROW({ common::dem_from_counts(dem, counts, num_shots); }, std::invalid_argument);
 
-  stim::DetectorErrorModel cleaned = common::remove_zero_probability_errors(dem);
+  std::vector<size_t> error_index_map;
+  stim::DetectorErrorModel cleaned =
+      common::remove_zero_probability_errors(dem, error_index_map);
   stim::DetectorErrorModel out_dem =
       common::dem_from_counts(cleaned, std::vector<size_t>{1, 4}, num_shots);
 
@@ -86,7 +88,9 @@ TEST(common, RemoveZeroProbabilityErrors) {
         detector(0, 0, 0) D2
       )DEM");
 
-  stim::DetectorErrorModel cleaned = common::remove_zero_probability_errors(dem);
+  std::vector<size_t> error_index_map;
+  stim::DetectorErrorModel cleaned =
+      common::remove_zero_probability_errors(dem, error_index_map);
 
   EXPECT_EQ(cleaned.count_errors(), 2);
   auto flat = cleaned.flattened();
@@ -153,7 +157,8 @@ TEST(CommonTest, merge_indistinguishable_errors_two_errors) {
   double p2 = 0.2;
   double expected_merged_p = p1 * (1 - p2) + p2 * (1 - p1);
   auto dem1 = create_dem_with_two_errors(p1, p2);
-  auto merged_dem1 = common::merge_indistinguishable_errors(dem1);
+  std::vector<size_t> error_index_map;
+  auto merged_dem1 = common::merge_indistinguishable_errors(dem1, error_index_map);
   ASSERT_NEAR(get_merged_probability(merged_dem1), expected_merged_p, 1e-9);
 
   // Case 2: One low, one high probability.
@@ -161,7 +166,7 @@ TEST(CommonTest, merge_indistinguishable_errors_two_errors) {
   p2 = 0.8;
   expected_merged_p = p1 * (1 - p2) + p2 * (1 - p1);
   auto dem2 = create_dem_with_two_errors(p1, p2);
-  auto merged_dem2 = common::merge_indistinguishable_errors(dem2);
+  auto merged_dem2 = common::merge_indistinguishable_errors(dem2, error_index_map);
   ASSERT_NEAR(get_merged_probability(merged_dem2), expected_merged_p, 1e-9);
 
   // Case 3: One high, one low probability.
@@ -169,7 +174,7 @@ TEST(CommonTest, merge_indistinguishable_errors_two_errors) {
   p2 = 0.1;
   expected_merged_p = p1 * (1 - p2) + p2 * (1 - p1);
   auto dem3 = create_dem_with_two_errors(p1, p2);
-  auto merged_dem3 = common::merge_indistinguishable_errors(dem3);
+  auto merged_dem3 = common::merge_indistinguishable_errors(dem3, error_index_map);
   ASSERT_NEAR(get_merged_probability(merged_dem3), expected_merged_p, 1e-9);
 
   // Case 4: Both probabilities are high.
@@ -177,6 +182,6 @@ TEST(CommonTest, merge_indistinguishable_errors_two_errors) {
   p2 = 0.9;
   expected_merged_p = p1 * (1 - p2) + p2 * (1 - p1);
   auto dem4 = create_dem_with_two_errors(p1, p2);
-  auto merged_dem4 = common::merge_indistinguishable_errors(dem4);
+  auto merged_dem4 = common::merge_indistinguishable_errors(dem4, error_index_map);
   ASSERT_NEAR(get_merged_probability(merged_dem4), expected_merged_p, 1e-9);
 }

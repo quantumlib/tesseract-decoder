@@ -421,7 +421,8 @@ int main(int argc, char* argv[]) {
   std::vector<double> cost_predicted(shots.size());
   std::vector<double> decoding_time_seconds(shots.size());
   std::vector<std::thread> decoder_threads;
-  std::vector<std::atomic<size_t>> error_use_totals(config.dem.count_errors());
+  const stim::DetectorErrorModel original_dem = config.dem.flattened();
+  std::vector<std::atomic<size_t>> error_use_totals(original_dem.count_errors());
   bool has_obs = args.has_observables();
   std::atomic<bool> worker_threads_please_terminate = false;
   std::atomic<size_t> num_worker_threads_active;
@@ -433,9 +434,9 @@ int main(int argc, char* argv[]) {
                                            &cost_predicted, &decoding_time_seconds, &finished,
                                            &error_use_totals, &has_obs,
                                            &worker_threads_please_terminate,
-                                           &num_worker_threads_active]() {
+                                           &num_worker_threads_active, &original_dem]() {
       SimplexDecoder decoder(config);
-      std::vector<size_t> error_use(config.dem.count_errors());
+      std::vector<size_t> error_use(original_dem.count_errors());
       for (size_t shot;
            !worker_threads_please_terminate and ((shot = next_unclaimed_shot++) < shots.size());) {
         auto start_time = std::chrono::high_resolution_clock::now();
@@ -513,8 +514,18 @@ int main(int argc, char* argv[]) {
       // When we know the obs, we only count non-error shots.
       num_usage_dem_shots -= num_errors;
     }
-    stim::DetectorErrorModel est_dem =
-        common::dem_from_counts(config.dem, counts, num_usage_dem_shots);
+    stim::DetectorErrorModel est_dem;
+    size_t error_index = 0;
+    for (const stim::DemInstruction& instruction : original_dem.flattened().instructions) {
+      if (instruction.type == stim::DemInstructionType::DEM_ERROR) {
+        double est_probability = double(counts.at(error_index)) / double(num_usage_dem_shots);
+        est_dem.append_error_instruction(est_probability, instruction.target_data,
+                                 std::string(instruction.tag));
+        ++error_index;
+      } else {
+        est_dem.append_dem_instruction(instruction);
+      }
+    }
     std::ofstream out(args.dem_out_fname, std::ofstream::out);
     if (!out.is_open()) {
       throw std::invalid_argument("Failed to open " + args.dem_out_fname);

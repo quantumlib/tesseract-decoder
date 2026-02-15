@@ -21,6 +21,13 @@ bazel build src:tesseract src:simplex
 bazel test src:all
 ```
 
+Suggested additional test step when changing Python bindings, Python API behavior,
+or Python docs/examples:
+
+```bash
+bazel test //src/py:all
+```
+
 ## Building with CMake
 
 In case you need to, when building with CMake, use parallel flags to speed up the process.

@@ -64,11 +64,18 @@ struct Error {
 
 // Makes a new (flattened) dem where identical error mechanisms have been
 // merged.
-stim::DetectorErrorModel merge_indistinguishable_errors(const stim::DetectorErrorModel& dem);
+// `error_index_map[old_error_index]` gives the corresponding merged DEM error
+// index in the returned DEM.
+stim::DetectorErrorModel merge_indistinguishable_errors(const stim::DetectorErrorModel& dem,
+                                                        std::vector<size_t>& error_index_map);
 
 // Returns a copy of the given error model with any zero-probability DEM_ERROR
 // instructions removed.
-stim::DetectorErrorModel remove_zero_probability_errors(const stim::DetectorErrorModel& dem);
+// `error_index_map[old_error_index]` gives the corresponding retained DEM error
+// index in the returned DEM, or `std::numeric_limits<size_t>::max()` if the
+// error was removed.
+stim::DetectorErrorModel remove_zero_probability_errors(const stim::DetectorErrorModel& dem,
+                                                        std::vector<size_t>& error_index_map);
 
 // Makes a new dem where the probabilities of errors are estimated from the
 // fraction of shots they were used in.

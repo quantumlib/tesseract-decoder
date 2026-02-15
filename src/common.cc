@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#include <limits>
 
 #include "common.h"
 
@@ -117,11 +118,15 @@ double common::merge_weights(double a, double b) {
 }
 
 stim::DetectorErrorModel common::merge_indistinguishable_errors(
-    const stim::DetectorErrorModel& dem) {
+    const stim::DetectorErrorModel& dem, std::vector<size_t>& error_index_map) {
   stim::DetectorErrorModel out_dem;
 
-  // Map to track the distinct symptoms
-  std::unordered_map<Symptom, Error, Symptom::hash> errors_by_symptom;
+  error_index_map.clear();
+
+  // Map to track first-seen distinct symptoms.
+  std::unordered_map<Symptom, size_t, Symptom::hash> merged_index_by_symptom;
+  std::vector<Error> merged_errors;
+
   for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_ERROR: {
@@ -131,11 +136,18 @@ stim::DetectorErrorModel common::merge_indistinguishable_errors(
           std::cout << "Warning: the circuit has errors that do not flip any detectors \n";
         }
 
-        if (errors_by_symptom.find(error.symptom) != errors_by_symptom.end()) {
-          error.likelihood_cost = merge_weights(error.likelihood_cost,
-                                                errors_by_symptom[error.symptom].likelihood_cost);
+        auto it = merged_index_by_symptom.find(error.symptom);
+        if (it != merged_index_by_symptom.end()) {
+          size_t merged_error_index = it->second;
+          merged_errors[merged_error_index].likelihood_cost =
+              merge_weights(error.likelihood_cost, merged_errors[merged_error_index].likelihood_cost);
+          error_index_map.push_back(merged_error_index);
+        } else {
+          size_t merged_error_index = merged_errors.size();
+          merged_index_by_symptom[error.symptom] = merged_error_index;
+          merged_errors.push_back(error);
+          error_index_map.push_back(merged_error_index);
         }
-        errors_by_symptom[error.symptom] = error;
         break;
       }
       case stim::DemInstructionType::DEM_DETECTOR: {
@@ -150,22 +162,26 @@ stim::DetectorErrorModel common::merge_indistinguishable_errors(
         throw std::invalid_argument("Unrecognized instruction type: " + instruction.str());
     }
   }
-  for (const auto& it : errors_by_symptom) {
-    out_dem.append_error_instruction(it.second.get_probability(),
-                                     it.second.symptom.as_dem_instruction_targets(),
+  for (const auto& error : merged_errors) {
+    out_dem.append_error_instruction(error.get_probability(), error.symptom.as_dem_instruction_targets(),
                                      /*tag=*/"");
   }
   return out_dem;
 }
 
 stim::DetectorErrorModel common::remove_zero_probability_errors(
-    const stim::DetectorErrorModel& dem) {
+    const stim::DetectorErrorModel& dem, std::vector<size_t>& error_index_map) {
   stim::DetectorErrorModel out_dem;
+  error_index_map.clear();
+  size_t output_error_index = 0;
   for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_ERROR:
         if (instruction.arg_data[0] > 0) {
           out_dem.append_dem_instruction(instruction);
+          error_index_map.push_back(output_error_index++);
+        } else {
+          error_index_map.push_back(std::numeric_limits<size_t>::max());
         }
         break;
       case stim::DemInstructionType::DEM_DETECTOR:
