@@ -19,12 +19,6 @@ bazel build src:tesseract src:simplex
 
 ```bash
 bazel test src:all
-```
-
-Suggested additional test step when changing Python bindings, Python API behavior,
-or Python docs/examples:
-
-```bash
 bazel test //src/py:all
 ```
 
