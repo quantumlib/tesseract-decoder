@@ -77,6 +77,14 @@ stim::DetectorErrorModel merge_indistinguishable_errors(const stim::DetectorErro
 stim::DetectorErrorModel remove_zero_probability_errors(const stim::DetectorErrorModel& dem,
                                                         std::vector<size_t>& error_index_map);
 
+// Updates the base_map by chaining it with next_map.
+// base_map[i] = next_map[base_map[i]]
+void chain_error_maps(std::vector<size_t>& base_map, const std::vector<size_t>& next_map);
+
+// Inverts the error_map to create a mapping from output error indices back to
+// the first original error index that maps to it.
+std::vector<size_t> invert_error_map(const std::vector<size_t>& error_map, size_t num_output_errors);
+
 // Makes a new dem where the probabilities of errors are estimated from the
 // fraction of shots they were used in.
 // Throws std::invalid_argument if `orig_dem` contains zero-probability errors;

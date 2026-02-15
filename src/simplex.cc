@@ -41,31 +41,15 @@ SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
   if (config.merge_errors) {
     std::vector<size_t> merge_map;
     config.dem = common::merge_indistinguishable_errors(config.dem, merge_map);
-    for (size_t& ei : dem_error_map) {
-      ei = merge_map[ei];
-    }
+    common::chain_error_maps(dem_error_map, merge_map);
   }
 
   std::vector<size_t> nonzero_map;
   config.dem = common::remove_zero_probability_errors(config.dem, nonzero_map);
-  for (size_t& ei : dem_error_map) {
-    if (ei == std::numeric_limits<size_t>::max()) {
-      continue;
-    }
-    ei = nonzero_map[ei];
-  }
+  common::chain_error_maps(dem_error_map, nonzero_map);
 
   dem_error_to_error = std::move(dem_error_map);
-  error_to_dem_error.assign(config.dem.count_errors(), std::numeric_limits<size_t>::max());
-  for (size_t dem_error_index = 0; dem_error_index < dem_error_to_error.size(); ++dem_error_index) {
-    size_t error_index = dem_error_to_error[dem_error_index];
-    if (error_index == std::numeric_limits<size_t>::max()) {
-      continue;
-    }
-    if (error_to_dem_error[error_index] == std::numeric_limits<size_t>::max()) {
-      error_to_dem_error[error_index] = dem_error_index;
-    }
-  }
+  error_to_dem_error = common::invert_error_map(dem_error_to_error, config.dem.count_errors());
 
   std::vector<double> detector_t_coords(config.dem.count_detectors());
   for (const stim::DemInstruction& instruction : config.dem.flattened().instructions) {

@@ -197,6 +197,27 @@ stim::DetectorErrorModel common::remove_zero_probability_errors(
   return out_dem;
 }
 
+void common::chain_error_maps(std::vector<size_t>& base_map, const std::vector<size_t>& next_map) {
+  for (size_t& ei : base_map) {
+    if (ei != std::numeric_limits<size_t>::max()) {
+      ei = next_map[ei];
+    }
+  }
+}
+
+std::vector<size_t> common::invert_error_map(const std::vector<size_t>& error_map,
+                                             size_t num_output_errors) {
+  std::vector<size_t> inverted_map(num_output_errors, std::numeric_limits<size_t>::max());
+  for (size_t i = 0; i < error_map.size(); ++i) {
+    size_t mapped_index = error_map[i];
+    if (mapped_index != std::numeric_limits<size_t>::max() &&
+        inverted_map[mapped_index] == std::numeric_limits<size_t>::max()) {
+      inverted_map[mapped_index] = i;
+    }
+  }
+  return inverted_map;
+}
+
 stim::DetectorErrorModel common::dem_from_counts(stim::DetectorErrorModel& orig_dem,
                                                  const std::vector<size_t>& error_counts,
                                                  size_t num_shots) {

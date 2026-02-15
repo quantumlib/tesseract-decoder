@@ -75,7 +75,6 @@ struct SimplexDecoder {
 
   ~SimplexDecoder();
 
- public:
   void init_ilp();
 };
 
