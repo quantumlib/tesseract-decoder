@@ -83,7 +83,8 @@ void chain_error_maps(std::vector<size_t>& base_map, const std::vector<size_t>& 
 
 // Inverts the error_map to create a mapping from output error indices back to
 // the first original error index that maps to it.
-std::vector<size_t> invert_error_map(const std::vector<size_t>& error_map, size_t num_output_errors);
+std::vector<size_t> invert_error_map(const std::vector<size_t>& error_map,
+                                     size_t num_output_errors);
 
 // Makes a new dem where the probabilities of errors are estimated from the
 // fraction of shots they were used in.

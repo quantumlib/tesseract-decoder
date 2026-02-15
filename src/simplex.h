@@ -62,8 +62,8 @@ struct SimplexDecoder {
   // Clears the predicted_errors_buffer and fills it with the decoded errors for
   // these detection events.
   void decode_to_errors(const std::vector<uint64_t>& detections);
-  // Returns the bitwise XOR of all observables affected by errors indexed by the
-  // original flattened DEM error indices.
+  // Returns the bitwise XOR of the observables flipped by the errors in the given array, indexed by
+  // the original flattened DEM error indices.
   std::vector<int> get_flipped_observables(const std::vector<size_t>& predicted_errors) const;
   // Returns the sum of likelihood costs of errors indexed by the original
   // flattened DEM error indices.
