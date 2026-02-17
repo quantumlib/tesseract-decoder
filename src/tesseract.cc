@@ -20,6 +20,7 @@
 #include <functional>  // For std::hash (though not strictly necessary here, but good practice)
 #include <iostream>
 #include <numeric>
+#include <limits>
 
 namespace {
 
