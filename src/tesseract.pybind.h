@@ -247,7 +247,7 @@ void add_tesseract_module(py::module& root) {
             Returns
             -------
             list[int]
-                A list of predicted error indices.
+                A list of predicted error indices from the original flattened DEM.
           )pbdoc")
       .def(
           "decode_to_errors",
@@ -288,16 +288,14 @@ void add_tesseract_module(py::module& root) {
             Returns
             -------
             list[int]
-                A list of predicted error indices.
+                A list of predicted error indices from the original flattened DEM.
           )pbdoc")
       .def(
           "get_observables_from_errors",
           [](TesseractDecoder& self, const std::vector<size_t>& predicted_errors) {
             std::vector<bool> result(self.num_observables, false);
-            for (size_t ei : predicted_errors) {
-              for (int obs_index : self.errors[ei].symptom.observables) {
-                result[obs_index] = result[obs_index] ^ true;
-              }
+            for (int obs_index : self.get_flipped_observables(predicted_errors)) {
+              result[obs_index] = result[obs_index] ^ true;
             }
             return result;
           },
@@ -308,7 +306,7 @@ void add_tesseract_module(py::module& root) {
             Parameters
             ----------
             predicted_errors : list[int]
-                A list of integers representing the predicted error indices.
+                A list of integers representing error indices from the original flattened DEM.
 
             Returns
             -------
@@ -324,7 +322,7 @@ void add_tesseract_module(py::module& root) {
             Parameters
             ----------
             predicted_errors : list[int]
-                A list of integers representing the predicted error indices.
+                A list of integers representing error indices from the original flattened DEM.
 
             Returns
             -------
@@ -337,10 +335,8 @@ void add_tesseract_module(py::module& root) {
           [](TesseractDecoder& self, const std::vector<uint64_t>& detections) {
             std::vector<char> result(self.num_observables, false);
             self.decode(detections);
-            for (size_t ei : self.predicted_errors_buffer) {
-              for (int obs_index : self.errors[ei].symptom.observables) {
-                result[obs_index] = result[obs_index] ^ true;
-              }
+            for (int obs_index : self.get_flipped_observables(self.predicted_errors_buffer)) {
+              result[obs_index] = result[obs_index] ^ true;
             }
             return py::array(py::dtype::of<bool>(), result.size(), result.data());
           },
@@ -384,10 +380,8 @@ void add_tesseract_module(py::module& root) {
             // for direct NumPy array creation. Therefore, I use `std::vector<char>`
             // instead to ensure compatibility with `py::array`.
             std::vector<char> result(self.num_observables, 0);
-            for (size_t ei : self.predicted_errors_buffer) {
-              for (int obs_index : self.errors[ei].symptom.observables) {
-                result[obs_index] = result[obs_index] ^ true;
-              }
+            for (int obs_index : self.get_flipped_observables(self.predicted_errors_buffer)) {
+              result[obs_index] = result[obs_index] ^ true;
             }
             return py::array(py::dtype::of<bool>(), result.size(), result.data());
           },
@@ -445,10 +439,8 @@ void add_tesseract_module(py::module& root) {
               self.decode(detections);
 
               // Collect results for the current shot being decoded.
-              for (size_t ei : self.predicted_errors_buffer) {
-                for (int obs_index : self.errors[ei].symptom.observables) {
-                  result_unchecked(i, obs_index) ^= 1;
-                }
+              for (int obs_index : self.get_flipped_observables(self.predicted_errors_buffer)) {
+                result_unchecked(i, obs_index) ^= 1;
               }
             }
 

@@ -43,6 +43,8 @@ struct SimplexDecoder {
   size_t num_detectors = 0;
   size_t num_observables = 0;
   std::vector<size_t> predicted_errors_buffer;
+  std::vector<size_t> dem_error_to_error;
+  std::vector<size_t> error_to_dem_error;
   std::vector<std::vector<int>> error_masks;
   std::vector<std::vector<size_t>> start_time_to_errors;
   std::vector<std::vector<size_t>> end_time_to_errors;
@@ -60,18 +62,22 @@ struct SimplexDecoder {
   // Clears the predicted_errors_buffer and fills it with the decoded errors for
   // these detection events.
   void decode_to_errors(const std::vector<uint64_t>& detections);
-  // Returns the bitwise XOR of all the observables bitmasks of all errors in
-  // the predicted errors buffer.
+
+  // Returns the bitwise XOR of the observables flipped by the errors in the given array, indexed by
+  // the original flattened DEM error indices.
   std::vector<int> get_flipped_observables(const std::vector<size_t>& predicted_errors) const;
-  // Returns the sum of the likelihood costs (minus-log-likelihood-ratios) of
-  // all errors in the predicted errors buffer.
+
+  // Returns the sum of likelihood costs of the errors in the given array, indexed by the original
+  // flattened DEM error indices.
   double cost_from_errors(const std::vector<size_t>& predicted_errors) const;
+
   std::vector<int> decode(const std::vector<uint64_t>& detections);
 
   void decode_shots(std::vector<stim::SparseShot>& shots,
                     std::vector<std::vector<int>>& obs_predicted);
 
   ~SimplexDecoder();
+
   void init_ilp();
 };
 
