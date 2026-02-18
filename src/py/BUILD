@@ -85,6 +85,26 @@ py_test(
 )
 
 
+py_library(
+    name = "decomposer",
+    srcs = ["decomposer.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//stim",
+    ],
+)
+
+py_test(
+    name = "decomposer_test",
+    srcs = ["decomposer_test.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":decomposer",
+        "@pypi//pytest",
+        "@pypi//stim",
+    ],
+)
+
 compile_pip_requirements(
     name = "requirements",
     src = "requirements.in",
