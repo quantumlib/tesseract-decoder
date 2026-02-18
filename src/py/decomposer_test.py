@@ -60,3 +60,20 @@ def test_do_decomposition_stim_surface_code_requires_xy_coords():
 
   with pytest.raises(AssertionError, match='requires detector x/y coordinates'):
     do_decomposition_stim_surface_code(dem)
+
+
+def test_do_decomposition_last_coordinate_index_dedupes_mod_2_targets():
+  dem = stim.DetectorErrorModel('''
+      detector(0, 0, 0, 0) D0
+      detector(1, 0, 0, 1) D1
+      error(0.125) D0 D0 D1 D1 L0 L0
+  ''')
+
+  actual = do_decomposition_last_coordinate_index(dem)
+
+  expected = stim.DetectorErrorModel('''
+      detector(0, 0, 0, 0) D0
+      detector(1, 0, 0, 1) D1
+      error(0.125)
+  ''')
+  assert actual == expected
