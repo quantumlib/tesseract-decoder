@@ -1,6 +1,17 @@
 import stim
 
 
+def get_dets_logicals(error: stim.DemInstruction):
+  dets = set()
+  logicals = set()
+  for t in error.targets_copy():
+    if t.is_logical_observable_id():
+      logicals = logicals.symmetric_difference({t.val})
+    elif t.is_relative_detector_id():
+      dets = dets.symmetric_difference({t.val})
+  return dets, logicals
+
+
 def _decompose_by_detector_partition(dem, partition_func):
   detector_coords = {}
 
@@ -19,17 +30,13 @@ def _decompose_by_detector_partition(dem, partition_func):
     # Make a new instruction where the detectors are decomposed.
     targets_by_basis = [[], []]
     observables = []
-    for d in instruction.targets_copy():
-      if d.is_separator():
-        # Ignore the existing decomposition, if present.
-        continue
-      if d.is_relative_detector_id():
-        coord = detector_coords[d.val]
-        targets_by_basis[partition_func(coord)].append(d)
-      else:
-        # Logical observables are placed in component 0.
-        assert d.is_logical_observable_id()
-        observables.append(d)
+    dets, logicals = get_dets_logicals(instruction)
+    for det in sorted(dets):
+      coord = detector_coords[det]
+      targets_by_basis[partition_func(coord)].append(stim.target_relative_detector_id(det))
+    for obs in sorted(logicals):
+      # Logical observables are placed in component 0.
+      observables.append(stim.target_logical_observable_id(obs))
 
     all_targets = []
     for targets in targets_by_basis:
