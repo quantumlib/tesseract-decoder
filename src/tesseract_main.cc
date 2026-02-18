@@ -266,7 +266,8 @@ struct Args {
     if (shot_range_begin or shot_range_end) {
       assert(shot_range_end >= shot_range_begin);
       if (shot_range_end > shots.size()) {
-        throw std::invalid_argument("Shot range end is past end of shots array.");
+        throw std::invalid_argument("Shot range end is past end of shots array (size " +
+                                    std::to_string(shots.size()) + ").");
       }
       std::vector<stim::SparseShot> shots_in_range(shots.begin() + shot_range_begin,
                                                    shots.begin() + shot_range_end);
