@@ -1,7 +1,7 @@
 import stim
 
 
-def do_decomposition_last_coordinate_index(dem):
+def _decompose_by_detector_partition(dem, partition_func):
   detector_coords = {}
 
   for instruction in dem.flattened():
@@ -15,24 +15,24 @@ def do_decomposition_last_coordinate_index(dem):
     if instruction.type != 'error':
       output_dem.append(instruction)
       continue
-    # Make a new instruction where the detectors are decomposed
-    targets_by_basis = [[],[]]
+
+    # Make a new instruction where the detectors are decomposed.
+    targets_by_basis = [[], []]
     observables = []
     for d in instruction.targets_copy():
       if d.is_separator():
-        # Ignore the existing decomposition, if present
+        # Ignore the existing decomposition, if present.
         continue
       if d.is_relative_detector_id():
         coord = detector_coords[d.val]
-        assert coord[-1] == int(coord[-1]) and coord[-1] in {0, 1}, 'invalid tail coordinate'
-        targets_by_basis[int(coord[-1])].append(d)
+        targets_by_basis[partition_func(coord)].append(d)
       else:
-        # Logical observables are placed in component 0
+        # Logical observables are placed in component 0.
         assert d.is_logical_observable_id()
         observables.append(d)
 
     all_targets = []
-    for i, targets in enumerate(targets_by_basis):
+    for targets in targets_by_basis:
       if len(all_targets) and len(targets):
         all_targets.append(stim.target_separator())
       all_targets += targets
@@ -44,7 +44,27 @@ def do_decomposition_last_coordinate_index(dem):
       targets=all_targets,
     )
     output_dem.append(new_instruction)
+
   return output_dem
+
+
+def do_decomposition_last_coordinate_index(dem):
+  def partition_func(coord):
+    assert coord[-1] == int(coord[-1]) and coord[-1] in {0, 1}, 'invalid tail coordinate'
+    return int(coord[-1])
+
+  return _decompose_by_detector_partition(dem, partition_func)
+
+
+def do_decomposition_stim_surface_code(dem):
+  def partition_func(coord):
+    assert len(coord) >= 2, 'surface-code decomposition requires detector x/y coordinates'
+    x, y = coord[0], coord[1]
+    assert x == int(x) and y == int(y), 'surface-code decomposition requires integer detector x/y coordinates'
+    return ((int(x) - int(y)) % 4) // 2
+
+  return _decompose_by_detector_partition(dem, partition_func)
+
 
 def apply_fix(in_fname, out_fname, fix_func):
   dem = stim.DetectorErrorModel.from_file(in_fname)
@@ -52,18 +72,22 @@ def apply_fix(in_fname, out_fname, fix_func):
   fixed.to_file(out_fname)
 
 
-
 if __name__ == '__main__':
   import argparse
+
   parser = argparse.ArgumentParser('Error mechanism decomposition script')
   parser.add_argument(
-    '--method', required=True, type=str,
-    help='Decomposition strategy. Must be last-coordinate-index')
+    '--method',
+    required=True,
+    type=str,
+    help='Decomposition strategy. Must be one of: last-coordinate-index, stim-surface-code',
+  )
   parser.add_argument('--in', dest='in_fname', help='DEM file to ingest', required=True, type=str)
   parser.add_argument('--out', dest='out_fname', help='DEM file to produce', required=True, type=str)
   args = parser.parse_args()
   if args.method == 'last-coordinate-index':
     apply_fix(args.in_fname, args.out_fname, do_decomposition_last_coordinate_index)
-  # Todo -- add Stim surface code coordinate convention, optionally add connected-components strategy
+  elif args.method == 'stim-surface-code':
+    apply_fix(args.in_fname, args.out_fname, do_decomposition_stim_surface_code)
   else:
     raise ValueError(f'invalid method: {args.method}')
