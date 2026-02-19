@@ -12,8 +12,7 @@ def get_dets_logicals(error: stim.DemInstruction):
       dets = dets.symmetric_difference({t.val})
   return dets, logicals
 
-def spatial_key(detector_coords: dict, min_t_coord:float, max_t_coord: float, error: stim.DemInstruction):
-  dets, logicals = get_dets_logicals(error)
+def spatial_key(detector_coords: dict, min_t_coord:float, max_t_coord: float, dets, logicals):
   d_coords = sorted([tuple(detector_coords[d]) for d in dets])
   min_d_coord = d_coords[0]
   relative_d_coords = [tuple(np.array(c)-np.array(min_d_coord)) for c in d_coords]
@@ -39,13 +38,35 @@ def get_detector_coords(dem: stim.DetectorErrorModel):
   max_t_coord = max(c[2] for c in detector_coords.values())
   return detector_coords, min_t_coord, max_t_coord
 
+
+# Analyze the errors to make the flip tables
+def merged_errors(dem):
+  errors_by_symptom = {}
+  for error in dem.flattened():
+    if error.type != "error":
+      continue
+    probability = error.args_copy()[0]
+    assert 0 <= probability and probability <= 1, error
+    detectors, observables = get_dets_logicals(error)
+    key = (tuple(sorted(detectors)), tuple(sorted(observables)))
+    if key in errors_by_symptom:
+      p0 = errors_by_symptom[key]["probability"]
+      probability = p0 * (1 - probability) + (1 - p0) * probability
+    error = {
+        "probability": probability,
+        "likelihood_cost": -np.log(probability / (1 - probability)),
+        "detectors": list(detectors),
+        "observables": list(observables),
+    }
+    errors_by_symptom[key] = error
+
+  return list(errors_by_symptom.values())
+
 def get_key_to_probabilities(spatial_data, template, verbose=False):
   key_to_probabilities = {}
-  for inst in template.flattened():
-    if inst.type != 'error':
-      continue
-    probability = inst.args_copy()[0]
-    key = spatial_key(*spatial_data, inst)
+  for error in merged_errors(template):
+    probability = error['probability']
+    key = spatial_key(*spatial_data, error['detectors'], error['observables'])
     if key not in key_to_probabilities:
       key_to_probabilities[key] = []
     key_to_probabilities[key].append(probability)
@@ -61,7 +82,7 @@ def merge_concat(dictionaries: List[dict]):
         merged[k] = []
       merged[k] = np.concatenate([merged[k], d[k]])
   return merged
-    
+
 
 def generalize(templates: List[stim.DetectorErrorModel], scaffold: stim.DetectorErrorModel, verbose: bool=False) -> stim.DetectorErrorModel:
   # Get detector coords for all detectors
@@ -77,11 +98,22 @@ def generalize(templates: List[stim.DetectorErrorModel], scaffold: stim.Detector
     for key, probabilities in key_to_probabilities.items()
   }
   output_dem = stim.DetectorErrorModel()
-  for inst in scaffold.flattened():
-    if inst.type == 'error':
-      # update the probability
-      key = spatial_key(*spatial_data_scaffold, inst)
-      inst = stim.DemInstruction(type='error', args=[key_to_probability[key]], targets=inst.targets_copy())
+  for instruction in scaffold.flattened():
+    if instruction.type != 'error':
+      output_dem.append(instruction)
+  for error in merged_errors(scaffold):
+    # update the probability
+    key = spatial_key(*spatial_data_scaffold, error['detectors'], error['observables'])
+    inst = stim.DemInstruction(
+      type='error',
+      args=[key_to_probability[key]],
+      targets=[
+        stim.target_relative_detector_id(D)
+        for D in error['detectors']
+      ] + [
+        stim.target_logical_observable_id(L)
+        for L in error['observables']
+      ])
     output_dem.append(inst)
 
   return output_dem
