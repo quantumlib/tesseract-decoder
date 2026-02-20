@@ -20,6 +20,7 @@ py_wheel(
     distribution = "tesseract_decoder",
     deps=[
         "//src:tesseract_decoder",
+        "//src/py:generated_stubs",
         ":package_data",
     ],
     version = "$(VERSION)",
