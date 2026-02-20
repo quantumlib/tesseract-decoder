@@ -120,6 +120,18 @@ set_target_properties(tesseract_decoder PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO ${PROJECT_SOURCE_DIR}/src
 )
 
+# === Stub Generation ===
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_FOUND)
+  add_custom_command(
+      TARGET tesseract_decoder POST_BUILD
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/generate_stubs.py
+          --output-dir ${PROJECT_SOURCE_DIR}/src
+      COMMENT "Generating Python type stubs for tesseract_decoder"
+      WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+  )
+endif()
+
 # === Tests ===
 enable_testing()
 

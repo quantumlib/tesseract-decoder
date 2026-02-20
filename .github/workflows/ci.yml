@@ -84,3 +84,7 @@ jobs:
 
     - name: Bazel tests
       run: bazel test src/...
+
+    - name: Generate and validate stubs
+      run: |
+        bazel run //src:generate_stubs -- --output-dir $(pwd)/src

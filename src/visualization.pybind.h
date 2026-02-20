@@ -1,3 +1,6 @@
+// NOTE: After modifying bindings in this file, regenerate the .pyi type stubs:
+//   bazel run //src:generate_stubs -- --output-dir $(pwd)/src
+
 #include <pybind11/iostream.h>
 #include <pybind11/numpy.h>
 #include <pybind11/operators.h>

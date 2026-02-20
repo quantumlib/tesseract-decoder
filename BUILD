@@ -6,6 +6,11 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+exports_files(
+    ["generate_stubs.py"],
+    visibility = ["//visibility:public"],
+)
+
 
 filegroup(
     name="package_data",
@@ -20,6 +25,7 @@ py_wheel(
     distribution = "tesseract_decoder",
     deps=[
         "//src:tesseract_decoder",
+        "//src:generated_stubs",
         ":package_data",
     ],
     version = "$(VERSION)",

@@ -74,6 +74,9 @@ jobs:
         echo "set version to ${TARGET_PYTHON}"
         python _update_bazel_py_version.py $TARGET_PYTHON
 
+    - name: Generate stubs
+      run: bazel run //src:generate_stubs -- --output-dir $(pwd)/src
+
     - name: Build package
       env:
         TARGET_PYTHON: ${{ matrix.python-version }}
