@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <boost/functional/hash.hpp>  // For boost::hash_range
 #include <cassert>
+#include <cstdint>
 #include <functional>  // For std::hash (though not strictly necessary here, but good practice)
 #include <iostream>
 #include <limits>
@@ -87,24 +88,26 @@ bool Node::operator>(const Node& other) const {
 double TesseractDecoder::get_detcost(
     size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const {
   double min_cost = INF;
+  uint32_t min_det_cost = std::numeric_limits<uint32_t>::infinity();
   double error_cost;
   ErrorCost ec;
   DetectorCostTuple dct;
 
   for (int ei : d2e[d]) {
     ec = error_costs[ei];
-    if (ec.min_cost >= min_cost) break;
+    if (ec.likelihood_cost * min_det_cost >= min_cost * errors[ei].symptom.detectors.size()) break;
 
     dct = detector_cost_tuples[ei];
     if (!dct.error_blocked) {
-      error_cost = ec.likelihood_cost / dct.detectors_count;
-      if (error_cost < min_cost) {
+      error_cost = ec.likelihood_cost;
+      if (error_cost < min_cost * dct.detectors_count) {
         min_cost = error_cost;
+        min_det_cost = dct.detectors_count;
       }
     }
   }
 
-  return min_cost + config.det_penalty;
+  return (min_cost / min_det_cost) + config.det_penalty;
 }
 
 TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
