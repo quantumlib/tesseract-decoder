@@ -219,7 +219,6 @@ TEST(tesseract, DecodersStripZeroProbabilityErrors) {
   EXPECT_EQ(s_dec.errors.size(), 2);
 }
 
-
 TEST(tesseract, GetDetectorCoordsAllowsLogicalObservableInstructionsInDem) {
   stim::DetectorErrorModel dem(R"DEM(
         error(0.1) D0 L0
@@ -241,9 +240,7 @@ TEST(tesseract, SimplexAllowsLogicalObservableInstructionsInDem) {
         logical_observable L0
       )DEM");
 
-  EXPECT_NO_THROW({
-    SimplexDecoder s_dec(SimplexConfig{dem});
-  });
+  EXPECT_NO_THROW({ SimplexDecoder s_dec(SimplexConfig{dem}); });
 }
 
 TEST(tesseract, DecoderErrorIndexMapsAreInOriginalDemCoordinates) {
