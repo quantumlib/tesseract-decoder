@@ -18,6 +18,7 @@
 
 #include "Highs.h"
 #include "io/HMPSIO.h"
+#include "utils.h"
 
 constexpr size_t T_COORD = 2;
 
@@ -51,24 +52,16 @@ SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
   dem_error_to_error = std::move(dem_error_map);
   error_to_dem_error = common::invert_error_map(dem_error_to_error, config.dem.count_errors());
 
-  std::vector<double> detector_t_coords(config.dem.count_detectors());
-  for (const stim::DemInstruction& instruction : config.dem.flattened().instructions) {
-    switch (instruction.type) {
-      case stim::DemInstructionType::DEM_SHIFT_DETECTORS:
-        throw std::runtime_error("DEM_SHIFT_DETECTORS instruction is not supported.");
-        break;
-      case stim::DemInstructionType::DEM_ERROR: {
-        if (!(instruction.arg_data[0] > 0)) {
-          throw std::invalid_argument("Error instruction probability must be greater than zero.");
-        }
-        errors.emplace_back(instruction);
-        break;
-      }
-      case stim::DemInstructionType::DEM_DETECTOR:
-        detector_t_coords[instruction.target_data[0].val()] = instruction.arg_data[T_COORD];
-        break;
-      default:
-        throw std::runtime_error("Unsupported instruction type encountered.");
+  errors = get_errors_from_dem(config.dem.flattened());
+
+  std::vector<double> detector_t_coords(config.dem.count_detectors(), 0);
+  std::vector<std::vector<double>> detector_coords = get_detector_coords(config.dem);
+  if (detector_coords.size() != config.dem.count_detectors()) {
+    throw std::runtime_error("Mismatch between detector coordinates and detector count.");
+  }
+  for (size_t d = 0; d < detector_coords.size(); ++d) {
+    if (detector_coords[d].size() > T_COORD) {
+      detector_t_coords[d] = detector_coords[d][T_COORD];
     }
   }
   std::map<double, std::vector<size_t>> start_time_to_errors_map, end_time_to_errors_map;
