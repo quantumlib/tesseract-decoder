@@ -24,6 +24,9 @@
 #include "utils.pybind.h"
 #include "visualization.pybind.h"
 
+// NOTE: If you modify any Python bindings in this file or in the included
+// .pybind.h headers, regenerate the .pyi type stubs by running:
+//   bazel run //src:generate_stubs -- --output-dir $(pwd)/src
 PYBIND11_MODULE(tesseract_decoder, tesseract) {
   py::module::import("stim");
 

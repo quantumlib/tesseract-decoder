@@ -14,7 +14,7 @@
 
 # load("@benchmark//:benchmark.bzl", "cc_benchmark")
 load("@pybind11_bazel//:build_defs.bzl", "pybind_extension", "pybind_library")
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -98,6 +98,21 @@ py_library(
     ],
 )
 
+py_binary(
+    name = "generate_stubs",
+    srcs = ["//:generate_stubs.py"],
+    deps = [
+        ":lib_tesseract_decoder",
+        "@pypi//pybind11_stubgen",
+        "@pypi//stim",
+    ],
+)
+
+filegroup(
+    name = "generated_stubs",
+    srcs = glob(["tesseract_decoder-stubs/**/*.pyi"]),
+    visibility = ["//visibility:public"],
+)
 
 cc_library(
     name = "libutils",

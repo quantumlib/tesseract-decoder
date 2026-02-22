@@ -105,6 +105,16 @@ py_test(
     ],
 )
 
+py_test(
+    name = "stub_test",
+    srcs = ["stub_test.py"],
+    data = ["//src:generated_stubs"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pytest",
+    ],
+)
+
 compile_pip_requirements(
     name = "requirements",
     src = "requirements.in",

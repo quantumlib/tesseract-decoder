@@ -11,6 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// NOTE: After modifying bindings in this file, regenerate the .pyi type stubs:
+//   bazel run //src:generate_stubs -- --output-dir $(pwd)/src
 
 #ifndef _SIMPLEX_PYBIND_H
 #define _SIMPLEX_PYBIND_H
