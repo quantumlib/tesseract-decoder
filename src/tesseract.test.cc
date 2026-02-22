@@ -219,6 +219,30 @@ TEST(tesseract, DecodersStripZeroProbabilityErrors) {
   EXPECT_EQ(s_dec.errors.size(), 2);
 }
 
+TEST(tesseract, GetDetectorCoordsAllowsLogicalObservableInstructionsInDem) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 L0
+        detector(1,2,3) D0
+        logical_observable L0
+      )DEM");
+
+  std::vector<std::vector<double>> detector_coords = get_detector_coords(dem);
+  ASSERT_EQ(detector_coords.size(), 1);
+  ASSERT_EQ(detector_coords[0].size(), 3);
+  EXPECT_EQ(detector_coords[0][0], 1);
+  EXPECT_EQ(detector_coords[0][1], 2);
+  EXPECT_EQ(detector_coords[0][2], 3);
+}
+TEST(tesseract, SimplexAllowsLogicalObservableInstructionsInDem) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 L0
+        detector(0,0,0) D0
+        logical_observable L0
+      )DEM");
+
+  EXPECT_NO_THROW({ SimplexDecoder s_dec(SimplexConfig{dem}); });
+}
+
 TEST(tesseract, DecoderErrorIndexMapsAreInOriginalDemCoordinates) {
   stim::DetectorErrorModel dem(R"DEM(
         error(0.1) D0
