@@ -265,7 +265,8 @@ void SimplexDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
       if (model_status != HighsModelStatus::kOptimal) {
         std::cerr << "Error: Model did not reach an optimal solution. Status: "
                   << highs->modelStatusToString(model_status) << std::endl;
-        throw std::runtime_error("HighsModelStatus::kOptimal expected.");
+        throw std::runtime_error("HighsModelStatus::kOptimal expected, got " +
+                                 highs->modelStatusToString(model_status) + ".");
       }
 
       // Extract the used errors
