@@ -376,12 +376,12 @@ void pybind_sinter_compat(py::module& root) {
       "make_tesseract_sinter_decoders_dict",
       []() -> py::object {
         auto result = py::dict();
-        result["tesseract"] = TesseractSinterDecoder{};
         result["tesseract-long-beam"] = TesseractSinterDecoder(
             /*det_beam=*/20, /*beam_climbing=*/true, /*no_revisit_dets=*/true,
             /*verbose=*/false, /*merge_errors=*/true, /*pqlimit=*/1000000,
             /*det_penalty=*/0.0, /*create_visualization=*/false,
             /*num_det_orders=*/21, /*det_order_method=*/DetOrder::DetIndex, /*seed=*/2384753);
+        result["tesseract"] = result["tesseract-long-beam"];
         result["tesseract-short-beam"] = TesseractSinterDecoder(
             /*det_beam=*/15, /*beam_climbing=*/true, /*no_revisit_dets=*/true,
             /*verbose=*/false, /*merge_errors=*/true, /*pqlimit=*/200000,
