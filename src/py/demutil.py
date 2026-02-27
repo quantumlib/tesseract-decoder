@@ -18,6 +18,22 @@ and related utilities, in `decompose_errors.py` and `generalize_dem.py`.
 """
 
 
+
+__all__ = [
+    "decompose_errors",
+    "regeneralize_spatial_dem",
+    "reduce_symmetric_difference",
+    "reduce_set_symmetric_difference",
+    "undecomposed_error_detectors_and_observables",
+    "get_component_obs_matching_undecomposed_obs",
+    "decompose_errors_using_detector_assignment",
+    "decompose_errors_using_detector_coordinate_assignment",
+    "detector_coord_to_basis_for_stim_surface_code_convention",
+    "decompose_errors_using_last_coordinate_index",
+    "decompose_errors_for_stim_surface_code_coords",
+    "undecompose_errors",
+]
+
 import stim
 
 from .decompose_errors import (
