@@ -30,22 +30,12 @@ py_library(
 
 py_library(
     name = "demutil",
-    srcs = ["demutil.py"],
+    srcs = ["demutil.py", "generalize_dem.py"],
     visibility = ["//:__subpackages__"],
     deps = [
         ":decompose_errors",
-        ":generalize_dem",
         "@pypi//stim",
-    ],
-)
-
-py_library(
-    name = "generalize_dem",
-    srcs = ["generalize_dem.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
         "@pypi//numpy",
-        "@pypi//stim",
     ],
 )
 
