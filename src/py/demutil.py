@@ -12,13 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Utilities for detector error model decomposition and re-generalization.
-
+"""
 This module is a dispatcher for DEMfunctionality such as decomposition and re-generalization,
 and related utilities, in `decompose_errors.py` and `generalize_dem.py`.
 """
 
-from typing import List
 
 import stim
 
