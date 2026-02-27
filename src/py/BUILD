@@ -96,8 +96,8 @@ py_test(
 
 
 py_library(
-    name = "decomposer",
-    srcs = ["decomposer.py"],
+    name = "decompose_errors",
+    srcs = ["decompose_errors.py"],
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//stim",
@@ -105,11 +105,11 @@ py_library(
 )
 
 py_test(
-    name = "decomposer_test",
-    srcs = ["decomposer_test.py"],
+    name = "decompose_errors_test",
+    srcs = ["decompose_errors_test.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":decomposer",
+        ":decompose_errors",
         "@pypi//pytest",
         "@pypi//stim",
     ],
