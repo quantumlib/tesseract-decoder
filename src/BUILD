@@ -95,6 +95,7 @@ py_library(
     imports=["src"],
     deps=[
         ":tesseract_decoder",
+        "//src/py:demutil",
     ],
 )
 
