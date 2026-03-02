@@ -33,7 +33,6 @@ PYBIND11_MODULE(tesseract_decoder, tesseract) {
   add_tesseract_module(tesseract);
   add_visualization_module(tesseract);
   pybind_sinter_compat(tesseract);
-  tesseract.attr("demutil") = py::module::import("src.py.demutil");
 
   // Adds a context manager to the python library that can be used to redirect C++'s stdout/stderr
   // to python's stdout/stderr at run time like
