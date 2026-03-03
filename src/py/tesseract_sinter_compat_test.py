@@ -19,8 +19,8 @@ import stim
 import shutil
 from sinter._decoding._decoding import sample_decode
 
-from src.tesseract_decoder import TesseractSinterDecoder, make_tesseract_sinter_decoders_dict
-from src import tesseract_decoder
+from tesseract_decoder import TesseractSinterDecoder, make_tesseract_sinter_decoders_dict
+import tesseract_decoder
 import sinter
 
 

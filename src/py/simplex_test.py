@@ -16,8 +16,9 @@ import pytest
 import numpy as np
 import stim
 
-from src import tesseract_decoder
-from src.py.shared_decoding_tests import (
+
+import tesseract_decoder
+from shared_decoding_tests import (
     shared_test_decode,
     shared_test_decode_batch_with_invalid_dimensions,
     shared_test_decode_batch_with_complex_model,

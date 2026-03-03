@@ -15,7 +15,8 @@
 import pytest
 import stim
 
-from src import tesseract_decoder
+
+import _tesseract_py_util as demutil
 
 
 def _demo_dem() -> stim.DetectorErrorModel:
@@ -30,41 +31,41 @@ def _demo_dem() -> stim.DetectorErrorModel:
     )
 
 
-@pytest.mark.skip(reason="Needs demutil")
+
 def test_import_exposes_demutil_submodule():
-    assert hasattr(tesseract_decoder, "demutil")
-    assert hasattr(tesseract_decoder.demutil, "regeneralize_spatial_dem")
-    assert hasattr(tesseract_decoder.demutil, "decompose_errors")
+    # assert hasattr(tesseract_decoder, "demutil")
+    assert hasattr(demutil, "regeneralize_spatial_dem")
+    assert hasattr(demutil, "decompose_errors")
 
 
-@pytest.mark.skip(reason="Needs demutil")
+
 def test_decompose_errors_dispatch_methods():
     dem = _demo_dem()
 
-    expected_surface = tesseract_decoder.demutil.decompose_errors_for_stim_surface_code_coords(
+    expected_surface = demutil.decompose_errors_for_stim_surface_code_coords(
         dem
     )
-    actual_surface = tesseract_decoder.demutil.decompose_errors(
+    actual_surface = demutil.decompose_errors(
         dem, method="stim-surfacecode-coords"
     )
     assert str(actual_surface) == str(expected_surface)
 
-    expected_last = tesseract_decoder.demutil.decompose_errors_using_last_coordinate_index(
+    expected_last = demutil.decompose_errors_using_last_coordinate_index(
         dem
     )
-    actual_last = tesseract_decoder.demutil.decompose_errors(
+    actual_last = demutil.decompose_errors(
         dem, method="last-coordinate-index"
     )
     assert str(actual_last) == str(expected_last)
 
 
-@pytest.mark.skip(reason="Needs demutil")
+
 def test_decompose_errors_rejects_unknown_method():
     with pytest.raises(ValueError, match="Unknown decomposition method"):
-        tesseract_decoder.demutil.decompose_errors(_demo_dem(), method="bad-method")
+        demutil.decompose_errors(_demo_dem(), method="bad-method")
 
 
-@pytest.mark.skip(reason="Needs demutil")
+
 def test_regeneralize_spatial_dem_averages_template_probabilities():
     template_1 = stim.DetectorErrorModel(
         """
@@ -91,7 +92,7 @@ def test_regeneralize_spatial_dem_averages_template_probabilities():
         """
     )
 
-    out = tesseract_decoder.demutil.regeneralize_spatial_dem(
+    out = demutil.regeneralize_spatial_dem(
         templates=[template_1, template_2], scaffold=scaffold
     )
 
@@ -99,81 +100,81 @@ def test_regeneralize_spatial_dem_averages_template_probabilities():
     assert probs == pytest.approx([0.2, 0.3])
 
 
-@pytest.mark.skip(reason="Needs demutil")
+
 def test_reduce_symmetric_difference_exposed():
-    assert tesseract_decoder.demutil.reduce_symmetric_difference([1, 2, 2, 3]) == (1, 3)
+    assert demutil.reduce_symmetric_difference([1, 2, 2, 3]) == (1, 3)
 
 
-@pytest.mark.skip(reason="Needs demutil")
+
 def test_reduce_set_symmetric_difference_exposed():
-    assert tesseract_decoder.demutil.reduce_set_symmetric_difference(
+    assert demutil.reduce_set_symmetric_difference(
         [{1, 2}, {2, 3}]
     ) == (1, 3)
 
 
-@pytest.mark.skip(reason="Needs demutil")
+
 def test_undecomposed_error_detectors_and_observables_exposed():
     err = stim.DemInstruction("error", [0.1], [stim.target_relative_detector_id(0)])
-    dets, obs = tesseract_decoder.demutil.undecomposed_error_detectors_and_observables(
+    dets, obs = demutil.undecomposed_error_detectors_and_observables(
         err
     )
     assert dets == (0,)
     assert obs == ()
 
 
-@pytest.mark.skip(reason="Needs demutil")
+
 def test_get_component_obs_matching_undecomposed_obs_exposed():
     # Simple case: 1 component, 1 option matching target
     obs_options = [{(0,)}]
     target_obs = (0,)
-    result = tesseract_decoder.demutil.get_component_obs_matching_undecomposed_obs(
+    result = demutil.get_component_obs_matching_undecomposed_obs(
         obs_options, target_obs
     )
     assert result == [(0,)]
 
 
-@pytest.mark.skip(reason="Needs demutil")
+
 def test_decompose_errors_using_detector_assignment_exposed():
     dem = _demo_dem()
     # Assign D0 (0) -> comp 0, D1 (1) -> comp 1
     # Error D0 D1 (0.3) should split if allowed, but here we just check it runs
     # This function is complex, we just check it returns a DEM
-    out = tesseract_decoder.demutil.decompose_errors_using_detector_assignment(
+    out = demutil.decompose_errors_using_detector_assignment(
         dem, lambda d: d
     )
     assert isinstance(out, stim.DetectorErrorModel)
 
 
-@pytest.mark.skip(reason="Needs demutil")
+
 def test_decompose_errors_using_detector_coordinate_assignment_exposed():
     dem = _demo_dem()
     # D0 at (0,0,0), D1 at (2,0,1)
     # Assign based on Z coord: D0->0, D1->1
-    out = tesseract_decoder.demutil.decompose_errors_using_detector_coordinate_assignment(
+    out = demutil.decompose_errors_using_detector_coordinate_assignment(
         dem, lambda c: int(c[2])
     )
     assert isinstance(out, stim.DetectorErrorModel)
 
 
-@pytest.mark.skip(reason="Needs demutil")
+
 def test_detector_coord_to_basis_exposed():
     # (0,0) -> 0 (X), (1,0) -> 1 (Z) ? check impl
     # Impl: 1 - ((x//2 + y//2) % 2)
     # (0,0) -> 1 - (0%2) = 1
     # (2,0) -> 1 - (1%2) = 0
     assert (
-        tesseract_decoder.demutil.detector_coord_to_basis_for_stim_surface_code_convention(
+        demutil.detector_coord_to_basis_for_stim_surface_code_convention(
             (0, 0)
         )
         == 1
     )
 
 
-@pytest.mark.skip(reason="Needs demutil")
+
 def test_undecompose_errors_exposed():
     dem = _demo_dem()
     # Undecomposing a flat DEM should be idempotent or similar
-    out = tesseract_decoder.demutil.undecompose_errors(dem)
+    out = demutil.undecompose_errors(dem)
     assert isinstance(out, stim.DetectorErrorModel)
     assert out.num_errors > 0
 
