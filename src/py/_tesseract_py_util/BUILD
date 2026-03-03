@@ -19,10 +19,10 @@ py_test(
     deps = [
         "@pypi//pytest",
         "@pypi//stim",
-        # "//src:lib_tesseract_decoder",
+        "//src:lib_tesseract_decoder",
         ":_tesseract_py_util",
     ],
-    imports = ["..", "."],
+    imports = ["..", ".", "../.."],
 )
 
 

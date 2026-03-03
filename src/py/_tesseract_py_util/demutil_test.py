@@ -16,7 +16,8 @@ import pytest
 import stim
 
 
-import _tesseract_py_util as demutil
+import tesseract_decoder
+from tesseract_decoder import demutil
 
 
 def _demo_dem() -> stim.DetectorErrorModel:
@@ -33,7 +34,7 @@ def _demo_dem() -> stim.DetectorErrorModel:
 
 
 def test_import_exposes_demutil_submodule():
-    # assert hasattr(tesseract_decoder, "demutil")
+    assert hasattr(tesseract_decoder, "demutil")
     assert hasattr(demutil, "regeneralize_spatial_dem")
     assert hasattr(demutil, "decompose_errors")
 
