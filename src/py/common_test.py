@@ -14,8 +14,8 @@
 
 import pytest
 import stim
-
 import tesseract_decoder
+
 
 def get_set_bits(n):
     """
@@ -37,6 +37,7 @@ def get_set_bits(n):
         i += 1
     return bits
 
+
 def test_error_from_direct_constructor():
     # Test the new constructor with likelihood_cost, detectors, and observables
     likelihood_cost = 1.945910
@@ -56,7 +57,10 @@ def test_error_str():
     observables = [5, 10]
     error = tesseract_decoder.common.Error(likelihood_cost, detectors, observables)
 
-    assert str(error) == "Error{cost=5.500000, symptom=Symptom{detectors=[1 2], observables=[5 10]}}"
+    assert (
+        str(error)
+        == "Error{cost=5.500000, symptom=Symptom{detectors=[1 2], observables=[5 10]}}"
+    )
 
 
 def test_as_dem_instruction_targets():
@@ -76,7 +80,11 @@ def test_as_dem_instruction_targets():
 def test_error_from_dem_instruction():
     di = stim.DemInstruction("error", [0.125], [stim.target_logical_observable_id(3)])
     error = tesseract_decoder.common.Error(di)
-    assert str(error) == "Error{cost=1.945910, symptom=Symptom{detectors=[], observables=[3]}}"
+    assert (
+        str(error)
+        == "Error{cost=1.945910, symptom=Symptom{detectors=[], observables=[3]}}"
+    )
+
 
 def test_error_get_set_probability():
     error = tesseract_decoder.common.Error()
@@ -94,6 +102,7 @@ def test_error_get_set_probability():
     assert error.likelihood_cost == pytest.approx(expected_cost)
     assert error.get_probability() == pytest.approx(probability)
 
+
 def test_error_set_with_probability_invalid_input():
     error = tesseract_decoder.common.Error()
 
@@ -102,17 +111,19 @@ def test_error_set_with_probability_invalid_input():
 
     with pytest.raises(ValueError):
         error.set_with_probability(1.0)
-    
+
     with pytest.raises(ValueError):
         error.set_with_probability(-0.1)
 
     with pytest.raises(ValueError):
         error.set_with_probability(1.1)
 
+
 def test_merge_indistinguishable_errors():
     dem = stim.DetectorErrorModel()
     assert isinstance(
-        tesseract_decoder.common.merge_indistinguishable_errors(dem), stim.DetectorErrorModel
+        tesseract_decoder.common.merge_indistinguishable_errors(dem),
+        stim.DetectorErrorModel,
     )
 
 
@@ -129,9 +140,6 @@ def test_dem_from_counts():
     assert isinstance(
         tesseract_decoder.common.dem_from_counts(dem, [], 3), stim.DetectorErrorModel
     )
-
-
-
 
 
 if __name__ == "__main__":

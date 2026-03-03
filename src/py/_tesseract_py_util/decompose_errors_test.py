@@ -1,17 +1,15 @@
-import pytest
 from collections.abc import Iterable
-import stim
 
+import pytest
+import stim
 from _tesseract_py_util.decompose_errors import (
-    reduce_symmetric_difference,
-    reduce_set_symmetric_difference,
-    get_component_obs_matching_undecomposed_obs,
+    decompose_errors_for_stim_surface_code_coords,
+    decompose_errors_using_detector_coordinate_assignment,
     decompose_errors_using_last_coordinate_index,
     detector_coord_to_basis_for_stim_surface_code_convention,
-    decompose_errors_for_stim_surface_code_coords,
-    undecompose_errors,
-    decompose_errors_using_detector_coordinate_assignment,
-)
+    get_component_obs_matching_undecomposed_obs,
+    reduce_set_symmetric_difference, reduce_symmetric_difference,
+    undecompose_errors)
 
 
 @pytest.mark.parametrize(

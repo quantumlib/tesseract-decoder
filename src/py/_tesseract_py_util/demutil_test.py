@@ -14,23 +14,18 @@
 
 import pytest
 import stim
-
-
 import tesseract_decoder
 from tesseract_decoder import demutil
 
 
 def _demo_dem() -> stim.DetectorErrorModel:
-    return stim.DetectorErrorModel(
-        """
+    return stim.DetectorErrorModel("""
         detector(0, 0, 0) D0
         detector(2, 0, 1) D1
         error(0.1) D0
         error(0.2) D1
         error(0.3) D0 D1
-        """
-    )
-
+        """)
 
 
 def test_import_exposes_demutil_submodule():
@@ -39,26 +34,16 @@ def test_import_exposes_demutil_submodule():
     assert hasattr(demutil, "decompose_errors")
 
 
-
 def test_decompose_errors_dispatch_methods():
     dem = _demo_dem()
 
-    expected_surface = demutil.decompose_errors_for_stim_surface_code_coords(
-        dem
-    )
-    actual_surface = demutil.decompose_errors(
-        dem, method="stim-surfacecode-coords"
-    )
+    expected_surface = demutil.decompose_errors_for_stim_surface_code_coords(dem)
+    actual_surface = demutil.decompose_errors(dem, method="stim-surfacecode-coords")
     assert str(actual_surface) == str(expected_surface)
 
-    expected_last = demutil.decompose_errors_using_last_coordinate_index(
-        dem
-    )
-    actual_last = demutil.decompose_errors(
-        dem, method="last-coordinate-index"
-    )
+    expected_last = demutil.decompose_errors_using_last_coordinate_index(dem)
+    actual_last = demutil.decompose_errors(dem, method="last-coordinate-index")
     assert str(actual_last) == str(expected_last)
-
 
 
 def test_decompose_errors_rejects_unknown_method():
@@ -66,32 +51,25 @@ def test_decompose_errors_rejects_unknown_method():
         demutil.decompose_errors(_demo_dem(), method="bad-method")
 
 
-
 def test_regeneralize_spatial_dem_averages_template_probabilities():
-    template_1 = stim.DetectorErrorModel(
-        """
+    template_1 = stim.DetectorErrorModel("""
         detector(0, 0, 0) D0
         detector(2, 0, 0) D1
         error(0.1) D0
         error(0.2) D1
-        """
-    )
-    template_2 = stim.DetectorErrorModel(
-        """
+        """)
+    template_2 = stim.DetectorErrorModel("""
         detector(0, 0, 0) D0
         detector(2, 0, 0) D1
         error(0.3) D0
         error(0.4) D1
-        """
-    )
-    scaffold = stim.DetectorErrorModel(
-        """
+        """)
+    scaffold = stim.DetectorErrorModel("""
         detector(0, 0, 0) D0
         detector(2, 0, 0) D1
         error(0.9) D0
         error(0.9) D1
-        """
-    )
+        """)
 
     out = demutil.regeneralize_spatial_dem(
         templates=[template_1, template_2], scaffold=scaffold
@@ -101,27 +79,19 @@ def test_regeneralize_spatial_dem_averages_template_probabilities():
     assert probs == pytest.approx([0.2, 0.3])
 
 
-
 def test_reduce_symmetric_difference_exposed():
     assert demutil.reduce_symmetric_difference([1, 2, 2, 3]) == (1, 3)
 
 
-
 def test_reduce_set_symmetric_difference_exposed():
-    assert demutil.reduce_set_symmetric_difference(
-        [{1, 2}, {2, 3}]
-    ) == (1, 3)
-
+    assert demutil.reduce_set_symmetric_difference([{1, 2}, {2, 3}]) == (1, 3)
 
 
 def test_undecomposed_error_detectors_and_observables_exposed():
     err = stim.DemInstruction("error", [0.1], [stim.target_relative_detector_id(0)])
-    dets, obs = demutil.undecomposed_error_detectors_and_observables(
-        err
-    )
+    dets, obs = demutil.undecomposed_error_detectors_and_observables(err)
     assert dets == (0,)
     assert obs == ()
-
 
 
 def test_get_component_obs_matching_undecomposed_obs_exposed():
@@ -134,17 +104,13 @@ def test_get_component_obs_matching_undecomposed_obs_exposed():
     assert result == [(0,)]
 
 
-
 def test_decompose_errors_using_detector_assignment_exposed():
     dem = _demo_dem()
     # Assign D0 (0) -> comp 0, D1 (1) -> comp 1
     # Error D0 D1 (0.3) should split if allowed, but here we just check it runs
     # This function is complex, we just check it returns a DEM
-    out = demutil.decompose_errors_using_detector_assignment(
-        dem, lambda d: d
-    )
+    out = demutil.decompose_errors_using_detector_assignment(dem, lambda d: d)
     assert isinstance(out, stim.DetectorErrorModel)
-
 
 
 def test_decompose_errors_using_detector_coordinate_assignment_exposed():
@@ -157,19 +123,12 @@ def test_decompose_errors_using_detector_coordinate_assignment_exposed():
     assert isinstance(out, stim.DetectorErrorModel)
 
 
-
 def test_detector_coord_to_basis_exposed():
     # (0,0) -> 0 (X), (1,0) -> 1 (Z) ? check impl
     # Impl: 1 - ((x//2 + y//2) % 2)
     # (0,0) -> 1 - (0%2) = 1
     # (2,0) -> 1 - (1%2) = 0
-    assert (
-        demutil.detector_coord_to_basis_for_stim_surface_code_convention(
-            (0, 0)
-        )
-        == 1
-    )
-
+    assert demutil.detector_coord_to_basis_for_stim_surface_code_convention((0, 0)) == 1
 
 
 def test_undecompose_errors_exposed():
