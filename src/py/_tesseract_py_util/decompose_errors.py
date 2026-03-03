@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import stim
-from functools import reduce
 import itertools
 from collections import defaultdict
 from collections.abc import Callable, Iterable
+from functools import reduce
+
+import stim
 
 
 def reduce_symmetric_difference(items: Iterable[int]) -> tuple[int]:

@@ -13,19 +13,16 @@
 # limitations under the License.
 
 import math
+
 import pytest
 import stim
+import tesseract_decoder
 
-from src import tesseract_decoder
-
-
-_DETECTOR_ERROR_MODEL = stim.DetectorErrorModel(
-    """
+_DETECTOR_ERROR_MODEL = stim.DetectorErrorModel("""
 error(0.125) D0
 error(0.375) D0 D1
 error(0.25) D1
-"""
-)
+""")
 
 _DETECTOR_ERROR_MODEL_10 = stim.DetectorErrorModel(
     "\n".join(f"error(0.1) D{i}" for i in range(10))

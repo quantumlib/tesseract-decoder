@@ -92,10 +92,9 @@ pybind_extension(
 
 py_library(
     name="lib_tesseract_decoder",
-    imports=["src"],
     deps=[
         ":tesseract_decoder",
-        "//src/py:demutil",
+        "//src/py/_tesseract_py_util:_tesseract_py_util",
     ],
 )
 
