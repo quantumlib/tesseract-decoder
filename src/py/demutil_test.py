@@ -99,7 +99,7 @@ def test_regeneralize_spatial_dem_averages_template_probabilities():
     assert probs == pytest.approx([0.2, 0.3])
 
 
-@pytest.mark.skip(reason="Needs demutil)
+@pytest.mark.skip(reason="Needs demutil")
 def test_reduce_symmetric_difference_exposed():
     assert tesseract_decoder.demutil.reduce_symmetric_difference([1, 2, 2, 3]) == (1, 3)
 
