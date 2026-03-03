@@ -27,6 +27,18 @@ py_library(
         "//src:lib_tesseract_decoder",
     ],
 )
+
+py_library(
+    name = "demutil",
+    srcs = ["demutil.py", "generalize_dem.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":decompose_errors",
+        "@pypi//stim",
+        "@pypi//numpy",
+    ],
+)
+
 py_test(
     name = "common_test",
     srcs = ["common_test.py"],
@@ -80,6 +92,39 @@ py_test(
         "@pypi//pytest",
         "@pypi//stim",
         "@pypi//sinter",
+        "//src:lib_tesseract_decoder",
+    ],
+)
+
+
+py_library(
+    name = "decompose_errors",
+    srcs = ["decompose_errors.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//stim",
+    ],
+)
+
+py_test(
+    name = "decompose_errors_test",
+    srcs = ["decompose_errors_test.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":decompose_errors",
+        "@pypi//pytest",
+        "@pypi//stim",
+    ],
+)
+
+
+py_test(
+    name = "demutil_test",
+    srcs = ["demutil_test.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//stim",
         "//src:lib_tesseract_decoder",
     ],
 )

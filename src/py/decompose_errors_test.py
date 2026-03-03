@@ -2,7 +2,7 @@ import pytest
 from collections.abc import Iterable
 import stim
 
-from decompose_errors import (
+from src.py.decompose_errors import (
     reduce_symmetric_difference,
     reduce_set_symmetric_difference,
     get_component_obs_matching_undecomposed_obs,
