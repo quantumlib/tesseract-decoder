@@ -73,7 +73,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 
-set(OPT_COPTS -Ofast -fno-fast-math -march=native)
+set(OPT_COPTS -O3 -march=native)
 
 set(TESSERACT_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
