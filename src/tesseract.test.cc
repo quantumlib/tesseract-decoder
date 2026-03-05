@@ -369,3 +369,29 @@ TEST(tesseract, EneighborsCorrectness_ComplexGrid) {
   EXPECT_EQ(t_dec.get_eneighbors()[6], expected_e6_neighbors);
   EXPECT_EQ(t_dec.get_eneighbors()[7], expected_e7_neighbors);
 }
+
+TEST(tesseract, DecodeToErrorsThrowsOnInvalidSymptom) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 D1
+        error(0.1) D1 D2
+        error(0.1) D2 D3
+        detector(0, 0, 0) D0
+        detector(1, 0, 0) D1
+        detector(2, 0, 0) D2
+        detector(2, 0, 0) D2
+    )DEM");
+
+  TesseractConfig config(dem);
+  TesseractDecoder decoder(config);
+
+  uint64_t invalid_symptom = decoder.num_detectors;
+
+  try {
+    decoder.decode_to_errors({invalid_symptom});
+  } catch (const std::runtime_error& err) {
+    EXPECT_EQ("Symptom " + std::to_string(invalid_symptom) +
+                  " references a detector >= num_detectors (= " +
+                  std::to_string(decoder.num_detectors) + ").",
+              err.what());
+  }
+}
