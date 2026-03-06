@@ -107,15 +107,15 @@ Example with Advanced Options:
 ```bash
 ./tesseract \
         --pqlimit 1000000 \
-        --at-most-two-errors-per-detector \
+        --no-revisit-dets \
         --det-order-seed 232852747 \
+        --det-order-index --num-det-orders 24 \
         --circuit circuit_file.stim \
         --sample-seed 232856747 \
         --sample-num-shots 10000 \
         --threads 32 \
         --print-stats \
-        --beam 23 \
-        --num-det-orders 1 \
+        --beam 23 --beam-climbing \
         --shot-range-begin 582 \
         --shot-range-end 583
 ```
