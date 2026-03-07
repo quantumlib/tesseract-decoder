@@ -96,6 +96,7 @@ py_library(
     name="lib_tesseract_decoder",
     deps=[
         ":tesseract_decoder",
+        "//src/py/_tesseract_py_util:_tesseract_py_util",
     ],
 )
 

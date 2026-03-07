@@ -45,6 +45,8 @@ std::vector<std::vector<double>> get_detector_coords(const stim::DetectorErrorMo
         detector_coords.push_back(coord);
         break;
       }
+      case stim::DemInstructionType::DEM_LOGICAL_OBSERVABLE:
+        break;
       default:
         throw std::invalid_argument(
             "Unexpected DemInstructionType found in the detector error model.");

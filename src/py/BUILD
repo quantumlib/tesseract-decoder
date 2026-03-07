@@ -27,7 +27,10 @@ py_library(
         "@pypi//numpy",
         "//src:lib_tesseract_decoder",
     ],
+    imports = ["..", "."],
 )
+
+
 py_test(
     name = "common_test",
     srcs = ["common_test.py"],
@@ -37,6 +40,7 @@ py_test(
         "@pypi//stim",
         "//src:lib_tesseract_decoder",
     ],
+    imports = ["..", "."],
 )
 
 py_test(
@@ -48,6 +52,7 @@ py_test(
         "@pypi//stim",
         "//src:lib_tesseract_decoder",
     ],
+    imports = ["..", "."],
 )
 
 py_test(
@@ -60,6 +65,7 @@ py_test(
         "//src:lib_tesseract_decoder",
         ":shared_decoding_tests",
     ],
+    imports = ["..", "."],
 )
 
 py_test(
@@ -72,6 +78,7 @@ py_test(
         "//src:lib_tesseract_decoder",
         ":shared_decoding_tests",
     ],
+    imports = ["..", "."],
 )
 py_test(
     name = "tesseract_sinter_compat_test",
@@ -83,28 +90,10 @@ py_test(
         "@pypi//sinter",
         "//src:lib_tesseract_decoder",
     ],
+    imports = ["..", "."],
 )
 
 
-py_library(
-    name = "decomposer",
-    srcs = ["decomposer.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "@pypi//stim",
-    ],
-)
-
-py_test(
-    name = "decomposer_test",
-    srcs = ["decomposer_test.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":decomposer",
-        "@pypi//pytest",
-        "@pypi//stim",
-    ],
-)
 
 py_test(
     name = "stub_test",

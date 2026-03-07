@@ -570,3 +570,67 @@ print(f"Shots run: {result.shots}")
 print(f"Observed errors: {result.errors}")
 print(f"Logical error rate: {result.errors / result.shots}")
 ```
+### `tesseract_decoder.demutil` Module
+The `tesseract_decoder.demutil` module provides utilities for manipulating `stim.DetectorErrorModel` objects, specifically for decomposing complex error mechanisms into simpler components and regeneralizing spatial error models.
+
+#### Functions
+* `demutil.decompose_errors(dem: stim.DetectorErrorModel, method: str) -> stim.DetectorErrorModel`
+  * Decomposes error mechanisms in a DEM into simpler components based on the specified method.
+  * Supported methods:
+    * `"stim-surfacecode-coords"`: Decomposes errors based on the spatial coordinates of detectors, assuming a surface code layout where coordinates indicate X or Z basis.
+    * `"last-coordinate-index"`: Decomposes errors using the last coordinate of the detector as the component identifier.
+  * **Note:** For decomposition to work, the DEM must contain "atomic" errors (errors involving only one component) that explain the components of the complex errors.
+
+**Example Usage**:
+
+```python
+import tesseract_decoder.demutil as demutil
+import stim
+
+dem = stim.DetectorErrorModel("""
+    detector(0, 0, 0) D0
+    detector(0, 0, 1) D1
+    # Atomic errors for decomposition reference
+    error(0.01) D0
+    error(0.01) D1
+    # Complex error to decompose
+    error(0.1) D0 D1
+""")
+
+# Re-decompose the errors assuming Stim surface code coordinate convention
+nice_matchable_dem = demutil.decompose_errors(dem, method='stim-surfacecode-coords')
+
+# Re-decompose the errors assuming the last-coordinate index indicates the component:
+nice_matchable_dem2 = demutil.decompose_errors(dem, method='last-coordinate-index')
+```
+
+* `demutil.regeneralize_spatial_dem(templates: list[stim.DetectorErrorModel], scaffold: stim.DetectorErrorModel, verbose: bool = False) -> stim.DetectorErrorModel`
+  * Updates the error probabilities in a `scaffold` DEM by averaging probabilities from matching errors in a list of `template` DEMs. Errors are matched based on their spatial geometry (relative coordinates of detectors).
+  * **Important:** The scaffold errors must have the same structure and **same absolute coordinates** (for the first detector) as the template errors to be matched.
+
+**Example Usage**:
+
+```python
+import tesseract_decoder.demutil as demutil
+import stim
+
+# Take one or more DEMs **with detector coordinates**, aggregate the error probabilities
+template1 = stim.DetectorErrorModel("""
+    detector(0, 0) D0
+    error(0.1) D0
+""")
+template2 = stim.DetectorErrorModel("""
+    detector(0, 0) D0
+    error(0.2) D0
+""")
+scaffold = stim.DetectorErrorModel("""
+    detector(0, 0) D1
+    error(0.99) D1
+""")
+
+nice_calibrated_dem = demutil.regeneralize_spatial_dem(
+    templates=[template1, template2],
+    scaffold=scaffold
+)
+# Result will have error probability (0.1 + 0.2) / 2 = 0.15
+```
