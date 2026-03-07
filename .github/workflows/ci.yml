@@ -71,5 +71,5 @@ jobs:
         files=$(git ls-files '*.cc' '*.cpp' '*.h' '*.hpp')
         [ -z "$files" ] || clang-format --dry-run --Werror $files
 
-    - name: Bazel tests 
+    - name: Bazel tests
       run: bazel test src/...
