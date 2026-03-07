@@ -1,0 +1,5 @@
+# Summary: define who is automatically requested for review when someone opens
+# a pull request that affects specified paths.
+
+# Set Tesseract Team for everything.
+* @quantumlib/tesseract-team

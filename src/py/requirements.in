@@ -1,3 +1,4 @@
 stim
 pytest
 sinter
+pybind11-stubgen

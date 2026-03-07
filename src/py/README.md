@@ -5,7 +5,7 @@ The `tesseract_decoder.tesseract` module provides the Tesseract decoder, which e
 
 #### Class `tesseract.TesseractConfig`
 This class holds the configuration parameters that control the behavior of the Tesseract decoder.
-* `TesseractConfig(dem: stim.DetectorErrorModel, det_beam: int = INF_DET_BEAM, beam_climbing: bool = False, no_revisit_dets: bool = False, at_most_two_errors_per_detector: bool = False, verbose: bool = False, pqlimit: int = sys.maxsize, det_orders: list[list[int]] = [], det_penalty: float = 0.0)`
+* `TesseractConfig(dem: stim.DetectorErrorModel, det_beam: int = INF_DET_BEAM, beam_climbing: bool = False, no_revisit_dets: bool = False, verbose: bool = False, pqlimit: int = sys.maxsize, det_orders: list[list[int]] = [], det_penalty: float = 0.0)`
 * `__str__()`
 
 Explanation of configuration arguments:
@@ -13,7 +13,7 @@ Explanation of configuration arguments:
 * `det_beam` - This integer value represents the beam search cutoff. It specifies a threshold for the number of "residual detection events" a node can have before it is pruned from the search. A lower `det_beam` value makes the search more aggressive, potentially sacrificing accuracy for speed. The default value `INF_DET_BEAM` means no beam cutoff is applied.
 * `beam_climbing` - A boolean flag that, when set to `True`, enables a heuristic called "beam climbing." This optimization causes the decoder to try different `det_beam` values (up to a maximum) to find a good decoding path. This can improve the decoder's chance of finding the most likely error, even with an initial narrow beam search.
 * `no_revisit_dets` - A boolean flag that, when `True`, activates a heuristic to prevent the decoder from revisiting nodes that have the same set of leftover detection events as a node it has already visited. This can help to reduce search redundancy and improve decoding speed.
-* `at_most_two_errors_per_detector` - This boolean flag is a specific constraint that assumes at most two errors can affect a given detector. This can be a useful optimization for certain types of codes and noise models, as it prunes the search space by making a stronger assumption about the error distribution.
+
 * `verbose` - A boolean flag that, when `True`, enables verbose logging. This is useful for debugging and understanding the decoder's internal behavior, as it will print information about the search process.
 * `pqlimit` - An integer that sets a limit on the number of nodes in the priority queue. This can be used to constrain the memory usage of the decoder. The default value is `sys.maxsize`, which means the size is effectively unbounded.
 * `det_orders` - A list of lists of integers, where each inner list represents an ordering of the detectors. This is used for "ensemble reordering," an optimization that tries different detector orderings to improve the search's convergence. The default is an empty list, meaning a single, fixed ordering is used.
@@ -569,4 +569,68 @@ print("Basic sample_decode Results:")
 print(f"Shots run: {result.shots}")
 print(f"Observed errors: {result.errors}")
 print(f"Logical error rate: {result.errors / result.shots}")
+```
+### `tesseract_decoder.demutil` Module
+The `tesseract_decoder.demutil` module provides utilities for manipulating `stim.DetectorErrorModel` objects, specifically for decomposing complex error mechanisms into simpler components and regeneralizing spatial error models.
+
+#### Functions
+* `demutil.decompose_errors(dem: stim.DetectorErrorModel, method: str) -> stim.DetectorErrorModel`
+  * Decomposes error mechanisms in a DEM into simpler components based on the specified method.
+  * Supported methods:
+    * `"stim-surfacecode-coords"`: Decomposes errors based on the spatial coordinates of detectors, assuming a surface code layout where coordinates indicate X or Z basis.
+    * `"last-coordinate-index"`: Decomposes errors using the last coordinate of the detector as the component identifier.
+  * **Note:** For decomposition to work, the DEM must contain "atomic" errors (errors involving only one component) that explain the components of the complex errors.
+
+**Example Usage**:
+
+```python
+import tesseract_decoder.demutil as demutil
+import stim
+
+dem = stim.DetectorErrorModel("""
+    detector(0, 0, 0) D0
+    detector(0, 0, 1) D1
+    # Atomic errors for decomposition reference
+    error(0.01) D0
+    error(0.01) D1
+    # Complex error to decompose
+    error(0.1) D0 D1
+""")
+
+# Re-decompose the errors assuming Stim surface code coordinate convention
+nice_matchable_dem = demutil.decompose_errors(dem, method='stim-surfacecode-coords')
+
+# Re-decompose the errors assuming the last-coordinate index indicates the component:
+nice_matchable_dem2 = demutil.decompose_errors(dem, method='last-coordinate-index')
+```
+
+* `demutil.regeneralize_spatial_dem(templates: list[stim.DetectorErrorModel], scaffold: stim.DetectorErrorModel, verbose: bool = False) -> stim.DetectorErrorModel`
+  * Updates the error probabilities in a `scaffold` DEM by averaging probabilities from matching errors in a list of `template` DEMs. Errors are matched based on their spatial geometry (relative coordinates of detectors).
+  * **Important:** The scaffold errors must have the same structure and **same absolute coordinates** (for the first detector) as the template errors to be matched.
+
+**Example Usage**:
+
+```python
+import tesseract_decoder.demutil as demutil
+import stim
+
+# Take one or more DEMs **with detector coordinates**, aggregate the error probabilities
+template1 = stim.DetectorErrorModel("""
+    detector(0, 0) D0
+    error(0.1) D0
+""")
+template2 = stim.DetectorErrorModel("""
+    detector(0, 0) D0
+    error(0.2) D0
+""")
+scaffold = stim.DetectorErrorModel("""
+    detector(0, 0) D1
+    error(0.99) D1
+""")
+
+nice_calibrated_dem = demutil.regeneralize_spatial_dem(
+    templates=[template1, template2],
+    scaffold=scaffold
+)
+# Result will have error probability (0.1 + 0.2) / 2 = 0.15
 ```

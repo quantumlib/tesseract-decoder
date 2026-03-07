@@ -6,10 +6,14 @@ bazel_dep(name = "rules_python", version = "0.40.0")
 bazel_dep(name = "rules_cc", version = "0.0.17")
 bazel_dep(name = "pybind11_bazel", version = "2.13.6")
 
-DEFAULT_PYTHON_VERSION = "3.11"
+DEFAULT_PYTHON_VERSION = "3.13"
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
-python.toolchain(python_version = DEFAULT_PYTHON_VERSION, is_default = True)
+python.toolchain(
+    python_version = DEFAULT_PYTHON_VERSION,
+    is_default = True,
+    ignore_root_user_error = True,
+)
 
 python_configure = use_extension("@pybind11_bazel//:python_configure.bzl", "extension")
 use_repo(python_configure, "local_config_python")
@@ -21,6 +25,7 @@ pip.parse(
     hub_name = "pypi",
     python_version = DEFAULT_PYTHON_VERSION,
     requirements_lock = "//src/py:requirements_lock.txt",
+    extra_pip_args = ["--index-url=https://pypi.org/simple"],
 )
 
 use_repo(pip, "pypi")

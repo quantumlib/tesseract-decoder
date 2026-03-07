@@ -39,15 +39,21 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(nlohmann_json)
 
-# Boost headers
-FetchContent_Declare(
-  boost
-  URL https://archives.boost.io/release/1.83.0/source/boost_1_83_0.tar.gz
-  URL_HASH SHA256=c0685b68dd44cc46574cce86c4e17c0f611b15e195be9848dfd0769a0a207628
-)
-FetchContent_MakeAvailable(boost)
-add_library(boost_headers INTERFACE)
-target_include_directories(boost_headers INTERFACE ${boost_SOURCE_DIR})
+# Boost headers - prefer system Boost when available
+find_package(Boost 1.83 QUIET)
+if(Boost_FOUND)
+  add_library(boost_headers INTERFACE)
+  target_link_libraries(boost_headers INTERFACE Boost::boost)
+else()
+  FetchContent_Declare(
+    boost
+    URL https://archives.boost.io/release/1.83.0/source/boost_1_83_0.tar.gz
+    URL_HASH SHA256=c0685b68dd44cc46574cce86c4e17c0f611b15e195be9848dfd0769a0a207628
+  )
+  FetchContent_MakeAvailable(boost)
+  add_library(boost_headers INTERFACE)
+  target_include_directories(boost_headers INTERFACE ${boost_SOURCE_DIR})
+endif()
 
 # pybind11
 FetchContent_Declare(
@@ -57,6 +63,15 @@ FetchContent_Declare(
 )
 set(PYBIND11_TEST OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(pybind11)
+
+# Google Test
+FetchContent_Declare(
+  googletest
+  GIT_REPOSITORY https://github.com/google/googletest.git
+  GIT_TAG release-1.12.1
+)
+FetchContent_MakeAvailable(googletest)
+
 
 set(OPT_COPTS -Ofast -fno-fast-math -march=native)
 
@@ -110,4 +125,15 @@ set_target_properties(tesseract_decoder PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL ${PROJECT_SOURCE_DIR}/src
     LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO ${PROJECT_SOURCE_DIR}/src
 )
+
+# === Tests ===
+enable_testing()
+
+add_executable(common_test ${TESSERACT_SRC_DIR}/common.test.cc)
+target_link_libraries(common_test PRIVATE common GTest::gtest_main)
+add_test(NAME common_test COMMAND common_test)
+
+add_executable(tesseract_test ${TESSERACT_SRC_DIR}/tesseract.test.cc)
+target_link_libraries(tesseract_test PRIVATE tesseract_lib simplex GTest::gtest_main)
+add_test(NAME tesseract_test COMMAND tesseract_test)
 

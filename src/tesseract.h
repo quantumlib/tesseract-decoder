@@ -36,7 +36,7 @@ struct TesseractConfig {
   int det_beam = DEFAULT_DET_BEAM;
   bool beam_climbing = false;
   bool no_revisit_dets = true;
-  bool at_most_two_errors_per_detector = false;
+
   bool verbose = false;
   bool merge_errors = true;
   size_t pqlimit = DEFAULT_PQLIMIT;
@@ -50,8 +50,10 @@ struct TesseractConfig {
 class Node {
  public:
   double cost;
-  size_t num_detectors;
-  std::vector<size_t> errors;
+  // The number of activated detectors (dets for short) at this node
+  size_t num_dets;
+  size_t depth;
+  int64_t error_chain_idx = -1;
 
   bool operator>(const Node& other) const;
   std::string str();
@@ -82,13 +84,13 @@ struct TesseractDecoder {
   void decode_to_errors(const std::vector<uint64_t>& detections, size_t detector_order,
                         size_t detector_beam);
 
-  // Returns the bitwise XOR of all the observables bitmasks of all errors in
-  // the predicted errors buffer.
-  std::vector<int> get_flipped_observables(const std::vector<size_t>& predicted_errors);
+  // Returns the bitwise XOR of the observables flipped by the errors in the given array, indexed by
+  // the original flattened DEM error indices.
+  std::vector<int> get_flipped_observables(const std::vector<size_t>& predicted_errors) const;
 
-  // Returns the sum of the likelihood costs (minus-log-likelihood-ratios) of
-  // all errors in the predicted errors buffer.
-  double cost_from_errors(const std::vector<size_t>& predicted_errors);
+  // Returns the sum of likelihood costs of the errors in the given array, indexed by the original
+  // flattened DEM error indices.
+  double cost_from_errors(const std::vector<size_t>& predicted_errors) const;
 
   std::vector<int> decode(const std::vector<uint64_t>& detections);
   void decode_shots(std::vector<stim::SparseShot>& shots,
@@ -96,6 +98,8 @@ struct TesseractDecoder {
 
   bool low_confidence_flag = false;
   std::vector<size_t> predicted_errors_buffer;
+  std::vector<size_t> dem_error_to_error;
+  std::vector<size_t> error_to_dem_error;
   std::vector<common::Error> errors;
   size_t num_observables;
   size_t num_detectors;
@@ -110,10 +114,11 @@ struct TesseractDecoder {
   std::vector<std::vector<int>> edets;
   size_t num_errors;
   std::vector<ErrorCost> error_costs;
+  std::vector<common::ErrorChainNode> error_chain_arena;
 
   void initialize_structures(size_t num_detectors);
   double get_detcost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const;
-  void flip_detectors_and_block_errors(size_t detector_order, const std::vector<size_t>& errors,
+  void flip_detectors_and_block_errors(size_t detector_order, int64_t error_chain_idx,
                                        boost::dynamic_bitset<>& detectors,
                                        std::vector<DetectorCostTuple>& detector_cost_tuples) const;
 };

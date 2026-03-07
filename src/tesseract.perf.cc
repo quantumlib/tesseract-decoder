@@ -78,7 +78,8 @@ void benchmark_tesseract(std::string circuit_path, size_t num_shots) {
       /*approximate_disjoint_errors_threshold=*/1,
       /*ignore_decomposition_failures=*/false,
       /*block_decomposition_from_introducing_remnant_edges=*/false);
-  dem = common::remove_zero_probability_errors(dem);
+  std::vector<size_t> error_index_map;
+  dem = common::remove_zero_probability_errors(dem, error_index_map);
   TesseractConfig config{dem};
   config.det_beam = 20;
   config.pqlimit = 10'000'000;
@@ -100,7 +101,8 @@ void benchmark_simplex(std::string circuit_path, size_t num_shots) {
       /*approximate_disjoint_errors_threshold=*/1,
       /*ignore_decomposition_failures=*/false,
       /*block_decomposition_from_introducing_remnant_edges=*/false);
-  dem = common::remove_zero_probability_errors(dem);
+  std::vector<size_t> error_index_map;
+  dem = common::remove_zero_probability_errors(dem, error_index_map);
   SimplexConfig config{dem};
   config.parallelize = true;
   SimplexDecoder decoder(config);

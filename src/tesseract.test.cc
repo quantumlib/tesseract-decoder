@@ -15,6 +15,7 @@
 #include "tesseract.h"
 
 #include <cstdlib>
+#include <limits>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -58,16 +59,16 @@ bool simplex_test_compare(stim::DetectorErrorModel& dem, std::vector<stim::Spars
                 << " tesseract got solution with cost:" << tesseract_cost
                 << " simplex got solution with cost: " << simplex_cost << std::endl;
       std::cout << "tesseract used errors ";
-      for (size_t ei : tesseract_decoder.predicted_errors_buffer) {
-        std::cout << ei << ", ";
-        std::cout << tesseract_decoder.errors[ei].str() << std::endl;
+      for (size_t dem_ei : tesseract_decoder.predicted_errors_buffer) {
+        std::cout << dem_ei << ", ";
       }
+      std::cout << std::endl;
       std::cout << " and had cost " << tesseract_cost << std::endl;
       std::cout << "simplex used errors ";
-      for (size_t ei : simplex_decoder.predicted_errors_buffer) {
-        std::cout << ei << ", ";
-        std::cout << simplex_decoder.errors[ei].str() << std::endl;
+      for (size_t dem_ei : simplex_decoder.predicted_errors_buffer) {
+        std::cout << dem_ei << ", ";
       }
+      std::cout << std::endl;
       std::cout << " and had cost " << simplex_cost << std::endl;
       return false;
     }
@@ -105,7 +106,8 @@ TEST(tesseract, Tesseract_simplex_test) {
         for (bool merge_errors : {true, false}) {
           stim::DetectorErrorModel new_dem = dem;
           if (merge_errors) {
-            new_dem = common::merge_indistinguishable_errors(dem);
+            std::vector<size_t> error_index_map;
+            new_dem = common::merge_indistinguishable_errors(dem, error_index_map);
           }
           std::vector<stim::SparseShot> shots;
           sample_shots(test_data_seed, circuit, num_shots, shots);
@@ -217,6 +219,61 @@ TEST(tesseract, DecodersStripZeroProbabilityErrors) {
   EXPECT_EQ(s_dec.errors.size(), 2);
 }
 
+TEST(tesseract, GetDetectorCoordsAllowsLogicalObservableInstructionsInDem) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 L0
+        detector(1,2,3) D0
+        logical_observable L0
+      )DEM");
+
+  std::vector<std::vector<double>> detector_coords = get_detector_coords(dem);
+  ASSERT_EQ(detector_coords.size(), 1);
+  ASSERT_EQ(detector_coords[0].size(), 3);
+  EXPECT_EQ(detector_coords[0][0], 1);
+  EXPECT_EQ(detector_coords[0][1], 2);
+  EXPECT_EQ(detector_coords[0][2], 3);
+}
+TEST(tesseract, SimplexAllowsLogicalObservableInstructionsInDem) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 L0
+        detector(0,0,0) D0
+        logical_observable L0
+      )DEM");
+
+  EXPECT_NO_THROW({ SimplexDecoder s_dec(SimplexConfig{dem}); });
+}
+
+TEST(tesseract, DecoderErrorIndexMapsAreInOriginalDemCoordinates) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0
+        error(0) D1
+        error(0.2) D2
+        error(0.3) D2
+        detector(0,0,0) D0
+        detector(0,0,0) D1
+        detector(0,0,0) D2
+      )DEM");
+
+  TesseractDecoder t_dec(TesseractConfig{dem});
+  SimplexDecoder s_dec(SimplexConfig{dem});
+
+  EXPECT_EQ(t_dec.dem_error_to_error.size(), 4);
+  EXPECT_EQ(t_dec.dem_error_to_error[1], std::numeric_limits<size_t>::max());
+  EXPECT_EQ(t_dec.dem_error_to_error[2], t_dec.dem_error_to_error[3]);
+  EXPECT_EQ(t_dec.error_to_dem_error[t_dec.dem_error_to_error[2]], 2);
+
+  EXPECT_EQ(s_dec.dem_error_to_error.size(), 4);
+  EXPECT_EQ(s_dec.dem_error_to_error[1], std::numeric_limits<size_t>::max());
+  EXPECT_EQ(s_dec.dem_error_to_error[2], s_dec.dem_error_to_error[3]);
+  EXPECT_EQ(s_dec.error_to_dem_error[s_dec.dem_error_to_error[2]], 2);
+
+  std::vector<size_t> removed_error = {1};
+  EXPECT_THROW(t_dec.cost_from_errors(removed_error), std::invalid_argument);
+  EXPECT_THROW(s_dec.cost_from_errors(removed_error), std::invalid_argument);
+  EXPECT_THROW(t_dec.get_flipped_observables(removed_error), std::invalid_argument);
+  EXPECT_THROW(s_dec.get_flipped_observables(removed_error), std::invalid_argument);
+}
+
 TEST(tesseract, EneighborsCorrectness) {
   stim::DetectorErrorModel dem(R"DEM(
         error(0.1) D0 D1
@@ -311,4 +368,30 @@ TEST(tesseract, EneighborsCorrectness_ComplexGrid) {
   EXPECT_EQ(t_dec.get_eneighbors()[5], expected_e5_neighbors);
   EXPECT_EQ(t_dec.get_eneighbors()[6], expected_e6_neighbors);
   EXPECT_EQ(t_dec.get_eneighbors()[7], expected_e7_neighbors);
+}
+
+TEST(tesseract, DecodeToErrorsThrowsOnInvalidSymptom) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 D1
+        error(0.1) D1 D2
+        error(0.1) D2 D3
+        detector(0, 0, 0) D0
+        detector(1, 0, 0) D1
+        detector(2, 0, 0) D2
+        detector(2, 0, 0) D2
+    )DEM");
+
+  TesseractConfig config(dem);
+  TesseractDecoder decoder(config);
+
+  uint64_t invalid_symptom = decoder.num_detectors;
+
+  try {
+    decoder.decode_to_errors({invalid_symptom});
+  } catch (const std::runtime_error& err) {
+    EXPECT_EQ("Symptom " + std::to_string(invalid_symptom) +
+                  " references a detector >= num_detectors (= " +
+                  std::to_string(decoder.num_detectors) + ").",
+              err.what());
+  }
 }

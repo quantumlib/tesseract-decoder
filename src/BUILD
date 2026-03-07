@@ -27,21 +27,19 @@ OPT_COPTS = select({
     "//conditions:default": [
         "-Ofast",
         "-fno-fast-math",
-        "-march=native",
     ],
     ":debug": ["-Og"],
 }) + select({
         "//conditions:default": ["-std=c++20"],
 }) + select({
-    "@platforms//os:macos": ["-mmacosx-version-min=10.15"],
-    "//conditions:default": [],
+    "@platforms//os:macos": ["-mmacosx-version-min=10.15",],
+    "//conditions:default": ["-march=native",],
 })
 
 OPT_LINKOPTS = select({
     "//conditions:default": [
         "-Ofast",
         "-fno-fast-math",
-        "-march=native",
     ],
     ":debug": [],
 }) + [
@@ -74,6 +72,7 @@ pybind_library(
         "tesseract.pybind.h",
         "tesseract_sinter_compat.pybind.h",
     ],
+    copts = OPT_COPTS,
     deps = [
         ":libcommon",
         ":libutils",
@@ -87,6 +86,7 @@ pybind_extension(
     srcs = [
         "tesseract.pybind.cc",
     ],
+    copts = OPT_COPTS,
     deps = [
         ":tesseract_decoder_pybind",
     ],
@@ -94,9 +94,9 @@ pybind_extension(
 
 py_library(
     name="lib_tesseract_decoder",
-    imports=["src"],
     deps=[
         ":tesseract_decoder",
+        "//src/py/_tesseract_py_util:_tesseract_py_util",
     ],
 )
 
