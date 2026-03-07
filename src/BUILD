@@ -72,6 +72,7 @@ pybind_library(
         "tesseract.pybind.h",
         "tesseract_sinter_compat.pybind.h",
     ],
+    copts = OPT_COPTS,
     deps = [
         ":libcommon",
         ":libutils",
@@ -85,6 +86,7 @@ pybind_extension(
     srcs = [
         "tesseract.pybind.cc",
     ],
+    copts = OPT_COPTS,
     deps = [
         ":tesseract_decoder_pybind",
     ],
