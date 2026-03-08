@@ -107,15 +107,15 @@ Example with Advanced Options:
 ```bash
 ./tesseract \
         --pqlimit 1000000 \
-        --at-most-two-errors-per-detector \
+        --no-revisit-dets \
         --det-order-seed 232852747 \
+        --det-order-index --num-det-orders 24 \
         --circuit circuit_file.stim \
         --sample-seed 232856747 \
         --sample-num-shots 10000 \
         --threads 32 \
         --print-stats \
-        --beam 23 \
-        --num-det-orders 1 \
+        --beam 23 --beam-climbing \
         --shot-range-begin 582 \
         --shot-range-end 583
 ```
@@ -376,6 +376,15 @@ cite the following:
     doi = {10.48550/arXiv.2503.10988},
     url={https://arxiv.org/abs/2503.10988},
 }
+```
+
+## Hacking on the Python module locally
+To install your own build of Tesseract python module locally so that you can easily modify and hack on it, use something like the following:
+```bash
+bazel build --define TARGET_VERSION="py3.12.9" --define VERSION="v0.0.0dev"  :tesseract_decoder_wheel
+pip uninstall --y tesseract_decoder
+pip install bazel-bin/tesseract_decoder-0.0.0.dev0-py3.12.9-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+python testscript.py
 ```
 
 ## Contact

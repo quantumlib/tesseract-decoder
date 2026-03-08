@@ -219,6 +219,30 @@ TEST(tesseract, DecodersStripZeroProbabilityErrors) {
   EXPECT_EQ(s_dec.errors.size(), 2);
 }
 
+TEST(tesseract, GetDetectorCoordsAllowsLogicalObservableInstructionsInDem) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 L0
+        detector(1,2,3) D0
+        logical_observable L0
+      )DEM");
+
+  std::vector<std::vector<double>> detector_coords = get_detector_coords(dem);
+  ASSERT_EQ(detector_coords.size(), 1);
+  ASSERT_EQ(detector_coords[0].size(), 3);
+  EXPECT_EQ(detector_coords[0][0], 1);
+  EXPECT_EQ(detector_coords[0][1], 2);
+  EXPECT_EQ(detector_coords[0][2], 3);
+}
+TEST(tesseract, SimplexAllowsLogicalObservableInstructionsInDem) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 L0
+        detector(0,0,0) D0
+        logical_observable L0
+      )DEM");
+
+  EXPECT_NO_THROW({ SimplexDecoder s_dec(SimplexConfig{dem}); });
+}
+
 TEST(tesseract, DecoderErrorIndexMapsAreInOriginalDemCoordinates) {
   stim::DetectorErrorModel dem(R"DEM(
         error(0.1) D0
@@ -344,4 +368,30 @@ TEST(tesseract, EneighborsCorrectness_ComplexGrid) {
   EXPECT_EQ(t_dec.get_eneighbors()[5], expected_e5_neighbors);
   EXPECT_EQ(t_dec.get_eneighbors()[6], expected_e6_neighbors);
   EXPECT_EQ(t_dec.get_eneighbors()[7], expected_e7_neighbors);
+}
+
+TEST(tesseract, DecodeToErrorsThrowsOnInvalidSymptom) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 D1
+        error(0.1) D1 D2
+        error(0.1) D2 D3
+        detector(0, 0, 0) D0
+        detector(1, 0, 0) D1
+        detector(2, 0, 0) D2
+        detector(2, 0, 0) D2
+    )DEM");
+
+  TesseractConfig config(dem);
+  TesseractDecoder decoder(config);
+
+  uint64_t invalid_symptom = decoder.num_detectors;
+
+  try {
+    decoder.decode_to_errors({invalid_symptom});
+  } catch (const std::runtime_error& err) {
+    EXPECT_EQ("Symptom " + std::to_string(invalid_symptom) +
+                  " references a detector >= num_detectors (= " +
+                  std::to_string(decoder.num_detectors) + ").",
+              err.what());
+  }
 }

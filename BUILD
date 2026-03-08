@@ -20,6 +20,8 @@ py_wheel(
     distribution = "tesseract_decoder",
     deps=[
         "//src:tesseract_decoder",
+        "//src/py:generated_stubs",
+        "//src/py/_tesseract_py_util:_tesseract_py_util",
         ":package_data",
     ],
     version = "$(VERSION)",
@@ -33,7 +35,7 @@ py_wheel(
         "@platforms//os:windows": "win32",
         "@platforms//os:linux": MANYLINUX_VERSION,
     }),
-    strip_path_prefixes = ["src"],
+    strip_path_prefixes = ["src/py", "src"],
     description_file=":package_description",
     description_content_type="text/markdown",
     summary="A search-based decoder for quantum error correction (QEC).",

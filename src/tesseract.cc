@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <boost/functional/hash.hpp>  // For boost::hash_range
 #include <cassert>
+#include <cstdint>
 #include <functional>  // For std::hash (though not strictly necessary here, but good practice)
 #include <iostream>
 #include <limits>
@@ -87,24 +88,26 @@ bool Node::operator>(const Node& other) const {
 double TesseractDecoder::get_detcost(
     size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const {
   double min_cost = INF;
+  uint32_t min_det_cost = std::numeric_limits<uint32_t>::max();
   double error_cost;
   ErrorCost ec;
   DetectorCostTuple dct;
 
   for (int ei : d2e[d]) {
     ec = error_costs[ei];
-    if (ec.min_cost >= min_cost) break;
+    if (ec.likelihood_cost * min_det_cost >= min_cost * errors[ei].symptom.detectors.size()) break;
 
     dct = detector_cost_tuples[ei];
     if (!dct.error_blocked) {
-      error_cost = ec.likelihood_cost / dct.detectors_count;
-      if (error_cost < min_cost) {
+      error_cost = ec.likelihood_cost;
+      if (error_cost < min_cost * dct.detectors_count) {
         min_cost = error_cost;
+        min_det_cost = dct.detectors_count;
       }
     }
   }
 
-  return min_cost + config.det_penalty;
+  return (min_cost / min_det_cost) + config.det_penalty;
 }
 
 TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
@@ -292,6 +295,11 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
   std::vector<DetectorCostTuple> initial_detector_cost_tuples(num_errors);
 
   for (size_t d : detections) {
+    if (d >= num_detectors) {
+      throw std::runtime_error(
+          "Symptom " + std::to_string(d) +
+          " references a detector >= num_detectors (= " + std::to_string(num_detectors) + ").");
+    }
     initial_detectors[d] = true;
     for (int ei : d2e[d]) {
       ++initial_detector_cost_tuples[ei].detectors_count;
@@ -433,13 +441,6 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
       }
       prev_ei = ei;
 
-      // Create the error chain node for this candidate.
-      error_chain_arena.emplace_back();
-      auto& next_node = error_chain_arena.back();
-      next_node.error_index = ei;
-      next_node.min_detector = min_detector;
-      next_node.parent_idx = node.error_chain_idx;
-
       next_detectors = detectors;
       next_detector_cost_tuples[ei].error_blocked = 1;
 
@@ -482,6 +483,13 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
       }
 
       if (next_cost == INF) continue;
+
+      // Create the error chain node for this candidate.
+      error_chain_arena.emplace_back();
+      auto& next_node = error_chain_arena.back();
+      next_node.error_index = ei;
+      next_node.min_detector = min_detector;
+      next_node.parent_idx = node.error_chain_idx;
 
       pq.push({next_cost, next_num_dets, node.depth + 1, (int64_t)(error_chain_arena.size() - 1)});
       ++num_pq_pushed;

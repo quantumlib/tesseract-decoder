@@ -15,6 +15,7 @@
 load("@rules_python//python:py_test.bzl", "py_test")
 load("@rules_python//python:pip.bzl", "compile_pip_requirements")
 load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_binary.bzl", "py_binary")
 
 py_library(
     name = "shared_decoding_tests",
@@ -26,7 +27,10 @@ py_library(
         "@pypi//numpy",
         "//src:lib_tesseract_decoder",
     ],
+    imports = ["..", "."],
 )
+
+
 py_test(
     name = "common_test",
     srcs = ["common_test.py"],
@@ -36,6 +40,7 @@ py_test(
         "@pypi//stim",
         "//src:lib_tesseract_decoder",
     ],
+    imports = ["..", "."],
 )
 
 py_test(
@@ -47,6 +52,7 @@ py_test(
         "@pypi//stim",
         "//src:lib_tesseract_decoder",
     ],
+    imports = ["..", "."],
 )
 
 py_test(
@@ -59,6 +65,7 @@ py_test(
         "//src:lib_tesseract_decoder",
         ":shared_decoding_tests",
     ],
+    imports = ["..", "."],
 )
 
 py_test(
@@ -71,6 +78,7 @@ py_test(
         "//src:lib_tesseract_decoder",
         ":shared_decoding_tests",
     ],
+    imports = ["..", "."],
 )
 py_test(
     name = "tesseract_sinter_compat_test",
@@ -82,27 +90,49 @@ py_test(
         "@pypi//sinter",
         "//src:lib_tesseract_decoder",
     ],
+    imports = ["..", "."],
 )
 
 
-py_library(
-    name = "decomposer",
-    srcs = ["decomposer.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "@pypi//stim",
-    ],
-)
 
 py_test(
-    name = "decomposer_test",
-    srcs = ["decomposer_test.py"],
+    name = "stub_test",
+    srcs = ["stub_test.py"],
+    data = [":generated_stubs"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":decomposer",
         "@pypi//pytest",
+    ],
+    imports = ["..", "."],
+)
+
+py_binary(
+    name = "generate_stubs",
+    srcs = ["generate_stubs.py"],
+    deps = [
+        "//src:lib_tesseract_decoder",
+        "@pypi//pybind11_stubgen",
         "@pypi//stim",
     ],
+    imports = ["..", "."],
+)
+
+STUB_FILES = [
+    "__init__.pyi",
+    "common.pyi",
+    "simplex.pyi",
+    "tesseract.pyi",
+    "tesseract_sinter_compat.pyi",
+    "utils.pyi",
+    "viz.pyi",
+]
+
+genrule(
+    name = "generated_stubs",
+    tools = [":generate_stubs"],
+    outs = ["tesseract_decoder-stubs/" + f for f in STUB_FILES],
+    cmd = "$(location :generate_stubs) --output-dir $(@D)",
+    visibility = ["//visibility:public"],
 )
 
 compile_pip_requirements(
