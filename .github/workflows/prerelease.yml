@@ -128,7 +128,7 @@ jobs:
       env:
         TARGET_PYTHON: ${{ matrix.python-version }}
       run: |
-        sudo $(. devtools/build_with_custom_toolchain.sh)
+        . devtools/build_with_custom_toolchain.sh
         ls custom_sysroot
 
 
