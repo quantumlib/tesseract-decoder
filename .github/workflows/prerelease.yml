@@ -124,12 +124,20 @@ jobs:
         echo "set version to ${TARGET_PYTHON}"
         python _update_bazel_py_version.py $TARGET_PYTHON
 
-    - name: Build with custom toolchain
+    - name: build custom C++ toolchain
       env:
         TARGET_PYTHON: ${{ matrix.python-version }}
       run: |
         . devtools/build_with_custom_toolchain.sh
-        ls custom_sysroot
+
+    - name: Build package
+      env:
+        TARGET_PYTHON: ${{ matrix.python-version }}
+      run: |
+        export GLIBC_VERSION=2.28
+        echo $GLIBC_VERSION
+        sed "s/^MANYLINUX_VERSION.*/MANYLINUX_VERSION=\"manylinux_${GLIBC_VERSION}_x86_64.manylinux2014_x86_64\"/" BUILD -i || true
+        bazel build --define GLIBC_VERSION=$GLIBC_VERSION --define TARGET_VERSION="$(python -c "print(\"py${TARGET_PYTHON}\".replace(\".\", \"\"))")" --define VERSION="$(cat version/version.txt)"  :tesseract_decoder_wheel
 
 
     - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -137,32 +145,32 @@ jobs:
         name: python-wheels-${{ matrix.os }}-${{ matrix.python-version }}
         path: ./bazel-bin/*.whl
 
-  release-wheels:
-    name: Publish all wheels
-    needs: [build_wheels,build_wheels_with_custom_toolchain]
-    runs-on: ubuntu-24.04
+  # release-wheels:
+  #   name: Publish all wheels
+  #   needs: [build_wheels,build_wheels_with_custom_toolchain]
+  #   runs-on: ubuntu-24.04
 
-    steps:
-    - name: Download build artifacts
-      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-      with:
-        pattern: python-wheels-*
-        merge-multiple: true
-        path: wheelhouse/
+  #   steps:
+  #   - name: Download build artifacts
+  #     uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+  #     with:
+  #       pattern: python-wheels-*
+  #       merge-multiple: true
+  #       path: wheelhouse/
 
-    - name: Publish package to testpypi
-      uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
-      with:
-        repository_url: https://test.pypi.org/legacy/
-        user: __token__
-        password: ${{ secrets.TEST_PYPI_TOKEN }}
-        packages_dir: wheelhouse/
-        verbose: true
+  #   - name: Publish package to testpypi
+  #     uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
+  #     with:
+  #       repository_url: https://test.pypi.org/legacy/
+  #       user: __token__
+  #       password: ${{ secrets.TEST_PYPI_TOKEN }}
+  #       packages_dir: wheelhouse/
+  #       verbose: true
 
 
-    - name: Publish package to pypi
-      uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
-      with:
-        user: __token__
-        password: ${{ secrets.PYPI_TOKEN }}
-        packages_dir: wheelhouse/
+  #   - name: Publish package to pypi
+  #     uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
+  #     with:
+  #       user: __token__
+  #       password: ${{ secrets.PYPI_TOKEN }}
+  #       packages_dir: wheelhouse/

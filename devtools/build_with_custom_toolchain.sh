@@ -30,3 +30,37 @@ tar -xzf sysroot.tar.gz -C custom_sysroot
 rm sysroot.tar.gz
 docker rm -f sysroot-builder
 
+# create custom_sysroot/BUILD
+echo """filegroup(
+    name = \"sysroot\",
+    srcs = glob([\"**/*\"]),
+    visibility = [\"//visibility:public\"],
+)""" > custom_sysroot/BUILD
+
+# update MODULE.bazel to use the custom toolchain
+echo """bazel_dep(name = \"toolchains_llvm\", version = \"1.6.0\")
+
+llvm = use_extension(\"@toolchains_llvm//toolchain/extensions:llvm.bzl\", \"llvm\")
+llvm.toolchain(
+    name = \"llvm_toolchain\",
+    llvm_version = \"17.0.6\",
+)
+
+llvm.sysroot(
+    name = \"llvm_toolchain\",
+    label = \"//custom_sysroot:sysroot\",
+    targets = [\"linux-x86_64\"],
+)
+use_repo(llvm, \"llvm_toolchain\")
+
+register_toolchains(\"@llvm_toolchain//:all\")
+""" >> MODULE.bazel
+
+
+apt-get update
+apt-get install -y libxml2
+
+cd custom_sysroot/lib64/
+rm -f ld-linux-x86-64.so.2
+ln -s ../lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 ld-linux-x86-64.so.2
+cd ../..
