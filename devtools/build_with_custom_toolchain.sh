@@ -1,5 +1,5 @@
 # 1. Start a temporary background container named 'sysroot-builder'
-docker run -d --name sysroot-builder debian:11.1 sleep 3600
+docker run -d --name sysroot-builder debian:11.5 sleep 3600
 
 # 2. Run the installation and packaging process inside the container
 docker exec sysroot-builder bash -c "
@@ -10,7 +10,9 @@ docker exec sysroot-builder bash -c "
   
   # Create the staging directory
   mkdir -p /sysroot/usr/lib /sysroot/usr/include /sysroot/lib /sysroot/lib64
-  
+    
+  ldd --version
+
   # Copy files while preserving symlinks (-a)
   cp -a /usr/include/* /sysroot/usr/include/
   cp -a /usr/lib/* /sysroot/usr/lib/
