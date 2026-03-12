@@ -1,5 +1,5 @@
 # 1. Start a temporary background container named 'sysroot-builder'
-docker run -d --name sysroot-builder debian:11.9 sleep 3600
+docker run -d --name sysroot-builder debian:11.7 sleep 3600
 
 # 2. Run the installation and packaging process inside the container
 docker exec sysroot-builder bash -c "
