@@ -158,32 +158,32 @@ jobs:
         name: python-wheels-${{ matrix.os }}-${{ matrix.python-version }}-legacy
         path: ./bazel-bin/*.whl
 
-  # release-wheels:
-  #   name: Publish all wheels
-  #   needs: [build_wheels,build_wheels_with_custom_toolchain]
-  #   runs-on: ubuntu-24.04
+  release-wheels:
+    name: Publish all wheels
+    needs: [build_wheels,build_wheels_for_legacy_systems]
+    runs-on: ubuntu-24.04
 
-  #   steps:
-  #   - name: Download build artifacts
-  #     uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-  #     with:
-  #       pattern: python-wheels-*
-  #       merge-multiple: true
-  #       path: wheelhouse/
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+      with:
+        pattern: python-wheels-*
+        merge-multiple: true
+        path: wheelhouse/
 
-  #   - name: Publish package to testpypi
-  #     uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
-  #     with:
-  #       repository_url: https://test.pypi.org/legacy/
-  #       user: __token__
-  #       password: ${{ secrets.TEST_PYPI_TOKEN }}
-  #       packages_dir: wheelhouse/
-  #       verbose: true
+    - name: Publish package to testpypi
+      uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
+      with:
+        repository_url: https://test.pypi.org/legacy/
+        user: __token__
+        password: ${{ secrets.TEST_PYPI_TOKEN }}
+        packages_dir: wheelhouse/
+        verbose: true
 
 
-  #   - name: Publish package to pypi
-  #     uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
-  #     with:
-  #       user: __token__
-  #       password: ${{ secrets.PYPI_TOKEN }}
-  #       packages_dir: wheelhouse/
+    - name: Publish package to pypi
+      uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
+      with:
+        user: __token__
+        password: ${{ secrets.PYPI_TOKEN }}
+        packages_dir: wheelhouse/
