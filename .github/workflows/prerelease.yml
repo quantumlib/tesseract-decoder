@@ -130,6 +130,10 @@ jobs:
       run: |
         . devtools/build_with_custom_toolchain.sh
 
+    - name: Test with new config
+      run:
+        bazel test src/...
+
     - name: Build package
       env:
         TARGET_PYTHON: ${{ matrix.python-version }}
