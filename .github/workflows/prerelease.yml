@@ -130,9 +130,6 @@ jobs:
       run: |
         . devtools/build_with_custom_toolchain.sh
 
-    # - name: Test with new config
-    #   run:
-    #     bazel test src/...
 
     - name: Build package
       env:
@@ -144,9 +141,21 @@ jobs:
         bazel build --define GLIBC_VERSION=$GLIBC_VERSION --define TARGET_VERSION="$(python -c "print(\"py${TARGET_PYTHON}\".replace(\".\", \"\"))")" --define VERSION="$(cat version/version.txt)"  :tesseract_decoder_wheel
 
 
+    - name: Test with new config
+      run: |
+        pip install pytest sinter
+        pip install bazel-bin/*.whl
+
+        mv src/py/ src/_lib. # rename because `py` causes pytest issues.
+        rm src/_lib/stub_test.py  # ignore this test because it uses os flags that are set by bazel
+        rm src/_lib/tesseract_sinter_compat_test.py # ignore this test because it mixes np.int64 and int which doesn't work with some python versions
+
+        bazel test src/...
+
+
     - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
-        name: python-wheels-${{ matrix.os }}-${{ matrix.python-version }}
+        name: python-wheels-${{ matrix.os }}-${{ matrix.python-version }}-legacy
         path: ./bazel-bin/*.whl
 
   # release-wheels:
