@@ -99,28 +99,3 @@ http_archive(
     build_file = "//external:boost.BUILD",
 )
 
-
-###
-
-cc_compatibility_proxy = use_extension("@rules_cc//cc:extensions.bzl", "compatibility_proxy")
-use_repo(cc_compatibility_proxy, "cc_compatibility_proxy")
-
-bazel_dep(name = "toolchains_llvm", version = "1.6.0")
-
-llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm")
-llvm.toolchain(
-    name = "llvm_toolchain",
-    llvm_version = "17.0.6", # Downloads a self-contained Clang/LLVM 17
-)
-
-# 3. Inject your custom GLIBC 2.28 sysroot
-llvm.sysroot(
-    name = "llvm_toolchain",
-    label = "//custom_sysroot:sysroot",
-    targets = ["linux-x86_64"], # Assuming you are building for x86_64 Linux
-)
-use_repo(llvm, "llvm_toolchain")
-
-# 4. Register the toolchain to override the host OS compiler
-register_toolchains("@llvm_toolchain//:all")
-

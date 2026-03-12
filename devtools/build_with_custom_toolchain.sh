@@ -57,8 +57,8 @@ register_toolchains(\"@llvm_toolchain//:all\")
 """ >> MODULE.bazel
 
 
-apt-get update
-apt-get install -y libxml2
+sudo apt-get update
+sudo apt-get install -y libxml2
 
 cd custom_sysroot/lib64/
 rm -f ld-linux-x86-64.so.2
