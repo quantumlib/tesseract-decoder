@@ -147,7 +147,7 @@ jobs:
       run: |
         pip install pytest sinter auditwheel
 
-        auditwheel show $(bazel-bin/*.whl)
+        auditwheel show $(ls bazel-bin/*.whl)
 
         pip install bazel-bin/*.whl
 
