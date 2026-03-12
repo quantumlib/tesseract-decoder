@@ -138,7 +138,7 @@ jobs:
       env:
         TARGET_PYTHON: ${{ matrix.python-version }}
       run: |
-        export GLIBC_VERSION=2.28
+        export GLIBC_VERSION=2_28
         echo $GLIBC_VERSION
         sed "s/^MANYLINUX_VERSION.*/MANYLINUX_VERSION=\"manylinux_${GLIBC_VERSION}_x86_64.manylinux2014_x86_64\"/" BUILD -i || true
         bazel build --define GLIBC_VERSION=$GLIBC_VERSION --define TARGET_VERSION="$(python -c "print(\"py${TARGET_PYTHON}\".replace(\".\", \"\"))")" --define VERSION="$(cat version/version.txt)"  :tesseract_decoder_wheel
