@@ -33,6 +33,7 @@ mkdir -p custom_sysroot
 tar -xzf sysroot.tar.gz -C custom_sysroot
 rm sysroot.tar.gz
 docker rm -f sysroot-builder
+ls -l -R custom_sysroot
 
 # create custom_sysroot/BUILD
 echo """filegroup(
