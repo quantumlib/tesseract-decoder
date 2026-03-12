@@ -5,7 +5,7 @@ docker run -d --name sysroot-builder debian:10 sleep 3600
 docker exec sysroot-builder bash -c "
   sed 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list  -i 
 
-  apt-get update && apt-get upgrade && apt-get install -y build-essential libc6-dev symlinks apt-utils
+  apt-get update && apt-get upgrade -y && apt-get install -y build-essential libc6-dev symlinks apt-utils
   
   # Convert absolute symlinks to relative (CRITICAL so Clang doesn't read your host OS files)
   symlinks -rc /lib /usr/lib /usr/include
