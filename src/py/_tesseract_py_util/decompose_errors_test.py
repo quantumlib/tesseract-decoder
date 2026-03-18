@@ -185,6 +185,37 @@ def test_undecompose_errors_surface_code():
     assert dem_decomposed_using_coords_func == dem_decomposed_using_coords
 
 
+def test_decompose_errors_disable_extra_checks():
+    dem = stim.DetectorErrorModel("""
+detector(0) D0
+detector(1) D1
+# Error with multiple components (D0 and D1)
+error(0.1) D0 D1
+# D0 exists as a standalone error
+error(0.1) D0
+# D1 DOES NOT exist as a standalone error
+""")
+
+    # Should fail by default
+    with pytest.raises(ValueError, match="needs to be decomposed into components"):
+        decompose_errors_using_last_coordinate_index(dem)
+
+    # Should pass with disable_extra_checks=True
+    decomposed_dem = decompose_errors_using_last_coordinate_index(dem, disable_extra_checks=True)
+    
+    # Check that D0 D1 was decomposed. 
+    # Since D1 doesn't exist, it should be treated as having no observables.
+    # D0 exists as error(0.1) D0, so it has no observables either.
+    # So D0 D1 should decompose to D0 ^ D1.
+    expected_dem = stim.DetectorErrorModel("""
+detector(0) D0
+detector(1) D1
+error(0.1) D0 ^ D1
+error(0.1) D0
+""")
+    assert str(decomposed_dem) == str(expected_dem)
+
+
 def test_undecompose_errors_with_repeat_block():
     dem = stim.DetectorErrorModel("""error(0.1) D2 D5 ^ D10 L1
 repeat 10 {
