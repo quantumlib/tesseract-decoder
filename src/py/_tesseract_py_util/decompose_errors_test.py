@@ -185,7 +185,7 @@ def test_undecompose_errors_surface_code():
     assert dem_decomposed_using_coords_func == dem_decomposed_using_coords
 
 
-def test_decompose_errors_disable_extra_checks():
+def test_decompose_errors_strip_undecomposable_errors():
     dem = stim.DetectorErrorModel("""
 detector(0) D0
 detector(1) D1
@@ -200,17 +200,12 @@ error(0.1) D0
     with pytest.raises(ValueError, match="needs to be decomposed into components"):
         decompose_errors_using_last_coordinate_index(dem)
 
-    # Should pass with disable_extra_checks=True
-    decomposed_dem = decompose_errors_using_last_coordinate_index(dem, disable_extra_checks=True)
+    # Should pass with strip_undecomposable_errors=True, but D0 D1 error is removed
+    decomposed_dem = decompose_errors_using_last_coordinate_index(dem, strip_undecomposable_errors=True)
     
-    # Check that D0 D1 was decomposed. 
-    # Since D1 doesn't exist, it should be treated as having no observables.
-    # D0 exists as error(0.1) D0, so it has no observables either.
-    # So D0 D1 should decompose to D0 ^ D1.
     expected_dem = stim.DetectorErrorModel("""
 detector(0) D0
 detector(1) D1
-error(0.1) D0 ^ D1
 error(0.1) D0
 """)
     assert str(decomposed_dem) == str(expected_dem)
