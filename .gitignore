@@ -37,3 +37,5 @@ user.bazelrc
  
 # Ignore python extension module produced by CMake.
 src/tesseract_decoder*.so
+
+MODULE.bazel.lock
