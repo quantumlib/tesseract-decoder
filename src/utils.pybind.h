@@ -24,6 +24,7 @@
 namespace py = pybind11;
 
 void add_utils_module(py::module& root) {
+  using namespace tesseract_decoder;
   auto m = root.def_submodule("utils", "utility methods");
 
   m.attr("EPSILON") = EPSILON;

@@ -7,6 +7,8 @@
 
 #include "common.h"
 
+namespace tesseract_decoder {
+
 struct Visualizer {
   void add_detector_coords(const std::vector<std::vector<double>>&);
   void add_errors(const std::vector<common::Error>&);
@@ -18,5 +20,7 @@ struct Visualizer {
  private:
   std::list<std::string> lines;
 };
+
+}  // namespace tesseract_decoder
 
 #endif

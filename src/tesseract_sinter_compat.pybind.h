@@ -25,6 +25,8 @@
 
 namespace py = pybind11;
 
+namespace tesseract_decoder {
+
 // These are the classes that will be exposed to Python.
 struct TesseractSinterCompiledDecoder;
 struct TesseractSinterDecoder;
@@ -398,3 +400,5 @@ void pybind_sinter_compat(py::module& root) {
   root.attr("TesseractSinterDecoder") = m.attr("TesseractSinterDecoder");
   root.attr("make_tesseract_sinter_decoders_dict") = m.attr("make_tesseract_sinter_decoders_dict");
 }
+
+}  // namespace tesseract_decoder

@@ -20,6 +20,8 @@
 #include <string>
 #include <vector>
 
+namespace {
+
 std::string vector_to_string(const std::vector<int>& vec) {
   std::stringstream ss;
   ss << "[";
@@ -33,6 +35,10 @@ std::string vector_to_string(const std::vector<int>& vec) {
   ss << "]";
   return ss.str();
 }
+
+}  // namespace
+
+namespace tesseract_decoder {
 
 std::string common::Symptom::str() const {
   std::string s = "Symptom{detectors=";
@@ -241,3 +247,5 @@ stim::DetectorErrorModel common::dem_from_counts(const stim::DetectorErrorModel&
   }
   return out_dem;
 }
+
+}  // namespace tesseract_decoder

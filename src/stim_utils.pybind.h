@@ -7,6 +7,8 @@
 
 #include "stim.h"
 
+namespace tesseract_decoder {
+
 namespace {
 namespace py = pybind11;
 }
@@ -23,7 +25,7 @@ T parse_py_object(py::object py_obj) {
   return T(obj_str);
 }
 
-stim::DemInstructionType parse_dit(std::string dit_str) {
+inline stim::DemInstructionType parse_dit(std::string dit_str) {
   if (dit_str == "error") return stim::DemInstructionType::DEM_ERROR;
   if (dit_str == "detector") return stim::DemInstructionType::DEM_DETECTOR;
   if (dit_str == "logical_observable") return stim::DemInstructionType::DEM_LOGICAL_OBSERVABLE;
@@ -33,12 +35,12 @@ stim::DemInstructionType parse_dit(std::string dit_str) {
   return stim::DemInstructionType::DEM_DETECTOR;
 }
 
-stim::DemTarget parse_py_dem_target(py::object py_obj) {
+inline stim::DemTarget parse_py_dem_target(py::object py_obj) {
   return stim::DemTarget::from_text(py::cast<std::string>(py_obj.attr("__str__")()));
 }
 
-stim::DemInstruction parse_py_dem_instruction(py::object py_obj, std::vector<double>& args,
-                                              std::vector<stim::DemTarget>& targets) {
+inline stim::DemInstruction parse_py_dem_instruction(py::object py_obj, std::vector<double>& args,
+                                                     std::vector<stim::DemTarget>& targets) {
   for (auto t : py_obj.attr("args_copy")()) args.push_back(t.cast<double>());
   stim::SpanRef args_ref(args);
 
@@ -65,5 +67,7 @@ template <typename T>
 void dem_setter(T& config, py::object dem) {
   config.dem = parse_py_object<stim::DetectorErrorModel>(dem);
 }
+
+}  // namespace tesseract_decoder
 
 #endif

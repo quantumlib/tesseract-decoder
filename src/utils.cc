@@ -27,6 +27,8 @@
 #include "common.h"
 #include "stim.h"
 
+namespace tesseract_decoder {
+
 std::vector<std::vector<double>> get_detector_coords(const stim::DetectorErrorModel& dem) {
   std::vector<std::vector<double>> detector_coords;
   for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
@@ -279,3 +281,5 @@ uint64_t vector_to_u64_mask(const std::vector<int>& v) {
   }
   return mask;
 }
+
+}  // namespace tesseract_decoder

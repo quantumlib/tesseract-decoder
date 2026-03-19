@@ -20,6 +20,8 @@
 #include "stim.h"
 #include "utils.h"
 
+using namespace tesseract_decoder;
+
 constexpr uint64_t test_data_seed = 752024;
 
 template <typename Decoder>
