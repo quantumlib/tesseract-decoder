@@ -105,6 +105,19 @@ pybind_extension(
         "tesseract.pybind.cc",
     ],
     copts = OPT_COPTS,
+    # Keep static-library symbols (notably HiGHS) private to this extension.
+    # Mach-O has no equivalent to ELF's --exclude-libs, so it needs an explicit
+    # export list; without it, highspy can see the linked HiGHS symbols.
+    additional_linker_inputs = ["tesseract_decoder.exports"],
+    linkopts = select({
+        "@platforms//os:osx": [
+            "-Wl,-exported_symbols_list,$(location :tesseract_decoder.exports)",
+        ],
+        # The ELF equivalent also hides symbols pulled from static archives.
+        "@platforms//os:linux": ["-Wl,--exclude-libs,ALL"],
+        # The default also covers Windows and non-ELF toolchains.
+        "//conditions:default": [],
+    }),
     deps = [
         ":tesseract_decoder_pybind",
     ],
