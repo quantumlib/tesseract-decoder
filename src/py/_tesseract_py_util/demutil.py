@@ -23,13 +23,19 @@ from _tesseract_py_util.decompose_errors import \
 
 
 def decompose_errors(
-    dem: stim.DetectorErrorModel, method: str = "stim-surfacecode-coords"
+    dem: stim.DetectorErrorModel,
+    method: str = "stim-surfacecode-coords",
+    strip_undecomposable_errors: bool = False,
 ) -> stim.DetectorErrorModel:
     """Dispatch decomposition strategy by method name."""
     if method == "stim-surfacecode-coords":
-        return decompose_errors_for_stim_surface_code_coords(dem)
+        return decompose_errors_for_stim_surface_code_coords(
+            dem, strip_undecomposable_errors=strip_undecomposable_errors
+        )
     if method == "last-coordinate-index":
-        return decompose_errors_using_last_coordinate_index(dem)
+        return decompose_errors_using_last_coordinate_index(
+            dem, strip_undecomposable_errors=strip_undecomposable_errors
+        )
     raise ValueError(
         "Unknown decomposition method "
         f"{method!r}. Expected 'stim-surfacecode-coords' or 'last-coordinate-index'."

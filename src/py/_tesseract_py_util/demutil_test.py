@@ -67,5 +67,29 @@ def test_regeneralize_spatial_dem_averages_template_probabilities():
     assert probs == pytest.approx([0.2, 0.3])
 
 
+def test_decompose_errors_top_level_strip_undecomposable_errors():
+    dem = stim.DetectorErrorModel("""
+detector(0) D0
+detector(1) D1
+# Error with multiple components (D0 and D1)
+error(0.1) D0 D1
+# D0 exists as a standalone error
+error(0.1) D0
+# D1 DOES NOT exist as a standalone error
+""")
+
+    # Should pass with strip_undecomposable_errors=True
+    decomposed_dem = demutil.decompose_errors(
+        dem, method="last-coordinate-index", strip_undecomposable_errors=True
+    )
+    
+    expected_dem = stim.DetectorErrorModel("""
+detector(0) D0
+detector(1) D1
+error(0.1) D0
+""")
+    assert str(decomposed_dem) == str(expected_dem)
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))

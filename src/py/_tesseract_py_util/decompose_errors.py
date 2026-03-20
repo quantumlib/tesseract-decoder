@@ -89,7 +89,9 @@ def get_component_obs_matching_undecomposed_obs(
 
 
 def decompose_errors_using_detector_assignment(
-    dem: stim.DetectorErrorModel, detector_component_func: Callable[[int], int]
+    dem: stim.DetectorErrorModel,
+    detector_component_func: Callable[[int], int],
+    strip_undecomposable_errors: bool = False,
 ) -> stim.DetectorErrorModel:
     """Decomposes errors in the detector error model `dem` based on an assignment of
     detectors to components by the function `detector_component_func`.
@@ -112,6 +114,9 @@ def decompose_errors_using_detector_assignment(
     detector_component_func : Callable[[int], int]
         A function that maps a detector id to its component. i.e. This could map
         a detector index to 0 if it is X-type or to 1 if it is Z-type.
+    strip_undecomposable_errors : bool
+        If True, errors that cannot be decomposed due to a missing component error
+        will be stripped from the output DEM instead of raising a ValueError.
 
     Returns
     -------
@@ -150,20 +155,28 @@ def decompose_errors_using_detector_assignment(
         dets_by_component = []
         obs_options_by_component = []
 
+        is_undecomposable = False
         for c in unique_components:
             component_dets = tuple(
                 sorted(d for d in detectors if det_components[d] == c)
             )
             if component_dets not in single_component_dets_to_obs:
-                raise ValueError(
-                    f"The dem error `{instruction}` needs to be decomposed into components, however "
-                    f"the component with detectors {component_dets} is not present as its own error "
-                    "in the dem."
-                )
+                if strip_undecomposable_errors:
+                    is_undecomposable = True
+                    break
+                else:
+                    raise ValueError(
+                        f"The dem error `{instruction}` needs to be decomposed into components, however "
+                        f"the component with detectors {component_dets} is not present as its own error "
+                        "in the dem."
+                    )
             dets_by_component.append(component_dets)
             obs_options_by_component.append(
                 single_component_dets_to_obs[component_dets]
             )
+
+        if is_undecomposable:
+            continue
 
         # Assign observables to each component, such that they are consistent with the
         # observables of the undecomposed error
@@ -202,7 +215,9 @@ def decompose_errors_using_detector_assignment(
 
 
 def decompose_errors_using_detector_coordinate_assignment(
-    dem: stim.DetectorErrorModel, coord_to_component_func: Callable[[list[float]], int]
+    dem: stim.DetectorErrorModel,
+    coord_to_component_func: Callable[[list[float]], int],
+    strip_undecomposable_errors: bool = False,
 ) -> stim.DetectorErrorModel:
     """Decomposes errors in the detector error model `dem` based on an assignment of
     detectors to components using a function of the detector coordinates.
@@ -225,6 +240,9 @@ def decompose_errors_using_detector_coordinate_assignment(
         A function that coordinates of a detector to an integer corresponding to
         the index of a component, to be used for the decomposition. The coordinates
         are provided as a list of floats.
+    strip_undecomposable_errors : bool
+        If True, errors that cannot be decomposed due to a missing component error
+        will be stripped from the output DEM instead of raising a ValueError.
 
     Returns
     -------
@@ -237,7 +255,9 @@ def decompose_errors_using_detector_coordinate_assignment(
         return coord_to_component_func(detector_coords[detector_id])
 
     return decompose_errors_using_detector_assignment(
-        dem=dem, detector_component_func=component_using_coords
+        dem=dem,
+        detector_component_func=component_using_coords,
+        strip_undecomposable_errors=strip_undecomposable_errors,
     )
 
 
@@ -252,6 +272,7 @@ def detector_coord_to_basis_for_stim_surface_code_convention(coord: tuple[int]) 
 
 def decompose_errors_using_last_coordinate_index(
     dem: stim.DetectorErrorModel,
+    strip_undecomposable_errors: bool = False,
 ) -> stim.DetectorErrorModel:
     """Decomposes errors in the detector error model `dem` based on an assignment of
     detectors to components by the last element of each detector coordinate.
@@ -269,6 +290,9 @@ def decompose_errors_using_last_coordinate_index(
     ----------
     dem : stim.DetectorErrorModel
         The detector error model to decompose.
+    strip_undecomposable_errors : bool
+        If True, errors that cannot be decomposed due to a missing component error
+        will be stripped from the output DEM instead of raising a ValueError.
 
     Returns
     -------
@@ -281,12 +305,15 @@ def decompose_errors_using_last_coordinate_index(
         return detector_coords[detector_id][-1]
 
     return decompose_errors_using_detector_assignment(
-        dem=dem, detector_component_func=last_coordinate_component
+        dem=dem,
+        detector_component_func=last_coordinate_component,
+        strip_undecomposable_errors=strip_undecomposable_errors,
     )
 
 
 def decompose_errors_for_stim_surface_code_coords(
     dem: stim.DetectorErrorModel,
+    strip_undecomposable_errors: bool = False,
 ) -> stim.DetectorErrorModel:
     """Decomposes the errors in the dem, such that each component
     of a decomposed error only triggers detectors of one basis (X or Z)
@@ -302,6 +329,9 @@ def decompose_errors_for_stim_surface_code_coords(
     ----------
     dem : stim.DetectorErrorModel
         The detector error model to decompose
+    strip_undecomposable_errors : bool
+        If True, errors that cannot be decomposed due to a missing component error
+        will be stripped from the output DEM instead of raising a ValueError.
 
     Returns
     -------
@@ -316,7 +346,9 @@ def decompose_errors_for_stim_surface_code_coords(
         )
 
     return decompose_errors_using_detector_assignment(
-        dem=dem, detector_component_func=stim_surface_code_det_component
+        dem=dem,
+        detector_component_func=stim_surface_code_det_component,
+        strip_undecomposable_errors=strip_undecomposable_errors,
     )
 
 
