@@ -574,11 +574,12 @@ print(f"Logical error rate: {result.errors / result.shots}")
 The `tesseract_decoder.demutil` module provides utilities for manipulating `stim.DetectorErrorModel` objects, specifically for decomposing complex error mechanisms into simpler components and regeneralizing spatial error models.
 
 #### Functions
-* `demutil.decompose_errors(dem: stim.DetectorErrorModel, method: str) -> stim.DetectorErrorModel`
+* `demutil.decompose_errors(dem: stim.DetectorErrorModel, method: str, strip_undecomposable_errors: bool = False) -> stim.DetectorErrorModel`
   * Decomposes error mechanisms in a DEM into simpler components based on the specified method.
   * Supported methods:
     * `"stim-surfacecode-coords"`: Decomposes errors based on the spatial coordinates of detectors, assuming a surface code layout where coordinates indicate X or Z basis.
     * `"last-coordinate-index"`: Decomposes errors using the last coordinate of the detector as the component identifier.
+  * `strip_undecomposable_errors`: If `False` (default), raises an error when a complex error cannot be decomposed into known atomic component errors. If `True`, silently drops undecomposable complex errors and continues.
   * **Note:** For decomposition to work, the DEM must contain "atomic" errors (errors involving only one component) that explain the components of the complex errors.
 
 **Example Usage**:
@@ -602,6 +603,13 @@ nice_matchable_dem = demutil.decompose_errors(dem, method='stim-surfacecode-coor
 
 # Re-decompose the errors assuming the last-coordinate index indicates the component:
 nice_matchable_dem2 = demutil.decompose_errors(dem, method='last-coordinate-index')
+
+# Optionally drop undecomposable complex errors instead of raising.
+nice_matchable_dem3 = demutil.decompose_errors(
+    dem,
+    method='last-coordinate-index',
+    strip_undecomposable_errors=True,
+)
 ```
 
 * `demutil.regeneralize_spatial_dem(templates: list[stim.DetectorErrorModel], scaffold: stim.DetectorErrorModel, verbose: bool = False) -> stim.DetectorErrorModel`
