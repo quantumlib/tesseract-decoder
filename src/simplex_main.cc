@@ -416,97 +416,65 @@ int main(int argc, char* argv[]) {
   std::vector<stim::SparseShot> shots;
   std::unique_ptr<stim::MeasureRecordWriter> writer;
   args.extract(config, shots, writer);
-  std::atomic<size_t> next_unclaimed_shot;
-  std::vector<std::atomic<bool>> finished(shots.size());
   std::vector<uint64_t> obs_predicted(shots.size());
   std::vector<double> cost_predicted(shots.size());
   std::vector<double> decoding_time_seconds(shots.size());
-  std::vector<std::thread> decoder_threads;
   const stim::DetectorErrorModel original_dem = config.dem.flattened();
   std::vector<std::atomic<size_t>> error_use_totals(original_dem.count_errors());
   bool has_obs = args.has_observables();
-  std::atomic<bool> worker_threads_please_terminate = false;
-  std::atomic<size_t> num_worker_threads_active;
-  for (size_t t = 0; t < args.num_threads; ++t) {
-    // After this value returns to 0, we know that no further shots will
-    // transition to finished.
-    ++num_worker_threads_active;
-    decoder_threads.push_back(std::thread([&config, &next_unclaimed_shot, &shots, &obs_predicted,
-                                           &cost_predicted, &decoding_time_seconds, &finished,
-                                           &error_use_totals, &has_obs,
-                                           &worker_threads_please_terminate,
-                                           &num_worker_threads_active, &original_dem]() {
-      SimplexDecoder decoder(config);
-      std::vector<size_t> error_use(original_dem.count_errors());
-      for (size_t shot;
-           !worker_threads_please_terminate and ((shot = next_unclaimed_shot++) < shots.size());) {
-        auto start_time = std::chrono::high_resolution_clock::now();
-        decoder.decode_to_errors(shots[shot].hits);
-        auto stop_time = std::chrono::high_resolution_clock::now();
-        decoding_time_seconds[shot] =
-            std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
-            1e6;
-        obs_predicted[shot] =
-            vector_to_u64_mask(decoder.get_flipped_observables(decoder.predicted_errors_buffer));
-        cost_predicted[shot] = decoder.cost_from_errors(decoder.predicted_errors_buffer);
-        if (!has_obs or shots[shot].obs_mask_as_u64() == obs_predicted[shot]) {
-          // Only count the error uses for shots that did not have a logical
-          // error, if we know the obs flips.
-          for (size_t ei : decoder.predicted_errors_buffer) {
-            ++error_use[ei];
-          }
-        }
-        finished[shot] = true;
-      }
-      // Add the error counts to the total
-      for (size_t ei = 0; ei < config.dem.count_errors(); ++ei) {
-        error_use_totals[ei] += error_use[ei];
-      }
-      --num_worker_threads_active;
-    }));
-  }
   size_t num_errors = 0;
   double total_time_seconds = 0;
   size_t num_observables = config.dem.count_observables();
-  size_t shot = 0;
-  for (; shot < shots.size(); ++shot) {
-    while (num_worker_threads_active and !finished[shot]) {
-      // We break once the number of active worker threads is 0, at which point
-      // there will be no further changes to finished[shot].
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-    // There can be no further changes to finished[shot]. If it is true, we
-    // process it and go to the next shot. If it is false, we break now as it
-    // will never be decoded and no subsequent shots will be decoded.
-    if (!finished[shot]) {
-      assert(num_worker_threads_active == 0);
-      // This and subsequent shots will never become decoded.
-      break;
-    }
-
-    if (writer) {
-      writer->write_bits((uint8_t*)&obs_predicted[shot], num_observables);
-      writer->write_end();
-    }
-
-    if (obs_predicted[shot] != shots[shot].obs_mask_as_u64()) ++num_errors;
-
-    total_time_seconds += decoding_time_seconds[shot];
-
-    if (args.print_stats) {
-      std::cout << "num_shots = " << (shot + 1) << " num_errors = " << num_errors
-                << " total_time_seconds = " << total_time_seconds << std::endl;
-      std::cout << "cost = " << cost_predicted[shot] << std::endl;
-      std::cout.flush();
-    }
-
-    if (num_errors >= args.max_errors) {
-      worker_threads_please_terminate = true;
-    }
-  }
-  for (size_t t = 0; t < args.num_threads; ++t) {
-    decoder_threads[t].join();
-  }
+  size_t shot = parallel_for_shots_in_order(
+      shots.size(), args.num_threads,
+      [&]() {
+        struct ThreadState {
+          SimplexDecoder decoder;
+          std::vector<size_t> error_use;
+          explicit ThreadState(const SimplexConfig& config, size_t num_errors)
+              : decoder(config), error_use(num_errors) {}
+        };
+        return ThreadState(config, original_dem.count_errors());
+      },
+      [&](auto& thread_state, size_t shot_index) {
+        auto start_time = std::chrono::high_resolution_clock::now();
+        thread_state.decoder.decode_to_errors(shots[shot_index].hits);
+        auto stop_time = std::chrono::high_resolution_clock::now();
+        decoding_time_seconds[shot_index] =
+            std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
+            1e6;
+        obs_predicted[shot_index] = vector_to_u64_mask(
+            thread_state.decoder.get_flipped_observables(thread_state.decoder.predicted_errors_buffer));
+        cost_predicted[shot_index] =
+            thread_state.decoder.cost_from_errors(thread_state.decoder.predicted_errors_buffer);
+        if (!has_obs or shots[shot_index].obs_mask_as_u64() == obs_predicted[shot_index]) {
+          for (size_t ei : thread_state.decoder.predicted_errors_buffer) {
+            ++thread_state.error_use[ei];
+          }
+        }
+      },
+      [&](auto& thread_state) {
+        for (size_t ei = 0; ei < config.dem.count_errors(); ++ei) {
+          error_use_totals[ei] += thread_state.error_use[ei];
+        }
+      },
+      [&](size_t shot_index) {
+        if (writer) {
+          writer->write_bits((uint8_t*)&obs_predicted[shot_index], num_observables);
+          writer->write_end();
+        }
+        if (obs_predicted[shot_index] != shots[shot_index].obs_mask_as_u64()) {
+          ++num_errors;
+        }
+        total_time_seconds += decoding_time_seconds[shot_index];
+        if (args.print_stats) {
+          std::cout << "num_shots = " << (shot_index + 1) << " num_errors = " << num_errors
+                    << " total_time_seconds = " << total_time_seconds << std::endl;
+          std::cout << "cost = " << cost_predicted[shot_index] << std::endl;
+          std::cout.flush();
+        }
+        return num_errors < args.max_errors;
+      });
 
   if (!args.dem_out_fname.empty()) {
     std::vector<size_t> counts(error_use_totals.begin(), error_use_totals.end());
