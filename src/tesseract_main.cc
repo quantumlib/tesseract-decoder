@@ -478,7 +478,7 @@ int main(int argc, char* argv[]) {
   std::vector<uint64_t> obs_predicted(shots.size());
   std::vector<double> cost_predicted(shots.size());
   std::vector<double> decoding_time_seconds(shots.size());
-  std::vector<bool> low_confidence(shots.size());
+  std::vector<uint8_t> low_confidence(shots.size());
   const stim::DetectorErrorModel original_dem = config.dem.flattened();
   std::vector<std::atomic<size_t>> error_use_totals(original_dem.count_errors());
   bool has_obs = args.has_observables();
@@ -506,7 +506,7 @@ int main(int argc, char* argv[]) {
             1e6;
         obs_predicted[shot_index] = vector_to_u64_mask(
             thread_state.decoder.get_flipped_observables(thread_state.decoder.predicted_errors_buffer));
-        low_confidence[shot_index] = thread_state.decoder.low_confidence_flag;
+        low_confidence[shot_index] = thread_state.decoder.low_confidence_flag ? 1 : 0;
         cost_predicted[shot_index] =
             thread_state.decoder.cost_from_errors(thread_state.decoder.predicted_errors_buffer);
         if (!has_obs or shots[shot_index].obs_mask_as_u64() == obs_predicted[shot_index]) {
