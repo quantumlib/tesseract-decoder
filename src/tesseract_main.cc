@@ -16,6 +16,7 @@
 #include <argparse/argparse.hpp>
 #include <atomic>
 #include <fstream>
+#include <memory>
 #include <nlohmann/json.hpp>
 #include <thread>
 #include <numeric>
@@ -480,7 +481,9 @@ int main(int argc, char* argv[]) {
   std::vector<double> decoding_time_seconds(shots.size());
   std::vector<std::atomic<bool>> low_confidence(shots.size());
   const stim::DetectorErrorModel original_dem = config.dem.flattened();
-  std::vector<std::atomic<size_t>> error_use_totals(original_dem.count_errors());
+  std::vector<std::unique_ptr<TesseractDecoder>> decoders(args.num_threads);
+  std::vector<std::vector<size_t>> error_use_per_thread(
+      args.num_threads, std::vector<size_t>(original_dem.count_errors()));
   bool has_obs = args.has_observables();
   size_t num_errors = 0;
   size_t num_low_confidence = 0;
@@ -488,36 +491,26 @@ int main(int argc, char* argv[]) {
   size_t num_observables = config.dem.count_observables();
   size_t shot = parallel_for_shots_in_order(
       shots.size(), args.num_threads,
-      [&]() {
-        struct ThreadState {
-          TesseractDecoder decoder;
-          std::vector<size_t> error_use;
-          explicit ThreadState(const TesseractConfig& config, size_t num_errors)
-              : decoder(config), error_use(num_errors) {}
-        };
-        return ThreadState(config, original_dem.count_errors());
-      },
-      [&](auto& thread_state, size_t shot_index) {
+      [&](size_t thread_index, size_t shot_index) {
+        if (!decoders[thread_index]) {
+          decoders[thread_index] = std::make_unique<TesseractDecoder>(config);
+        }
+        auto& decoder = *decoders[thread_index];
+        auto& error_use = error_use_per_thread[thread_index];
         auto start_time = std::chrono::high_resolution_clock::now();
-        thread_state.decoder.decode_to_errors(shots[shot_index].hits);
+        decoder.decode_to_errors(shots[shot_index].hits);
         auto stop_time = std::chrono::high_resolution_clock::now();
         decoding_time_seconds[shot_index] =
             std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
             1e6;
-        obs_predicted[shot_index] = vector_to_u64_mask(
-            thread_state.decoder.get_flipped_observables(thread_state.decoder.predicted_errors_buffer));
-        low_confidence[shot_index] = thread_state.decoder.low_confidence_flag;
-        cost_predicted[shot_index] =
-            thread_state.decoder.cost_from_errors(thread_state.decoder.predicted_errors_buffer);
+        obs_predicted[shot_index] =
+            vector_to_u64_mask(decoder.get_flipped_observables(decoder.predicted_errors_buffer));
+        low_confidence[shot_index] = decoder.low_confidence_flag;
+        cost_predicted[shot_index] = decoder.cost_from_errors(decoder.predicted_errors_buffer);
         if (!has_obs or shots[shot_index].obs_mask_as_u64() == obs_predicted[shot_index]) {
-          for (size_t ei : thread_state.decoder.predicted_errors_buffer) {
-            ++thread_state.error_use[ei];
+          for (size_t ei : decoder.predicted_errors_buffer) {
+            ++error_use[ei];
           }
-        }
-      },
-      [&](auto& thread_state) {
-        for (size_t ei = 0; ei < error_use_totals.size(); ++ei) {
-          error_use_totals[ei] += thread_state.error_use[ei];
         }
       },
       [&](size_t shot_index) {
@@ -541,6 +534,13 @@ int main(int argc, char* argv[]) {
         }
         return num_errors < args.max_errors;
       });
+
+  std::vector<size_t> error_use_totals(original_dem.count_errors());
+  for (const auto& error_use : error_use_per_thread) {
+    for (size_t ei = 0; ei < error_use_totals.size(); ++ei) {
+      error_use_totals[ei] += error_use[ei];
+    }
+  }
 
   if (!args.dem_out_fname.empty()) {
     std::vector<size_t> counts(error_use_totals.begin(), error_use_totals.end());
