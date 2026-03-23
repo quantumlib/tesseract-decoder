@@ -59,9 +59,17 @@ std::vector<std::string> get_files_recursive(const std::string& directory_path);
 uint64_t vector_to_u64_mask(const std::vector<int>& v);
 
 // Applies a shot-wise worker function in parallel while consuming completed
-// shots in increasing order. If consume_shot returns false, pending workers are
-// asked to stop early from claiming new shots, but workers always finish any
-// shot they already started.
+// shots in increasing order.
+//
+// process_shot(thread_index, shot_index):
+//   - Runs on worker threads.
+//   - thread_index is stable for each worker and lies in [0, num_threads).
+//
+// consume_shot(shot_index):
+//   - Runs on the caller thread in increasing shot order.
+//
+// If consume_shot returns false, workers stop claiming new shots but always
+// finish any shot they already started.
 template <typename ProcessShot, typename ConsumeShot>
 size_t parallel_for_shots_in_order(size_t num_shots, size_t num_threads,
                                    ProcessShot&& process_shot,

@@ -121,6 +121,9 @@ struct Args {
           "Cannot load observable flips without a corresponding detection "
           "event data file.");
     }
+    if (num_threads == 0) {
+      throw std::invalid_argument("--threads must be at least 1.");
+    }
     if (num_threads > 1000) {
       throw std::invalid_argument(
           "There is a maximum limit of 1000 threads imposed to avoid "
@@ -425,7 +428,9 @@ int main(int argc, char* argv[]) {
   program.add_argument("--threads")
       .help("Number of decoder threads to use")
       .metavar("N")
-      .default_value(size_t(std::thread::hardware_concurrency()))
+      .default_value(size_t(std::thread::hardware_concurrency() == 0
+                                ? 1
+                                : std::thread::hardware_concurrency()))
       .store_into(args.num_threads);
   program.add_argument("--beam")
       .help("Beam to use for truncation (default = infinity)")
