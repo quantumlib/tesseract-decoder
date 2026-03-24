@@ -371,9 +371,8 @@ int main(int argc, char* argv[]) {
   program.add_argument("--threads")
       .help("Number of decoder threads to use")
       .metavar("N")
-      .default_value(size_t(std::thread::hardware_concurrency() == 0
-                                ? 1
-                                : std::thread::hardware_concurrency()))
+      .default_value(size_t(
+          std::thread::hardware_concurrency() == 0 ? 1 : std::thread::hardware_concurrency()))
       .store_into(args.num_threads);
   program.add_argument("--parallelize-ilp")
       .help(

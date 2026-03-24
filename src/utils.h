@@ -71,8 +71,7 @@ uint64_t vector_to_u64_mask(const std::vector<int>& v);
 // If consume_shot returns false, workers stop claiming new shots but always
 // finish any shot they already started.
 template <typename ProcessShot, typename ConsumeShot>
-size_t parallel_for_shots_in_order(size_t num_shots, size_t num_threads,
-                                   ProcessShot&& process_shot,
+size_t parallel_for_shots_in_order(size_t num_shots, size_t num_threads, ProcessShot&& process_shot,
                                    ConsumeShot&& consume_shot) {
   std::atomic<size_t> next_unclaimed_shot = 0;
   std::vector<std::atomic<bool>> finished(num_shots);
@@ -84,8 +83,8 @@ size_t parallel_for_shots_in_order(size_t num_shots, size_t num_threads,
   for (size_t t = 0; t < num_threads; ++t) {
     ++num_worker_threads_active;
     workers.emplace_back([&, t]() {
-      for (size_t shot; !worker_threads_please_terminate &&
-                        ((shot = next_unclaimed_shot++) < num_shots);) {
+      for (size_t shot;
+           !worker_threads_please_terminate && ((shot = next_unclaimed_shot++) < num_shots);) {
         process_shot(t, shot);
         finished[shot] = true;
       }

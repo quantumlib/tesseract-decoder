@@ -18,9 +18,9 @@
 #include <fstream>
 #include <memory>
 #include <nlohmann/json.hpp>
-#include <thread>
 #include <numeric>
 #include <queue>
+#include <thread>
 
 #include "common.h"
 #include "stim.h"
@@ -428,9 +428,8 @@ int main(int argc, char* argv[]) {
   program.add_argument("--threads")
       .help("Number of decoder threads to use")
       .metavar("N")
-      .default_value(size_t(std::thread::hardware_concurrency() == 0
-                                ? 1
-                                : std::thread::hardware_concurrency()))
+      .default_value(size_t(
+          std::thread::hardware_concurrency() == 0 ? 1 : std::thread::hardware_concurrency()))
       .store_into(args.num_threads);
   program.add_argument("--beam")
       .help("Beam to use for truncation (default = infinity)")
