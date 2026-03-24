@@ -10,7 +10,7 @@ namespace py = pybind11;
 
 void add_visualization_module(py::module& root) {
   auto m = root.def_submodule("viz", "Module containing the visualization tools");
-  py::class_<Visualizer>(m, "Visualizer")
+  py::class_<tesseract_decoder::Visualizer>(m, "Visualizer")
       .def(py::init<>())
-      .def("write", &Visualizer::write, py::arg("fpath"));
+      .def("write", &tesseract_decoder::Visualizer::write, py::arg("fpath"));
 }

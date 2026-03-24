@@ -23,6 +23,9 @@
 #include "stim.h"
 #include "utils.h"
 
+namespace tesseract_decoder {
+namespace {
+
 constexpr uint64_t test_data_seed = 752024;
 
 bool simplex_test_compare(stim::DetectorErrorModel& dem, std::vector<stim::SparseShot>& shots) {
@@ -395,3 +398,6 @@ TEST(tesseract, DecodeToErrorsThrowsOnInvalidSymptom) {
               err.what());
   }
 }
+
+}  // namespace
+}  // namespace tesseract_decoder

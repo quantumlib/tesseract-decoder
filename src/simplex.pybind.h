@@ -27,7 +27,9 @@
 
 namespace py = pybind11;
 
+namespace tesseract_decoder {
 namespace {
+
 // Helper function to compile the decoder.
 std::unique_ptr<SimplexDecoder> _compile_simplex_decoder_helper(const SimplexConfig& self) {
   return std::make_unique<SimplexDecoder>(self);
@@ -41,9 +43,11 @@ SimplexConfig simplex_config_maker(py::object dem, bool parallelize = false,
       {input_dem, parallelize, window_length, window_slide_length, verbose, merge_errors});
 }
 
-};  // namespace
+}  // namespace
+}  // namespace tesseract_decoder
 
 void add_simplex_module(py::module& root) {
+  using namespace tesseract_decoder;
   auto m =
       root.def_submodule("simplex", "Module containing the SimplexDecoder and related methods");
 

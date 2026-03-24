@@ -20,6 +20,8 @@
 #include "io/HMPSIO.h"
 #include "utils.h"
 
+namespace tesseract_decoder {
+
 constexpr size_t T_COORD = 2;
 
 std::string SimplexConfig::str() {
@@ -399,3 +401,5 @@ void SimplexDecoder::decode_shots(std::vector<stim::SparseShot>& shots,
 }
 
 SimplexDecoder::~SimplexDecoder() {}
+
+}  // namespace tesseract_decoder

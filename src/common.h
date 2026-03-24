@@ -18,6 +18,7 @@
 
 #include "stim.h"
 
+namespace tesseract_decoder {
 namespace common {
 
 // Represents the effect of an error
@@ -107,5 +108,6 @@ stim::DetectorErrorModel dem_from_counts(const stim::DetectorErrorModel& orig_de
 double merge_weights(double a, double b);
 
 }  // namespace common
+}  // namespace tesseract_decoder
 
 #endif

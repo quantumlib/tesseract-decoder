@@ -27,6 +27,8 @@
 #include "utils.h"
 #include "visualization.h"
 
+namespace tesseract_decoder {
+
 constexpr size_t INF_DET_BEAM = std::numeric_limits<uint16_t>::max();
 constexpr int DEFAULT_DET_BEAM = 5;
 constexpr size_t DEFAULT_PQLIMIT = 200000;
@@ -122,5 +124,7 @@ struct TesseractDecoder {
                                        boost::dynamic_bitset<>& detectors,
                                        std::vector<DetectorCostTuple>& detector_cost_tuples) const;
 };
+
+}  // namespace tesseract_decoder
 
 #endif  // TESSERACT_DECODER_H
