@@ -16,10 +16,13 @@
 #define __TESSERACT_UTILS_H__
 
 #include <array>
+#include <atomic>
 #include <cassert>
+#include <chrono>
 #include <cstdint>
 #include <random>
 #include <string>
+#include <thread>
 #include <unordered_set>
 #include <vector>
 
@@ -54,4 +57,60 @@ std::vector<common::Error> get_errors_from_dem(const stim::DetectorErrorModel& d
 std::vector<std::string> get_files_recursive(const std::string& directory_path);
 
 uint64_t vector_to_u64_mask(const std::vector<int>& v);
+
+// Applies a shot-wise worker function in parallel while consuming completed
+// shots in increasing order.
+//
+// process_shot(thread_index, shot_index):
+//   - Runs on worker threads.
+//   - thread_index is stable for each worker and lies in [0, num_threads).
+//
+// consume_shot(shot_index):
+//   - Runs on the caller thread in increasing shot order.
+//
+// If consume_shot returns false, workers stop claiming new shots but always
+// finish any shot they already started.
+template <typename ProcessShot, typename ConsumeShot>
+size_t parallel_for_shots_in_order(size_t num_shots, size_t num_threads,
+                                   ProcessShot&& process_shot,
+                                   ConsumeShot&& consume_shot) {
+  std::atomic<size_t> next_unclaimed_shot = 0;
+  std::vector<std::atomic<bool>> finished(num_shots);
+  std::atomic<bool> worker_threads_please_terminate = false;
+  std::atomic<size_t> num_worker_threads_active = 0;
+  std::vector<std::thread> workers;
+  workers.reserve(num_threads);
+
+  for (size_t t = 0; t < num_threads; ++t) {
+    ++num_worker_threads_active;
+    workers.emplace_back([&, t]() {
+      for (size_t shot; !worker_threads_please_terminate &&
+                        ((shot = next_unclaimed_shot++) < num_shots);) {
+        process_shot(t, shot);
+        finished[shot] = true;
+      }
+      --num_worker_threads_active;
+    });
+  }
+
+  size_t shot = 0;
+  for (; shot < num_shots; ++shot) {
+    while (num_worker_threads_active && !finished[shot]) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    if (!finished[shot]) {
+      assert(num_worker_threads_active == 0);
+      break;
+    }
+    if (!consume_shot(shot)) {
+      worker_threads_please_terminate = true;
+    }
+  }
+
+  for (auto& worker : workers) {
+    worker.join();
+  }
+  return shot;
+}
+
 #endif  // __TESSERACT_UTILS_H__

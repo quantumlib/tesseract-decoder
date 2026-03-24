@@ -89,9 +89,82 @@ jobs:
         name: python-wheels-${{ matrix.os }}-${{ matrix.python-version }}
         path: ./bazel-bin/*.whl
 
+  build_wheels_for_legacy_systems:
+    runs-on: ${{ matrix.os }}
+    needs: [create_version]
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-22.04]
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4
+    - name: Set up Python
+      uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+      with:
+        name: version-file
+        path: version
+
+
+    - name: Set Python Version
+      env:
+        TARGET_PYTHON: ${{ matrix.python-version }}
+      run: |
+        echo "set version to ${TARGET_PYTHON}"
+        python _update_bazel_py_version.py $TARGET_PYTHON
+
+    - name: build custom C++ toolchain
+      env:
+        TARGET_PYTHON: ${{ matrix.python-version }}
+      run: |
+        . devtools/build_with_custom_toolchain.sh
+
+
+    - name: Set up Bazel
+      uses: bazel-contrib/setup-bazel@083175551ceeceebc757ebee2127fde78840ca77 # 0.18.0
+      with:
+        bazelisk-cache: true
+        disk-cache: ${{ github.workflow }}
+        repository-cache: true
+
+
+    - name: Build package
+      env:
+        TARGET_PYTHON: ${{ matrix.python-version }}
+      run: |
+        export GLIBC_VERSION=2_28
+        echo $GLIBC_VERSION
+        sed "s/^MANYLINUX_VERSION.*/MANYLINUX_VERSION=\"manylinux_${GLIBC_VERSION}_x86_64.manylinux2014_x86_64\"/" BUILD -i || true
+        bazel build --define GLIBC_VERSION=$GLIBC_VERSION --define TARGET_VERSION="$(python -c "print(\"py${TARGET_PYTHON}\".replace(\".\", \"\"))")" --define VERSION="$(cat version/version.txt)"  :tesseract_decoder_wheel
+  
+
+    - name: Test
+      run: |
+        pip install pytest sinter auditwheel
+
+        auditwheel show $(ls bazel-bin/*.whl)
+
+        pip install bazel-bin/*.whl
+
+        mv src/py/ src/_lib  # rename because `py` causes pytest issues.
+        rm src/_lib/stub_test.py  # ignore this test because it uses os flags that are set by bazel
+        rm src/_lib/tesseract_sinter_compat_test.py # ignore this test because it mixes np.int64 and int which doesn't work with older python versions
+
+        PYTHONPATH=src/_lib/::$PYTHONPATH pytest src/_lib/
+
+
+    - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: python-wheels-${{ matrix.os }}-${{ matrix.python-version }}-legacy
+        path: ./bazel-bin/*.whl
+
   release-wheels:
     name: Publish all wheels
-    needs: [build_wheels]
+    needs: [build_wheels,build_wheels_for_legacy_systems]
     runs-on: ubuntu-24.04
 
     steps:
