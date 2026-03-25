@@ -47,7 +47,7 @@ git_repository(
 http_archive(
     name = "highs",
     sha256 = HIGHS_SHA_256,
-    build_file = "//external:highs.BUILD",
+    build_file = "//third_party:highs.BUILD",
     strip_prefix = "HiGHS-" + HIGHS_VERSION,
     urls = ["https://github.com/ERGO-Code/HiGHS/archive/refs/tags/v" + HIGHS_VERSION + ".tar.gz"],
 )
@@ -67,7 +67,7 @@ ARGPARSE_SHA_256 = "3e5a59ab7688dcd1f918bc92051a10564113d4f36c3bbed3ef596c25e519
 
 http_archive(
     name = "argparse",
-    build_file = "//external:argparse.BUILD",
+    build_file = "//third_party:argparse.BUILD",
     sha256 = ARGPARSE_SHA_256,
     strip_prefix = "argparse-3.1",
     urls = ["https://github.com/p-ranav/argparse/archive/refs/tags/v3.1.zip"],
@@ -96,7 +96,7 @@ http_archive(
     ],
     strip_prefix = BOOST_ARCHIVE_NAME,
     sha256 = "c0685b68dd44cc46574cce86c4e17c0f611b15e195be9848dfd0769a0a207628",
-    build_file = "//external:boost.BUILD",
+    build_file = "//third_party:boost.BUILD",
 )
 
 cc_compatibility_proxy = use_extension("@rules_cc//cc:extensions.bzl", "compatibility_proxy")

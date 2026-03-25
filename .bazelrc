@@ -1,4 +1,4 @@
-common --enable_bzlmod --enable_workspace
+common --enable_bzlmod
 
 # Automatically apply build:<os> sections based on host OS.
 common --enable_platform_specific_config
