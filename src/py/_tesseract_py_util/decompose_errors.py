@@ -185,6 +185,8 @@ def decompose_errors_using_detector_assignment(
         )
 
         if consistent_obs_by_component is None:
+            if strip_undecomposable_errors:
+                continue
             raise ValueError(
                 f"The error instruction `{instruction}` could not be decomposed, due to its "
                 "observables not being consistent with the observables of any available "
