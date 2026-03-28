@@ -381,7 +381,7 @@ TEST(tesseract, DecodeToErrorsThrowsOnInvalidSymptom) {
         detector(2, 0, 0) D2
     )DEM");
 
-  TesseractConfig config(dem);
+  TesseractConfig config{dem};
   TesseractDecoder decoder(config);
 
   uint64_t invalid_symptom = decoder.num_detectors;
