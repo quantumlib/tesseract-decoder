@@ -4,14 +4,22 @@
   <meta charset="UTF-8" />
   <title>Tesseract Decoder Viewer</title>
   <style>
-    body { margin: 0; overflow: hidden; font-family: sans-serif; background: white; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: sans-serif;
+      background: white;
+    }
     #overlay {
       position: absolute;
-      top: 10px; left: 10px;
-      background: rgba(255,255,255,0.95);
+      top: 10px;
+      left: 10px;
+      background: rgba(255,255,255,0.96);
       padding: 12px;
       border-radius: 6px;
-      z-index: 1;
+      z-index: 2;
+      max-width: 320px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     }
     #legend {
       font-size: 14px;
@@ -27,27 +35,57 @@
     .gray { background: #aaa; }
     .blue { background: #07f; }
     .red { background: #f00; }
-    canvas { display: block; background: white; }
+    .controls-hint {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #444;
+      line-height: 1.35;
+    }
+    .button-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin: 8px 0;
+    }
+    input[type="range"] {
+      width: 100%;
+      max-width: 220px;
+    }
+    canvas {
+      display: block;
+      background: white;
+    }
   </style>
 </head>
 <body>
 <div id="overlay">
-  <input type="file" id="fileInput" accept=".json"/><br/><br/>
-  <button onclick="toggleAnimation()">Play/Pause</button><br/><br/>
+  <input type="file" id="fileInput" accept=".json" /><br/><br/>
+
+  <div class="button-row">
+    <button id="playPauseBtn">Play/Pause</button>
+    <button id="resetViewBtn">Reset View</button>
+    <button id="toggleViewBtn">Toggle View Angle</button>
+  </div>
 
   <label for="speedSlider">Speed: <span id="speedDisplay">3</span> FPS</label>
   <input type="range" id="speedSlider" min="0" max="100" value="35"><br/><br/>
 
   <label for="zoomSlider">Zoom:</label>
-  <input type="range" id="zoomSlider" min="5" max="100" value="30"><br/>
+  <input type="range" id="zoomSlider" min="5" max="100" step="0.1" value="30"><br/><br/>
 
   <label for="frameSlider">Frame: <span id="frameDisplay">0</span></label>
-  <input type="range" id="frameSlider" min="0" max="0" value="0" style="width: 200px;"><br/>
+  <input type="range" id="frameSlider" min="0" max="0" value="0"><br/><br/>
 
-  <label><input type="checkbox" id="loopCheckbox"> Loop animation</label><br/>
+  <label><input type="checkbox" id="loopCheckbox"> Loop animation</label><br/><br/>
+
   <label for="spinSlider">Spin speed:</label>
   <input type="range" id="spinSlider" min="0" max="0.006" step="0.0005" value="0.003"><br/>
-  <button id="toggleViewBtn">Toggle View Angle</button><br/>
+
+  <div class="controls-hint">
+    Left-drag: rotate<br/>
+    Right-drag: pan<br/>
+    Mouse wheel: zoom
+  </div>
 
   <div id="legend">
     <div><span class="legend-dot gray"></span> All Detectors</div>
@@ -58,8 +96,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.153.0/build/three.min.js"></script>
 <script>
-let zoomDistance = 30;
-let scene, camera, renderer;
+let scene = null;
+let camera = null;
+let renderer = null;
+let animationStarted = false;
+let resizeListenerInstalled = false;
+let canvasListenersInstalled = false;
+
 let activeEdges = [];
 let errorToDetectors = {};
 let detectorMeshes = {};
@@ -71,13 +114,32 @@ let frameIndex = 0;
 let playing = true;
 let frameInterval = 1000 / 3;
 let animationTimer = null;
-let rotationAngle = 0;
 let spinSpeed = 0.003;
 let topDownView = false;
 let loop = false;
 
-let sphereGeo = new THREE.SphereGeometry(0.2, 16, 16);
-let grayMat = new THREE.MeshPhysicalMaterial({
+let defaultView = {
+  target: new THREE.Vector3(0, 0, 0),
+  distance: 30,
+  theta: 0.55,
+  phi: 1.05,
+};
+
+const cameraState = {
+  target: new THREE.Vector3(0, 0, 0),
+  distance: 30,
+  theta: 0.55,
+  phi: 1.05,
+  minDistance: 2,
+  maxDistance: 500,
+  isDragging: false,
+  mouseButton: 0,
+  lastX: 0,
+  lastY: 0,
+};
+
+const sphereGeo = new THREE.SphereGeometry(0.2, 16, 16);
+const grayMat = new THREE.MeshPhysicalMaterial({
   color: 0xffffff,
   metalness: 0.25,
   roughness: 0.1,
@@ -86,96 +148,244 @@ let grayMat = new THREE.MeshPhysicalMaterial({
   transparent: true,
   opacity: 0.3,
   clearcoat: 1.0,
-  clearcoatRoughness: 0.1
+  clearcoatRoughness: 0.1,
 });
-let blueMat = new THREE.MeshPhongMaterial({ color: 0x0077ff });
-let redMat  = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+const blueMat = new THREE.MeshPhongMaterial({ color: 0x0077ff });
+const redMat = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+const redLineMat = new THREE.LineBasicMaterial({ color: 0xff0000 });
 
 const fileInput = document.getElementById('fileInput');
+const playPauseBtn = document.getElementById('playPauseBtn');
+const resetViewBtn = document.getElementById('resetViewBtn');
+const toggleViewBtn = document.getElementById('toggleViewBtn');
 const speedSlider = document.getElementById('speedSlider');
 const speedDisplay = document.getElementById('speedDisplay');
+const zoomSlider = document.getElementById('zoomSlider');
 const frameSlider = document.getElementById('frameSlider');
 const frameDisplay = document.getElementById('frameDisplay');
+const loopCheckbox = document.getElementById('loopCheckbox');
+const spinSlider = document.getElementById('spinSlider');
 
-document.getElementById('loopCheckbox').addEventListener('change', (e) => {
-  loop = e.target.checked;
-});
+function clamp(value, minValue, maxValue) {
+  return Math.max(minValue, Math.min(maxValue, value));
+}
 
-document.getElementById('spinSlider').addEventListener('input', (e) => {
-  spinSpeed = parseFloat(e.target.value);
-});
+function syncZoomSlider() {
+  zoomSlider.value = String(cameraState.distance);
+}
 
-document.getElementById('zoomSlider').addEventListener('input', (e) => {
-  const distance = parseFloat(e.target.value);
-  if (topDownView) {
-    camera.position.set(0, 0, distance);
-  } else {
-    camera.position.x = distance * Math.cos(rotationAngle);
-    camera.position.y = distance * Math.sin(rotationAngle);
-    camera.position.z = distance / 2;
+function setCameraFromState() {
+  if (!camera) {
+    return;
   }
-  camera.lookAt(0, 0, 0);
-});
+  const eps = 1e-3;
+  cameraState.phi = clamp(cameraState.phi, eps, Math.PI - eps);
+  cameraState.distance = clamp(cameraState.distance, cameraState.minDistance, cameraState.maxDistance);
 
-document.getElementById('toggleViewBtn').addEventListener('click', () => {
-  topDownView = !topDownView;
-  if (topDownView) {
-    camera.position.set(0, 0, 50);
-    camera.up.set(0, 1, 0);
-    camera.lookAt(0, 0, 0);
-  } else {
-    camera.position.set(20, 0, 10);
-    camera.up.set(0, 0, 1);
-    camera.lookAt(0, 0, 0);
+  const sinPhi = Math.sin(cameraState.phi);
+  const cosPhi = Math.cos(cameraState.phi);
+  const x = cameraState.target.x + cameraState.distance * Math.cos(cameraState.theta) * sinPhi;
+  const y = cameraState.target.y + cameraState.distance * Math.sin(cameraState.theta) * sinPhi;
+  const z = cameraState.target.z + cameraState.distance * cosPhi;
+
+  camera.position.set(x, y, z);
+  camera.up.set(0, 0, 1);
+  camera.lookAt(cameraState.target);
+  syncZoomSlider();
+}
+
+function setObliqueView(useDefaultDistance = false) {
+  if (useDefaultDistance) {
+    cameraState.distance = defaultView.distance;
   }
-});
+  cameraState.target.copy(defaultView.target);
+  cameraState.theta = defaultView.theta;
+  cameraState.phi = defaultView.phi;
+  topDownView = false;
+  setCameraFromState();
+}
 
-fileInput.addEventListener('change', handleFile);
+function setTopDownView(useDefaultDistance = false) {
+  if (useDefaultDistance) {
+    cameraState.distance = defaultView.distance;
+  }
+  cameraState.target.copy(defaultView.target);
+  cameraState.theta = 0;
+  cameraState.phi = 0.05;
+  topDownView = true;
+  setCameraFromState();
+}
 
-speedSlider.addEventListener('input', function () {
-  const logScale = parseInt(this.value);
-  let fps = Math.round(10 ** (logScale / 25));
-  fps = Math.min(fps, 1000);
-  frameInterval = 1000 / fps;
-  speedDisplay.innerText = fps;
-  if (playing && frames.length) restartAnimationTimer();
-});
+function resetView() {
+  if (topDownView) {
+    setTopDownView(true);
+  } else {
+    setObliqueView(true);
+  }
+}
 
-frameSlider.addEventListener("input", () => {
-  playing = false;
-  clearInterval(animationTimer);
-  frameIndex = parseInt(frameSlider.value);
-  updateFrame();
-  frameDisplay.innerText = frameIndex;
-});
+function fitViewToData(detectorCoords, errorCoordsIn) {
+  const box = new THREE.Box3();
+  let pointCount = 0;
+
+  for (const coord of Object.values(detectorCoords || {})) {
+    box.expandByPoint(new THREE.Vector3(coord[0], coord[1], coord[2]));
+    pointCount += 1;
+  }
+  for (const coord of Object.values(errorCoordsIn || {})) {
+    box.expandByPoint(new THREE.Vector3(coord[0], coord[1], coord[2]));
+    pointCount += 1;
+  }
+
+  if (pointCount === 0) {
+    defaultView.target.set(0, 0, 0);
+    defaultView.distance = 30;
+    defaultView.theta = 0.55;
+    defaultView.phi = 1.05;
+  } else {
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const radius = Math.max(size.length() * 0.5, 1);
+    defaultView.target.copy(center);
+    defaultView.distance = Math.max(radius * 2.8, 10);
+    defaultView.theta = 0.55;
+    defaultView.phi = 1.05;
+
+    cameraState.minDistance = Math.max(radius * 0.25, 1);
+    cameraState.maxDistance = Math.max(radius * 20, 100);
+    zoomSlider.min = cameraState.minDistance.toFixed(2);
+    zoomSlider.max = cameraState.maxDistance.toFixed(2);
+    zoomSlider.step = Math.max(radius / 500, 0.05).toFixed(3);
+  }
+
+  if (topDownView) {
+    setTopDownView(true);
+  } else {
+    setObliqueView(true);
+  }
+}
+
+function ensureRendererAndCamera() {
+  if (!renderer) {
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+  }
+
+  if (!camera) {
+    camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 5000);
+  }
+
+  if (!resizeListenerInstalled) {
+    window.addEventListener('resize', onWindowResize, false);
+    resizeListenerInstalled = true;
+  }
+
+  if (!canvasListenersInstalled) {
+    renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+    renderer.domElement.addEventListener('mousedown', onMouseDown);
+    renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    canvasListenersInstalled = true;
+  }
+}
+
+function onMouseDown(event) {
+  if (!renderer || event.target !== renderer.domElement) {
+    return;
+  }
+  cameraState.isDragging = true;
+  cameraState.mouseButton = event.button;
+  cameraState.lastX = event.clientX;
+  cameraState.lastY = event.clientY;
+}
+
+function onMouseMove(event) {
+  if (!cameraState.isDragging || !camera || !renderer) {
+    return;
+  }
+
+  const dx = event.clientX - cameraState.lastX;
+  const dy = event.clientY - cameraState.lastY;
+  cameraState.lastX = event.clientX;
+  cameraState.lastY = event.clientY;
+
+  if (cameraState.mouseButton === 0) {
+    cameraState.theta -= dx * 0.005;
+    cameraState.phi -= dy * 0.005;
+    setCameraFromState();
+    return;
+  }
+
+  if (cameraState.mouseButton === 2 || cameraState.mouseButton === 1) {
+    const targetDistance = camera.position.distanceTo(cameraState.target);
+    const panPerPixel = 2 * targetDistance * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) / Math.max(renderer.domElement.clientHeight, 1);
+
+    const viewDir = new THREE.Vector3().subVectors(cameraState.target, camera.position).normalize();
+    let upRef = camera.up.clone();
+    if (Math.abs(viewDir.dot(upRef)) > 0.98) {
+      upRef = new THREE.Vector3(0, 1, 0);
+    }
+    const right = new THREE.Vector3().crossVectors(viewDir, upRef).normalize();
+    const up = new THREE.Vector3().crossVectors(right, viewDir).normalize();
+
+    const pan = new THREE.Vector3()
+      .addScaledVector(right, -dx * panPerPixel)
+      .addScaledVector(up, dy * panPerPixel);
+
+    cameraState.target.add(pan);
+    defaultView.target.add(pan);
+    setCameraFromState();
+  }
+}
+
+function onMouseUp() {
+  cameraState.isDragging = false;
+}
+
+function onWheel(event) {
+  if (!renderer || event.target !== renderer.domElement) {
+    return;
+  }
+  event.preventDefault();
+  const zoomFactor = Math.exp(event.deltaY * 0.0015);
+  cameraState.distance *= zoomFactor;
+  setCameraFromState();
+}
 
 function handleFile(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) {
+    return;
+  }
+
   const reader = new FileReader();
   reader.onload = function(e) {
     try {
       const data = JSON.parse(e.target.result);
-      console.log(data.errorToDetectors)
       initializeScene(data.detectorCoords, data.errorCoords, data.frames, data.errorToDetectors);
     } catch (err) {
-      console.error("Failed to parse JSON:", err);
+      console.error('Failed to parse JSON:', err);
     }
   };
-  reader.readAsText(event.target.files[0]);
+  reader.readAsText(file);
 }
 
 function restartAnimationTimer() {
   clearInterval(animationTimer);
 
-  // If trying to play from the very end of a non-looping animation, reset to the beginning first.
   if (frames.length > 0 && frameIndex === frames.length - 1 && !loop) {
     frameIndex = 0;
-    updateFrame(); // Immediately update visuals to show frame 0
+    updateFrame();
   }
 
   animationTimer = setInterval(() => {
-    if (!playing || !frames.length) return;
+    if (!playing || !frames.length) {
+      return;
+    }
     if (frameIndex < frames.length - 1) {
-      frameIndex++;
+      frameIndex += 1;
     } else if (loop) {
       frameIndex = 0;
     } else {
@@ -188,27 +398,10 @@ function restartAnimationTimer() {
 }
 
 function initializeScene(detectorCoords, errorCoordsIn, frameData, errorToDetectorsIn) {
-  if (scene) {
-    while (scene.children.length > 0) scene.remove(scene.children[0]);
-    if (renderer.domElement.parentNode) {
-        renderer.domElement.parentNode.removeChild(renderer.domElement);
-    }
-  }
+  ensureRendererAndCamera();
 
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0xffffff);
-
-  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.set(20, 0, 10);
-  camera.up.set(0, 0, 1);
-  camera.lookAt(0, 0, 0);
-
-  renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  document.body.appendChild(renderer.domElement);
-
-  // Add resize listener
-  window.addEventListener('resize', onWindowResize, false);
 
   scene.add(new THREE.AmbientLight(0x888888));
   const light = new THREE.PointLight(0xffffff, 1);
@@ -216,115 +409,193 @@ function initializeScene(detectorCoords, errorCoordsIn, frameData, errorToDetect
   scene.add(light);
 
   detectorMeshes = {};
-  for (const [idStr, coord] of Object.entries(detectorCoords)) {
-    const id = parseInt(idStr);
+  activeEdges = [];
+  activeDetectors = [];
+  activeErrors = [];
+
+  for (const [idStr, coord] of Object.entries(detectorCoords || {})) {
+    const id = parseInt(idStr, 10);
     const mesh = new THREE.Mesh(sphereGeo, grayMat);
-    mesh.position.set(...coord);
+    mesh.position.set(coord[0], coord[1], coord[2]);
     scene.add(mesh);
     detectorMeshes[id] = mesh;
   }
 
-  errorCoords = errorCoordsIn;
-  errorToDetectors = errorToDetectorsIn;
-  frames = frameData;
+  errorCoords = errorCoordsIn || {};
+  errorToDetectors = errorToDetectorsIn || {};
+  frames = Array.isArray(frameData) ? frameData : [];
   frameIndex = 0;
-  frameSlider.max = frames.length - 1;
+  frameSlider.max = Math.max(frames.length - 1, 0);
   frameSlider.value = 0;
-  frameDisplay.innerText = 0;
+  frameDisplay.innerText = '0';
 
+  fitViewToData(detectorCoords || {}, errorCoords);
   updateFrame();
   restartAnimationTimer();
-  animate();
+
+  if (!animationStarted) {
+    animationStarted = true;
+    animate();
+  }
+}
+
+function clearFrameObjects() {
+  activeDetectors.forEach((mesh) => scene.remove(mesh));
+  activeDetectors = [];
+
+  activeErrors.forEach((mesh) => scene.remove(mesh));
+  activeErrors = [];
+
+  activeEdges.forEach((line) => {
+    scene.remove(line);
+    if (line.geometry) {
+      line.geometry.dispose();
+    }
+  });
+  activeEdges = [];
 }
 
 function updateFrame() {
-  // Clear previous markers
-  activeDetectors.forEach(s => scene.remove(s));
-  activeDetectors = [];
-  activeErrors.forEach(s => scene.remove(s));
-  activeErrors = [];
-  activeEdges.forEach(e => scene.remove(e));
-  activeEdges = [];
+  if (!scene) {
+    return;
+  }
 
-  if (!frames || frames.length === 0) return;
+  clearFrameObjects();
+
+  if (!frames || frames.length === 0) {
+    frameSlider.value = 0;
+    frameDisplay.innerText = '0';
+    return;
+  }
+
   const frame = frames[frameIndex];
+  const activatedDetectors = Array.isArray(frame.activated) ? frame.activated : [];
+  const activatedErrors = Array.isArray(frame.activated_errors) ? frame.activated_errors : [];
 
-  // Draw activated detectors
-  for (const id of frame.activated) {
-    if (!(id in detectorMeshes)) continue;
+  for (const id of activatedDetectors) {
+    if (!(id in detectorMeshes)) {
+      continue;
+    }
     const blue = new THREE.Mesh(sphereGeo, blueMat);
     blue.position.copy(detectorMeshes[id].position);
     scene.add(blue);
     activeDetectors.push(blue);
   }
 
-  // Draw activated errors and red edges to detectors
-  for (const eid of frame.activated_errors) {
-    if (!(eid in errorCoords)) continue;
+  for (const eid of activatedErrors) {
+    if (!(eid in errorCoords)) {
+      continue;
+    }
+
     const errPos = new THREE.Vector3(...errorCoords[eid]);
     const red = new THREE.Mesh(sphereGeo, redMat);
     red.position.copy(errPos);
     scene.add(red);
     activeErrors.push(red);
 
-    if (errorToDetectors) {
-      for (const did of errorToDetectors[String(eid)]) {
-        if (!(did in detectorMeshes)) continue;
-        const detPos = detectorMeshes[did].position;
-        const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
-        const geometry = new THREE.BufferGeometry().setFromPoints([errPos, detPos]);
-        const line = new THREE.Line(geometry, material);
-        scene.add(line);
-        activeEdges.push(line);
+    const incidentDetectors = errorToDetectors[String(eid)] || [];
+    for (const did of incidentDetectors) {
+      if (!(did in detectorMeshes)) {
+        continue;
       }
+      const detPos = detectorMeshes[did].position;
+      const geometry = new THREE.BufferGeometry().setFromPoints([errPos, detPos]);
+      const line = new THREE.Line(geometry, redLineMat);
+      scene.add(line);
+      activeEdges.push(line);
     }
   }
 
-  // Update frame label and slider
   frameSlider.value = frameIndex;
-  frameDisplay.innerText = frameIndex;
+  frameDisplay.innerText = String(frameIndex);
 }
 
 function onWindowResize() {
-    if (camera && renderer) {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    }
+  if (!camera || !renderer) {
+    return;
+  }
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
 function animate() {
   requestAnimationFrame(animate);
-  rotationAngle += spinSpeed;
-  if (!topDownView) {
-    const zoomInput = document.getElementById("zoomSlider");
-    zoomDistance = parseFloat(zoomInput.value);
-    camera.position.x = zoomDistance * Math.cos(rotationAngle);
-    camera.position.y = zoomDistance * Math.sin(rotationAngle);
-    camera.position.z = zoomDistance / 2;
-    camera.lookAt(0, 0, 0);
+  if (!renderer || !scene || !camera) {
+    return;
   }
-  if (renderer && scene && camera) {
-    renderer.render(scene, camera);
+
+  if (!cameraState.isDragging && spinSpeed !== 0) {
+    cameraState.theta += spinSpeed;
+    setCameraFromState();
   }
+
+  renderer.render(scene, camera);
 }
 
 function toggleAnimation() {
   playing = !playing;
-  if (playing && frames.length) restartAnimationTimer();
-  else clearInterval(animationTimer);
+  if (playing && frames.length) {
+    restartAnimationTimer();
+  } else {
+    clearInterval(animationTimer);
+  }
 }
 
-// Try to load a default logfile when the page is opened.
+fileInput.addEventListener('change', handleFile);
+playPauseBtn.addEventListener('click', toggleAnimation);
+resetViewBtn.addEventListener('click', resetView);
+toggleViewBtn.addEventListener('click', () => {
+  if (topDownView) {
+    setObliqueView(false);
+  } else {
+    setTopDownView(false);
+  }
+});
+
+loopCheckbox.addEventListener('change', (e) => {
+  loop = e.target.checked;
+});
+
+spinSlider.addEventListener('input', (e) => {
+  spinSpeed = parseFloat(e.target.value);
+});
+
+zoomSlider.addEventListener('input', (e) => {
+  cameraState.distance = parseFloat(e.target.value);
+  setCameraFromState();
+});
+
+speedSlider.addEventListener('input', function () {
+  const logScale = parseInt(this.value, 10);
+  let fps = Math.round(10 ** (logScale / 25));
+  fps = Math.min(fps, 1000);
+  frameInterval = 1000 / fps;
+  speedDisplay.innerText = String(fps);
+  if (playing && frames.length) {
+    restartAnimationTimer();
+  }
+});
+
+frameSlider.addEventListener('input', () => {
+  playing = false;
+  clearInterval(animationTimer);
+  frameIndex = parseInt(frameSlider.value, 10);
+  updateFrame();
+});
+
 window.addEventListener('load', () => {
   fetch('logfile.json')
-    .then(r => r.ok ? r.json() : Promise.reject())
-    .then(data => initializeScene(
+    .then((r) => r.ok ? r.json() : Promise.reject(new Error('No default logfile.json')))
+    .then((data) => initializeScene(
       data.detectorCoords,
       data.errorCoords,
       data.frames,
-      data.errorToDetectors))
-    .catch(() => {/* ignore if not present */});
+      data.errorToDetectors
+    ))
+    .catch(() => {
+      // Ignore missing default logfile when the user intends to use the file picker.
+    });
 });
 </script>
 </body>
