@@ -108,7 +108,6 @@ struct TesseractDecoder {
     return eneighbors;
   }
 
- private:
   std::vector<std::vector<int>> d2e;
   std::vector<std::vector<int>> eneighbors;
   std::vector<std::vector<int>> edets;
