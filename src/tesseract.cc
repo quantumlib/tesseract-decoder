@@ -88,26 +88,26 @@ bool Node::operator>(const Node& other) const {
 double TesseractDecoder::get_detcost(
     size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const {
   double min_cost = INF;
-  uint32_t min_det_cost = std::numeric_limits<uint32_t>::max();
+  uint32_t min_det_cost_det_count = std::numeric_limits<uint32_t>::max();
   double error_cost;
   ErrorCost ec;
   DetectorCostTuple dct;
 
   for (int ei : d2e[d]) {
     ec = error_costs[ei];
-    if (ec.likelihood_cost * min_det_cost >= min_cost * errors[ei].symptom.detectors.size()) break;
+    if (ec.likelihood_cost * min_det_cost_det_count >= min_cost * errors[ei].symptom.detectors.size()) break;
 
     dct = detector_cost_tuples[ei];
     if (!dct.error_blocked) {
       error_cost = ec.likelihood_cost;
-      if (error_cost < min_cost * dct.detectors_count) {
+      if (error_cost * min_det_cost_det_count < min_cost * dct.detectors_count) {
         min_cost = error_cost;
-        min_det_cost = dct.detectors_count;
+        min_det_cost_det_count = dct.detectors_count;
       }
     }
   }
 
-  return (min_cost / min_det_cost) + config.det_penalty;
+  return (min_cost / min_det_cost_det_count) + config.det_penalty;
 }
 
 TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
