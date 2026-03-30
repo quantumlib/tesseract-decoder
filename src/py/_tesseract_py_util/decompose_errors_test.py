@@ -211,6 +211,34 @@ error(0.1) D0
     assert str(decomposed_dem) == str(expected_dem)
 
 
+
+
+def test_decompose_errors_strip_inconsistent_observables():
+    dem = stim.DetectorErrorModel("""
+detector(0) D0
+detector(1) D1
+# Standalone components fix observable choices for each detector.
+error(0.1) D0 L0
+error(0.1) D1 L1
+# Cross-component error has observables that cannot be matched by available components.
+error(0.1) D0 D1 L0
+""")
+
+    with pytest.raises(ValueError, match="could not be decomposed"):
+        decompose_errors_using_last_coordinate_index(dem)
+
+    decomposed_dem = decompose_errors_using_last_coordinate_index(
+        dem, strip_undecomposable_errors=True
+    )
+
+    expected_dem = stim.DetectorErrorModel("""
+detector(0) D0
+detector(1) D1
+error(0.1) D0 L0
+error(0.1) D1 L1
+""")
+    assert str(decomposed_dem) == str(expected_dem)
+
 def test_undecompose_errors_with_repeat_block():
     dem = stim.DetectorErrorModel("""error(0.1) D2 D5 ^ D10 L1
 repeat 10 {

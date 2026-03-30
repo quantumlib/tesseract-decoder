@@ -381,7 +381,7 @@ TEST(tesseract, DecodeToErrorsThrowsOnInvalidSymptom) {
         detector(2, 0, 0) D2
     )DEM");
 
-  TesseractConfig config(dem);
+  TesseractConfig config{dem};
   TesseractDecoder decoder(config);
 
   uint64_t invalid_symptom = decoder.num_detectors;
@@ -394,4 +394,27 @@ TEST(tesseract, DecodeToErrorsThrowsOnInvalidSymptom) {
                   std::to_string(decoder.num_detectors) + ").",
               err.what());
   }
+}
+
+TEST(TesseractDetcostTest, ComparesRatiosNotRawCosts) {
+  stim::DetectorErrorModel dem = stim::DetectorErrorModel(R"DEM(
+    error(0.005322067133022559) D0 D1 D3
+    error(0.0051237598826648) D0 D1 D2
+  )DEM");
+
+  TesseractConfig cfg;
+  cfg.dem = dem;
+  cfg.merge_errors = false;
+  TesseractDecoder dec(cfg);
+
+  std::vector<DetectorCostTuple> tuples(dec.errors.size());
+  // residual x = {D0, D1}
+  std::cout <<"dec.d2e.size() = "<<dec.d2e.size()<<std::endl;
+  for (int ei : dec.d2e[0]) tuples[ei].detectors_count++;
+  for (int ei : dec.d2e[1]) tuples[ei].detectors_count++;
+
+  double got = dec.get_detcost(0, tuples);
+  double expected = 5.230557212477344 / 2.0;  // from D0 D1 D3
+
+  EXPECT_NEAR(got, expected, 1e-12);
 }
