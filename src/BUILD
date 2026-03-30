@@ -140,6 +140,20 @@ cc_library(
     ],
 )
 
+
+cc_library(
+    name = "libtesseract_ftl",
+    srcs = ["tesseract_ftl.cc"],
+    hdrs = ["tesseract_ftl.h"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    deps = [
+        ":libtesseract",
+        "@boost//:dynamic_bitset",
+        "@highs",
+    ],
+)
+
 cc_binary(
     name = "tesseract",
     srcs = ["tesseract_main.cc"],
@@ -147,6 +161,20 @@ cc_binary(
     linkopts = OPT_LINKOPTS,
     deps = [
         ":libtesseract",
+        "@argparse",
+        "@nlohmann_json//:json",
+        "@stim//:stim_lib",
+    ],
+)
+
+
+cc_binary(
+    name = "tesseract_ftl",
+    srcs = ["tesseract_ftl_main.cc"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    deps = [
+        ":libtesseract_ftl",
         "@argparse",
         "@nlohmann_json//:json",
         "@stim//:stim_lib",

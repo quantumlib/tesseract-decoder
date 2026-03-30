@@ -97,6 +97,8 @@ struct TesseractDecoder {
                     std::vector<std::vector<int>>& obs_predicted);
 
   bool low_confidence_flag = false;
+  size_t num_pq_pushed = 0;
+  size_t num_pq_popped = 0;
   std::vector<size_t> predicted_errors_buffer;
   std::vector<size_t> dem_error_to_error;
   std::vector<size_t> error_to_dem_error;
@@ -108,7 +110,6 @@ struct TesseractDecoder {
     return eneighbors;
   }
 
- private:
   std::vector<std::vector<int>> d2e;
   std::vector<std::vector<int>> eneighbors;
   std::vector<std::vector<int>> edets;
