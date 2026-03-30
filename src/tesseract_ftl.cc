@@ -105,14 +105,15 @@ double dot_on_support(const std::vector<double>& values, const std::vector<int>&
 //   maximize   sum_i x_i
 //   subject to A x <= b
 //              x >= 0
-// where A is a 0/1 matrix given by row supports.
+// where A is a 0/1 matrix given by row supports for a selected subset of rows.
 DenseSimplexResult solve_dense_primal_packing_lp(
     size_t num_vars, const std::vector<std::vector<int>>& row_supports,
-    const std::vector<double>& rhs, const std::vector<double>* entering_priorities = nullptr) {
+    const std::vector<int>& selected_rows, const std::vector<double>& rhs,
+    const std::vector<double>* entering_priorities = nullptr) {
   DenseSimplexResult result;
   result.solution.assign(num_vars, 0.0);
 
-  const size_t num_rows = row_supports.size();
+  const size_t num_rows = selected_rows.size();
   if (num_vars == 0) {
     result.success = true;
     return result;
@@ -123,44 +124,46 @@ DenseSimplexResult solve_dense_primal_packing_lp(
   }
 
   const size_t width = num_vars + num_rows + 1;
-  std::vector<std::vector<double>> tableau(num_rows + 1, std::vector<double>(width, 0.0));
+  const size_t height = num_rows + 1;
+  std::vector<double> tableau(height * width, 0.0);
   std::vector<size_t> basis(num_rows);
 
   for (size_t row = 0; row < num_rows; ++row) {
-    for (int col : row_supports[row]) {
-      tableau[row][(size_t)col] = 1.0;
+    size_t orig_row = (size_t)selected_rows[row];
+    for (int col : row_supports[orig_row]) {
+      tableau[row * width + (size_t)col] = 1.0;
     }
-    tableau[row][num_vars + row] = 1.0;
-    tableau[row][width - 1] = rhs[row];
+    tableau[row * width + num_vars + row] = 1.0;
+    tableau[row * width + width - 1] = rhs[orig_row];
     basis[row] = num_vars + row;
-    if (rhs[row] < -SIMPLEX_EPS) {
+    if (rhs[orig_row] < -SIMPLEX_EPS) {
       throw std::runtime_error("Dense simplex received a negative RHS.");
     }
   }
   for (size_t col = 0; col < num_vars; ++col) {
-    tableau[num_rows][col] = -1.0;
+    tableau[num_rows * width + col] = -1.0;
   }
 
   auto pivot = [&](size_t pivot_row, size_t pivot_col) {
-    const double pivot_value = tableau[pivot_row][pivot_col];
+    const double pivot_value = tableau[pivot_row * width + pivot_col];
     assert(std::abs(pivot_value) > SIMPLEX_EPS);
     const double inv_pivot = 1.0 / pivot_value;
     for (size_t col = 0; col < width; ++col) {
-      tableau[pivot_row][col] *= inv_pivot;
+      tableau[pivot_row * width + col] *= inv_pivot;
     }
-    tableau[pivot_row][pivot_col] = 1.0;
+    tableau[pivot_row * width + pivot_col] = 1.0;
 
-    for (size_t row = 0; row <= num_rows; ++row) {
+    for (size_t row = 0; row < height; ++row) {
       if (row == pivot_row) continue;
-      const double factor = tableau[row][pivot_col];
+      const double factor = tableau[row * width + pivot_col];
       if (std::abs(factor) <= SIMPLEX_EPS) {
-        tableau[row][pivot_col] = 0.0;
+        tableau[row * width + pivot_col] = 0.0;
         continue;
       }
       for (size_t col = 0; col < width; ++col) {
-        tableau[row][col] -= factor * tableau[pivot_row][col];
+        tableau[row * width + col] -= factor * tableau[pivot_row * width + col];
       }
-      tableau[row][pivot_col] = 0.0;
+      tableau[row * width + pivot_col] = 0.0;
     }
     basis[pivot_row] = pivot_col;
     result.pivots++;
@@ -170,13 +173,12 @@ DenseSimplexResult solve_dense_primal_packing_lp(
     size_t entering_col = width;
     double entering_priority = -INF_D;
     for (size_t col = 0; col + 1 < width; ++col) {
-      if (tableau[num_rows][col] >= -SIMPLEX_EPS) continue;
+      if (tableau[num_rows * width + col] >= -SIMPLEX_EPS) continue;
       const bool current_is_original = entering_col < num_vars;
       const bool candidate_is_original = col < num_vars;
-      const double candidate_priority =
-          candidate_is_original && entering_priorities != nullptr
-              ? (*entering_priorities)[col]
-              : -INF_D;
+      const double candidate_priority = candidate_is_original && entering_priorities != nullptr
+                                            ? (*entering_priorities)[col]
+                                            : -INF_D;
       if (entering_col == width) {
         entering_col = col;
         entering_priority = candidate_priority;
@@ -190,8 +192,7 @@ DenseSimplexResult solve_dense_primal_packing_lp(
         continue;
       }
       if (candidate_priority > entering_priority + SIMPLEX_EPS ||
-          (std::abs(candidate_priority - entering_priority) <= SIMPLEX_EPS &&
-           col < entering_col)) {
+          (std::abs(candidate_priority - entering_priority) <= SIMPLEX_EPS && col < entering_col)) {
         entering_col = col;
         entering_priority = candidate_priority;
       }
@@ -203,9 +204,9 @@ DenseSimplexResult solve_dense_primal_packing_lp(
     size_t leaving_row = num_rows;
     double best_ratio = INF_D;
     for (size_t row = 0; row < num_rows; ++row) {
-      const double coeff = tableau[row][entering_col];
+      const double coeff = tableau[row * width + entering_col];
       if (coeff <= SIMPLEX_EPS) continue;
-      const double ratio = tableau[row][width - 1] / coeff;
+      const double ratio = tableau[row * width + width - 1] / coeff;
       if (ratio + SIMPLEX_EPS < best_ratio) {
         best_ratio = ratio;
         leaving_row = row;
@@ -224,12 +225,12 @@ DenseSimplexResult solve_dense_primal_packing_lp(
 
   for (size_t row = 0; row < num_rows; ++row) {
     if (basis[row] < num_vars) {
-      double value = tableau[row][width - 1];
+      double value = tableau[row * width + width - 1];
       if (std::abs(value) <= SIMPLEX_EPS) value = 0.0;
       result.solution[basis[row]] = value;
     }
   }
-  result.objective = tableau[num_rows][width - 1];
+  result.objective = tableau[num_rows * width + width - 1];
   if (std::abs(result.objective) <= SIMPLEX_EPS) result.objective = 0.0;
   result.success = true;
   return result;
@@ -315,18 +316,8 @@ SingletonComponentSolveResult solve_singleton_component_lp(
       throw std::runtime_error("Constraint generation exceeded the number of unique constraints.");
     }
 
-    std::vector<std::vector<int>> reduced_rows;
-    std::vector<double> reduced_rhs;
-    reduced_rows.reserve(selected_indices.size());
-    reduced_rhs.reserve(selected_indices.size());
-    for (int idx : selected_indices) {
-      reduced_rows.push_back(row_supports[(size_t)idx]);
-      reduced_rhs.push_back(rhs[(size_t)idx]);
-    }
-
-    DenseSimplexResult simplex =
-        solve_dense_primal_packing_lp(num_local_detectors, reduced_rows, reduced_rhs,
-                                      &seed_budgets);
+    DenseSimplexResult simplex = solve_dense_primal_packing_lp(
+        num_local_detectors, row_supports, selected_indices, rhs, &seed_budgets);
     result.simplex_solves++;
     if (simplex.unbounded) {
       result.unbounded = true;
@@ -435,8 +426,7 @@ bool TesseractFTLDecoder::FTLNode::operator>(const FTLNode& other) const {
   return f_cost > other.f_cost || (f_cost == other.f_cost && num_dets < other.num_dets);
 }
 
-size_t TesseractFTLDecoder::DynamicBitsetHash::operator()(
-    const boost::dynamic_bitset<>& bs) const {
+size_t TesseractFTLDecoder::DynamicBitsetHash::operator()(const boost::dynamic_bitset<>& bs) const {
   return boost::hash_value(bs);
 }
 
@@ -537,7 +527,7 @@ void TesseractFTLDecoder::initialize_structures(size_t num_detectors_) {
 
 void TesseractFTLDecoder::flip_detectors_and_block_errors(
     size_t detector_order, int64_t error_chain_idx, boost::dynamic_bitset<>& detectors,
-    std::vector<DetectorCostTuple>& detector_cost_tuples) const {
+    std::vector<uint8_t>& blocked_flags) const {
   (void)detector_order;
   int64_t walker_idx = error_chain_idx;
   while (walker_idx != -1) {
@@ -546,7 +536,7 @@ void TesseractFTLDecoder::flip_detectors_and_block_errors(
     const size_t min_detector = node.min_detector;
 
     for (int oei : d2e[min_detector]) {
-      detector_cost_tuples[(size_t)oei].error_blocked = 1;
+      blocked_flags[(size_t)oei] = 1;
       if ((size_t)oei == ei) break;
     }
     for (int d : edets[ei]) detectors[(size_t)d] = !detectors[(size_t)d];
@@ -555,8 +545,7 @@ void TesseractFTLDecoder::flip_detectors_and_block_errors(
 }
 
 TesseractFTLDecoder::SingletonBuildResult TesseractFTLDecoder::build_singleton_components(
-    const boost::dynamic_bitset<>& detectors,
-    const std::vector<DetectorCostTuple>& detector_cost_tuples) const {
+    const boost::dynamic_bitset<>& detectors, const std::vector<uint8_t>& blocked_flags) const {
   SingletonBuildResult result;
 
   std::vector<int> active_detectors;
@@ -573,7 +562,7 @@ TesseractFTLDecoder::SingletonBuildResult TesseractFTLDecoder::build_singleton_c
   std::vector<uint8_t> has_available(active_detectors.size(), 0);
 
   for (size_t ei = 0; ei < num_errors; ++ei) {
-    if (detector_cost_tuples[ei].error_blocked) continue;
+    if (blocked_flags[ei]) continue;
     int first_active = -1;
     for (int detector : edets[ei]) {
       const int active_pos = detector_to_active_pos[(size_t)detector];
@@ -594,15 +583,15 @@ TesseractFTLDecoder::SingletonBuildResult TesseractFTLDecoder::build_singleton_c
     }
   }
 
-  std::unordered_map<int, std::vector<int>> positions_by_root;
-  positions_by_root.reserve(active_detectors.size());
+  std::vector<std::vector<int>> positions_by_root(active_detectors.size());
   for (int active_pos = 0; active_pos < (int)active_detectors.size(); ++active_pos) {
-    positions_by_root[uf.find(active_pos)].push_back(active_pos);
+    positions_by_root[(size_t)uf.find(active_pos)].push_back(active_pos);
   }
 
   std::vector<std::vector<int>> component_positions;
-  component_positions.reserve(positions_by_root.size());
-  for (auto& [_, positions] : positions_by_root) {
+  component_positions.reserve(active_detectors.size());
+  for (auto& positions : positions_by_root) {
+    if (positions.empty()) continue;
     std::sort(positions.begin(), positions.end(), [&](int a, int b) {
       return active_detectors[(size_t)a] < active_detectors[(size_t)b];
     });
@@ -635,7 +624,7 @@ TesseractFTLDecoder::SingletonBuildResult TesseractFTLDecoder::build_singleton_c
       result.components.size());
 
   for (size_t ei = 0; ei < num_errors; ++ei) {
-    if (detector_cost_tuples[ei].error_blocked) continue;
+    if (blocked_flags[ei]) continue;
 
     int component_index = -1;
     std::vector<int> local_hits;
@@ -708,28 +697,26 @@ TesseractFTLDecoder::SingletonBuildResult TesseractFTLDecoder::build_singleton_c
 }
 
 TesseractFTLDecoder::ExactSubsetSolution TesseractFTLDecoder::solve_exact_subset_lp(
-    const boost::dynamic_bitset<>& detectors,
-    const std::vector<DetectorCostTuple>& detector_cost_tuples, int64_t warm_solution_idx) {
+    const boost::dynamic_bitset<>& detectors, const std::vector<uint8_t>& blocked_flags,
+    int64_t warm_solution_idx) {
   stats.heuristic_calls++;
   stats.exact_refinement_calls++;
   const auto start_time = std::chrono::high_resolution_clock::now();
 
   ExactSubsetSolution solution;
-  const auto build = build_singleton_components(detectors, detector_cost_tuples);
+  const auto build = build_singleton_components(detectors, blocked_flags);
   if (!build.feasible) {
     solution.value = INF_D;
     const auto stop_time = std::chrono::high_resolution_clock::now();
     stats.lp_total_seconds +=
-        std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
-        1e6;
+        std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() / 1e6;
     return solution;
   }
   if (build.components.empty()) {
     solution.value = 0.0;
     const auto stop_time = std::chrono::high_resolution_clock::now();
     stats.lp_total_seconds +=
-        std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
-        1e6;
+        std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() / 1e6;
     return solution;
   }
 
@@ -738,12 +725,23 @@ TesseractFTLDecoder::ExactSubsetSolution TesseractFTLDecoder::solve_exact_subset
 
   solution.value = 0.0;
   solution.num_components = build.components.size();
+  std::vector<std::pair<int, double>> detector_budget_pairs;
+  detector_budget_pairs.reserve(detectors.count());
 
   for (const auto& component : build.components) {
     std::vector<double> seed_budgets(component.detectors.size(), 0.0);
     if (warm_solution != nullptr) {
+      size_t warm_pos = 0;
       for (size_t local = 0; local < component.detectors.size(); ++local) {
-        seed_budgets[local] = lookup_detector_budget(*warm_solution, component.detectors[local]);
+        int det = component.detectors[local];
+        while (warm_pos < warm_solution->active_detectors.size() &&
+               warm_solution->active_detectors[warm_pos] < det) {
+          ++warm_pos;
+        }
+        if (warm_pos < warm_solution->active_detectors.size() &&
+            warm_solution->active_detectors[warm_pos] == det) {
+          seed_budgets[local] = warm_solution->detector_budgets[warm_pos];
+        }
       }
     }
 
@@ -756,9 +754,9 @@ TesseractFTLDecoder::ExactSubsetSolution TesseractFTLDecoder::solve_exact_subset
       rhs.push_back(constraint.rhs);
     }
 
-    const auto component_result =
-        solve_singleton_component_lp(component.detectors.size(), row_supports, rhs,
-                                     component.cheapest_constraint_for_local_detector, seed_budgets);
+    const auto component_result = solve_singleton_component_lp(
+        component.detectors.size(), row_supports, rhs,
+        component.cheapest_constraint_for_local_detector, seed_budgets);
     stats.lp_calls += component_result.simplex_solves;
 
     if (component_result.unbounded) {
@@ -774,36 +772,55 @@ TesseractFTLDecoder::ExactSubsetSolution TesseractFTLDecoder::solve_exact_subset
     solution.num_constraints += component_result.reduced_constraints;
 
     for (size_t local = 0; local < component.detectors.size(); ++local) {
-      solution.active_detectors.push_back(component.detectors[local]);
-      solution.detector_budgets.push_back(component_result.detector_budgets[local]);
+      detector_budget_pairs.emplace_back(component.detectors[local],
+                                         component_result.detector_budgets[local]);
     }
+  }
+
+  if (detector_budget_pairs.size() > 1) {
+    std::sort(detector_budget_pairs.begin(), detector_budget_pairs.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
+  }
+  solution.active_detectors.reserve(detector_budget_pairs.size());
+  solution.detector_budgets.reserve(detector_budget_pairs.size());
+  for (const auto& [detector, budget] : detector_budget_pairs) {
+    solution.active_detectors.push_back(detector);
+    solution.detector_budgets.push_back(budget);
   }
 
   const auto stop_time = std::chrono::high_resolution_clock::now();
   stats.lp_total_seconds +=
-      std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
-      1e6;
+      std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() / 1e6;
   return solution;
 }
 
-double TesseractFTLDecoder::project_from_exact_solution(
-    const ExactSubsetSolution& solution, const boost::dynamic_bitset<>& detectors,
-    const std::vector<DetectorCostTuple>& detector_cost_tuples) {
+double TesseractFTLDecoder::project_from_exact_solution(const ExactSubsetSolution& solution,
+                                                        const boost::dynamic_bitset<>& detectors,
+                                                        const std::vector<uint8_t>& blocked_flags) {
   stats.heuristic_calls++;
   stats.projection_heuristic_calls++;
 
   double total = 0.0;
+  size_t budget_pos = 0;
   for (size_t detector = detectors.find_first(); detector != boost::dynamic_bitset<>::npos;
        detector = detectors.find_next(detector)) {
     bool has_available = false;
     for (int ei : d2e[detector]) {
-      if (!detector_cost_tuples[(size_t)ei].error_blocked) {
+      if (!blocked_flags[(size_t)ei]) {
         has_available = true;
         break;
       }
     }
     if (!has_available) return INF_D;
-    total += lookup_detector_budget(solution, (int)detector);
+
+    while (budget_pos < solution.active_detectors.size() &&
+           solution.active_detectors[budget_pos] < (int)detector) {
+      ++budget_pos;
+    }
+    if (budget_pos < solution.active_detectors.size() &&
+        solution.active_detectors[budget_pos] == (int)detector) {
+      total += solution.detector_budgets[budget_pos];
+    }
   }
   return total;
 }
@@ -817,6 +834,13 @@ void TesseractFTLDecoder::reset_decode_state() {
 }
 
 void TesseractFTLDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
+  if (config.verbose) {
+    std::cout << "shot";
+    for (const uint64_t& d : detections) {
+      std::cout << " D" << d;
+    }
+    std::cout << std::endl;
+  }
   if (plain_delegate) {
     plain_delegate->decode_to_errors(detections);
     predicted_errors_buffer = plain_delegate->predicted_errors_buffer;
@@ -891,12 +915,11 @@ void TesseractFTLDecoder::decode_to_errors(const std::vector<uint64_t>& detectio
   }
 
   std::priority_queue<FTLNode, std::vector<FTLNode>, std::greater<FTLNode>> pq;
-  std::unordered_map<size_t,
-                     std::unordered_set<boost::dynamic_bitset<>, DynamicBitsetHash>>
-      visited_detectors;
+  std::vector<std::unordered_set<boost::dynamic_bitset<>, DynamicBitsetHash>> visited_detectors(
+      num_detectors + 1);
 
   boost::dynamic_bitset<> initial_detectors(num_detectors, false);
-  std::vector<DetectorCostTuple> initial_detector_cost_tuples(num_errors);
+  std::vector<uint8_t> initial_blocked_flags(num_errors, 0);
   for (size_t detector : detections) {
     if (detector >= num_detectors) {
       throw std::runtime_error("Symptom references detector >= num_detectors");
@@ -905,7 +928,8 @@ void TesseractFTLDecoder::decode_to_errors(const std::vector<uint64_t>& detectio
   }
 
   size_t min_num_dets = detections.size();
-  size_t max_num_dets = min_num_dets + detector_beam;
+  size_t max_num_dets =
+      detector_beam > num_detectors - min_num_dets ? num_detectors : min_num_dets + detector_beam;
 
   FTLNode root;
   root.g_cost = 0.0;
@@ -916,7 +940,7 @@ void TesseractFTLDecoder::decode_to_errors(const std::vector<uint64_t>& detectio
   root.exact_solution_idx = -1;
 
   ExactSubsetSolution root_exact =
-      solve_exact_subset_lp(initial_detectors, initial_detector_cost_tuples, -1);
+      solve_exact_subset_lp(initial_detectors, initial_blocked_flags, -1);
   if (root_exact.value == INF_D) {
     low_confidence_flag = true;
     return;
@@ -940,9 +964,8 @@ void TesseractFTLDecoder::decode_to_errors(const std::vector<uint64_t>& detectio
     if (node.num_dets > max_num_dets) continue;
 
     boost::dynamic_bitset<> detectors = initial_detectors;
-    std::vector<DetectorCostTuple> detector_cost_tuples(num_errors);
-    flip_detectors_and_block_errors(detector_order, node.error_chain_idx, detectors,
-                                    detector_cost_tuples);
+    std::vector<uint8_t> blocked_flags(num_errors, 0);
+    flip_detectors_and_block_errors(detector_order, node.error_chain_idx, detectors, blocked_flags);
 
     if (config.verbose) {
       const size_t projected_unrefined =
@@ -953,9 +976,9 @@ void TesseractFTLDecoder::decode_to_errors(const std::vector<uint64_t>& detectio
                 << " lp_reinserts=" << stats.lp_reinserts
                 << " proj_generated=" << stats.projected_nodes_generated
                 << " proj_refined=" << stats.projected_nodes_refined
-                << " proj_unrefined_so_far=" << projected_unrefined
-                << " num_dets=" << node.num_dets << " max_num_dets=" << max_num_dets
-                << " f=" << node.f_cost << " g=" << node.g_cost << " h=" << node.h_cost
+                << " proj_unrefined_so_far=" << projected_unrefined << " num_dets=" << node.num_dets
+                << " max_num_dets=" << max_num_dets << " f=" << node.f_cost << " g=" << node.g_cost
+                << " h=" << node.h_cost
                 << " h_source=" << heuristic_source_to_string(node.heuristic_source)
                 << " exact_refined=" << node.exact_refined << std::endl;
     }
@@ -977,19 +1000,22 @@ void TesseractFTLDecoder::decode_to_errors(const std::vector<uint64_t>& detectio
 
     if (node.num_dets < min_num_dets) {
       min_num_dets = node.num_dets;
+      const size_t next_max_num_dets = detector_beam > num_detectors - min_num_dets
+                                           ? num_detectors
+                                           : min_num_dets + detector_beam;
       if (config.no_revisit_dets) {
-        for (size_t count = min_num_dets + detector_beam + 1; count <= max_num_dets; ++count) {
+        for (size_t count = next_max_num_dets + 1; count <= max_num_dets; ++count) {
           visited_detectors[count].clear();
         }
       }
-      max_num_dets = std::min(max_num_dets, min_num_dets + detector_beam);
+      max_num_dets = std::min(max_num_dets, next_max_num_dets);
     }
 
     if (!node.exact_refined) {
       const double prev_h = node.h_cost;
       const FTLHeuristicSource prev_source = node.heuristic_source;
       ExactSubsetSolution exact_solution =
-          solve_exact_subset_lp(detectors, detector_cost_tuples, node.warm_solution_idx);
+          solve_exact_subset_lp(detectors, blocked_flags, node.warm_solution_idx);
       if (prev_source == FTLHeuristicSource::kProjected) stats.projected_nodes_refined++;
       if (exact_solution.value == INF_D) {
         if (config.verbose) {
@@ -1040,10 +1066,7 @@ void TesseractFTLDecoder::decode_to_errors(const std::vector<uint64_t>& detectio
       }
     }
 
-    std::vector<uint8_t> prefix_blocked(num_errors, 0);
-    for (size_t ei = 0; ei < num_errors; ++ei) {
-      prefix_blocked[ei] = detector_cost_tuples[ei].error_blocked;
-    }
+    std::vector<uint8_t> prefix_blocked = blocked_flags;
 
     size_t children_generated = 0;
     size_t children_projected = 0;
@@ -1052,24 +1075,25 @@ void TesseractFTLDecoder::decode_to_errors(const std::vector<uint64_t>& detectio
 
     for (int ei : d2e[min_detector]) {
       prefix_blocked[(size_t)ei] = 1;
-      if (detector_cost_tuples[(size_t)ei].error_blocked) continue;
+      if (blocked_flags[(size_t)ei]) continue;
 
       boost::dynamic_bitset<> child_detectors = detectors;
-      for (int detector : edets[(size_t)ei]) child_detectors[(size_t)detector] = !child_detectors[(size_t)detector];
-      const size_t child_num_dets = child_detectors.count();
+      size_t child_num_dets = node.num_dets;
+      for (int detector : edets[(size_t)ei]) {
+        if (detectors[(size_t)detector]) {
+          --child_num_dets;
+        } else {
+          ++child_num_dets;
+        }
+        child_detectors.flip((size_t)detector);
+      }
       if (child_num_dets > max_num_dets) {
         children_beam_pruned++;
         continue;
       }
 
-      std::vector<DetectorCostTuple> child_detector_cost_tuples(num_errors);
-      for (size_t j = 0; j < num_errors; ++j) {
-        child_detector_cost_tuples[j].error_blocked = prefix_blocked[j];
-      }
-
-      const double child_h =
-          project_from_exact_solution(exact_solution_arena[(size_t)node.exact_solution_idx],
-                                      child_detectors, child_detector_cost_tuples);
+      const double child_h = project_from_exact_solution(
+          exact_solution_arena[(size_t)node.exact_solution_idx], child_detectors, prefix_blocked);
       stats.projected_nodes_generated++;
       children_projected++;
       if (child_h == INF_D) {
@@ -1108,8 +1132,8 @@ void TesseractFTLDecoder::decode_to_errors(const std::vector<uint64_t>& detectio
           stats.projected_nodes_generated - stats.projected_nodes_refined;
       std::cout << "  expanded children_generated=" << children_generated
                 << " children_projected=" << children_projected
-                << " beam_pruned=" << children_beam_pruned
-                << " infeasible=" << children_infeasible << " lp_calls=" << stats.lp_calls
+                << " beam_pruned=" << children_beam_pruned << " infeasible=" << children_infeasible
+                << " lp_calls=" << stats.lp_calls
                 << " proj_unrefined_so_far=" << projected_unrefined << std::endl;
     }
   }
@@ -1124,7 +1148,7 @@ double TesseractFTLDecoder::cost_from_errors(const std::vector<size_t>& predicte
   if (plain_delegate) return plain_delegate->cost_from_errors(predicted_errors);
   double total_cost = 0.0;
   for (size_t dem_error_index : predicted_errors) {
-    const size_t error_index = dem_error_to_error.at(dem_error_index);
+    const size_t error_index = dem_error_to_error[dem_error_index];
     if (error_index == std::numeric_limits<size_t>::max()) {
       throw std::invalid_argument("error index does not map to a retained decoder error");
     }
@@ -1136,23 +1160,21 @@ double TesseractFTLDecoder::cost_from_errors(const std::vector<size_t>& predicte
 std::vector<int> TesseractFTLDecoder::get_flipped_observables(
     const std::vector<size_t>& predicted_errors) const {
   if (plain_delegate) return plain_delegate->get_flipped_observables(predicted_errors);
-  std::unordered_set<int> flipped_observables_set;
+  std::vector<uint8_t> toggled(num_observables, 0);
   for (size_t dem_error_index : predicted_errors) {
-    const size_t error_index = dem_error_to_error.at(dem_error_index);
+    const size_t error_index = dem_error_to_error[dem_error_index];
     if (error_index == std::numeric_limits<size_t>::max()) {
       throw std::invalid_argument("error index does not map to a retained decoder error");
     }
     for (int obs_index : errors[error_index].symptom.observables) {
-      if (flipped_observables_set.count(obs_index)) {
-        flipped_observables_set.erase(obs_index);
-      } else {
-        flipped_observables_set.insert(obs_index);
-      }
+      toggled[(size_t)obs_index] ^= 1;
     }
   }
-  std::vector<int> flipped_observables(flipped_observables_set.begin(),
-                                       flipped_observables_set.end());
-  std::sort(flipped_observables.begin(), flipped_observables.end());
+  std::vector<int> flipped_observables;
+  flipped_observables.reserve(num_observables);
+  for (size_t obs_index = 0; obs_index < num_observables; ++obs_index) {
+    if (toggled[obs_index]) flipped_observables.push_back((int)obs_index);
+  }
   return flipped_observables;
 }
 

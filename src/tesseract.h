@@ -60,7 +60,7 @@ class Node {
 };
 
 struct DetectorCostTuple {
-  uint32_t error_blocked;
+  uint8_t error_blocked;
   uint32_t detectors_count;
 };
 

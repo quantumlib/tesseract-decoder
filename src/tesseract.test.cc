@@ -409,7 +409,7 @@ TEST(TesseractDetcostTest, ComparesRatiosNotRawCosts) {
 
   std::vector<DetectorCostTuple> tuples(dec.errors.size());
   // residual x = {D0, D1}
-  std::cout <<"dec.d2e.size() = "<<dec.d2e.size()<<std::endl;
+  std::cout << "dec.d2e.size() = " << dec.d2e.size() << std::endl;
   for (int ei : dec.d2e[0]) tuples[ei].detectors_count++;
   for (int ei : dec.d2e[1]) tuples[ei].detectors_count++;
 

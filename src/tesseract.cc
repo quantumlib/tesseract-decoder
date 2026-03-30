@@ -95,7 +95,9 @@ double TesseractDecoder::get_detcost(
 
   for (int ei : d2e[d]) {
     ec = error_costs[ei];
-    if (ec.likelihood_cost * min_det_cost_det_count >= min_cost * errors[ei].symptom.detectors.size()) break;
+    if (ec.likelihood_cost * min_det_cost_det_count >=
+        min_cost * errors[ei].symptom.detectors.size())
+      break;
 
     dct = detector_cost_tuples[ei];
     if (!dct.error_blocked) {

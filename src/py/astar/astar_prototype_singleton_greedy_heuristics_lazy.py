@@ -903,6 +903,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--circuit", type=Path, required=True, help="Path to a .stim circuit file.")
     parser.add_argument(
+        "--dets",
+        type=str,
+        default=None,
+        help="String of shot dets (e.g., 'shot D0 D1 L2') to parse instead of sampling.",
+    )
+    parser.add_argument(
         "--sample-num-shots",
         type=int,
         default=100,
@@ -1004,15 +1010,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     dem = circuit.detector_error_model(decompose_errors=False)
     errors = merged_errors_from_dem(dem) if args.merge_errors else list(iter_dem_errors_from_dem(dem))
 
-    dets, obs = sample_detections_and_observables(
-        circuit,
-        num_shots=args.sample_num_shots,
-        seed=args.seed,
-        num_detectors=dem.num_detectors,
-        num_observables=dem.num_observables,
-    )
-    shot_dets = dets[args.shot]
-    shot_obs = obs[args.shot]
+    if args.dets is not None:
+        shot_dets = np.zeros(dem.num_detectors, dtype=bool)
+        shot_obs = np.zeros(dem.num_observables, dtype=bool)
+        for token in args.dets.split():
+            if token == "shot":
+                continue
+            if token.startswith("D") and token[1:].isdigit():
+                d_idx = int(token[1:])
+                if d_idx < dem.num_detectors:
+                    shot_dets[d_idx] = True
+            elif token.startswith("L") and token[1:].isdigit():
+                l_idx = int(token[1:])
+                if l_idx < dem.num_observables:
+                    shot_obs[l_idx] = True
+    else:
+        dets, obs = sample_detections_and_observables(
+            circuit,
+            num_shots=args.sample_num_shots,
+            seed=args.seed,
+            num_detectors=dem.num_detectors,
+            num_observables=dem.num_observables,
+        )
+        shot_dets = dets[args.shot]
+        shot_obs = obs[args.shot]
 
     decoder = GreedySingletonHeuristicDecoder(
         errors,

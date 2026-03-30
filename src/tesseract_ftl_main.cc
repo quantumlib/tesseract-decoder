@@ -291,7 +291,9 @@ int main(int argc, char* argv[]) {
       .default_value(static_cast<uint64_t>(std::random_device()()))
       .store_into(args.sample_seed);
 
-  program.add_argument("--shot-range-begin").default_value(size_t(0)).store_into(args.shot_range_begin);
+  program.add_argument("--shot-range-begin")
+      .default_value(size_t(0))
+      .store_into(args.shot_range_begin);
   program.add_argument("--shot-range-end").default_value(size_t(0)).store_into(args.shot_range_end);
 
   program.add_argument("--in").default_value(std::string("")).store_into(args.in_fname);
@@ -315,22 +317,18 @@ int main(int argc, char* argv[]) {
   program.add_argument("--obs-in-format", "--obs_in_format")
       .default_value(std::string(""))
       .store_into(args.obs_in_format);
-  program.add_argument("--out").default_value(std::string(""))
-      .store_into(args.out_fname);
-  program.add_argument("--out-format").default_value(std::string(""))
-      .store_into(args.out_format);
-  program.add_argument("--dem-out").default_value(std::string(""))
-      .store_into(args.dem_out_fname);
-  program.add_argument("--stats-out").default_value(std::string(""))
+  program.add_argument("--out").default_value(std::string("")).store_into(args.out_fname);
+  program.add_argument("--out-format").default_value(std::string("")).store_into(args.out_format);
+  program.add_argument("--dem-out").default_value(std::string("")).store_into(args.dem_out_fname);
+  program.add_argument("--stats-out")
+      .default_value(std::string(""))
       .store_into(args.stats_out_fname);
 
   program.add_argument("--threads")
       .default_value(size_t(
           std::thread::hardware_concurrency() == 0 ? 1 : std::thread::hardware_concurrency()))
       .store_into(args.num_threads);
-  program.add_argument("--beam")
-      .default_value(INF_DET_BEAM)
-      .store_into(args.det_beam);
+  program.add_argument("--beam").default_value(INF_DET_BEAM).store_into(args.det_beam);
   program.add_argument("--det-penalty").default_value(0.0).store_into(args.det_penalty);
   program.add_argument("--beam-climbing").flag().store_into(args.beam_climbing);
   program.add_argument("--no-revisit-dets").flag().store_into(args.no_revisit_dets);

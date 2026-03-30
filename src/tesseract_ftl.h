@@ -135,10 +135,6 @@ struct TesseractFTLDecoder {
     bool operator>(const FTLNode& other) const;
   };
 
-  struct DetectorCostTuple {
-    uint32_t error_blocked = 0;
-  };
-
   struct SingletonPatternConstraint {
     std::vector<int> local_detectors;
     double rhs = 0.0;
@@ -183,19 +179,18 @@ struct TesseractFTLDecoder {
 
   void flip_detectors_and_block_errors(size_t detector_order, int64_t error_chain_idx,
                                        boost::dynamic_bitset<>& detectors,
-                                       std::vector<DetectorCostTuple>& detector_cost_tuples) const;
+                                       std::vector<uint8_t>& blocked_flags) const;
 
-  SingletonBuildResult build_singleton_components(
-      const boost::dynamic_bitset<>& detectors,
-      const std::vector<DetectorCostTuple>& detector_cost_tuples) const;
+  SingletonBuildResult build_singleton_components(const boost::dynamic_bitset<>& detectors,
+                                                  const std::vector<uint8_t>& blocked_flags) const;
 
   ExactSubsetSolution solve_exact_subset_lp(const boost::dynamic_bitset<>& detectors,
-                                            const std::vector<DetectorCostTuple>& detector_cost_tuples,
+                                            const std::vector<uint8_t>& blocked_flags,
                                             int64_t warm_solution_idx);
 
   double project_from_exact_solution(const ExactSubsetSolution& solution,
                                      const boost::dynamic_bitset<>& detectors,
-                                     const std::vector<DetectorCostTuple>& detector_cost_tuples);
+                                     const std::vector<uint8_t>& blocked_flags);
 
   void reset_decode_state();
 };
