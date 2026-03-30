@@ -195,6 +195,20 @@ def test_create_tesseract_decoder():
     assert decoder.cost_from_errors([1]) == pytest.approx(0.5108256237659907)
 
 
+def test_tesseract_priority_queue_counters_track_search():
+    config = tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL)
+    decoder = tesseract_decoder.tesseract.TesseractDecoder(config)
+
+    decoder.decode_to_errors(np.array([True, False], dtype=bool))
+    assert decoder.num_pq_pushed >= 1
+    assert decoder.num_pq_popped >= 1
+    assert decoder.num_pq_pushed >= decoder.num_pq_popped
+
+    decoder.decode_to_errors(np.array([False, False], dtype=bool))
+    assert decoder.num_pq_pushed == 1
+    assert decoder.num_pq_popped == 1
+
+
 def test_tesseract_compile_decoder():
     shared_test_compile_decoder(
         tesseract_decoder.tesseract.TesseractConfig,

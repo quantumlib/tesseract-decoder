@@ -283,6 +283,8 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
                                         size_t detector_order, size_t detector_beam) {
   predicted_errors_buffer.clear();
   low_confidence_flag = false;
+  num_pq_pushed = 0;
+  num_pq_popped = 0;
   error_chain_arena.clear();
   // Can technically be larger than pqlimit, but we need an initial guess on how many nodes we
   // will process from the queue.
@@ -323,11 +325,12 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
   std::vector<DetectorCostTuple> next_detector_cost_tuples;
 
   pq.push({initial_cost, min_num_dets, 0, -1});
-  size_t num_pq_pushed = 1;
+  num_pq_pushed = 1;
 
   while (!pq.empty()) {
     const Node node = pq.top();
     pq.pop();
+    ++num_pq_popped;
 
     if (node.num_dets > max_num_dets) continue;
 
