@@ -46,6 +46,7 @@ struct TesseractFTLConfig {
   std::vector<std::vector<size_t>> det_orders;
   double det_penalty = 0;
   bool create_visualization = false;
+  bool ignore_blocked_errors_in_heuristic = false;
 
   // 0 = delegate to the original Tesseract detcost heuristic.
   // 1 = use the singleton fractional lower bound implemented in this file.
@@ -72,6 +73,17 @@ struct TesseractFTLStats {
   double total_lp_refinement_gain = 0.0;
   double max_lp_refinement_gain = 0.0;
   double lp_total_seconds = 0.0;
+  double chain_replay_total_seconds = 0.0;
+  double component_build_total_seconds = 0.0;
+  double component_candidate_total_seconds = 0.0;
+  double component_union_total_seconds = 0.0;
+  double component_dedup_total_seconds = 0.0;
+  double component_finalize_total_seconds = 0.0;
+  double simplex_total_seconds = 0.0;
+  double projection_total_seconds = 0.0;
+  size_t component_build_calls = 0;
+  size_t simplex_calls = 0;
+  size_t projection_calls = 0;
 
   void clear();
   void accumulate(const TesseractFTLStats& other);
@@ -132,6 +144,7 @@ struct TesseractFTLDecoder {
     size_t num_dets = 0;
     size_t depth = 0;
     int64_t error_chain_idx = -1;
+    int64_t detector_state_idx = -1;
     int64_t warm_solution_idx = -1;
     int64_t exact_solution_idx = -1;
     bool exact_refined = false;
@@ -169,7 +182,11 @@ struct TesseractFTLDecoder {
   size_t num_errors = 0;
   std::vector<ErrorCost> error_costs;
   std::vector<common::ErrorChainNode> error_chain_arena;
+  std::vector<boost::dynamic_bitset<>> detector_state_arena;
   std::vector<ExactSubsetSolution> exact_solution_arena;
+  std::unordered_map<boost::dynamic_bitset<>, int64_t, DynamicBitsetHash> exact_solution_cache;
+  mutable std::vector<uint64_t> candidate_error_marks;
+  mutable uint64_t candidate_error_mark_epoch = 1;
 
   // If subset_detcost_size == 0, delegate to the original Tesseract decoder.
   std::unique_ptr<TesseractDecoder> plain_delegate;
@@ -181,7 +198,7 @@ struct TesseractFTLDecoder {
                                        std::vector<uint8_t>& blocked_flags) const;
 
   SingletonBuildResult build_singleton_components(const boost::dynamic_bitset<>& detectors,
-                                                  const std::vector<uint8_t>& blocked_flags) const;
+                                                  const std::vector<uint8_t>& blocked_flags);
 
   ExactSubsetSolution solve_exact_subset_lp(const boost::dynamic_bitset<>& detectors,
                                             const std::vector<uint8_t>& blocked_flags,

@@ -65,6 +65,7 @@ struct Args {
   size_t pqlimit;
 
   size_t subset_detcost_size = 0;
+  bool ignore_blocked_errors_in_heuristic = false;
 
   bool verbose = false;
   bool print_stats = false;
@@ -151,6 +152,7 @@ struct Args {
 
     config.merge_errors = !no_merge_errors;
     config.subset_detcost_size = subset_detcost_size;
+    config.ignore_blocked_errors_in_heuristic = ignore_blocked_errors_in_heuristic;
 
     {
       DetOrder order = DetOrder::DetBFS;
@@ -257,6 +259,10 @@ int main(int argc, char* argv[]) {
       .help("0 = plain detcost delegate, 1 = singleton fractional lower bound")
       .default_value(size_t(0))
       .store_into(args.subset_detcost_size);
+  program.add_argument("--ignore-blocked-errors-in-heuristic")
+      .help("Experimental: ignore precedence-blocked errors when computing the FTL LP heuristic")
+      .flag()
+      .store_into(args.ignore_blocked_errors_in_heuristic);
 
   program.add_argument("--num-det-orders")
       .help("Number of ways to orient the manifold when reordering the detectors")
@@ -445,6 +451,7 @@ int main(int argc, char* argv[]) {
         {"num_det_orders", args.num_det_orders},
         {"det_order_seed", args.det_order_seed},
         {"subset_detcost_size", args.subset_detcost_size},
+        {"ignore_blocked_errors_in_heuristic", args.ignore_blocked_errors_in_heuristic},
         {"total_time_seconds", total_time_seconds},
         {"num_errors", num_errors},
         {"num_low_confidence", num_low_confidence},
@@ -465,6 +472,19 @@ int main(int argc, char* argv[]) {
         {"ftl_total_lp_refinement_gain", decoder_stats_total.total_lp_refinement_gain},
         {"ftl_max_lp_refinement_gain", decoder_stats_total.max_lp_refinement_gain},
         {"ftl_lp_total_seconds", decoder_stats_total.lp_total_seconds},
+        {"ftl_chain_replay_total_seconds", decoder_stats_total.chain_replay_total_seconds},
+        {"ftl_component_build_total_seconds", decoder_stats_total.component_build_total_seconds},
+        {"ftl_component_candidate_total_seconds",
+         decoder_stats_total.component_candidate_total_seconds},
+        {"ftl_component_union_total_seconds", decoder_stats_total.component_union_total_seconds},
+        {"ftl_component_dedup_total_seconds", decoder_stats_total.component_dedup_total_seconds},
+        {"ftl_component_finalize_total_seconds",
+         decoder_stats_total.component_finalize_total_seconds},
+        {"ftl_simplex_total_seconds", decoder_stats_total.simplex_total_seconds},
+        {"ftl_projection_total_seconds", decoder_stats_total.projection_total_seconds},
+        {"ftl_component_build_calls", decoder_stats_total.component_build_calls},
+        {"ftl_simplex_calls", decoder_stats_total.simplex_calls},
+        {"ftl_projection_calls", decoder_stats_total.projection_calls},
     };
 
     if (args.stats_out_fname == "-") {
