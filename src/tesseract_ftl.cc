@@ -389,6 +389,30 @@ std::string heuristic_source_to_string(FTLHeuristicSource source) {
   return "unknown";
 }
 
+std::string detector_choice_policy_to_string(FTLDetectorChoicePolicy policy) {
+  switch (policy) {
+    case FTLDetectorChoicePolicy::kOrder:
+      return "order";
+    case FTLDetectorChoicePolicy::kFewestIncidentErrors:
+      return "fewest_incident_errors";
+    case FTLDetectorChoicePolicy::kLargestBudget:
+      return "largest_budget";
+    case FTLDetectorChoicePolicy::kLargestBudgetPerIncident:
+      return "largest_budget_per_incident";
+  }
+  return "unknown";
+}
+
+std::string error_order_policy_to_string(FTLErrorOrderPolicy policy) {
+  switch (policy) {
+    case FTLErrorOrderPolicy::kStatic:
+      return "static";
+    case FTLErrorOrderPolicy::kReducedCost:
+      return "reduced_cost";
+  }
+  return "unknown";
+}
+
 }  // namespace
 
 std::string TesseractFTLConfig::str() {
@@ -404,7 +428,14 @@ std::string TesseractFTLConfig::str() {
   ss << "det_penalty=" << det_penalty << ", ";
   ss << "create_visualization=" << create_visualization << ", ";
   ss << "subset_detcost_size=" << subset_detcost_size << ", ";
-  ss << "ignore_blocked_errors_in_heuristic=" << ignore_blocked_errors_in_heuristic;
+  ss << "ignore_blocked_errors_in_heuristic=" << ignore_blocked_errors_in_heuristic << ", ";
+  ss << "num_min_dets_to_consider=" << num_min_dets_to_consider << ", ";
+  ss << "detector_choice_policy="
+     << detector_choice_policy_to_string(detector_choice_policy) << ", ";
+  ss << "error_order_policy=" << error_order_policy_to_string(error_order_policy) << ", ";
+  ss << "root_det_order_count=" << root_det_order_count << ", ";
+  ss << "root_det_order_depth=" << root_det_order_depth << ", ";
+  ss << "exact_child_refine_count=" << exact_child_refine_count;
   ss << ")";
   return ss.str();
 }
@@ -439,6 +470,20 @@ void TesseractFTLStats::accumulate(const TesseractFTLStats& other) {
   component_build_calls += other.component_build_calls;
   simplex_calls += other.simplex_calls;
   projection_calls += other.projection_calls;
+  detector_choice_calls += other.detector_choice_calls;
+  error_ordering_calls += other.error_ordering_calls;
+  total_active_detectors_popped += other.total_active_detectors_popped;
+  total_root_order_candidates += other.total_root_order_candidates;
+  total_min_detector_candidates += other.total_min_detector_candidates;
+  total_min_detectors_selected += other.total_min_detectors_selected;
+  total_min_detector_available_errors += other.total_min_detector_available_errors;
+  total_min_detector_blocked_errors += other.total_min_detector_blocked_errors;
+  total_child_candidates_considered += other.total_child_candidates_considered;
+  total_children_generated += other.total_children_generated;
+  total_children_beam_pruned += other.total_children_beam_pruned;
+  total_children_infeasible += other.total_children_infeasible;
+  total_selected_min_detector_budget += other.total_selected_min_detector_budget;
+  exact_child_pre_refinements += other.exact_child_pre_refinements;
 }
 
 bool TesseractFTLDecoder::FTLNode::operator>(const FTLNode& other) const {
@@ -905,6 +950,148 @@ double TesseractFTLDecoder::project_from_exact_solution(const ExactSubsetSolutio
   return total;
 }
 
+std::vector<size_t> TesseractFTLDecoder::select_min_detectors(
+    const boost::dynamic_bitset<>& detectors, const std::vector<uint8_t>& blocked_flags,
+    size_t detector_order, size_t depth, const ExactSubsetSolution& exact_solution) {
+  stats.detector_choice_calls++;
+  stats.total_active_detectors_popped += detectors.count();
+
+  struct CandidateDetector {
+    size_t detector;
+    size_t order_rank;
+    size_t available_errors;
+    double budget;
+  };
+
+  const size_t order_count =
+      depth < config.root_det_order_depth ? std::min(config.root_det_order_count, config.det_orders.size()) : 1;
+  std::vector<uint8_t> seen(num_detectors, 0);
+  std::vector<CandidateDetector> candidates;
+  candidates.reserve(detectors.count());
+
+  size_t discovery_rank = 0;
+  for (size_t order_offset = 0; order_offset < order_count; ++order_offset) {
+    size_t taken_from_order = 0;
+    const size_t order_index = (detector_order + order_offset) % config.det_orders.size();
+    for (size_t offset = 0; offset < num_detectors; ++offset) {
+      const size_t detector = config.det_orders[order_index][offset];
+      if (!detectors[detector]) continue;
+      if (!seen[detector]) {
+        seen[detector] = 1;
+        size_t available_errors = 0;
+        for (int ei : d2e[detector]) {
+          if (!blocked_flags[(size_t)ei]) {
+            available_errors++;
+          }
+        }
+        candidates.push_back({detector, discovery_rank++, available_errors,
+                              lookup_detector_budget(exact_solution, (int)detector)});
+      }
+      taken_from_order++;
+      if (config.detector_choice_policy == FTLDetectorChoicePolicy::kOrder &&
+          taken_from_order >= config.num_min_dets_to_consider) {
+        break;
+      }
+    }
+  }
+
+  stats.total_root_order_candidates += candidates.size();
+  stats.total_min_detector_candidates += candidates.size();
+
+  if (config.detector_choice_policy != FTLDetectorChoicePolicy::kOrder) {
+    std::stable_sort(candidates.begin(), candidates.end(), [&](const auto& a, const auto& b) {
+      switch (config.detector_choice_policy) {
+        case FTLDetectorChoicePolicy::kOrder:
+          break;
+        case FTLDetectorChoicePolicy::kFewestIncidentErrors:
+          if (a.available_errors != b.available_errors) {
+            return a.available_errors < b.available_errors;
+          }
+          break;
+        case FTLDetectorChoicePolicy::kLargestBudget:
+          if (a.budget != b.budget) return a.budget > b.budget;
+          break;
+        case FTLDetectorChoicePolicy::kLargestBudgetPerIncident: {
+          const double a_score =
+              a.available_errors == 0 ? INF_D : a.budget / (double)a.available_errors;
+          const double b_score =
+              b.available_errors == 0 ? INF_D : b.budget / (double)b.available_errors;
+          if (a_score != b_score) return a_score > b_score;
+          break;
+        }
+      }
+      if (a.order_rank != b.order_rank) return a.order_rank < b.order_rank;
+      return a.detector < b.detector;
+    });
+  }
+
+  std::vector<size_t> selected;
+  selected.reserve(std::min(config.num_min_dets_to_consider, candidates.size()));
+  for (const auto& candidate : candidates) {
+    selected.push_back(candidate.detector);
+    stats.total_min_detectors_selected++;
+    stats.total_min_detector_available_errors += candidate.available_errors;
+    stats.total_selected_min_detector_budget += candidate.budget;
+    if (selected.size() >= config.num_min_dets_to_consider) break;
+  }
+  return selected;
+}
+
+std::vector<int> TesseractFTLDecoder::order_candidate_errors(
+    size_t min_detector, const boost::dynamic_bitset<>& detectors,
+    const std::vector<uint8_t>& blocked_flags, const ExactSubsetSolution& exact_solution) {
+  stats.error_ordering_calls++;
+
+  std::vector<int> ordered_errors;
+  ordered_errors.reserve(d2e[min_detector].size());
+
+  if (config.error_order_policy == FTLErrorOrderPolicy::kStatic) {
+    for (int ei : d2e[min_detector]) {
+      if (blocked_flags[(size_t)ei]) {
+        stats.total_min_detector_blocked_errors++;
+        continue;
+      }
+      ordered_errors.push_back(ei);
+    }
+    return ordered_errors;
+  }
+
+  struct CandidateError {
+    int error_index;
+    size_t order_rank;
+    double reduced_cost;
+    int net_det_delta;
+  };
+  std::vector<CandidateError> candidates;
+  candidates.reserve(d2e[min_detector].size());
+  size_t order_rank = 0;
+  for (int ei : d2e[min_detector]) {
+    if (blocked_flags[(size_t)ei]) {
+      stats.total_min_detector_blocked_errors++;
+      continue;
+    }
+    double covered_budget = 0.0;
+    int net_det_delta = 0;
+    for (int detector : edets[(size_t)ei]) {
+      if (detectors[(size_t)detector]) {
+        covered_budget += lookup_detector_budget(exact_solution, detector);
+        net_det_delta--;
+      } else {
+        net_det_delta++;
+      }
+    }
+    candidates.push_back(
+        {ei, order_rank++, errors[(size_t)ei].likelihood_cost - covered_budget, net_det_delta});
+  }
+  std::stable_sort(candidates.begin(), candidates.end(), [&](const auto& a, const auto& b) {
+    if (a.reduced_cost != b.reduced_cost) return a.reduced_cost < b.reduced_cost;
+    if (a.net_det_delta != b.net_det_delta) return a.net_det_delta < b.net_det_delta;
+    return a.order_rank < b.order_rank;
+  });
+  for (const auto& candidate : candidates) ordered_errors.push_back(candidate.error_index);
+  return ordered_errors;
+}
+
 void TesseractFTLDecoder::reset_decode_state() {
   low_confidence_flag = false;
   predicted_errors_buffer.clear();
@@ -1187,75 +1374,100 @@ void TesseractFTLDecoder::decode_to_errors(const std::vector<uint64_t>& detectio
       continue;
     }
 
-    size_t min_detector = std::numeric_limits<size_t>::max();
-    for (size_t offset = 0; offset < num_detectors; ++offset) {
-      const size_t detector = config.det_orders[detector_order][offset];
-      if (detectors[detector]) {
-        min_detector = detector;
-        break;
-      }
+    const auto& exact_solution = exact_solution_arena[(size_t)node.exact_solution_idx];
+    std::vector<size_t> min_detectors =
+        select_min_detectors(detectors, blocked_flags, detector_order, node.depth, exact_solution);
+    if (min_detectors.empty()) {
+      throw std::runtime_error("Failed to select an active min detector for a non-terminal node.");
     }
-
-    std::vector<uint8_t> prefix_blocked = blocked_flags;
 
     size_t children_generated = 0;
     size_t children_projected = 0;
     size_t children_beam_pruned = 0;
     size_t children_infeasible = 0;
+    size_t children_exactly_refined = 0;
 
-    for (int ei : d2e[min_detector]) {
-      prefix_blocked[(size_t)ei] = 1;
-      if (blocked_flags[(size_t)ei]) continue;
+    for (size_t min_detector : min_detectors) {
+      std::vector<uint8_t> prefix_blocked = blocked_flags;
+      const std::vector<int> ordered_errors =
+          order_candidate_errors(min_detector, detectors, blocked_flags, exact_solution);
+      for (int ei : ordered_errors) {
+        prefix_blocked[(size_t)ei] = 1;
+        stats.total_child_candidates_considered++;
 
-      boost::dynamic_bitset<> child_detectors = detectors;
-      size_t child_num_dets = node.num_dets;
-      for (int detector : edets[(size_t)ei]) {
-        if (detectors[(size_t)detector]) {
-          --child_num_dets;
-        } else {
-          ++child_num_dets;
+        boost::dynamic_bitset<> child_detectors = detectors;
+        size_t child_num_dets = node.num_dets;
+        for (int detector : edets[(size_t)ei]) {
+          if (detectors[(size_t)detector]) {
+            --child_num_dets;
+          } else {
+            ++child_num_dets;
+          }
+          child_detectors.flip((size_t)detector);
         }
-        child_detectors.flip((size_t)detector);
-      }
-      if (child_num_dets > max_num_dets) {
-        children_beam_pruned++;
-        continue;
-      }
+        if (child_num_dets > max_num_dets) {
+          children_beam_pruned++;
+          stats.total_children_beam_pruned++;
+          continue;
+        }
 
-      const double child_h = project_from_exact_solution(
-          exact_solution_arena[(size_t)node.exact_solution_idx], child_detectors, prefix_blocked);
-      stats.projected_nodes_generated++;
-      children_projected++;
-      if (child_h == INF_D) {
-        children_infeasible++;
-        continue;
-      }
+        double child_h = project_from_exact_solution(exact_solution, child_detectors, prefix_blocked);
+        stats.projected_nodes_generated++;
+        children_projected++;
+        if (child_h == INF_D) {
+          children_infeasible++;
+          stats.total_children_infeasible++;
+          continue;
+        }
 
-      error_chain_arena.emplace_back();
-      auto& chain_node = error_chain_arena.back();
-      chain_node.error_index = (size_t)ei;
-      chain_node.min_detector = min_detector;
-      chain_node.parent_idx = node.error_chain_idx;
+        error_chain_arena.emplace_back();
+        auto& chain_node = error_chain_arena.back();
+        chain_node.error_index = (size_t)ei;
+        chain_node.min_detector = min_detector;
+        chain_node.parent_idx = node.error_chain_idx;
 
-      FTLNode child;
-      child.g_cost = node.g_cost + errors[(size_t)ei].likelihood_cost;
-      child.h_cost = child_h;
-      child.f_cost = child.g_cost + child.h_cost;
-      child.num_dets = child_num_dets;
-      child.depth = node.depth + 1;
-      child.error_chain_idx = (int64_t)error_chain_arena.size() - 1;
-      detector_state_arena.push_back(std::move(child_detectors));
-      child.detector_state_idx = (int64_t)detector_state_arena.size() - 1;
-      child.warm_solution_idx = node.exact_solution_idx;
-      child.exact_solution_idx = -1;
-      child.exact_refined = false;
-      child.heuristic_source = FTLHeuristicSource::kProjected;
-      pq.push(child);
-      stats.num_pq_pushed++;
-      children_generated++;
-      if (stats.num_pq_pushed > config.pqlimit) {
-        low_confidence_flag = true;
-        return;
+        FTLNode child;
+        child.g_cost = node.g_cost + errors[(size_t)ei].likelihood_cost;
+        child.h_cost = child_h;
+        child.f_cost = child.g_cost + child.h_cost;
+        child.num_dets = child_num_dets;
+        child.depth = node.depth + 1;
+        child.error_chain_idx = (int64_t)error_chain_arena.size() - 1;
+        detector_state_arena.push_back(std::move(child_detectors));
+        child.detector_state_idx = (int64_t)detector_state_arena.size() - 1;
+        child.warm_solution_idx = node.exact_solution_idx;
+        child.exact_solution_idx = -1;
+        child.exact_refined = false;
+        child.heuristic_source = FTLHeuristicSource::kProjected;
+
+        if (config.exact_child_refine_count > 0 &&
+            children_exactly_refined < config.exact_child_refine_count) {
+          ExactSubsetSolution child_exact = solve_exact_subset_lp(
+              detector_state_arena[(size_t)child.detector_state_idx], prefix_blocked,
+              child.warm_solution_idx);
+          if (child_exact.value == INF_D) {
+            children_infeasible++;
+            stats.total_children_infeasible++;
+            continue;
+          }
+          exact_solution_arena.push_back(std::move(child_exact));
+          child.exact_solution_idx = (int64_t)exact_solution_arena.size() - 1;
+          child.h_cost = exact_solution_arena.back().value;
+          child.f_cost = child.g_cost + child.h_cost;
+          child.exact_refined = true;
+          child.heuristic_source = FTLHeuristicSource::kExact;
+          children_exactly_refined++;
+          stats.exact_child_pre_refinements++;
+        }
+
+        pq.push(child);
+        stats.num_pq_pushed++;
+        children_generated++;
+        stats.total_children_generated++;
+        if (stats.num_pq_pushed > config.pqlimit) {
+          low_confidence_flag = true;
+          return;
+        }
       }
     }
 

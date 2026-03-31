@@ -34,6 +34,18 @@
 
 constexpr size_t DEFAULT_FTL_SUBSET_DETCOST_SIZE = 0;
 
+enum class FTLDetectorChoicePolicy : uint8_t {
+  kOrder = 0,
+  kFewestIncidentErrors = 1,
+  kLargestBudget = 2,
+  kLargestBudgetPerIncident = 3,
+};
+
+enum class FTLErrorOrderPolicy : uint8_t {
+  kStatic = 0,
+  kReducedCost = 1,
+};
+
 struct TesseractFTLConfig {
   stim::DetectorErrorModel dem;
   int det_beam = DEFAULT_DET_BEAM;
@@ -47,6 +59,12 @@ struct TesseractFTLConfig {
   double det_penalty = 0;
   bool create_visualization = false;
   bool ignore_blocked_errors_in_heuristic = false;
+  size_t num_min_dets_to_consider = 1;
+  FTLDetectorChoicePolicy detector_choice_policy = FTLDetectorChoicePolicy::kOrder;
+  FTLErrorOrderPolicy error_order_policy = FTLErrorOrderPolicy::kStatic;
+  size_t root_det_order_count = 1;
+  size_t root_det_order_depth = 0;
+  size_t exact_child_refine_count = 0;
 
   // 0 = delegate to the original Tesseract detcost heuristic.
   // 1 = use the singleton fractional lower bound implemented in this file.
@@ -84,6 +102,20 @@ struct TesseractFTLStats {
   size_t component_build_calls = 0;
   size_t simplex_calls = 0;
   size_t projection_calls = 0;
+  size_t detector_choice_calls = 0;
+  size_t error_ordering_calls = 0;
+  size_t total_active_detectors_popped = 0;
+  size_t total_root_order_candidates = 0;
+  size_t total_min_detector_candidates = 0;
+  size_t total_min_detectors_selected = 0;
+  size_t total_min_detector_available_errors = 0;
+  size_t total_min_detector_blocked_errors = 0;
+  size_t total_child_candidates_considered = 0;
+  size_t total_children_generated = 0;
+  size_t total_children_beam_pruned = 0;
+  size_t total_children_infeasible = 0;
+  double total_selected_min_detector_budget = 0.0;
+  size_t exact_child_pre_refinements = 0;
 
   void clear();
   void accumulate(const TesseractFTLStats& other);
@@ -207,6 +239,16 @@ struct TesseractFTLDecoder {
   double project_from_exact_solution(const ExactSubsetSolution& solution,
                                      const boost::dynamic_bitset<>& detectors,
                                      const std::vector<uint8_t>& blocked_flags);
+
+  std::vector<size_t> select_min_detectors(const boost::dynamic_bitset<>& detectors,
+                                           const std::vector<uint8_t>& blocked_flags,
+                                           size_t detector_order, size_t depth,
+                                           const ExactSubsetSolution& exact_solution);
+
+  std::vector<int> order_candidate_errors(size_t min_detector,
+                                          const boost::dynamic_bitset<>& detectors,
+                                          const std::vector<uint8_t>& blocked_flags,
+                                          const ExactSubsetSolution& exact_solution);
 
   void reset_decode_state();
 };

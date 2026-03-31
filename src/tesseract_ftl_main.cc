@@ -27,6 +27,26 @@
 #include "tesseract_ftl.h"
 #include "utils.h"
 
+namespace {
+
+FTLDetectorChoicePolicy parse_detector_choice_policy(const std::string& value) {
+  if (value == "order") return FTLDetectorChoicePolicy::kOrder;
+  if (value == "fewest_incident_errors") return FTLDetectorChoicePolicy::kFewestIncidentErrors;
+  if (value == "largest_budget") return FTLDetectorChoicePolicy::kLargestBudget;
+  if (value == "largest_budget_per_incident") {
+    return FTLDetectorChoicePolicy::kLargestBudgetPerIncident;
+  }
+  throw std::invalid_argument("Unknown detector choice policy: " + value);
+}
+
+FTLErrorOrderPolicy parse_error_order_policy(const std::string& value) {
+  if (value == "static") return FTLErrorOrderPolicy::kStatic;
+  if (value == "reduced_cost") return FTLErrorOrderPolicy::kReducedCost;
+  throw std::invalid_argument("Unknown error order policy: " + value);
+}
+
+}  // namespace
+
 struct Args {
   std::string circuit_path;
   std::string dem_path;
@@ -66,6 +86,12 @@ struct Args {
 
   size_t subset_detcost_size = 0;
   bool ignore_blocked_errors_in_heuristic = false;
+  size_t num_min_dets_to_consider = 1;
+  std::string detector_choice_policy = "order";
+  std::string error_order_policy = "static";
+  size_t root_det_order_count = 1;
+  size_t root_det_order_depth = 0;
+  size_t exact_child_refine_count = 0;
 
   bool verbose = false;
   bool print_stats = false;
@@ -123,6 +149,14 @@ struct Args {
     if (subset_detcost_size > 1) {
       throw std::invalid_argument("This prototype currently supports --subset-detcost-size <= 1");
     }
+    if (num_min_dets_to_consider == 0) {
+      throw std::invalid_argument("--num-min-dets-to-consider must be at least 1");
+    }
+    if (root_det_order_count == 0) {
+      throw std::invalid_argument("--root-det-order-count must be at least 1");
+    }
+    parse_detector_choice_policy(detector_choice_policy);
+    parse_error_order_policy(error_order_policy);
   }
 
   void extract(TesseractFTLConfig& config, std::vector<stim::SparseShot>& shots,
@@ -153,6 +187,12 @@ struct Args {
     config.merge_errors = !no_merge_errors;
     config.subset_detcost_size = subset_detcost_size;
     config.ignore_blocked_errors_in_heuristic = ignore_blocked_errors_in_heuristic;
+    config.num_min_dets_to_consider = num_min_dets_to_consider;
+    config.detector_choice_policy = parse_detector_choice_policy(detector_choice_policy);
+    config.error_order_policy = parse_error_order_policy(error_order_policy);
+    config.root_det_order_count = root_det_order_count;
+    config.root_det_order_depth = root_det_order_depth;
+    config.exact_child_refine_count = exact_child_refine_count;
 
     {
       DetOrder order = DetOrder::DetBFS;
@@ -263,6 +303,33 @@ int main(int argc, char* argv[]) {
       .help("Experimental: ignore precedence-blocked errors when computing the FTL LP heuristic")
       .flag()
       .store_into(args.ignore_blocked_errors_in_heuristic);
+  program.add_argument("--num-min-dets-to-consider")
+      .help("Experimental: when expanding a node, branch on the first N active detectors in the "
+            "selected detector order.")
+      .default_value(size_t(1))
+      .store_into(args.num_min_dets_to_consider);
+  program.add_argument("--detector-choice-policy")
+      .help("Experimental detector pivot policy: order, fewest_incident_errors, "
+            "largest_budget, or largest_budget_per_incident.")
+      .default_value(std::string("order"))
+      .store_into(args.detector_choice_policy);
+  program.add_argument("--error-order-policy")
+      .help("Experimental sibling ordering policy: static or reduced_cost.")
+      .default_value(std::string("static"))
+      .store_into(args.error_order_policy);
+  program.add_argument("--root-det-order-count")
+      .help("Experimental: at shallow depths, union candidates from the first N detector orders.")
+      .default_value(size_t(1))
+      .store_into(args.root_det_order_count);
+  program.add_argument("--root-det-order-depth")
+      .help("Experimental: use root-det-order-count while node depth is less than this value.")
+      .default_value(size_t(0))
+      .store_into(args.root_det_order_depth);
+  program.add_argument("--exact-child-refine-count")
+      .help("Experimental exact mode: immediately LP-refine the first N generated children per "
+            "expanded node.")
+      .default_value(size_t(0))
+      .store_into(args.exact_child_refine_count);
 
   program.add_argument("--num-det-orders")
       .help("Number of ways to orient the manifold when reordering the detectors")
@@ -452,6 +519,12 @@ int main(int argc, char* argv[]) {
         {"det_order_seed", args.det_order_seed},
         {"subset_detcost_size", args.subset_detcost_size},
         {"ignore_blocked_errors_in_heuristic", args.ignore_blocked_errors_in_heuristic},
+        {"num_min_dets_to_consider", args.num_min_dets_to_consider},
+        {"detector_choice_policy", args.detector_choice_policy},
+        {"error_order_policy", args.error_order_policy},
+        {"root_det_order_count", args.root_det_order_count},
+        {"root_det_order_depth", args.root_det_order_depth},
+        {"exact_child_refine_count", args.exact_child_refine_count},
         {"total_time_seconds", total_time_seconds},
         {"num_errors", num_errors},
         {"num_low_confidence", num_low_confidence},
@@ -485,6 +558,24 @@ int main(int argc, char* argv[]) {
         {"ftl_component_build_calls", decoder_stats_total.component_build_calls},
         {"ftl_simplex_calls", decoder_stats_total.simplex_calls},
         {"ftl_projection_calls", decoder_stats_total.projection_calls},
+        {"ftl_detector_choice_calls", decoder_stats_total.detector_choice_calls},
+        {"ftl_error_ordering_calls", decoder_stats_total.error_ordering_calls},
+        {"ftl_total_active_detectors_popped", decoder_stats_total.total_active_detectors_popped},
+        {"ftl_total_root_order_candidates", decoder_stats_total.total_root_order_candidates},
+        {"ftl_total_min_detector_candidates", decoder_stats_total.total_min_detector_candidates},
+        {"ftl_total_min_detectors_selected", decoder_stats_total.total_min_detectors_selected},
+        {"ftl_total_min_detector_available_errors",
+         decoder_stats_total.total_min_detector_available_errors},
+        {"ftl_total_min_detector_blocked_errors",
+         decoder_stats_total.total_min_detector_blocked_errors},
+        {"ftl_total_child_candidates_considered",
+         decoder_stats_total.total_child_candidates_considered},
+        {"ftl_total_children_generated", decoder_stats_total.total_children_generated},
+        {"ftl_total_children_beam_pruned", decoder_stats_total.total_children_beam_pruned},
+        {"ftl_total_children_infeasible", decoder_stats_total.total_children_infeasible},
+        {"ftl_total_selected_min_detector_budget",
+         decoder_stats_total.total_selected_min_detector_budget},
+        {"ftl_exact_child_pre_refinements", decoder_stats_total.exact_child_pre_refinements},
     };
 
     if (args.stats_out_fname == "-") {
@@ -506,6 +597,8 @@ int main(int argc, char* argv[]) {
       std::cout << " lp_reinserts = " << decoder_stats_total.lp_reinserts;
       std::cout << " projected_nodes_generated = " << decoder_stats_total.projected_nodes_generated;
       std::cout << " projected_nodes_refined = " << decoder_stats_total.projected_nodes_refined;
+      std::cout << " child_candidates = " << decoder_stats_total.total_child_candidates_considered;
+      std::cout << " children_generated = " << decoder_stats_total.total_children_generated;
     }
     std::cout << std::endl;
   }
