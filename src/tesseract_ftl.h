@@ -114,6 +114,11 @@ struct TesseractFTLDecoder {
   size_t num_detectors = 0;
   TesseractFTLStats stats;
 
+  struct SingletonPatternConstraint {
+    std::vector<int> local_detectors;
+    double rhs = 0.0;
+  };
+
  private:
   struct ErrorCost {
     double likelihood_cost = 0;
@@ -134,12 +139,6 @@ struct TesseractFTLDecoder {
 
     bool operator>(const FTLNode& other) const;
   };
-
-  struct SingletonPatternConstraint {
-    std::vector<int> local_detectors;
-    double rhs = 0.0;
-  };
-
   struct SingletonLPComponent {
     std::vector<int> detectors;
     std::vector<SingletonPatternConstraint> constraints;

@@ -107,8 +107,9 @@ double dot_on_support(const std::vector<double>& values, const std::vector<int>&
 //              x >= 0
 // where A is a 0/1 matrix given by row supports for a selected subset of rows.
 DenseSimplexResult solve_dense_primal_packing_lp(
-    size_t num_vars, const std::vector<std::vector<int>>& row_supports,
-    const std::vector<int>& selected_rows, const std::vector<double>& rhs,
+    size_t num_vars,
+    const std::vector<TesseractFTLDecoder::SingletonPatternConstraint>& constraints,
+    const std::vector<int>& selected_rows,
     const std::vector<double>* entering_priorities = nullptr) {
   DenseSimplexResult result;
   result.solution.assign(num_vars, 0.0);
@@ -130,13 +131,13 @@ DenseSimplexResult solve_dense_primal_packing_lp(
 
   for (size_t row = 0; row < num_rows; ++row) {
     size_t orig_row = (size_t)selected_rows[row];
-    for (int col : row_supports[orig_row]) {
+    for (int col : constraints[orig_row].local_detectors) {
       tableau[row * width + (size_t)col] = 1.0;
     }
     tableau[row * width + num_vars + row] = 1.0;
-    tableau[row * width + width - 1] = rhs[orig_row];
+    tableau[row * width + width - 1] = constraints[orig_row].rhs;
     basis[row] = num_vars + row;
-    if (rhs[orig_row] < -SIMPLEX_EPS) {
+    if (constraints[orig_row].rhs < -SIMPLEX_EPS) {
       throw std::runtime_error("Dense simplex received a negative RHS.");
     }
   }
@@ -255,8 +256,9 @@ struct SingletonComponentSolveResult {
 };
 
 SingletonComponentSolveResult solve_singleton_component_lp(
-    size_t num_local_detectors, const std::vector<std::vector<int>>& row_supports,
-    const std::vector<double>& rhs, const std::vector<int>& cheapest_constraint_for_local_detector,
+    size_t num_local_detectors,
+    const std::vector<TesseractFTLDecoder::SingletonPatternConstraint>& constraints,
+    const std::vector<int>& cheapest_constraint_for_local_detector,
     const std::vector<double>& seed_budgets) {
   SingletonComponentSolveResult result;
   result.detector_budgets.assign(num_local_detectors, 0.0);
@@ -265,16 +267,16 @@ SingletonComponentSolveResult solve_singleton_component_lp(
     result.success = true;
     return result;
   }
-  if (row_supports.empty()) {
+  if (constraints.empty()) {
     result.unbounded = true;
     return result;
   }
 
   const double seed_total = std::accumulate(seed_budgets.begin(), seed_budgets.end(), 0.0);
 
-  std::vector<uint8_t> selected(row_supports.size(), 0);
+  std::vector<uint8_t> selected(constraints.size(), 0);
   std::vector<int> selected_indices;
-  selected_indices.reserve(std::min(row_supports.size(), num_local_detectors * 2 + 4));
+  selected_indices.reserve(std::min(constraints.size(), num_local_detectors * 2 + 4));
 
   auto add_constraint = [&](int idx) {
     if (idx < 0) return;
@@ -284,16 +286,17 @@ SingletonComponentSolveResult solve_singleton_component_lp(
     }
   };
 
-  for (size_t row = 0; row < row_supports.size(); ++row) {
-    const double slack = rhs[row] - dot_on_support(seed_budgets, row_supports[row]);
-    if (slack <= SEED_TIGHT_EPS * (1.0 + rhs[row])) {
+  for (size_t row = 0; row < constraints.size(); ++row) {
+    const auto& constraint = constraints[row];
+    const double slack = constraint.rhs - dot_on_support(seed_budgets, constraint.local_detectors);
+    if (slack <= SEED_TIGHT_EPS * (1.0 + constraint.rhs)) {
       add_constraint((int)row);
     }
   }
 
   std::vector<uint8_t> covered(num_local_detectors, 0);
   for (int idx : selected_indices) {
-    for (int local : row_supports[(size_t)idx]) covered[(size_t)local] = 1;
+    for (int local : constraints[(size_t)idx].local_detectors) covered[(size_t)local] = 1;
   }
   for (size_t local = 0; local < num_local_detectors; ++local) {
     if (!covered[local]) {
@@ -302,7 +305,7 @@ SingletonComponentSolveResult solve_singleton_component_lp(
         throw std::runtime_error("Missing seed constraint for active detector.");
       }
       add_constraint(idx);
-      for (int touched : row_supports[(size_t)idx]) covered[(size_t)touched] = 1;
+      for (int touched : constraints[(size_t)idx].local_detectors) covered[(size_t)touched] = 1;
     }
   }
 
@@ -312,12 +315,13 @@ SingletonComponentSolveResult solve_singleton_component_lp(
 
   size_t rounds = 0;
   while (true) {
-    if (++rounds > row_supports.size() + 1) {
+    if (++rounds > constraints.size() + 1) {
       throw std::runtime_error("Constraint generation exceeded the number of unique constraints.");
     }
 
-    DenseSimplexResult simplex = solve_dense_primal_packing_lp(
-        num_local_detectors, row_supports, selected_indices, rhs, &seed_budgets);
+    DenseSimplexResult simplex =
+        solve_dense_primal_packing_lp(num_local_detectors, constraints, selected_indices,
+                                      &seed_budgets);
     result.simplex_solves++;
     if (simplex.unbounded) {
       result.unbounded = true;
@@ -334,14 +338,15 @@ SingletonComponentSolveResult solve_singleton_component_lp(
     std::vector<std::pair<double, int>> top_violated;
     top_violated.reserve(VIOLATION_BATCH_SIZE);
 
-    for (size_t row = 0; row < row_supports.size(); ++row) {
+    for (size_t row = 0; row < constraints.size(); ++row) {
       if (selected[row]) continue;
-      const double lhs = dot_on_support(simplex.solution, row_supports[row]);
-      const double violation = lhs - rhs[row];
+      const auto& constraint = constraints[row];
+      const double lhs = dot_on_support(simplex.solution, constraint.local_detectors);
+      const double violation = lhs - constraint.rhs;
       if (violation > max_violation) {
         max_violation = violation;
       }
-      if (violation <= VIOLATION_EPS * (1.0 + rhs[row])) continue;
+      if (violation <= VIOLATION_EPS * (1.0 + constraint.rhs)) continue;
 
       top_violated.emplace_back(violation, (int)row);
       std::sort(top_violated.begin(), top_violated.end(),
@@ -622,13 +627,14 @@ TesseractFTLDecoder::SingletonBuildResult TesseractFTLDecoder::build_singleton_c
 
   std::vector<std::unordered_map<std::vector<int>, double, IntVectorHash>> min_rhs_by_pattern(
       result.components.size());
+  std::vector<int> local_hits;
+  local_hits.reserve(16);
 
   for (size_t ei = 0; ei < num_errors; ++ei) {
     if (blocked_flags[ei]) continue;
 
     int component_index = -1;
-    std::vector<int> local_hits;
-    local_hits.reserve(edets[ei].size());
+    local_hits.clear();
 
     for (int detector : edets[ei]) {
       const int active_pos = detector_to_active_pos[(size_t)detector];
@@ -643,7 +649,6 @@ TesseractFTLDecoder::SingletonBuildResult TesseractFTLDecoder::build_singleton_c
 
     if (component_index < 0) continue;
 
-    std::sort(local_hits.begin(), local_hits.end());
     auto& rhs_map = min_rhs_by_pattern[(size_t)component_index];
     const double rhs = errors[ei].likelihood_cost;
     auto it = rhs_map.find(local_hits);
@@ -722,16 +727,15 @@ TesseractFTLDecoder::ExactSubsetSolution TesseractFTLDecoder::solve_exact_subset
 
   const ExactSubsetSolution* warm_solution =
       warm_solution_idx >= 0 ? &exact_solution_arena[(size_t)warm_solution_idx] : nullptr;
-
   solution.value = 0.0;
   solution.num_components = build.components.size();
   std::vector<std::pair<int, double>> detector_budget_pairs;
   detector_budget_pairs.reserve(detectors.count());
+  size_t warm_pos = 0;
 
   for (const auto& component : build.components) {
     std::vector<double> seed_budgets(component.detectors.size(), 0.0);
     if (warm_solution != nullptr) {
-      size_t warm_pos = 0;
       for (size_t local = 0; local < component.detectors.size(); ++local) {
         int det = component.detectors[local];
         while (warm_pos < warm_solution->active_detectors.size() &&
@@ -744,18 +748,8 @@ TesseractFTLDecoder::ExactSubsetSolution TesseractFTLDecoder::solve_exact_subset
         }
       }
     }
-
-    std::vector<std::vector<int>> row_supports;
-    std::vector<double> rhs;
-    row_supports.reserve(component.constraints.size());
-    rhs.reserve(component.constraints.size());
-    for (const auto& constraint : component.constraints) {
-      row_supports.push_back(constraint.local_detectors);
-      rhs.push_back(constraint.rhs);
-    }
-
     const auto component_result = solve_singleton_component_lp(
-        component.detectors.size(), row_supports, rhs,
+        component.detectors.size(), component.constraints,
         component.cheapest_constraint_for_local_detector, seed_budgets);
     stats.lp_calls += component_result.simplex_solves;
 
