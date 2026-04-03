@@ -1,6 +1,8 @@
-import stim
-from collections import defaultdict
+import heapq
 import sys
+from operator import itemgetter
+
+import stim
 
 
 def decode_beam_search(circuit: stim.Circuit, actual_dets: set[int], L: int) -> bool | None:
@@ -30,7 +32,9 @@ def decode_beam_search(circuit: stim.Circuit, actual_dets: set[int], L: int) -> 
             elif t.is_logical_observable_id() and t.val == 0:
                 flip_l0 ^= 1
 
-        faults.append((p, det_mask, flip_l0))
+        q = 1.0 - p
+        delta_scale = -p if flip_l0 else p
+        faults.append((q, p, delta_scale, det_mask))
         all_possible_dets_mask |= det_mask
 
     # 3. Convert observed syndrome set to an integer bitmask
@@ -48,7 +52,7 @@ def decode_beam_search(circuit: stim.Circuit, actual_dets: set[int], L: int) -> 
     retiring_masks = [0] * len(faults)
     last_seen_index = {}
     
-    for idx, (_, det_mask, _) in enumerate(faults):
+    for idx, (_, _, _, det_mask) in enumerate(faults):
         temp = det_mask
         d_id = 0
         # Extract which bits are set in the mask to find the latest index for each detector
@@ -62,61 +66,87 @@ def decode_beam_search(circuit: stim.Circuit, actual_dets: set[int], L: int) -> 
         retiring_masks[idx] |= (1 << d_id)
 
     # 5. The Beam Search Sweep
-    state_probs = {0: [1.0, 0.0]}  # active_syndrome_mask -> [P(L0), P(L1)]
+    # Each beam entry is (active_syndrome_mask, total_probability, logical_bias),
+    # where logical_bias = P(L0) - P(L1). Total probability is enough for beam
+    # ranking, and the bias preserves the final logical comparison.
+    beam = [(0, 1.0, 1.0)]
 
-    for i, (p, det_mask, flip_l0) in enumerate(faults):
-        q = 1.0 - p
-        next_probs = defaultdict(lambda: [0.0, 0.0])
+    for i, (q, p, delta_scale, det_mask) in enumerate(faults):
+        next_probs: dict[int, list[float]] = {}
 
         # A. Expand the beam
-        for s, (p0, p1) in state_probs.items():
+        for s, total, delta in beam:
             # Fault absent
-            next_probs[s][0] += p0 * q
-            next_probs[s][1] += p1 * q
+            entry = next_probs.get(s)
+            absent_total = total * q
+            absent_delta = delta * q
+            if entry is None:
+                next_probs[s] = [absent_total, absent_delta]
+            else:
+                entry[0] += absent_total
+                entry[1] += absent_delta
 
             # Fault present
             t = s ^ det_mask
-            if flip_l0:
-                next_probs[t][0] += p1 * p
-                next_probs[t][1] += p0 * p
+            present_total = total * p
+            present_delta = delta * delta_scale
+            if t == s:
+                entry = next_probs[s]
+                entry[0] += present_total
+                entry[1] += present_delta
             else:
-                next_probs[t][0] += p0 * p
-                next_probs[t][1] += p1 * p
+                entry = next_probs.get(t)
+                if entry is None:
+                    next_probs[t] = [present_total, present_delta]
+                else:
+                    entry[0] += present_total
+                    entry[1] += present_delta
 
         # B. Enforce Reality & Collapse the State Space
         retiring_mask = retiring_masks[i]
-        collapsed_probs = defaultdict(lambda: [0.0, 0.0])
-        
-        for s, (p0, p1) in next_probs.items():
-            if retiring_mask != 0:
-                # If the retiring bits don't match our actual observation, kill the state
-                if (s & retiring_mask) != (actual_dets_mask & retiring_mask):
-                    continue 
-            
-            # Zero out the retired bits so states merge properly in the dictionary
-            shrunk_s = s & ~retiring_mask
-            collapsed_probs[shrunk_s][0] += p0
-            collapsed_probs[shrunk_s][1] += p1
+        if retiring_mask != 0:
+            collapsed_probs: dict[int, list[float]] = {}
+            expected_bits = actual_dets_mask & retiring_mask
+            keep_mask = ~retiring_mask
+
+            for s, (total, delta) in next_probs.items():
+                # If the retiring bits don't match our actual observation, kill the state.
+                if (s & retiring_mask) != expected_bits:
+                    continue
+
+                shrunk_s = s & keep_mask
+                entry = collapsed_probs.get(shrunk_s)
+                if entry is None:
+                    collapsed_probs[shrunk_s] = [total, delta]
+                else:
+                    entry[0] += total
+                    entry[1] += delta
+        else:
+            collapsed_probs = next_probs
 
         # C. Truncate the Beam (Top L Cutoff)
         if len(collapsed_probs) > L:
-            # Sort by total marginal probability: P(L0) + P(L1)
-            sorted_states = sorted(
-                collapsed_probs.items(), 
-                key=lambda kv: kv[1][0] + kv[1][1], 
-                reverse=True
+            beam = heapq.nlargest(
+                L,
+                (
+                    (state, total, delta)
+                    for state, (total, delta) in collapsed_probs.items()
+                ),
+                key=itemgetter(1),
             )
-            state_probs = dict(sorted_states[:L])
         else:
-            state_probs = dict(collapsed_probs)
+            beam = [
+                (state, total, delta)
+                for state, (total, delta) in collapsed_probs.items()
+            ]
 
     # 6. Final Likelihood Comparison
     # Since all bits are retired, the only surviving state mask should be exactly 0.
-    p0, p1 = state_probs.get(0, (0.0, 0.0))
-    
-    if p0 == p1:
+    _, _, final_delta = next((entry for entry in beam if entry[0] == 0), (0, 0.0, 0.0))
+
+    if final_delta == 0.0:
         return None  # Tie or beam missed the correct path entirely
-    return p1 > p0
+    return final_delta < 0.0
 
 
 def run_experiment(circuit_fname: str, L: int):
