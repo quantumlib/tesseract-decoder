@@ -140,6 +140,20 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "libtesseract_trellis",
+    srcs = ["tesseract_trellis.cc"],
+    hdrs = ["tesseract_trellis.h"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    deps = [
+        ":libcommon",
+        ":libutils",
+        "@boost//:dynamic_bitset",
+        "@stim//:stim_lib",
+    ],
+)
+
 
 cc_library(
     name = "libtesseract_ftl",
@@ -161,6 +175,19 @@ cc_binary(
     linkopts = OPT_LINKOPTS,
     deps = [
         ":libtesseract",
+        "@argparse",
+        "@nlohmann_json//:json",
+        "@stim//:stim_lib",
+    ],
+)
+
+cc_binary(
+    name = "tesseract_trellis",
+    srcs = ["tesseract_trellis_main.cc"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    deps = [
+        ":libtesseract_trellis",
         "@argparse",
         "@nlohmann_json//:json",
         "@stim//:stim_lib",
