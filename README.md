@@ -1,5 +1,9 @@
 <div align="center">
 
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/74a52d92-f7b4-40ed-a0e9-09b611fcbd9a" width="300" alt="Tesseract Decoder Logo">
+</p>
+
 # [Tesseract Decoder](https://quantumlib.github.io/tesseract-decoder)
 
 A Search-Based Decoder for Quantum Error Correction.
