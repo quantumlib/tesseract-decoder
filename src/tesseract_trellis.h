@@ -22,9 +22,34 @@
 #include "stim.h"
 
 enum class TesseractTrellisPruneMode {
-  kMergedStates,
-  kBranchEntries,
-  kNoMerge,
+  MergedStates,
+  BranchEntries,
+  NoMerge,
+};
+
+enum class TesseractTrellisRankingMode {
+  MassOnly,
+  FutureDetcostRanked,
+};
+
+struct TesseractTrellisDetcostTransition {
+  std::vector<uint8_t> fault_local_indices;
+  std::vector<int8_t> next_local_indices;
+  std::vector<double> current_costs;
+  std::vector<double> next_costs;
+};
+
+struct TesseractTrellisSmallLayerTemplate {
+  double q = 0;
+  double p = 0;
+  uint64_t obs_flip_bit = 0;
+  uint64_t local_det_mask = 0;
+  uint64_t retiring_mask = 0;
+  size_t previous_width = 0;
+  std::vector<uint8_t> surviving_local_indices;
+  std::vector<int> current_active_detectors;
+  std::vector<double> next_frontier_costs;
+  TesseractTrellisDetcostTransition detcost_transition;
 };
 
 struct TesseractTrellisConfig {
@@ -32,7 +57,8 @@ struct TesseractTrellisConfig {
   size_t beam_width = 1024;
   size_t merge_interval = 1;
   bool verbose = false;
-  TesseractTrellisPruneMode prune_mode = TesseractTrellisPruneMode::kMergedStates;
+  TesseractTrellisPruneMode prune_mode = TesseractTrellisPruneMode::MergedStates;
+  TesseractTrellisRankingMode ranking_mode = TesseractTrellisRankingMode::MassOnly;
 };
 
 struct TesseractTrellisDecoder {
@@ -62,6 +88,10 @@ struct TesseractTrellisDecoder {
   std::vector<common::Error> errors;
   size_t num_observables = 0;
   size_t num_detectors = 0;
+  boost::dynamic_bitset<> all_possible_detectors;
+  bool has_small_layer_templates = false;
+  std::vector<TesseractTrellisSmallLayerTemplate> small_layer_templates;
+  std::vector<double> initial_future_detcost;
 };
 
 #endif  // TESSERACT_TRELLIS_DECODER_H

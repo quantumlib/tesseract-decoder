@@ -27,10 +27,16 @@
 namespace {
 
 TesseractTrellisPruneMode parse_prune_mode(const std::string& value) {
-  if (value == "merged") return TesseractTrellisPruneMode::kMergedStates;
-  if (value == "branch") return TesseractTrellisPruneMode::kBranchEntries;
-  if (value == "none") return TesseractTrellisPruneMode::kNoMerge;
+  if (value == "merged") return TesseractTrellisPruneMode::MergedStates;
+  if (value == "branch") return TesseractTrellisPruneMode::BranchEntries;
+  if (value == "none") return TesseractTrellisPruneMode::NoMerge;
   throw std::invalid_argument("Unknown trellis prune mode: " + value);
+}
+
+TesseractTrellisRankingMode parse_ranking_mode(const std::string& value) {
+  if (value == "mass") return TesseractTrellisRankingMode::MassOnly;
+  if (value == "future-detcost") return TesseractTrellisRankingMode::FutureDetcostRanked;
+  throw std::invalid_argument("Unknown trellis ranking mode: " + value);
 }
 
 }  // namespace
@@ -61,6 +67,7 @@ struct Args {
   size_t beam_width = 1024;
   size_t merge_interval = 1;
   std::string prune_mode = "merged";
+  std::string ranking_mode = "mass";
 
   bool verbose = false;
   bool print_stats = false;
@@ -115,6 +122,7 @@ struct Args {
       throw std::invalid_argument("--merge-interval must be at least 1.");
     }
     parse_prune_mode(prune_mode);
+    parse_ranking_mode(ranking_mode);
   }
 
   void extract(TesseractTrellisConfig& config, std::vector<stim::SparseShot>& shots,
@@ -150,6 +158,7 @@ struct Args {
     config.merge_interval = merge_interval;
     config.verbose = verbose;
     config.prune_mode = parse_prune_mode(prune_mode);
+    config.ranking_mode = parse_ranking_mode(ranking_mode);
 
     if (sample_num_shots > 0) {
       assert(!circuit_path.empty());
@@ -272,6 +281,10 @@ int main(int argc, char* argv[]) {
       .help("Trellis pruning mode: merged, branch, or none")
       .default_value(std::string("merged"))
       .store_into(args.prune_mode);
+  program.add_argument("--ranking-mode")
+      .help("Trellis ranking mode: mass or future-detcost")
+      .default_value(std::string("mass"))
+      .store_into(args.ranking_mode);
   program.add_argument("--verbose").flag().store_into(args.verbose);
   program.add_argument("--print-stats").flag().store_into(args.print_stats);
 
