@@ -319,66 +319,6 @@ double compute_penalty_from_scratch(uint64_t mismatch_mask,
   return total;
 }
 
-double advance_penalty_row(double current_penalty, uint64_t current_mismatch,
-                           const TesseractTrellisDetcostTransition& transition) {
-  if (current_penalty == INF) {
-    return INF;
-  }
-  double total = current_penalty;
-  for (size_t k = 0; k < transition.fault_local_indices.size(); ++k) {
-    const uint64_t local_bit = uint64_t{1} << transition.fault_local_indices[k];
-    if ((current_mismatch & local_bit) == 0) {
-      continue;
-    }
-    double current_cost = transition.current_costs[k];
-    double next_cost = transition.next_costs[k];
-    if (next_cost == INF) {
-      return INF;
-    }
-    total += next_cost - current_cost;
-  }
-  return total;
-}
-
-double adjust_penalty_for_branch(double parent_penalty_next_row, uint64_t base_state,
-                                 uint64_t current_target_bits, uint64_t next_target_bits,
-                                 bool present_branch, uint64_t projected_state,
-                                 const TesseractTrellisSmallLayerTemplate& layer) {
-  if (parent_penalty_next_row == INF) {
-    return compute_penalty_from_scratch(projected_state ^ next_target_bits, layer.next_frontier_costs);
-  }
-
-  double total = parent_penalty_next_row;
-  for (size_t k = 0; k < layer.detcost_transition.fault_local_indices.size(); ++k) {
-    uint8_t local = layer.detcost_transition.fault_local_indices[k];
-    int8_t next_local = layer.detcost_transition.next_local_indices[k];
-    if (next_local < 0) {
-      continue;
-    }
-
-    const uint64_t state_bit =
-        local < layer.previous_width ? ((base_state >> local) & 1ULL) : 0ULL;
-    const uint64_t prev_mismatch =
-        local < layer.previous_width ? (state_bit ^ ((current_target_bits >> local) & 1ULL)) : 0ULL;
-    const uint64_t child_bit = state_bit ^ (present_branch ? 1ULL : 0ULL);
-    const uint64_t child_mismatch = child_bit ^ ((next_target_bits >> next_local) & 1ULL);
-    if (prev_mismatch == child_mismatch) {
-      continue;
-    }
-
-    double next_cost = layer.detcost_transition.next_costs[k];
-    if (child_mismatch) {
-      if (next_cost == INF) {
-        return INF;
-      }
-      total += next_cost;
-    } else {
-      total -= next_cost;
-    }
-  }
-  return total;
-}
-
 void build_future_detcost_transitions(const std::vector<Fault>& faults, size_t num_detectors,
                                       std::vector<TesseractTrellisSmallLayerTemplate>* layers,
                                       std::vector<double>* initial_future_detcost) {
@@ -651,16 +591,24 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
     std::vector<PackedMass> beam_entries;
     double initial_penalty = 0.0;
     if (config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked) {
+      std::vector<double> initial_frontier_costs;
+      if (!small_layer_templates.empty()) {
+        const auto& first_layer = small_layer_templates.front();
+        initial_frontier_costs.resize(first_layer.current_active_detectors.size(), INF);
+        for (size_t local = 0; local < first_layer.current_active_detectors.size(); ++local) {
+          initial_frontier_costs[local] =
+              initial_future_detcost[(size_t)first_layer.current_active_detectors[local]];
+        }
+      }
       initial_penalty = compute_penalty_from_scratch(
           current_target_bits_per_layer.empty() ? 0 : current_target_bits_per_layer.front(),
-          initial_future_detcost);
+          initial_frontier_costs);
     }
     beam_entries.push_back({pack_small_key(0, 0), 1.0, initial_penalty});
     max_beam_size_seen = 1;
 
     for (size_t layer_index = 0; layer_index < small_layer_templates.size(); ++layer_index) {
       const auto& layer = small_layer_templates[layer_index];
-      const uint64_t current_target_bits = current_target_bits_per_layer[layer_index];
       const uint64_t next_target_bits = next_target_bits_per_layer[layer_index];
       const uint64_t expected_retiring_bits = expected_retiring_bits_per_layer[layer_index];
       auto t0 = std::chrono::high_resolution_clock::now();
@@ -670,33 +618,17 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
         ++num_states_expanded;
         const uint64_t base_state = unpack_small_state(item.key);
         const uint64_t base_obs = unpack_small_obs(item.key);
-        const double parent_penalty_next_row =
-            config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked
-                ? advance_penalty_row(item.penalty, base_state ^ current_target_bits,
-                                      layer.detcost_transition)
-                : 0.0;
 
         if (((base_state ^ expected_retiring_bits) & layer.retiring_mask) == 0) {
           uint64_t projected_state = project_small_state(base_state, layer.surviving_local_indices);
-          double penalty =
-              config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked
-                  ? adjust_penalty_for_branch(parent_penalty_next_row, base_state, current_target_bits,
-                                              next_target_bits, false, projected_state, layer)
-                  : 0.0;
-          next_entries.push_back(
-              {pack_small_key(projected_state, base_obs), item.mass * layer.q, penalty});
+          next_entries.push_back({pack_small_key(projected_state, base_obs), item.mass * layer.q, 0.0});
         }
 
         uint64_t toggled_state = base_state ^ layer.local_det_mask;
         if (((toggled_state ^ expected_retiring_bits) & layer.retiring_mask) == 0) {
           uint64_t projected_state = project_small_state(toggled_state, layer.surviving_local_indices);
-          double penalty =
-              config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked
-                  ? adjust_penalty_for_branch(parent_penalty_next_row, base_state, current_target_bits,
-                                              next_target_bits, true, projected_state, layer)
-                  : 0.0;
-          next_entries.push_back({pack_small_key(projected_state, base_obs ^ layer.obs_flip_bit),
-                                  item.mass * layer.p, penalty});
+          next_entries.push_back(
+              {pack_small_key(projected_state, base_obs ^ layer.obs_flip_bit), item.mass * layer.p, 0.0});
         }
       }
       auto t1 = std::chrono::high_resolution_clock::now();
@@ -722,6 +654,13 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
       auto t2 = std::chrono::high_resolution_clock::now();
       time_collapse_seconds +=
           std::chrono::duration_cast<std::chrono::microseconds>(t2 - t2a).count() / 1e6;
+
+      if (config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked) {
+        for (auto& item : beam_entries) {
+          item.penalty = compute_penalty_from_scratch(unpack_small_state(item.key) ^ next_target_bits,
+                                                      layer.next_frontier_costs);
+        }
+      }
 
       if (config.prune_mode == TesseractTrellisPruneMode::MergedStates) {
         keep_top_states(beam_entries, config.beam_width, config.ranking_mode);

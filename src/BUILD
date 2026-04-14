@@ -194,7 +194,6 @@ cc_binary(
     ],
 )
 
-
 cc_binary(
     name = "tesseract_ftl",
     srcs = ["tesseract_ftl_main.cc"],
