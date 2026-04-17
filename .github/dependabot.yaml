@@ -25,11 +25,19 @@ updates:
       - "area/health"
 
   - package-ecosystem: "pip"
-    directories:
-      - "**/*"
+    directory: "/src/py"
+    allow:
+      - dependency-name: stim
+      - dependency-name: pytest
+      - dependency-name: sinter
+      - dependency-name: pybind11-stubgen
     schedule:
-      interval: "monthly"
+      interval: "weekly"
     versioning-strategy: "increase-if-necessary"
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
     labels:
       - "area/dependencies"
       - "area/python"
