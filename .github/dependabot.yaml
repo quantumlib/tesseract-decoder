@@ -32,7 +32,7 @@ updates:
       - dependency-name: sinter
       - dependency-name: pybind11-stubgen
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     versioning-strategy: "increase-if-necessary"
     groups:
       python-dependencies:
