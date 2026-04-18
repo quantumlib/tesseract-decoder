@@ -15,6 +15,7 @@
 #include "tesseract_trellis.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -49,7 +50,7 @@ struct PackedMass {
 struct SmallStateGroup {
   uint64_t state;
   double mass;
-  double penalty;
+  double score;
   size_t begin;
   size_t end;
 };
@@ -541,12 +542,44 @@ void normalize_items(std::vector<WidePackedMass>& items) {
   }
 }
 
+void radix_sort_packed_masses_by_key(std::vector<PackedMass>& items) {
+  if (items.size() <= 1) {
+    return;
+  }
+
+  thread_local std::vector<PackedMass> buffer;
+  buffer.resize(items.size());
+
+  PackedMass* src = items.data();
+  PackedMass* dst = buffer.data();
+  constexpr size_t RADIX = 256;
+  std::array<size_t, RADIX> counts;
+
+  for (size_t shift = 0; shift < 64; shift += 8) {
+    counts.fill(0);
+    for (size_t k = 0; k < items.size(); ++k) {
+      ++counts[(src[k].key >> shift) & 0xFF];
+    }
+
+    size_t total = 0;
+    for (size_t k = 0; k < RADIX; ++k) {
+      size_t count = counts[k];
+      counts[k] = total;
+      total += count;
+    }
+
+    for (size_t k = 0; k < items.size(); ++k) {
+      dst[counts[(src[k].key >> shift) & 0xFF]++] = src[k];
+    }
+    std::swap(src, dst);
+  }
+}
+
 void merge_equal_keys_inplace(std::vector<PackedMass>& items) {
   if (items.empty()) {
     return;
   }
-  std::sort(items.begin(), items.end(),
-            [](const PackedMass& a, const PackedMass& b) { return a.key < b.key; });
+  radix_sort_packed_masses_by_key(items);
   size_t out = 0;
   for (size_t i = 1; i < items.size(); ++i) {
     if (items[i].key == items[out].key) {
@@ -610,37 +643,27 @@ std::vector<WideStateMass> accumulate_state_masses_from_entries(
   return totals;
 }
 
-double branch_score(const PackedMass& item, TesseractTrellisRankingMode ranking_mode) {
+double score_mass_and_penalty(double mass, double penalty,
+                              TesseractTrellisRankingMode ranking_mode) {
   if (ranking_mode == TesseractTrellisRankingMode::MassOnly) {
-    return item.mass;
+    return mass;
   }
-  if (item.penalty == INF || item.mass == 0.0) {
+  if (penalty == INF || mass == 0.0) {
     return -INF;
   }
-  return std::log(item.mass) - item.penalty;
+  return std::log(mass) - penalty;
+}
+
+double branch_score(const PackedMass& item, TesseractTrellisRankingMode ranking_mode) {
+  return score_mass_and_penalty(item.mass, item.penalty, ranking_mode);
 }
 
 double branch_score(const WidePackedMass& item, TesseractTrellisRankingMode ranking_mode) {
-  if (ranking_mode == TesseractTrellisRankingMode::MassOnly) {
-    return item.mass;
-  }
-  if (item.penalty == INF || item.mass == 0.0) {
-    return -INF;
-  }
-  return std::log(item.mass) - item.penalty;
+  return score_mass_and_penalty(item.mass, item.penalty, ranking_mode);
 }
 
-double state_score(const SmallStateGroup& item, TesseractTrellisRankingMode ranking_mode) {
-  if (ranking_mode == TesseractTrellisRankingMode::MassOnly) {
-    return item.mass;
-  }
-  if (item.penalty == INF || item.mass == 0.0) {
-    return -INF;
-  }
-  return std::log(item.mass) - item.penalty;
-}
-
-std::vector<SmallStateGroup> collect_small_state_groups(const std::vector<PackedMass>& entries) {
+std::vector<SmallStateGroup> collect_small_state_groups(
+    const std::vector<PackedMass>& entries, TesseractTrellisRankingMode ranking_mode) {
   std::vector<SmallStateGroup> groups;
   if (entries.empty()) {
     return groups;
@@ -655,66 +678,57 @@ std::vector<SmallStateGroup> collect_small_state_groups(const std::vector<Packed
       mass += entries[end].mass;
       ++end;
     }
-    groups.push_back({state, mass, entries[begin].penalty, begin, end});
+    groups.push_back(
+        {state, mass, score_mass_and_penalty(mass, entries[begin].penalty, ranking_mode), begin,
+         end});
     begin = end;
   }
   return groups;
 }
 
 double state_score(const WideStateMass& item, TesseractTrellisRankingMode ranking_mode) {
-  if (ranking_mode == TesseractTrellisRankingMode::MassOnly) {
-    return item.mass;
-  }
-  if (item.penalty == INF || item.mass == 0.0) {
-    return -INF;
-  }
-  return std::log(item.mass) - item.penalty;
+  return score_mass_and_penalty(item.mass, item.penalty, ranking_mode);
 }
 
-void keep_top_states(std::vector<PackedMass>& entries, size_t beam_width,
-                     TesseractTrellisRankingMode ranking_mode) {
+size_t keep_top_states(std::vector<PackedMass>& entries, size_t beam_width,
+                       TesseractTrellisRankingMode ranking_mode) {
   if (entries.empty()) {
-    return;
+    return 0;
   }
-  auto groups = collect_small_state_groups(entries);
+  auto groups = collect_small_state_groups(entries, ranking_mode);
   if (groups.size() <= beam_width) {
-    return;
+    return groups.size();
   }
 
-  std::vector<size_t> keep_indices(groups.size());
-  std::iota(keep_indices.begin(), keep_indices.end(), 0);
-  std::nth_element(keep_indices.begin(), keep_indices.begin() + beam_width, keep_indices.end(),
-                   [&groups, ranking_mode](size_t a, size_t b) {
-                     return state_score(groups[a], ranking_mode) >
-                            state_score(groups[b], ranking_mode);
+  std::nth_element(groups.begin(), groups.begin() + beam_width, groups.end(),
+                   [](const SmallStateGroup& a, const SmallStateGroup& b) {
+                     return a.score > b.score;
                    });
-  keep_indices.resize(beam_width);
-  std::sort(keep_indices.begin(), keep_indices.end(),
-            [&groups](size_t a, size_t b) { return groups[a].begin < groups[b].begin; });
+  groups.resize(beam_width);
 
   std::vector<PackedMass> kept;
   size_t kept_entries = 0;
-  for (size_t idx : keep_indices) {
-    kept_entries += groups[idx].end - groups[idx].begin;
+  for (const auto& group : groups) {
+    kept_entries += group.end - group.begin;
   }
   kept.reserve(kept_entries);
-  for (size_t idx : keep_indices) {
-    const auto& group = groups[idx];
+  for (const auto& group : groups) {
     for (size_t k = group.begin; k < group.end; ++k) {
-      kept.push_back(entries[k]);
+      kept.push_back(std::move(entries[k]));
     }
   }
   entries = std::move(kept);
+  return groups.size();
 }
 
-void keep_top_states(std::vector<WidePackedMass>& entries, size_t beam_width,
-                     TesseractTrellisRankingMode ranking_mode) {
+size_t keep_top_states(std::vector<WidePackedMass>& entries, size_t beam_width,
+                       TesseractTrellisRankingMode ranking_mode) {
   if (entries.empty()) {
-    return;
+    return 0;
   }
   auto totals = accumulate_state_masses_from_entries(entries);
   if (totals.size() <= beam_width) {
-    return;
+    return totals.size();
   }
   std::nth_element(totals.begin(), totals.begin() + beam_width, totals.end(),
                    [ranking_mode](const WideStateMass& a, const WideStateMass& b) {
@@ -737,6 +751,7 @@ void keep_top_states(std::vector<WidePackedMass>& entries, size_t beam_width,
     }
   }
   entries = std::move(kept);
+  return totals.size();
 }
 
 void keep_best_state_representatives(std::vector<PackedMass>& entries, size_t beam_width,
@@ -1052,8 +1067,9 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
       time_collapse_seconds +=
           std::chrono::duration_cast<std::chrono::microseconds>(t2 - t2a).count() / 1e6;
 
+      size_t kept_states = 0;
       if (config.prune_mode == TesseractTrellisPruneMode::MergedStates) {
-        keep_top_states(beam_entries, config.beam_width, config.ranking_mode);
+        kept_states = keep_top_states(beam_entries, config.beam_width, config.ranking_mode);
       } else if (config.prune_mode == TesseractTrellisPruneMode::KeepBest) {
         keep_best_state_representatives(beam_entries, config.beam_width, config.ranking_mode);
       } else if (config.prune_mode == TesseractTrellisPruneMode::BranchEntries ||
@@ -1066,9 +1082,8 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
         return;
       }
       if (config.prune_mode == TesseractTrellisPruneMode::MergedStates) {
-        auto post_groups = collect_small_state_groups(beam_entries);
-        num_states_merged += post_groups.size();
-        max_beam_size_seen = std::max(max_beam_size_seen, post_groups.size());
+        num_states_merged += kept_states;
+        max_beam_size_seen = std::max(max_beam_size_seen, kept_states);
       } else if (config.prune_mode == TesseractTrellisPruneMode::KeepBest) {
         num_states_merged += beam_entries.size();
         max_beam_size_seen = std::max(max_beam_size_seen, beam_entries.size());
@@ -1188,8 +1203,9 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
       time_collapse_seconds +=
           std::chrono::duration_cast<std::chrono::microseconds>(t2 - t2a).count() / 1e6;
 
+      size_t kept_states = 0;
       if (config.prune_mode == TesseractTrellisPruneMode::MergedStates) {
-        keep_top_states(beam_entries, config.beam_width, config.ranking_mode);
+        kept_states = keep_top_states(beam_entries, config.beam_width, config.ranking_mode);
       } else if (config.prune_mode == TesseractTrellisPruneMode::KeepBest) {
         keep_best_state_representatives(beam_entries, config.beam_width, config.ranking_mode);
       } else if (config.prune_mode == TesseractTrellisPruneMode::BranchEntries ||
@@ -1208,9 +1224,8 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
         num_states_merged += beam_entries.size();
         max_beam_size_seen = std::max(max_beam_size_seen, beam_entries.size());
       } else {
-        auto post_totals = accumulate_state_masses_from_entries(beam_entries);
-        num_states_merged += post_totals.size();
-        max_beam_size_seen = std::max(max_beam_size_seen, post_totals.size());
+        num_states_merged += kept_states;
+        max_beam_size_seen = std::max(max_beam_size_seen, kept_states);
       }
       auto t3 = std::chrono::high_resolution_clock::now();
       time_truncate_seconds +=

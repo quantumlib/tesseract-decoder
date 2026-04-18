@@ -384,14 +384,13 @@ int main(int argc, char* argv[]) {
                     << " states_merged = " << num_states_merged_per_shot[shot_index]
                     << " max_beam = " << max_beam_size_per_shot[shot_index]
                     << " frontier_width = " << max_frontier_width_per_shot[shot_index]
-                    << " total_time_seconds = " << total_time_seconds << std::endl;
+                    << " total_time_seconds = " << total_time_seconds << '\n';
           std::cout << "branch_masses" << " obs0=" << mass0_predicted[shot_index]
-                    << " obs1=" << mass1_predicted[shot_index] << std::endl;
+                    << " obs1=" << mass1_predicted[shot_index] << '\n';
           std::cout << "phase_times_seconds" << " expand=" << time_expand_per_shot[shot_index]
                     << " collapse=" << time_collapse_per_shot[shot_index]
                     << " truncate=" << time_truncate_per_shot[shot_index]
-                    << " reconstruct=" << time_reconstruct_per_shot[shot_index] << std::endl;
-          std::cout.flush();
+                    << " reconstruct=" << time_reconstruct_per_shot[shot_index] << '\n';
         }
         return num_errors < args.max_errors;
       });
