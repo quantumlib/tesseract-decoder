@@ -28,6 +28,7 @@ namespace {
 
 TesseractTrellisPruneMode parse_prune_mode(const std::string& value) {
   if (value == "merged") return TesseractTrellisPruneMode::MergedStates;
+  if (value == "keep-best") return TesseractTrellisPruneMode::KeepBest;
   if (value == "branch") return TesseractTrellisPruneMode::BranchEntries;
   if (value == "none") return TesseractTrellisPruneMode::NoMerge;
   throw std::invalid_argument("Unknown trellis prune mode: " + value);
@@ -253,7 +254,9 @@ int main(int argc, char* argv[]) {
   program.add_argument("--sample-seed")
       .default_value(static_cast<uint64_t>(std::random_device()()))
       .store_into(args.sample_seed);
-  program.add_argument("--shot-range-begin").default_value(size_t(0)).store_into(args.shot_range_begin);
+  program.add_argument("--shot-range-begin")
+      .default_value(size_t(0))
+      .store_into(args.shot_range_begin);
   program.add_argument("--shot-range-end").default_value(size_t(0)).store_into(args.shot_range_end);
   program.add_argument("--in").default_value(std::string("")).store_into(args.in_fname);
   program.add_argument("--in-format", "--in_format")
@@ -263,14 +266,18 @@ int main(int argc, char* argv[]) {
       .default_value(false)
       .store_into(args.append_observables)
       .flag();
-  program.add_argument("--obs_in", "--obs-in").default_value(std::string("")).store_into(args.obs_in_fname);
+  program.add_argument("--obs_in", "--obs-in")
+      .default_value(std::string(""))
+      .store_into(args.obs_in_fname);
   program.add_argument("--obs-in-format", "--obs_in_format")
       .default_value(std::string(""))
       .store_into(args.obs_in_format);
   program.add_argument("--out").default_value(std::string("")).store_into(args.out_fname);
   program.add_argument("--out-format").default_value(std::string("")).store_into(args.out_format);
   program.add_argument("--dem-out").default_value(std::string("")).store_into(args.dem_out_fname);
-  program.add_argument("--stats-out").default_value(std::string("")).store_into(args.stats_out_fname);
+  program.add_argument("--stats-out")
+      .default_value(std::string(""))
+      .store_into(args.stats_out_fname);
   program.add_argument("--threads")
       .default_value(size_t(
           std::thread::hardware_concurrency() == 0 ? 1 : std::thread::hardware_concurrency()))
@@ -278,7 +285,15 @@ int main(int argc, char* argv[]) {
   program.add_argument("--beam").default_value(size_t(1024)).store_into(args.beam_width);
   program.add_argument("--merge-interval").default_value(size_t(1)).store_into(args.merge_interval);
   program.add_argument("--prune-mode")
-      .help("Trellis pruning mode: merged, branch, or none")
+      .help(
+          "Trellis pruning mode: merged, keep-best, branch, or none. "
+          "merged sums probabilities of all branches with the same residual detection events. "
+          "keep-best keeps only the single highest-probability branch for each residual detection "
+          "state. "
+          "branch ranks branches individually, but still merges exact duplicate (state, "
+          "observable) entries first. "
+          "none skips even that exact-duplicate merge, so identical branches may occupy multiple "
+          "beam slots.")
       .default_value(std::string("merged"))
       .store_into(args.prune_mode);
   program.add_argument("--ranking-mode")
@@ -370,11 +385,9 @@ int main(int argc, char* argv[]) {
                     << " max_beam = " << max_beam_size_per_shot[shot_index]
                     << " frontier_width = " << max_frontier_width_per_shot[shot_index]
                     << " total_time_seconds = " << total_time_seconds << std::endl;
-          std::cout << "branch_masses"
-                    << " obs0=" << mass0_predicted[shot_index]
+          std::cout << "branch_masses" << " obs0=" << mass0_predicted[shot_index]
                     << " obs1=" << mass1_predicted[shot_index] << std::endl;
-          std::cout << "phase_times_seconds"
-                    << " expand=" << time_expand_per_shot[shot_index]
+          std::cout << "phase_times_seconds" << " expand=" << time_expand_per_shot[shot_index]
                     << " collapse=" << time_collapse_per_shot[shot_index]
                     << " truncate=" << time_truncate_per_shot[shot_index]
                     << " reconstruct=" << time_reconstruct_per_shot[shot_index] << std::endl;
@@ -384,7 +397,8 @@ int main(int argc, char* argv[]) {
       });
 
   if (!args.dem_out_fname.empty()) {
-    throw std::invalid_argument("--dem-out is not supported by tesseract_trellis without path reconstruction.");
+    throw std::invalid_argument(
+        "--dem-out is not supported by tesseract_trellis without path reconstruction.");
   }
 
   bool print_final_stats = true;

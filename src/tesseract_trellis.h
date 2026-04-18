@@ -16,6 +16,7 @@
 #define TESSERACT_TRELLIS_DECODER_H
 
 #include <boost/dynamic_bitset.hpp>
+#include <cstdint>
 #include <vector>
 
 #include "common.h"
@@ -23,6 +24,7 @@
 
 enum class TesseractTrellisPruneMode {
   MergedStates,
+  KeepBest,
   BranchEntries,
   NoMerge,
 };
@@ -33,8 +35,8 @@ enum class TesseractTrellisRankingMode {
 };
 
 struct TesseractTrellisDetcostTransition {
-  std::vector<uint8_t> fault_local_indices;
-  std::vector<int8_t> next_local_indices;
+  std::vector<uint32_t> fault_local_indices;
+  std::vector<int32_t> next_local_indices;
   std::vector<double> current_costs;
   std::vector<double> next_costs;
 };
@@ -45,9 +47,28 @@ struct TesseractTrellisSmallLayerTemplate {
   uint64_t obs_flip_bit = 0;
   uint64_t local_det_mask = 0;
   uint64_t retiring_mask = 0;
+  uint64_t surviving_mask = 0;
+  uint64_t projected_fault_mask = 0;
   size_t previous_width = 0;
   std::vector<uint8_t> surviving_local_indices;
   std::vector<int> current_active_detectors;
+  std::vector<double> next_frontier_costs;
+  TesseractTrellisDetcostTransition detcost_transition;
+};
+
+struct TesseractTrellisSmallDetectorLayerRef {
+  uint32_t layer_index = 0;
+  uint8_t local_index = 0;
+};
+
+struct TesseractTrellisWideLayerTemplate {
+  double q = 0;
+  double p = 0;
+  uint64_t obs_mask = 0;
+  size_t previous_width = 0;
+  std::vector<uint32_t> surviving_local_indices;
+  std::vector<int> current_active_detectors;
+  std::vector<uint64_t> projected_fault_mask_words;
   std::vector<double> next_frontier_costs;
   TesseractTrellisDetcostTransition detcost_transition;
 };
@@ -91,6 +112,10 @@ struct TesseractTrellisDecoder {
   boost::dynamic_bitset<> all_possible_detectors;
   bool has_small_layer_templates = false;
   std::vector<TesseractTrellisSmallLayerTemplate> small_layer_templates;
+  std::vector<std::vector<TesseractTrellisSmallDetectorLayerRef>> small_detector_layer_refs;
+  std::vector<uint64_t> scratch_small_current_target_bits;
+  std::vector<uint64_t> scratch_small_expected_retiring_bits;
+  std::vector<TesseractTrellisWideLayerTemplate> wide_layer_templates;
   std::vector<double> initial_future_detcost;
 };
 

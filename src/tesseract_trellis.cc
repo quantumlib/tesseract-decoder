@@ -15,27 +15,19 @@
 #include "tesseract_trellis.h"
 
 #include <algorithm>
-#include <array>
-#include <bit>
-#include <boost/functional/hash.hpp>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
+#if defined(__BMI2__) && \
+    (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86))
+#include <immintrin.h>
+#endif
+#include <iostream>
 #include <limits>
 #include <numeric>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
 
 #include "utils.h"
-
-namespace std {
-template <>
-struct hash<boost::dynamic_bitset<>> {
-  size_t operator()(const boost::dynamic_bitset<>& bs) const {
-    return boost::hash_value(bs);
-  }
-};
-}  // namespace std
 
 namespace {
 
@@ -48,61 +40,39 @@ struct Fault {
   std::vector<int> detectors;
 };
 
-struct LayerFault {
-  size_t error_index;
-  double log_q;
-  double log_p;
-  uint64_t obs_mask;
-  boost::dynamic_bitset<> local_det_mask;
-  boost::dynamic_bitset<> retiring_mask;
-  boost::dynamic_bitset<> expected_retiring_bits;
-  std::vector<size_t> surviving_local_indices;
-};
-
-struct SmallLayerFault {
-  size_t error_index;
-  double q;
-  double p;
-  uint64_t obs_flip_bit;
-  uint64_t local_det_mask;
-  uint64_t retiring_mask;
-  uint64_t expected_retiring_bits;
-  std::vector<uint8_t> surviving_local_indices;
-};
-
 struct PackedMass {
   uint64_t key;
   double mass;
   double penalty;
 };
 
-struct StateMass {
+struct SmallStateGroup {
   uint64_t state;
+  double mass;
+  double penalty;
+  size_t begin;
+  size_t end;
+};
+
+struct WidePackedMass {
+  std::vector<uint64_t> state_words;
+  uint64_t obs_mask;
   double mass;
   double penalty;
 };
 
-struct ObsAggregate {
-  double log_mass = -INF;
+struct WideStateMass {
+  std::vector<uint64_t> state_words;
+  double mass;
+  double penalty;
 };
 
-struct FrontierAggregate {
-  double total_log_mass = -INF;
-  std::unordered_map<uint64_t, ObsAggregate> obs_entries;
+struct BranchPenaltyUpdate {
+  bool absent_valid = true;
+  bool present_valid = true;
+  double absent_penalty = 0.0;
+  double present_penalty = 0.0;
 };
-
-double logsumexp2(double a, double b) {
-  if (a == -INF) return b;
-  if (b == -INF) return a;
-  if (a < b) std::swap(a, b);
-  return a + std::log1p(std::exp(b - a));
-}
-
-void add_obs_mass(FrontierAggregate& aggregate, uint64_t obs_mask, double log_mass) {
-  aggregate.total_log_mass = logsumexp2(aggregate.total_log_mass, log_mass);
-  auto& obs = aggregate.obs_entries[obs_mask];
-  obs.log_mass = logsumexp2(obs.log_mass, log_mass);
-}
 
 std::vector<Fault> parse_faults(const std::vector<common::Error>& errors, size_t num_observables) {
   std::vector<Fault> faults;
@@ -110,7 +80,9 @@ std::vector<Fault> parse_faults(const std::vector<common::Error>& errors, size_t
   for (size_t error_index = 0; error_index < errors.size(); ++error_index) {
     const auto& error = errors[error_index];
     const double p = error.get_probability();
-    if (p <= 0) continue;
+    if (p <= 0) {
+      continue;
+    }
     Fault fault;
     fault.error_index = error_index;
     fault.likelihood_cost = error.likelihood_cost;
@@ -130,88 +102,6 @@ std::vector<Fault> parse_faults(const std::vector<common::Error>& errors, size_t
     faults.push_back(std::move(fault));
   }
   return faults;
-}
-
-boost::dynamic_bitset<> project_state(const boost::dynamic_bitset<>& state,
-                                      const std::vector<size_t>& surviving_local_indices) {
-  boost::dynamic_bitset<> out(surviving_local_indices.size());
-  for (size_t k = 0; k < surviving_local_indices.size(); ++k) {
-    out[k] = state[surviving_local_indices[k]];
-  }
-  return out;
-}
-
-std::vector<LayerFault> build_layer_faults(const std::vector<Fault>& faults, size_t num_detectors,
-                                           const std::vector<uint64_t>& detections,
-                                           size_t* max_frontier_width_seen) {
-  std::vector<size_t> last_seen(num_detectors, std::numeric_limits<size_t>::max());
-  for (size_t i = 0; i < faults.size(); ++i) {
-    for (int d : faults[i].detectors) {
-      last_seen[d] = i;
-    }
-  }
-
-  boost::dynamic_bitset<> actual_dets(num_detectors);
-  for (uint64_t d : detections) {
-    if (d >= num_detectors) {
-      throw std::runtime_error("Detector index out of range.");
-    }
-    actual_dets.flip(d);
-  }
-
-  std::vector<int> active_detectors;
-  active_detectors.reserve(num_detectors);
-  std::vector<int> global_to_local(num_detectors, -1);
-  std::vector<LayerFault> layers;
-  layers.reserve(faults.size());
-  *max_frontier_width_seen = 0;
-
-  for (size_t i = 0; i < faults.size(); ++i) {
-    for (int d : faults[i].detectors) {
-      if (global_to_local[d] == -1) {
-        global_to_local[d] = active_detectors.size();
-        active_detectors.push_back(d);
-      }
-    }
-
-    *max_frontier_width_seen = std::max(*max_frontier_width_seen, active_detectors.size());
-    LayerFault layer{
-        .error_index = faults[i].error_index,
-        .log_q = faults[i].log_q,
-        .log_p = faults[i].log_p,
-        .obs_mask = faults[i].obs_mask,
-        .local_det_mask = boost::dynamic_bitset<>(active_detectors.size()),
-        .retiring_mask = boost::dynamic_bitset<>(active_detectors.size()),
-        .expected_retiring_bits = boost::dynamic_bitset<>(active_detectors.size()),
-        .surviving_local_indices = {},
-    };
-
-    for (int d : faults[i].detectors) {
-      layer.local_det_mask.set(global_to_local[d]);
-    }
-
-    for (size_t local = 0; local < active_detectors.size(); ++local) {
-      const int d = active_detectors[local];
-      if (last_seen[d] == i) {
-        layer.retiring_mask.set(local);
-        layer.expected_retiring_bits[local] = actual_dets[d];
-      } else {
-        layer.surviving_local_indices.push_back(local);
-      }
-    }
-
-    std::vector<int> next_active;
-    next_active.reserve(layer.surviving_local_indices.size());
-    std::fill(global_to_local.begin(), global_to_local.end(), -1);
-    for (size_t next_local = 0; next_local < layer.surviving_local_indices.size(); ++next_local) {
-      int d = active_detectors[layer.surviving_local_indices[next_local]];
-      global_to_local[d] = next_local;
-      next_active.push_back(d);
-    }
-    active_detectors = std::move(next_active);
-    layers.push_back(std::move(layer));
-  }
-  return layers;
 }
 
 bool build_small_layer_templates(const std::vector<Fault>& faults, size_t num_detectors,
@@ -251,6 +141,8 @@ bool build_small_layer_templates(const std::vector<Fault>& faults, size_t num_de
         .obs_flip_bit = faults[i].obs_mask & 1,
         .local_det_mask = 0,
         .retiring_mask = 0,
+        .surviving_mask = 0,
+        .projected_fault_mask = 0,
         .previous_width = previous_width,
         .surviving_local_indices = {},
         .current_active_detectors = active_detectors,
@@ -268,6 +160,8 @@ bool build_small_layer_templates(const std::vector<Fault>& faults, size_t num_de
         layer.surviving_local_indices.push_back((uint8_t)local);
       }
     }
+    uint64_t live_mask = (uint64_t{1} << active_detectors.size()) - 1;
+    layer.surviving_mask = live_mask & ~layer.retiring_mask;
 
     std::vector<int> next_active;
     next_active.reserve(layer.surviving_local_indices.size());
@@ -284,43 +178,82 @@ bool build_small_layer_templates(const std::vector<Fault>& faults, size_t num_de
   return true;
 }
 
-uint64_t project_small_state(uint64_t state, const std::vector<uint8_t>& surviving_local_indices) {
-  uint64_t out = 0;
-  for (size_t k = 0; k < surviving_local_indices.size(); ++k) {
-    out |= ((state >> surviving_local_indices[k]) & 1ULL) << k;
-  }
-  return out;
-}
-
-uint64_t compute_target_bits(const std::vector<int>& active_detectors,
-                             const boost::dynamic_bitset<>& actual_dets) {
-  uint64_t target_bits = 0;
-  for (size_t local = 0; local < active_detectors.size(); ++local) {
-    if (actual_dets[(size_t)active_detectors[local]]) {
-      target_bits |= uint64_t{1} << local;
+void build_small_detector_layer_refs(
+    const std::vector<TesseractTrellisSmallLayerTemplate>& layers, size_t num_detectors,
+    std::vector<std::vector<TesseractTrellisSmallDetectorLayerRef>>* refs) {
+  refs->assign(num_detectors, {});
+  for (size_t layer_index = 0; layer_index < layers.size(); ++layer_index) {
+    const auto& layer = layers[layer_index];
+    for (size_t local = 0; local < layer.current_active_detectors.size(); ++local) {
+      int detector = layer.current_active_detectors[local];
+      (*refs)[(size_t)detector].push_back(
+          {static_cast<uint32_t>(layer_index), static_cast<uint8_t>(local)});
     }
   }
-  return target_bits;
 }
 
-double compute_penalty_from_scratch(uint64_t mismatch_mask,
-                                    const std::vector<double>& aligned_future_costs) {
-  double total = 0.0;
-  while (mismatch_mask) {
-    uint64_t low_bit = mismatch_mask & -mismatch_mask;
-    int detector = std::countr_zero(low_bit);
-    mismatch_mask ^= low_bit;
-    double best = aligned_future_costs[(size_t)detector];
-    if (best == INF) {
-      return INF;
+void build_wide_layer_templates(const std::vector<Fault>& faults, size_t num_detectors,
+                                std::vector<TesseractTrellisWideLayerTemplate>* layers,
+                                size_t* max_frontier_width_seen) {
+  std::vector<size_t> last_seen(num_detectors, std::numeric_limits<size_t>::max());
+  for (size_t i = 0; i < faults.size(); ++i) {
+    for (int d : faults[i].detectors) {
+      last_seen[d] = i;
     }
-    total += best;
   }
-  return total;
+
+  std::vector<int> active_detectors;
+  active_detectors.reserve(num_detectors);
+  std::vector<int> global_to_local(num_detectors, -1);
+  layers->clear();
+  layers->reserve(faults.size());
+  *max_frontier_width_seen = 0;
+
+  for (size_t i = 0; i < faults.size(); ++i) {
+    const size_t previous_width = active_detectors.size();
+    for (int d : faults[i].detectors) {
+      if (global_to_local[d] == -1) {
+        global_to_local[d] = active_detectors.size();
+        active_detectors.push_back(d);
+      }
+    }
+
+    *max_frontier_width_seen = std::max(*max_frontier_width_seen, active_detectors.size());
+    TesseractTrellisWideLayerTemplate layer{
+        .q = std::exp(faults[i].log_q),
+        .p = std::exp(faults[i].log_p),
+        .obs_mask = faults[i].obs_mask,
+        .previous_width = previous_width,
+        .surviving_local_indices = {},
+        .current_active_detectors = active_detectors,
+        .projected_fault_mask_words = {},
+        .next_frontier_costs = {},
+        .detcost_transition = {},
+    };
+
+    for (size_t local = 0; local < active_detectors.size(); ++local) {
+      const int d = active_detectors[local];
+      if (last_seen[d] != i) {
+        layer.surviving_local_indices.push_back((uint32_t)local);
+      }
+    }
+
+    std::vector<int> next_active;
+    next_active.reserve(layer.surviving_local_indices.size());
+    std::fill(global_to_local.begin(), global_to_local.end(), -1);
+    for (size_t next_local = 0; next_local < layer.surviving_local_indices.size(); ++next_local) {
+      int d = active_detectors[layer.surviving_local_indices[next_local]];
+      global_to_local[d] = next_local;
+      next_active.push_back(d);
+    }
+    active_detectors = std::move(next_active);
+    layers->push_back(std::move(layer));
+  }
 }
 
+template <typename LayerT>
 void build_future_detcost_transitions(const std::vector<Fault>& faults, size_t num_detectors,
-                                      std::vector<TesseractTrellisSmallLayerTemplate>* layers,
+                                      std::vector<LayerT>* layers,
                                       std::vector<double>* initial_future_detcost) {
   std::vector<double> current_row(num_detectors, INF);
   for (size_t fault_index = faults.size(); fault_index-- > 0;) {
@@ -329,45 +262,241 @@ void build_future_detcost_transitions(const std::vector<Fault>& faults, size_t n
 
     layer.next_frontier_costs.resize(layer.surviving_local_indices.size(), INF);
     for (size_t next_local = 0; next_local < layer.surviving_local_indices.size(); ++next_local) {
-      int global_detector = layer.current_active_detectors[layer.surviving_local_indices[next_local]];
+      size_t current_local = (size_t)layer.surviving_local_indices[next_local];
+      int global_detector = layer.current_active_detectors[current_local];
       layer.next_frontier_costs[next_local] = current_row[(size_t)global_detector];
     }
 
-    std::array<int8_t, 64> current_to_next;
-    current_to_next.fill(-1);
+    std::vector<int32_t> current_to_next(layer.current_active_detectors.size(), -1);
     for (size_t next_local = 0; next_local < layer.surviving_local_indices.size(); ++next_local) {
-      current_to_next[layer.surviving_local_indices[next_local]] = (int8_t)next_local;
+      current_to_next[(size_t)layer.surviving_local_indices[next_local]] = (int32_t)next_local;
     }
 
-    layer.detcost_transition.fault_local_indices.clear();
-    layer.detcost_transition.next_local_indices.clear();
-    layer.detcost_transition.current_costs.clear();
-    layer.detcost_transition.next_costs.clear();
-    layer.detcost_transition.fault_local_indices.reserve(fault.detectors.size());
-    layer.detcost_transition.next_local_indices.reserve(fault.detectors.size());
-    layer.detcost_transition.current_costs.reserve(fault.detectors.size());
-    layer.detcost_transition.next_costs.reserve(fault.detectors.size());
+    auto& transition = layer.detcost_transition;
+    transition.fault_local_indices.clear();
+    transition.next_local_indices.clear();
+    transition.current_costs.clear();
+    transition.next_costs.clear();
+    transition.fault_local_indices.reserve(fault.detectors.size());
+    transition.next_local_indices.reserve(fault.detectors.size());
+    transition.current_costs.reserve(fault.detectors.size());
+    transition.next_costs.reserve(fault.detectors.size());
 
     if (!fault.detectors.empty()) {
       double ecost = fault.likelihood_cost / fault.detectors.size();
       for (int detector : fault.detectors) {
-        auto it = std::find(layer.current_active_detectors.begin(), layer.current_active_detectors.end(),
-                            detector);
+        auto it = std::find(layer.current_active_detectors.begin(),
+                            layer.current_active_detectors.end(), detector);
         if (it == layer.current_active_detectors.end()) {
           throw std::runtime_error("Missing detector in active frontier while preparing detcost.");
         }
-        uint8_t local = (uint8_t)std::distance(layer.current_active_detectors.begin(), it);
+        uint32_t local = (uint32_t)std::distance(layer.current_active_detectors.begin(), it);
         double next_cost = current_row[(size_t)detector];
         double current_cost = std::min(ecost, next_cost);
-        layer.detcost_transition.fault_local_indices.push_back(local);
-        layer.detcost_transition.next_local_indices.push_back(current_to_next[local]);
-        layer.detcost_transition.current_costs.push_back(current_cost);
-        layer.detcost_transition.next_costs.push_back(next_cost);
+        transition.fault_local_indices.push_back(local);
+        transition.next_local_indices.push_back(current_to_next[local]);
+        transition.current_costs.push_back(current_cost);
+        transition.next_costs.push_back(next_cost);
         current_row[(size_t)detector] = current_cost;
       }
     }
   }
-  *initial_future_detcost = std::move(current_row);
+
+  if (initial_future_detcost != nullptr) {
+    *initial_future_detcost = std::move(current_row);
+  }
+}
+
+size_t num_state_words(size_t num_bits) {
+  return (num_bits + 63) >> 6;
+}
+
+uint64_t compact_bits_u64(uint64_t value, uint64_t mask) {
+#if defined(__BMI2__) && \
+    (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86))
+  return _pext_u64(value, mask);
+#else
+  uint64_t out = 0;
+  uint64_t out_bit = 1;
+  while (mask) {
+    uint64_t keep = mask & -mask;
+    if (value & keep) {
+      out |= out_bit;
+    }
+    mask ^= keep;
+    out_bit <<= 1;
+  }
+  return out;
+#endif
+}
+
+bool get_state_bit(const std::vector<uint64_t>& state_words, size_t bit, size_t logical_width) {
+  if (bit >= logical_width) {
+    return false;
+  }
+  size_t word = bit >> 6;
+  if (word >= state_words.size()) {
+    return false;
+  }
+  return (state_words[word] >> (bit & 63)) & 1ULL;
+}
+
+void xor_state_words(std::vector<uint64_t>& state_words, const std::vector<uint64_t>& mask_words) {
+  if (state_words.size() < mask_words.size()) {
+    state_words.resize(mask_words.size(), 0);
+  }
+  for (size_t k = 0; k < mask_words.size(); ++k) {
+    state_words[k] ^= mask_words[k];
+  }
+}
+
+std::vector<uint64_t> project_wide_state(const std::vector<uint64_t>& state_words,
+                                         size_t logical_width,
+                                         const std::vector<uint32_t>& surviving_local_indices) {
+  std::vector<uint64_t> out(num_state_words(surviving_local_indices.size()), 0);
+  for (size_t next_local = 0; next_local < surviving_local_indices.size(); ++next_local) {
+    size_t current_local = (size_t)surviving_local_indices[next_local];
+    if (get_state_bit(state_words, current_local, logical_width)) {
+      out[next_local >> 6] ^= uint64_t{1} << (next_local & 63);
+    }
+  }
+  return out;
+}
+
+bool wide_state_less(const std::vector<uint64_t>& a, const std::vector<uint64_t>& b) {
+  if (a.size() != b.size()) {
+    return a.size() < b.size();
+  }
+  for (size_t k = a.size(); k-- > 0;) {
+    if (a[k] != b[k]) {
+      return a[k] < b[k];
+    }
+  }
+  return false;
+}
+
+bool wide_state_zero(const std::vector<uint64_t>& state_words) {
+  for (uint64_t word : state_words) {
+    if (word != 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+uint64_t project_small_state(uint64_t state, uint64_t surviving_mask) {
+  return compact_bits_u64(state, surviving_mask);
+}
+
+double compute_initial_penalty_for_target_bits(uint64_t target_bits,
+                                               const std::vector<int>& active_detectors,
+                                               const std::vector<double>& initial_future_detcost) {
+  double total = 0.0;
+  while (target_bits) {
+    uint64_t low_bit = target_bits & -target_bits;
+    size_t local = (size_t)std::countr_zero(low_bit);
+    target_bits ^= low_bit;
+    double best = initial_future_detcost[(size_t)active_detectors[local]];
+    if (best == INF) {
+      return INF;
+    }
+    total += best;
+  }
+  return total;
+}
+
+double compute_initial_penalty_for_active_detectors(
+    const std::vector<int>& active_detectors, const boost::dynamic_bitset<>& actual_dets,
+    const std::vector<double>& initial_future_detcost) {
+  double total = 0.0;
+  for (int detector : active_detectors) {
+    if (!actual_dets[(size_t)detector]) {
+      continue;
+    }
+    double best = initial_future_detcost[(size_t)detector];
+    if (best == INF) {
+      return INF;
+    }
+    total += best;
+  }
+  return total;
+}
+
+BranchPenaltyUpdate compute_small_branch_update(uint64_t base_state, size_t previous_width,
+                                                double current_penalty,
+                                                uint64_t current_target_bits,
+                                                const TesseractTrellisDetcostTransition& transition,
+                                                bool compute_penalties) {
+  BranchPenaltyUpdate update;
+  update.absent_penalty = compute_penalties ? current_penalty : 0.0;
+  update.present_penalty = compute_penalties ? current_penalty : 0.0;
+
+  for (size_t k = 0; k < transition.fault_local_indices.size(); ++k) {
+    size_t local = transition.fault_local_indices[k];
+    bool state_bit = local < previous_width && ((base_state >> local) & 1ULL);
+    bool target_bit = (current_target_bits >> local) & 1ULL;
+    bool mismatch = state_bit ^ target_bit;
+    int32_t next_local = transition.next_local_indices[k];
+
+    if (next_local < 0) {
+      if (mismatch) {
+        update.absent_valid = false;
+      } else {
+        update.present_valid = false;
+      }
+    }
+
+    if (!compute_penalties) {
+      continue;
+    }
+
+    double prev_contrib = (local < previous_width && mismatch) ? transition.current_costs[k] : 0.0;
+    double absent_contrib = (next_local >= 0 && mismatch) ? transition.next_costs[k] : 0.0;
+    double present_contrib = (next_local >= 0 && !mismatch) ? transition.next_costs[k] : 0.0;
+    update.absent_penalty += absent_contrib - prev_contrib;
+    update.present_penalty += present_contrib - prev_contrib;
+  }
+
+  return update;
+}
+
+BranchPenaltyUpdate compute_wide_branch_update(const std::vector<uint64_t>& base_state_words,
+                                               size_t previous_width, double current_penalty,
+                                               const std::vector<int>& current_active_detectors,
+                                               const boost::dynamic_bitset<>& actual_dets,
+                                               const TesseractTrellisDetcostTransition& transition,
+                                               bool compute_penalties) {
+  BranchPenaltyUpdate update;
+  update.absent_penalty = compute_penalties ? current_penalty : 0.0;
+  update.present_penalty = compute_penalties ? current_penalty : 0.0;
+
+  for (size_t k = 0; k < transition.fault_local_indices.size(); ++k) {
+    size_t local = transition.fault_local_indices[k];
+    bool state_bit = get_state_bit(base_state_words, local, previous_width);
+    bool target_bit = actual_dets[(size_t)current_active_detectors[local]];
+    bool mismatch = state_bit ^ target_bit;
+    int32_t next_local = transition.next_local_indices[k];
+
+    if (next_local < 0) {
+      if (mismatch) {
+        update.absent_valid = false;
+      } else {
+        update.present_valid = false;
+      }
+    }
+
+    if (!compute_penalties) {
+      continue;
+    }
+
+    double prev_contrib = (local < previous_width && mismatch) ? transition.current_costs[k] : 0.0;
+    double absent_contrib = (next_local >= 0 && mismatch) ? transition.next_costs[k] : 0.0;
+    double present_contrib = (next_local >= 0 && !mismatch) ? transition.next_costs[k] : 0.0;
+    update.absent_penalty += absent_contrib - prev_contrib;
+    update.present_penalty += present_contrib - prev_contrib;
+  }
+
+  return update;
 }
 
 uint64_t pack_small_key(uint64_t state, uint64_t obs_flip_bit) {
@@ -397,53 +526,87 @@ void normalize_items(std::vector<PackedMass>& items) {
   }
 }
 
-std::vector<PackedMass> merge_equal_keys(std::vector<PackedMass>& items) {
-  if (items.empty()) {
-    return {};
+void normalize_items(std::vector<WidePackedMass>& items) {
+  double total_mass = 0.0;
+  for (const auto& item : items) {
+    total_mass += item.mass;
   }
-  std::sort(items.begin(), items.end(), [](const PackedMass& a, const PackedMass& b) {
-    return a.key < b.key;
-  });
-  std::vector<PackedMass> merged;
-  merged.reserve(items.size());
-  uint64_t cur_key = items[0].key;
-  double cur_mass = items[0].mass;
-  double cur_penalty = items[0].penalty;
-  for (size_t i = 1; i < items.size(); ++i) {
-    if (items[i].key == cur_key) {
-      cur_mass += items[i].mass;
-    } else {
-      merged.push_back({cur_key, cur_mass, cur_penalty});
-      cur_key = items[i].key;
-      cur_mass = items[i].mass;
-      cur_penalty = items[i].penalty;
-    }
+  if (total_mass == 0.0) {
+    items.clear();
+    return;
   }
-  merged.push_back({cur_key, cur_mass, cur_penalty});
-  return merged;
+  double inv = 1.0 / total_mass;
+  for (auto& item : items) {
+    item.mass *= inv;
+  }
 }
 
-std::vector<StateMass> accumulate_state_masses_from_entries(const std::vector<PackedMass>& entries) {
-  std::vector<StateMass> totals;
+void merge_equal_keys_inplace(std::vector<PackedMass>& items) {
+  if (items.empty()) {
+    return;
+  }
+  std::sort(items.begin(), items.end(),
+            [](const PackedMass& a, const PackedMass& b) { return a.key < b.key; });
+  size_t out = 0;
+  for (size_t i = 1; i < items.size(); ++i) {
+    if (items[i].key == items[out].key) {
+      items[out].mass += items[i].mass;
+    } else {
+      ++out;
+      if (out != i) {
+        items[out] = std::move(items[i]);
+      }
+    }
+  }
+  items.resize(out + 1);
+}
+
+void merge_equal_keys_inplace(std::vector<WidePackedMass>& items) {
+  if (items.empty()) {
+    return;
+  }
+  std::sort(items.begin(), items.end(), [](const WidePackedMass& a, const WidePackedMass& b) {
+    if (wide_state_less(a.state_words, b.state_words)) {
+      return true;
+    }
+    if (wide_state_less(b.state_words, a.state_words)) {
+      return false;
+    }
+    return a.obs_mask < b.obs_mask;
+  });
+
+  size_t out = 0;
+  for (size_t i = 1; i < items.size(); ++i) {
+    if (items[i].obs_mask == items[out].obs_mask &&
+        items[i].state_words == items[out].state_words) {
+      items[out].mass += items[i].mass;
+    } else {
+      ++out;
+      if (out != i) {
+        items[out] = std::move(items[i]);
+      }
+    }
+  }
+  items.resize(out + 1);
+}
+
+std::vector<WideStateMass> accumulate_state_masses_from_entries(
+    const std::vector<WidePackedMass>& entries) {
+  std::vector<WideStateMass> totals;
   if (entries.empty()) {
     return totals;
   }
   totals.reserve(entries.size());
-  uint64_t cur_state = unpack_small_state(entries[0].key);
-  double cur_mass = entries[0].mass;
-  double cur_penalty = entries[0].penalty;
+  WideStateMass current{entries[0].state_words, entries[0].mass, entries[0].penalty};
   for (size_t i = 1; i < entries.size(); ++i) {
-    uint64_t s = unpack_small_state(entries[i].key);
-    if (s == cur_state) {
-      cur_mass += entries[i].mass;
+    if (entries[i].state_words == current.state_words) {
+      current.mass += entries[i].mass;
     } else {
-      totals.push_back({cur_state, cur_mass, cur_penalty});
-      cur_state = s;
-      cur_mass = entries[i].mass;
-      cur_penalty = entries[i].penalty;
+      totals.push_back(std::move(current));
+      current = {entries[i].state_words, entries[i].mass, entries[i].penalty};
     }
   }
-  totals.push_back({cur_state, cur_mass, cur_penalty});
+  totals.push_back(std::move(current));
   return totals;
 }
 
@@ -457,7 +620,48 @@ double branch_score(const PackedMass& item, TesseractTrellisRankingMode ranking_
   return std::log(item.mass) - item.penalty;
 }
 
-double state_score(const StateMass& item, TesseractTrellisRankingMode ranking_mode) {
+double branch_score(const WidePackedMass& item, TesseractTrellisRankingMode ranking_mode) {
+  if (ranking_mode == TesseractTrellisRankingMode::MassOnly) {
+    return item.mass;
+  }
+  if (item.penalty == INF || item.mass == 0.0) {
+    return -INF;
+  }
+  return std::log(item.mass) - item.penalty;
+}
+
+double state_score(const SmallStateGroup& item, TesseractTrellisRankingMode ranking_mode) {
+  if (ranking_mode == TesseractTrellisRankingMode::MassOnly) {
+    return item.mass;
+  }
+  if (item.penalty == INF || item.mass == 0.0) {
+    return -INF;
+  }
+  return std::log(item.mass) - item.penalty;
+}
+
+std::vector<SmallStateGroup> collect_small_state_groups(const std::vector<PackedMass>& entries) {
+  std::vector<SmallStateGroup> groups;
+  if (entries.empty()) {
+    return groups;
+  }
+  groups.reserve(entries.size());
+  size_t begin = 0;
+  while (begin < entries.size()) {
+    uint64_t state = unpack_small_state(entries[begin].key);
+    double mass = 0.0;
+    size_t end = begin;
+    while (end < entries.size() && unpack_small_state(entries[end].key) == state) {
+      mass += entries[end].mass;
+      ++end;
+    }
+    groups.push_back({state, mass, entries[begin].penalty, begin, end});
+    begin = end;
+  }
+  return groups;
+}
+
+double state_score(const WideStateMass& item, TesseractTrellisRankingMode ranking_mode) {
   if (ranking_mode == TesseractTrellisRankingMode::MassOnly) {
     return item.mass;
   }
@@ -472,30 +676,168 @@ void keep_top_states(std::vector<PackedMass>& entries, size_t beam_width,
   if (entries.empty()) {
     return;
   }
+  auto groups = collect_small_state_groups(entries);
+  if (groups.size() <= beam_width) {
+    return;
+  }
+
+  std::vector<size_t> keep_indices(groups.size());
+  std::iota(keep_indices.begin(), keep_indices.end(), 0);
+  std::nth_element(keep_indices.begin(), keep_indices.begin() + beam_width, keep_indices.end(),
+                   [&groups, ranking_mode](size_t a, size_t b) {
+                     return state_score(groups[a], ranking_mode) >
+                            state_score(groups[b], ranking_mode);
+                   });
+  keep_indices.resize(beam_width);
+  std::sort(keep_indices.begin(), keep_indices.end(),
+            [&groups](size_t a, size_t b) { return groups[a].begin < groups[b].begin; });
+
+  std::vector<PackedMass> kept;
+  size_t kept_entries = 0;
+  for (size_t idx : keep_indices) {
+    kept_entries += groups[idx].end - groups[idx].begin;
+  }
+  kept.reserve(kept_entries);
+  for (size_t idx : keep_indices) {
+    const auto& group = groups[idx];
+    for (size_t k = group.begin; k < group.end; ++k) {
+      kept.push_back(entries[k]);
+    }
+  }
+  entries = std::move(kept);
+}
+
+void keep_top_states(std::vector<WidePackedMass>& entries, size_t beam_width,
+                     TesseractTrellisRankingMode ranking_mode) {
+  if (entries.empty()) {
+    return;
+  }
   auto totals = accumulate_state_masses_from_entries(entries);
   if (totals.size() <= beam_width) {
     return;
   }
   std::nth_element(totals.begin(), totals.begin() + beam_width, totals.end(),
-                   [ranking_mode](const StateMass& a, const StateMass& b) {
+                   [ranking_mode](const WideStateMass& a, const WideStateMass& b) {
                      return state_score(a, ranking_mode) > state_score(b, ranking_mode);
                    });
   totals.resize(beam_width);
-  std::sort(totals.begin(), totals.end(), [](const StateMass& a, const StateMass& b) {
-    return a.state < b.state;
+  std::sort(totals.begin(), totals.end(), [](const WideStateMass& a, const WideStateMass& b) {
+    return wide_state_less(a.state_words, b.state_words);
   });
 
-  std::vector<PackedMass> kept;
+  std::vector<WidePackedMass> kept;
   kept.reserve(entries.size());
   size_t ti = 0;
-  for (const auto& item : entries) {
-    uint64_t s = unpack_small_state(item.key);
-    while (ti < totals.size() && totals[ti].state < s) {
+  for (auto& item : entries) {
+    while (ti < totals.size() && wide_state_less(totals[ti].state_words, item.state_words)) {
       ++ti;
     }
-    if (ti < totals.size() && totals[ti].state == s) {
-      kept.push_back(item);
+    if (ti < totals.size() && item.state_words == totals[ti].state_words) {
+      kept.push_back(std::move(item));
     }
+  }
+  entries = std::move(kept);
+}
+
+void keep_best_state_representatives(std::vector<PackedMass>& entries, size_t beam_width,
+                                     TesseractTrellisRankingMode ranking_mode) {
+  if (entries.empty()) {
+    return;
+  }
+  if (beam_width == 0) {
+    entries.clear();
+    return;
+  }
+
+  std::vector<size_t> representative_indices;
+  representative_indices.reserve(entries.size());
+  size_t begin = 0;
+  while (begin < entries.size()) {
+    uint64_t state = unpack_small_state(entries[begin].key);
+    size_t best = begin;
+    double best_score = branch_score(entries[begin], ranking_mode);
+    size_t end = begin + 1;
+    while (end < entries.size() && unpack_small_state(entries[end].key) == state) {
+      double score = branch_score(entries[end], ranking_mode);
+      if (score > best_score) {
+        best = end;
+        best_score = score;
+      }
+      ++end;
+    }
+    representative_indices.push_back(best);
+    begin = end;
+  }
+
+  if (representative_indices.size() > beam_width) {
+    std::nth_element(representative_indices.begin(), representative_indices.begin() + beam_width,
+                     representative_indices.end(), [&entries, ranking_mode](size_t a, size_t b) {
+                       double sa = branch_score(entries[a], ranking_mode);
+                       double sb = branch_score(entries[b], ranking_mode);
+                       if (sa != sb) {
+                         return sa > sb;
+                       }
+                       return a < b;
+                     });
+    representative_indices.resize(beam_width);
+  }
+  std::sort(representative_indices.begin(), representative_indices.end());
+
+  std::vector<PackedMass> kept;
+  kept.reserve(representative_indices.size());
+  for (size_t idx : representative_indices) {
+    kept.push_back(entries[idx]);
+  }
+  entries = std::move(kept);
+}
+
+void keep_best_state_representatives(std::vector<WidePackedMass>& entries, size_t beam_width,
+                                     TesseractTrellisRankingMode ranking_mode) {
+  if (entries.empty()) {
+    return;
+  }
+  if (beam_width == 0) {
+    entries.clear();
+    return;
+  }
+
+  std::vector<size_t> representative_indices;
+  representative_indices.reserve(entries.size());
+  size_t begin = 0;
+  while (begin < entries.size()) {
+    size_t best = begin;
+    double best_score = branch_score(entries[begin], ranking_mode);
+    size_t end = begin + 1;
+    while (end < entries.size() && entries[end].state_words == entries[begin].state_words) {
+      double score = branch_score(entries[end], ranking_mode);
+      if (score > best_score) {
+        best = end;
+        best_score = score;
+      }
+      ++end;
+    }
+    representative_indices.push_back(best);
+    begin = end;
+  }
+
+  if (representative_indices.size() > beam_width) {
+    std::nth_element(representative_indices.begin(), representative_indices.begin() + beam_width,
+                     representative_indices.end(), [&entries, ranking_mode](size_t a, size_t b) {
+                       double sa = branch_score(entries[a], ranking_mode);
+                       double sb = branch_score(entries[b], ranking_mode);
+                       if (sa != sb) {
+                         return sa > sb;
+                       }
+                       return a < b;
+                     });
+    representative_indices.resize(beam_width);
+  }
+  std::sort(representative_indices.begin(), representative_indices.end());
+
+  std::vector<WidePackedMass> kept;
+  kept.reserve(representative_indices.size());
+  for (size_t idx : representative_indices) {
+    kept.push_back(std::move(entries[idx]));
   }
   entries = std::move(kept);
 }
@@ -510,6 +852,42 @@ void keep_top_branch_entries(std::vector<PackedMass>& entries, size_t beam_width
                      return branch_score(a, ranking_mode) > branch_score(b, ranking_mode);
                    });
   entries.resize(beam_width);
+}
+
+void keep_top_branch_entries(std::vector<WidePackedMass>& entries, size_t beam_width,
+                             TesseractTrellisRankingMode ranking_mode) {
+  if (entries.size() <= beam_width) {
+    return;
+  }
+  std::nth_element(entries.begin(), entries.begin() + beam_width, entries.end(),
+                   [ranking_mode](const WidePackedMass& a, const WidePackedMass& b) {
+                     return branch_score(a, ranking_mode) > branch_score(b, ranking_mode);
+                   });
+  entries.resize(beam_width);
+}
+
+void prepare_projected_fault_masks(std::vector<TesseractTrellisSmallLayerTemplate>* layers) {
+  for (auto& layer : *layers) {
+    layer.projected_fault_mask = 0;
+    for (int32_t next_local : layer.detcost_transition.next_local_indices) {
+      if (next_local >= 0) {
+        layer.projected_fault_mask ^= uint64_t{1} << next_local;
+      }
+    }
+  }
+}
+
+void prepare_projected_fault_masks(std::vector<TesseractTrellisWideLayerTemplate>* layers) {
+  for (auto& layer : *layers) {
+    layer.projected_fault_mask_words.assign(num_state_words(layer.surviving_local_indices.size()),
+                                            0);
+    for (int32_t next_local : layer.detcost_transition.next_local_indices) {
+      if (next_local >= 0) {
+        size_t local = (size_t)next_local;
+        layer.projected_fault_mask_words[local >> 6] ^= uint64_t{1} << (local & 63);
+      }
+    }
+  }
 }
 
 }  // namespace
@@ -532,16 +910,25 @@ TesseractTrellisDecoder::TesseractTrellisDecoder(TesseractTrellisConfig config_)
   }
 
   auto faults = parse_faults(errors, num_observables);
+
+  size_t wide_frontier_width = 0;
+  build_wide_layer_templates(faults, num_detectors, &wide_layer_templates, &wide_frontier_width);
+  build_future_detcost_transitions(faults, num_detectors, &wide_layer_templates,
+                                   &initial_future_detcost);
+  prepare_projected_fault_masks(&wide_layer_templates);
+
   size_t small_frontier_width = 0;
   has_small_layer_templates =
       num_observables <= 1 &&
-      build_small_layer_templates(faults, num_detectors, &small_layer_templates, &small_frontier_width);
+      build_small_layer_templates(faults, num_detectors, &small_layer_templates,
+                                  &small_frontier_width);
   if (has_small_layer_templates) {
-    build_future_detcost_transitions(faults, num_detectors, &small_layer_templates,
-                                     &initial_future_detcost);
-  } else if (config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked) {
-    throw std::invalid_argument(
-        "future-detcost ranking is currently implemented only for the packed small trellis path");
+    build_future_detcost_transitions(faults, num_detectors, &small_layer_templates, nullptr);
+    prepare_projected_fault_masks(&small_layer_templates);
+    build_small_detector_layer_refs(small_layer_templates, num_detectors,
+                                    &small_detector_layer_refs);
+    scratch_small_current_target_bits.assign(small_layer_templates.size(), 0);
+    scratch_small_expected_retiring_bits.assign(small_layer_templates.size(), 0);
   }
 }
 
@@ -559,86 +946,96 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
   total_mass_obs0 = 0;
   total_mass_obs1 = 0;
 
-  boost::dynamic_bitset<> actual_dets(num_detectors);
-  for (uint64_t d : detections) {
-    if (d >= num_detectors || !all_possible_detectors[d]) {
-      low_confidence_flag = true;
-      return;
-    }
-    actual_dets.flip((size_t)d);
-  }
-
   if (has_small_layer_templates) {
-    max_frontier_width_seen = 0;
-    std::vector<uint64_t> current_target_bits_per_layer(small_layer_templates.size());
-    std::vector<uint64_t> next_target_bits_per_layer(small_layer_templates.size());
-    std::vector<uint64_t> expected_retiring_bits_per_layer(small_layer_templates.size());
+    std::fill(scratch_small_current_target_bits.begin(), scratch_small_current_target_bits.end(),
+              0);
+    std::fill(scratch_small_expected_retiring_bits.begin(),
+              scratch_small_expected_retiring_bits.end(), 0);
+
+    for (uint64_t d : detections) {
+      if (d >= num_detectors || !all_possible_detectors[d]) {
+        low_confidence_flag = true;
+        return;
+      }
+      for (const auto& ref : small_detector_layer_refs[(size_t)d]) {
+        scratch_small_current_target_bits[ref.layer_index] ^= uint64_t{1} << ref.local_index;
+      }
+    }
+
     for (size_t layer_index = 0; layer_index < small_layer_templates.size(); ++layer_index) {
       const auto& layer = small_layer_templates[layer_index];
-      max_frontier_width_seen = std::max(max_frontier_width_seen, layer.current_active_detectors.size());
-      uint64_t current_target_bits = compute_target_bits(layer.current_active_detectors, actual_dets);
-      current_target_bits_per_layer[layer_index] = current_target_bits;
-      expected_retiring_bits_per_layer[layer_index] = current_target_bits & layer.retiring_mask;
+      max_frontier_width_seen =
+          std::max(max_frontier_width_seen, layer.current_active_detectors.size());
+      scratch_small_expected_retiring_bits[layer_index] =
+          scratch_small_current_target_bits[layer_index] & layer.retiring_mask;
+    }
 
-      uint64_t next_target_bits = 0;
-      for (size_t next_local = 0; next_local < layer.surviving_local_indices.size(); ++next_local) {
-        uint8_t current_local = layer.surviving_local_indices[next_local];
-        next_target_bits |= ((current_target_bits >> current_local) & 1ULL) << next_local;
-      }
-      next_target_bits_per_layer[layer_index] = next_target_bits;
+    double initial_penalty = 0.0;
+    if (config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked &&
+        !small_layer_templates.empty()) {
+      initial_penalty = compute_initial_penalty_for_target_bits(
+          scratch_small_current_target_bits.front(),
+          small_layer_templates.front().current_active_detectors, initial_future_detcost);
     }
 
     std::vector<PackedMass> beam_entries;
-    double initial_penalty = 0.0;
-    if (config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked) {
-      std::vector<double> initial_frontier_costs;
-      if (!small_layer_templates.empty()) {
-        const auto& first_layer = small_layer_templates.front();
-        initial_frontier_costs.resize(first_layer.current_active_detectors.size(), INF);
-        for (size_t local = 0; local < first_layer.current_active_detectors.size(); ++local) {
-          initial_frontier_costs[local] =
-              initial_future_detcost[(size_t)first_layer.current_active_detectors[local]];
-        }
-      }
-      initial_penalty = compute_penalty_from_scratch(
-          current_target_bits_per_layer.empty() ? 0 : current_target_bits_per_layer.front(),
-          initial_frontier_costs);
-    }
+    std::vector<PackedMass> next_entries;
+    beam_entries.reserve(config.beam_width * 2 + 2);
+    next_entries.reserve(config.beam_width * 4 + 4);
     beam_entries.push_back({pack_small_key(0, 0), 1.0, initial_penalty});
     max_beam_size_seen = 1;
 
+    const bool compute_penalties =
+        config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked;
     for (size_t layer_index = 0; layer_index < small_layer_templates.size(); ++layer_index) {
       const auto& layer = small_layer_templates[layer_index];
-      const uint64_t next_target_bits = next_target_bits_per_layer[layer_index];
-      const uint64_t expected_retiring_bits = expected_retiring_bits_per_layer[layer_index];
+      const uint64_t current_target_bits = scratch_small_current_target_bits[layer_index];
+      const uint64_t expected_retiring_bits = scratch_small_expected_retiring_bits[layer_index];
+
       auto t0 = std::chrono::high_resolution_clock::now();
-      std::vector<PackedMass> next_entries;
+      next_entries.clear();
       next_entries.reserve(beam_entries.size() * 2);
       for (const auto& item : beam_entries) {
         ++num_states_expanded;
         const uint64_t base_state = unpack_small_state(item.key);
         const uint64_t base_obs = unpack_small_obs(item.key);
 
-        if (((base_state ^ expected_retiring_bits) & layer.retiring_mask) == 0) {
-          uint64_t projected_state = project_small_state(base_state, layer.surviving_local_indices);
-          next_entries.push_back({pack_small_key(projected_state, base_obs), item.mass * layer.q, 0.0});
+        BranchPenaltyUpdate update;
+        if (compute_penalties) {
+          update = compute_small_branch_update(base_state, layer.previous_width, item.penalty,
+                                               current_target_bits, layer.detcost_transition, true);
+        } else {
+          update.absent_valid =
+              (((base_state ^ expected_retiring_bits) & layer.retiring_mask) == 0);
+          uint64_t toggled_state = base_state ^ layer.local_det_mask;
+          update.present_valid =
+              (((toggled_state ^ expected_retiring_bits) & layer.retiring_mask) == 0);
         }
 
-        uint64_t toggled_state = base_state ^ layer.local_det_mask;
-        if (((toggled_state ^ expected_retiring_bits) & layer.retiring_mask) == 0) {
-          uint64_t projected_state = project_small_state(toggled_state, layer.surviving_local_indices);
-          next_entries.push_back(
-              {pack_small_key(projected_state, base_obs ^ layer.obs_flip_bit), item.mass * layer.p, 0.0});
+        if (!update.absent_valid && !update.present_valid) {
+          continue;
+        }
+
+        uint64_t projected_state = project_small_state(base_state, layer.surviving_mask);
+        if (update.absent_valid && layer.q != 0.0) {
+          next_entries.push_back({pack_small_key(projected_state, base_obs), item.mass * layer.q,
+                                  update.absent_penalty});
+        }
+        if (update.present_valid && layer.p != 0.0) {
+          next_entries.push_back({pack_small_key(projected_state ^ layer.projected_fault_mask,
+                                                 base_obs ^ layer.obs_flip_bit),
+                                  item.mass * layer.p, update.present_penalty});
         }
       }
       auto t1 = std::chrono::high_resolution_clock::now();
-      time_collapse_seconds +=
+      time_expand_seconds +=
           std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() / 1e6;
 
-      beam_entries = std::move(next_entries);
+      beam_entries.swap(next_entries);
       bool at_checkpoint = ((layer_index + 1) % config.merge_interval == 0) ||
                            (layer_index + 1 == small_layer_templates.size());
       if (!at_checkpoint) {
+        normalize_items(beam_entries);
         max_beam_size_seen = std::max(max_beam_size_seen, beam_entries.size());
         if (beam_entries.empty()) {
           low_confidence_flag = true;
@@ -649,21 +1046,16 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
 
       auto t2a = std::chrono::high_resolution_clock::now();
       if (config.prune_mode != TesseractTrellisPruneMode::NoMerge) {
-        beam_entries = merge_equal_keys(beam_entries);
+        merge_equal_keys_inplace(beam_entries);
       }
       auto t2 = std::chrono::high_resolution_clock::now();
       time_collapse_seconds +=
           std::chrono::duration_cast<std::chrono::microseconds>(t2 - t2a).count() / 1e6;
 
-      if (config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked) {
-        for (auto& item : beam_entries) {
-          item.penalty = compute_penalty_from_scratch(unpack_small_state(item.key) ^ next_target_bits,
-                                                      layer.next_frontier_costs);
-        }
-      }
-
       if (config.prune_mode == TesseractTrellisPruneMode::MergedStates) {
         keep_top_states(beam_entries, config.beam_width, config.ranking_mode);
+      } else if (config.prune_mode == TesseractTrellisPruneMode::KeepBest) {
+        keep_best_state_representatives(beam_entries, config.beam_width, config.ranking_mode);
       } else if (config.prune_mode == TesseractTrellisPruneMode::BranchEntries ||
                  config.prune_mode == TesseractTrellisPruneMode::NoMerge) {
         keep_top_branch_entries(beam_entries, config.beam_width, config.ranking_mode);
@@ -673,13 +1065,16 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
         low_confidence_flag = true;
         return;
       }
-      if (config.prune_mode == TesseractTrellisPruneMode::NoMerge) {
+      if (config.prune_mode == TesseractTrellisPruneMode::MergedStates) {
+        auto post_groups = collect_small_state_groups(beam_entries);
+        num_states_merged += post_groups.size();
+        max_beam_size_seen = std::max(max_beam_size_seen, post_groups.size());
+      } else if (config.prune_mode == TesseractTrellisPruneMode::KeepBest) {
         num_states_merged += beam_entries.size();
         max_beam_size_seen = std::max(max_beam_size_seen, beam_entries.size());
       } else {
-        auto post_totals = accumulate_state_masses_from_entries(beam_entries);
-        num_states_merged += post_totals.size();
-        max_beam_size_seen = std::max(max_beam_size_seen, post_totals.size());
+        num_states_merged += beam_entries.size();
+        max_beam_size_seen = std::max(max_beam_size_seen, beam_entries.size());
       }
       auto t3 = std::chrono::high_resolution_clock::now();
       time_truncate_seconds +=
@@ -707,98 +1102,132 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
     time_reconstruct_seconds +=
         std::chrono::duration_cast<std::chrono::microseconds>(tr1 - tr0).count() / 1e6;
   } else {
-    auto faults = parse_faults(errors, num_observables);
-    auto layers = build_layer_faults(faults, num_detectors, detections, &max_frontier_width_seen);
-    std::unordered_map<boost::dynamic_bitset<>, FrontierAggregate> beam;
-    FrontierAggregate init;
-    add_obs_mass(init, 0, 0.0);
-    beam.emplace(boost::dynamic_bitset<>(0), std::move(init));
+    boost::dynamic_bitset<> actual_dets(num_detectors);
+    for (uint64_t d : detections) {
+      if (d >= num_detectors || !all_possible_detectors[d]) {
+        low_confidence_flag = true;
+        return;
+      }
+      actual_dets.flip((size_t)d);
+    }
+    max_frontier_width_seen = 0;
+    for (const auto& layer : wide_layer_templates) {
+      max_frontier_width_seen =
+          std::max(max_frontier_width_seen, layer.current_active_detectors.size());
+    }
+
+    double initial_penalty = 0.0;
+    if (config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked &&
+        !wide_layer_templates.empty()) {
+      initial_penalty = compute_initial_penalty_for_active_detectors(
+          wide_layer_templates.front().current_active_detectors, actual_dets,
+          initial_future_detcost);
+    }
+
+    std::vector<WidePackedMass> beam_entries;
+    std::vector<WidePackedMass> next_entries;
+    beam_entries.reserve(config.beam_width * 2 + 2);
+    next_entries.reserve(config.beam_width * 4 + 4);
+    beam_entries.push_back({{}, 0, 1.0, initial_penalty});
     max_beam_size_seen = 1;
 
-    for (const auto& layer : layers) {
+    for (size_t layer_index = 0; layer_index < wide_layer_templates.size(); ++layer_index) {
+      const auto& layer = wide_layer_templates[layer_index];
+      const bool compute_penalties =
+          config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked;
+
       auto t0 = std::chrono::high_resolution_clock::now();
-      std::unordered_map<boost::dynamic_bitset<>, FrontierAggregate> expanded;
-      expanded.reserve(beam.size() * 2 + 1);
+      next_entries.clear();
+      next_entries.reserve(beam_entries.size() * 2);
 
-      for (const auto& [state, aggregate] : beam) {
+      for (const auto& item : beam_entries) {
         ++num_states_expanded;
-        boost::dynamic_bitset<> base_state = state;
-        base_state.resize(layer.local_det_mask.size());
-        for (const auto& [obs_mask, obs] : aggregate.obs_entries) {
-          auto& absent_bucket = expanded[base_state];
-          add_obs_mass(absent_bucket, obs_mask, obs.log_mass + layer.log_q);
+        BranchPenaltyUpdate update = compute_wide_branch_update(
+            item.state_words, layer.previous_width, item.penalty, layer.current_active_detectors,
+            actual_dets, layer.detcost_transition, compute_penalties);
 
-          boost::dynamic_bitset<> present_state = base_state ^ layer.local_det_mask;
-          auto& present_bucket = expanded[present_state];
-          add_obs_mass(present_bucket, obs_mask ^ layer.obs_mask, obs.log_mass + layer.log_p);
+        if (!update.absent_valid && !update.present_valid) {
+          continue;
+        }
+
+        std::vector<uint64_t> projected_state = project_wide_state(
+            item.state_words, layer.previous_width, layer.surviving_local_indices);
+        if (update.absent_valid && layer.q != 0.0) {
+          next_entries.push_back(
+              {projected_state, item.obs_mask, item.mass * layer.q, update.absent_penalty});
+        }
+        if (update.present_valid && layer.p != 0.0) {
+          std::vector<uint64_t> projected_toggled = projected_state;
+          xor_state_words(projected_toggled, layer.projected_fault_mask_words);
+          next_entries.push_back({std::move(projected_toggled), item.obs_mask ^ layer.obs_mask,
+                                  item.mass * layer.p, update.present_penalty});
         }
       }
       auto t1 = std::chrono::high_resolution_clock::now();
       time_expand_seconds +=
           std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() / 1e6;
 
-      std::unordered_map<boost::dynamic_bitset<>, FrontierAggregate> collapsed;
-      collapsed.reserve(expanded.size());
-      for (auto& [state, aggregate] : expanded) {
-        if (((state & layer.retiring_mask) ^ layer.expected_retiring_bits).any()) {
-          continue;
+      beam_entries.swap(next_entries);
+      bool at_checkpoint = ((layer_index + 1) % config.merge_interval == 0) ||
+                           (layer_index + 1 == wide_layer_templates.size());
+      if (!at_checkpoint) {
+        normalize_items(beam_entries);
+        max_beam_size_seen = std::max(max_beam_size_seen, beam_entries.size());
+        if (beam_entries.empty()) {
+          low_confidence_flag = true;
+          return;
         }
-        boost::dynamic_bitset<> projected = project_state(state, layer.surviving_local_indices);
-        auto& out = collapsed[projected];
-        for (const auto& [obs_mask, obs] : aggregate.obs_entries) {
-          add_obs_mass(out, obs_mask, obs.log_mass);
-        }
+        continue;
+      }
+
+      auto t2a = std::chrono::high_resolution_clock::now();
+      if (config.prune_mode != TesseractTrellisPruneMode::NoMerge) {
+        merge_equal_keys_inplace(beam_entries);
       }
       auto t2 = std::chrono::high_resolution_clock::now();
       time_collapse_seconds +=
-          std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count() / 1e6;
+          std::chrono::duration_cast<std::chrono::microseconds>(t2 - t2a).count() / 1e6;
 
-      num_states_merged += collapsed.size();
-      if (collapsed.empty()) {
+      if (config.prune_mode == TesseractTrellisPruneMode::MergedStates) {
+        keep_top_states(beam_entries, config.beam_width, config.ranking_mode);
+      } else if (config.prune_mode == TesseractTrellisPruneMode::KeepBest) {
+        keep_best_state_representatives(beam_entries, config.beam_width, config.ranking_mode);
+      } else if (config.prune_mode == TesseractTrellisPruneMode::BranchEntries ||
+                 config.prune_mode == TesseractTrellisPruneMode::NoMerge) {
+        keep_top_branch_entries(beam_entries, config.beam_width, config.ranking_mode);
+      }
+      normalize_items(beam_entries);
+      if (beam_entries.empty()) {
         low_confidence_flag = true;
         return;
       }
-
-      std::vector<std::pair<boost::dynamic_bitset<>, FrontierAggregate>> next_beam;
-      next_beam.reserve(collapsed.size());
-      for (auto& item : collapsed) {
-        next_beam.push_back(std::move(item));
-      }
-      if (next_beam.size() > config.beam_width) {
-        std::nth_element(next_beam.begin(), next_beam.begin() + config.beam_width, next_beam.end(),
-                         [](const auto& a, const auto& b) {
-                           return a.second.total_log_mass > b.second.total_log_mass;
-                         });
-        next_beam.resize(config.beam_width);
-      }
-      max_beam_size_seen = std::max(max_beam_size_seen, next_beam.size());
-
-      beam.clear();
-      beam.reserve(next_beam.size());
-      for (auto& item : next_beam) {
-        beam.emplace(std::move(item.first), std::move(item.second));
+      if (config.prune_mode == TesseractTrellisPruneMode::NoMerge) {
+        num_states_merged += beam_entries.size();
+        max_beam_size_seen = std::max(max_beam_size_seen, beam_entries.size());
+      } else if (config.prune_mode == TesseractTrellisPruneMode::KeepBest) {
+        num_states_merged += beam_entries.size();
+        max_beam_size_seen = std::max(max_beam_size_seen, beam_entries.size());
+      } else {
+        auto post_totals = accumulate_state_masses_from_entries(beam_entries);
+        num_states_merged += post_totals.size();
+        max_beam_size_seen = std::max(max_beam_size_seen, post_totals.size());
       }
       auto t3 = std::chrono::high_resolution_clock::now();
       time_truncate_seconds +=
           std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count() / 1e6;
     }
 
-    auto it = beam.find(boost::dynamic_bitset<>(0));
-    if (it == beam.end() || it->second.obs_entries.empty()) {
-      low_confidence_flag = true;
-      return;
-    }
-
-    const auto& final_entry = it->second;
     auto tr0 = std::chrono::high_resolution_clock::now();
-    if (final_entry.obs_entries.empty()) {
-      low_confidence_flag = true;
-      return;
+    for (const auto& item : beam_entries) {
+      if (!wide_state_zero(item.state_words)) {
+        continue;
+      }
+      if (item.obs_mask == 0) {
+        total_mass_obs0 += item.mass;
+      } else if (item.obs_mask == 1) {
+        total_mass_obs1 += item.mass;
+      }
     }
-    auto it0 = final_entry.obs_entries.find(0);
-    auto it1 = final_entry.obs_entries.find(1);
-    total_mass_obs0 = it0 == final_entry.obs_entries.end() ? 0.0 : std::exp(it0->second.log_mass);
-    total_mass_obs1 = it1 == final_entry.obs_entries.end() ? 0.0 : std::exp(it1->second.log_mass);
     if (total_mass_obs0 == 0.0 && total_mass_obs1 == 0.0) {
       low_confidence_flag = true;
       return;
@@ -813,8 +1242,8 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
     std::cout << "trellis beam_width=" << config.beam_width
               << " frontier_width=" << max_frontier_width_seen
               << " states_expanded=" << num_states_expanded
-              << " states_merged=" << num_states_merged
-              << " max_beam=" << max_beam_size_seen << std::endl;
+              << " states_merged=" << num_states_merged << " max_beam=" << max_beam_size_seen
+              << std::endl;
   }
 }
 

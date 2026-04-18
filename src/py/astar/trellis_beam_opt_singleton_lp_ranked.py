@@ -7,15 +7,30 @@ import shutil
 import sys
 import tempfile
 import time
+from bisect import bisect_left
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterable
 
 import numpy as np
-import stim
+
+try:  # pragma: no cover - optional at runtime in this environment.
+    import stim  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - exercised when Stim is unavailable.
+    stim = None
+
+try:  # pragma: no cover - optional at runtime.
+    from scipy.optimize import linprog  # type: ignore
+    from scipy.sparse import csr_matrix  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - exercised if SciPy is unavailable.
+    linprog = None
+    csr_matrix = None
 
 
 STIM_RESULT_FORMATS = ("01", "b8", "r8", "ptb64", "hits", "dets")
 STIM_RESULT_FORMATS_HELP = "/".join(STIM_RESULT_FORMATS)
+INF = float("inf")
 
 
 @dataclass(frozen=True)
@@ -24,6 +39,7 @@ class Fault:
     p: float
     delta_scale: float
     det_mask: int
+    detector_ids: tuple[int, ...]
     likelihood_cost: float
 
 
@@ -32,9 +48,11 @@ class DecoderModel:
     faults: tuple[Fault, ...]
     retiring_masks: tuple[int, ...]
     live_masks_after: tuple[int, ...]
-    future_detcost: tuple[tuple[float, ...], ...]
+    plain_future_detcost: tuple[tuple[float, ...], ...]
+    detector_to_faults: tuple[tuple[int, ...], ...]
     all_possible_dets_mask: int
     max_width: int
+    num_detectors: int
 
 
 @dataclass(frozen=True)
@@ -45,6 +63,10 @@ class BeamDecodeResult:
     discarded_mass: float
     max_width: int
     elapsed_seconds: float
+    heuristic_calls: int = 0
+    cache_hits: int = 0
+    lp_calls: int = 0
+    lp_seconds: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -64,6 +86,273 @@ class ExperimentSummary:
     total_elapsed: float
     total_triggered: int
     max_width_seen: int
+    total_heuristic_calls: int
+    total_cache_hits: int
+    total_lp_calls: int
+    total_lp_seconds: float
+
+
+@dataclass
+class ShotSingletonLPContext:
+    row_index: int
+    detector_fault_offsets: list[int]
+    seen_fault_marks: list[int]
+    current_mark: int = 0
+
+    def next_mark(self) -> int:
+        self.current_mark += 1
+        if self.current_mark >= (1 << 60):
+            self.seen_fault_marks[:] = [0] * len(self.seen_fault_marks)
+            self.current_mark = 1
+        return self.current_mark
+
+
+class UnionFind:
+    def __init__(self, n: int) -> None:
+        self.parent = list(range(n))
+        self.rank = [0] * n
+
+    def find(self, x: int) -> int:
+        while self.parent[x] != x:
+            self.parent[x] = self.parent[self.parent[x]]
+            x = self.parent[x]
+        return x
+
+    def union(self, a: int, b: int) -> None:
+        ra = self.find(a)
+        rb = self.find(b)
+        if ra == rb:
+            return
+        if self.rank[ra] < self.rank[rb]:
+            self.parent[ra] = rb
+        elif self.rank[ra] > self.rank[rb]:
+            self.parent[rb] = ra
+        else:
+            self.parent[rb] = ra
+            self.rank[ra] += 1
+
+
+class OptimalSingletonLPEvaluator:
+    """Evaluates the exact singleton-budget LP on a suffix of future faults.
+
+    The dual LP is
+        maximize   sum_d y_d
+        subject to sum_{d in support(e) ∩ M} y_d <= w_e  for each future fault e
+                   y_d >= 0
+    where M is the current residual live-detector mismatch mask.
+
+    Results are cached across shots by (suffix_row, mismatch_mask). Within one shot,
+    the suffix row advances monotonically, so per-detector pointers into the future
+    fault lists can be updated incrementally instead of re-bisecting each time.
+    """
+
+    def __init__(
+        self,
+        model: DecoderModel,
+        *,
+        use_cache: bool = True,
+        cache_max_entries: int = 0,
+        split_components: bool = True,
+    ) -> None:
+        self.model = model
+        self.use_cache = use_cache
+        self.cache_max_entries = cache_max_entries
+        self.split_components = split_components
+        self.cache: OrderedDict[tuple[int, int], float] = OrderedDict()
+        self.heuristic_calls = 0
+        self.cache_hits = 0
+        self.lp_calls = 0
+        self.lp_seconds = 0.0
+
+    def clear_cache(self) -> None:
+        self.cache.clear()
+
+    def begin_shot(self) -> ShotSingletonLPContext:
+        return ShotSingletonLPContext(
+            row_index=0,
+            detector_fault_offsets=[0] * self.model.num_detectors,
+            seen_fault_marks=[0] * len(self.model.faults),
+        )
+
+    def advance_past_fault(self, context: ShotSingletonLPContext, fault_index: int) -> None:
+        context.row_index = fault_index + 1
+        target_row = context.row_index
+        fault = self.model.faults[fault_index]
+        for detector in fault.detector_ids:
+            future_faults = self.model.detector_to_faults[detector]
+            pos = context.detector_fault_offsets[detector]
+            while pos < len(future_faults) and future_faults[pos] < target_row:
+                pos += 1
+            context.detector_fault_offsets[detector] = pos
+
+    def evaluate(self, context: ShotSingletonLPContext, mismatch_mask: int) -> float:
+        self.heuristic_calls += 1
+
+        if mismatch_mask == 0:
+            return 0.0
+
+        cache_key = (context.row_index, mismatch_mask)
+        if self.use_cache:
+            cached = self.cache.get(cache_key)
+            if cached is not None:
+                self.cache_hits += 1
+                self.cache.move_to_end(cache_key)
+                return cached
+
+        if linprog is None or csr_matrix is None:
+            raise RuntimeError(
+                "The exact singleton-LP heuristic requires SciPy (scipy.optimize.linprog)."
+            )
+
+        mark = context.next_mark()
+        seen_fault_marks = context.seen_fault_marks
+        support_to_weight: dict[int, float] = {}
+        covered_mask = 0
+
+        for detector in _detectors_from_mask(mismatch_mask):
+            future_faults = self.model.detector_to_faults[detector]
+            start = context.detector_fault_offsets[detector]
+            for fault_index in future_faults[start:]:
+                if seen_fault_marks[fault_index] == mark:
+                    continue
+                seen_fault_marks[fault_index] = mark
+
+                fault = self.model.faults[fault_index]
+                support_mask = fault.det_mask & mismatch_mask
+                if support_mask == 0:
+                    continue
+                covered_mask |= support_mask
+                previous = support_to_weight.get(support_mask)
+                if previous is None or fault.likelihood_cost < previous:
+                    support_to_weight[support_mask] = fault.likelihood_cost
+
+        if covered_mask != mismatch_mask:
+            return self._store(cache_key, INF)
+
+        if len(support_to_weight) == 1:
+            only_value = next(iter(support_to_weight.values()))
+            return self._store(cache_key, only_value)
+
+        if mismatch_mask.bit_count() == 1:
+            best = min(support_to_weight.values())
+            return self._store(cache_key, best)
+
+        start_time = time.perf_counter()
+        value = self._solve_support_system(support_to_weight=support_to_weight, mismatch_mask=mismatch_mask)
+        self.lp_seconds += time.perf_counter() - start_time
+        return self._store(cache_key, value)
+
+    def _store(self, cache_key: tuple[int, int], value: float) -> float:
+        if self.use_cache:
+            self.cache[cache_key] = value
+            self.cache.move_to_end(cache_key)
+            if self.cache_max_entries > 0:
+                while len(self.cache) > self.cache_max_entries:
+                    self.cache.popitem(last=False)
+        return value
+
+    def _solve_support_system(self, *, support_to_weight: dict[int, float], mismatch_mask: int) -> float:
+        active_detectors = _detectors_from_mask(mismatch_mask)
+        if not active_detectors:
+            return 0.0
+
+        detector_index = {detector: i for i, detector in enumerate(active_detectors)}
+
+        if not self.split_components:
+            return self._solve_component_lp(
+                supports=tuple(support_to_weight.items()),
+                detector_index=detector_index,
+                component_detectors=tuple(active_detectors),
+            )
+
+        uf = UnionFind(len(active_detectors))
+        support_bits_cache: dict[int, tuple[int, ...]] = {}
+        for support_mask in support_to_weight:
+            bits = _detectors_from_mask(support_mask)
+            support_bits_cache[support_mask] = tuple(bits)
+            if len(bits) > 1:
+                base = detector_index[bits[0]]
+                for detector in bits[1:]:
+                    uf.union(base, detector_index[detector])
+
+        component_detectors: dict[int, list[int]] = {}
+        for detector in active_detectors:
+            root = uf.find(detector_index[detector])
+            component_detectors.setdefault(root, []).append(detector)
+
+        component_supports: dict[int, list[tuple[int, float]]] = {root: [] for root in component_detectors}
+        for support_mask, weight in support_to_weight.items():
+            bits = support_bits_cache[support_mask]
+            root = uf.find(detector_index[bits[0]])
+            component_supports[root].append((support_mask, weight))
+
+        total = 0.0
+        for root, detectors in component_detectors.items():
+            supports = component_supports[root]
+            if len(detectors) == 1:
+                total += min(weight for _support_mask, weight in supports)
+                continue
+            total += self._solve_component_lp(
+                supports=tuple(supports),
+                detector_index=detector_index,
+                component_detectors=tuple(detectors),
+            )
+        return total
+
+    def _solve_component_lp(
+        self,
+        *,
+        supports: tuple[tuple[int, float], ...],
+        detector_index: dict[int, int],
+        component_detectors: tuple[int, ...],
+    ) -> float:
+        if linprog is None or csr_matrix is None:
+            raise RuntimeError(
+                "The exact singleton-LP heuristic requires SciPy (scipy.optimize.linprog)."
+            )
+
+        local_index = {detector: i for i, detector in enumerate(component_detectors)}
+        row_indices: list[int] = []
+        col_indices: list[int] = []
+        data: list[float] = []
+        rhs: list[float] = []
+
+        for row, (support_mask, weight) in enumerate(supports):
+            rhs.append(weight)
+            pending = support_mask
+            while pending:
+                low_bit = pending & -pending
+                detector = low_bit.bit_length() - 1
+                pending ^= low_bit
+                col_indices.append(local_index[detector])
+                row_indices.append(row)
+                data.append(1.0)
+
+        a_ub = csr_matrix(
+            (data, (row_indices, col_indices)),
+            shape=(len(supports), len(component_detectors)),
+            dtype=np.float64,
+        )
+        self.lp_calls += 1
+        result = linprog(
+            c=-np.ones(len(component_detectors), dtype=np.float64),
+            A_ub=a_ub,
+            b_ub=np.array(rhs, dtype=np.float64),
+            bounds=[(0.0, None)] * len(component_detectors),
+            method="highs",
+        )
+        if result.status == 0:
+            return max(0.0, float(-result.fun))
+        if result.status in {2, 3}:
+            return INF
+        raise RuntimeError(f"linprog failed with status={result.status}: {result.message}")
+
+
+def _require_stim() -> None:
+    if stim is None:
+        raise RuntimeError(
+            "This script requires stim for CLI operation. Install stim, or import the module and build models manually."
+        )
 
 
 def _likelihood_cost(probability: float) -> float:
@@ -74,13 +363,15 @@ def _likelihood_cost(probability: float) -> float:
     return -math.log(probability / (1.0 - probability))
 
 
-def _detectors_from_mask(mask: int) -> list[int]:
-    detectors: list[int] = []
+def _iter_mask_bits(mask: int) -> Iterable[int]:
     while mask:
         low_bit = mask & -mask
-        detectors.append(low_bit.bit_length() - 1)
+        yield low_bit.bit_length() - 1
         mask ^= low_bit
-    return detectors
+
+
+def _detectors_from_mask(mask: int) -> list[int]:
+    return list(_iter_mask_bits(mask))
 
 
 def _mask_from_bool_row(row: np.ndarray) -> int:
@@ -96,10 +387,10 @@ def _future_detcost_by_detector(faults: tuple[Fault, ...], num_detectors: int) -
     for fault_index in range(len(faults) - 1, -1, -1):
         row = next_row.copy()
         fault = faults[fault_index]
-        det_count = fault.det_mask.bit_count()
+        det_count = len(fault.detector_ids)
         if det_count:
             ecost = fault.likelihood_cost / det_count
-            for det_id in _detectors_from_mask(fault.det_mask):
+            for det_id in fault.detector_ids:
                 if ecost < row[det_id]:
                     row[det_id] = ecost
         future_detcost[fault_index] = row
@@ -108,11 +399,13 @@ def _future_detcost_by_detector(faults: tuple[Fault, ...], num_detectors: int) -
 
 
 def _build_decoder_model(circuit: stim.Circuit) -> DecoderModel:
+    _require_stim()
     dem = circuit.detector_error_model(decompose_errors=False).flattened()
 
     faults: list[Fault] = []
     all_possible_dets_mask = 0
     last_seen_index: dict[int, int] = {}
+    detector_to_faults_lists: list[list[int]] = [[] for _ in range(circuit.num_detectors)]
 
     for inst in dem:
         if inst.type != "error":
@@ -129,19 +422,21 @@ def _build_decoder_model(circuit: stim.Circuit) -> DecoderModel:
             elif target.is_logical_observable_id() and target.val == 0:
                 flip_l0 ^= 1
 
-        faults.append(
-            Fault(
-                q=1.0 - p,
-                p=p,
-                delta_scale=(-p if flip_l0 else p),
-                det_mask=det_mask,
-                likelihood_cost=_likelihood_cost(p),
-            )
+        detector_ids = tuple(_detectors_from_mask(det_mask))
+        fault = Fault(
+            q=1.0 - p,
+            p=p,
+            delta_scale=(-p if flip_l0 else p),
+            det_mask=det_mask,
+            detector_ids=detector_ids,
+            likelihood_cost=_likelihood_cost(p),
         )
+        faults.append(fault)
         all_possible_dets_mask |= det_mask
-
-        for det_id in _detectors_from_mask(det_mask):
-            last_seen_index[det_id] = len(faults) - 1
+        fault_index = len(faults) - 1
+        for det_id in detector_ids:
+            last_seen_index[det_id] = fault_index
+            detector_to_faults_lists[det_id].append(fault_index)
 
     retiring_masks = [0] * len(faults)
     for det_id, index in last_seen_index.items():
@@ -161,9 +456,11 @@ def _build_decoder_model(circuit: stim.Circuit) -> DecoderModel:
         faults=frozen_faults,
         retiring_masks=tuple(retiring_masks),
         live_masks_after=tuple(live_masks_after),
-        future_detcost=_future_detcost_by_detector(frozen_faults, circuit.num_detectors),
+        plain_future_detcost=_future_detcost_by_detector(frozen_faults, circuit.num_detectors),
+        detector_to_faults=tuple(tuple(v) for v in detector_to_faults_lists),
         all_possible_dets_mask=all_possible_dets_mask,
         max_width=max_width,
+        num_detectors=circuit.num_detectors,
     )
 
 
@@ -203,6 +500,7 @@ def _sample_shot_arrays(
     shots: int,
     seed: int | None,
 ) -> tuple[np.ndarray, np.ndarray]:
+    _require_stim()
     sampler = circuit.compile_detector_sampler(seed=seed)
     dets, obs = sampler.sample(shots=shots, separate_observables=True)
     return (
@@ -218,6 +516,7 @@ def _read_detector_shot_arrays(
     num_detectors: int,
     num_observables: int,
 ) -> tuple[np.ndarray, np.ndarray | None]:
+    _require_stim()
     common_kwargs = dict(
         path=path,
         format=fmt,
@@ -248,6 +547,7 @@ def _read_detector_shot_arrays(
 
 
 def _read_observable_shot_array(*, path: str, fmt: str, num_observables: int) -> np.ndarray:
+    _require_stim()
     obs = stim.read_shot_data_file(
         path=path,
         format=fmt,
@@ -354,12 +654,18 @@ def _load_shots(
     return _shots_from_arrays(dets, obs)
 
 
-def decode_beam_search_detcost_ranked(
+def decode_beam_search_singleton_lp_ranked(
     model: DecoderModel,
     actual_dets_mask: int,
     L: int,
+    *,
+    heuristic: str,
+    evaluator: OptimalSingletonLPEvaluator | None = None,
 ) -> BeamDecodeResult:
     start_time = time.perf_counter()
+
+    if heuristic not in {"opt_singleton_lp", "plain_detcost"}:
+        raise ValueError(f"Unsupported heuristic {heuristic!r}.")
 
     if (actual_dets_mask & ~model.all_possible_dets_mask) != 0:
         return BeamDecodeResult(
@@ -370,6 +676,21 @@ def decode_beam_search_detcost_ranked(
             max_width=model.max_width,
             elapsed_seconds=time.perf_counter() - start_time,
         )
+
+    if heuristic == "opt_singleton_lp":
+        if evaluator is None:
+            evaluator = OptimalSingletonLPEvaluator(model)
+        context = evaluator.begin_shot()
+        start_heuristic_calls = evaluator.heuristic_calls
+        start_cache_hits = evaluator.cache_hits
+        start_lp_calls = evaluator.lp_calls
+        start_lp_seconds = evaluator.lp_seconds
+    else:
+        context = None
+        start_heuristic_calls = 0
+        start_cache_hits = 0
+        start_lp_calls = 0
+        start_lp_seconds = 0.0
 
     beam = [(0, 1.0, 1.0)]
     discarded_mass = 0.0
@@ -438,14 +759,27 @@ def decode_beam_search_detcost_ranked(
                 discarded_mass=discarded_mass,
                 max_width=model.max_width,
                 elapsed_seconds=time.perf_counter() - start_time,
+                heuristic_calls=(0 if evaluator is None else evaluator.heuristic_calls - start_heuristic_calls),
+                cache_hits=(0 if evaluator is None else evaluator.cache_hits - start_cache_hits),
+                lp_calls=(0 if evaluator is None else evaluator.lp_calls - start_lp_calls),
+                lp_seconds=(0.0 if evaluator is None else evaluator.lp_seconds - start_lp_seconds),
             )
 
-        ranked_states: list[tuple[float, float, int, float]] = []
         live_target_mask = actual_dets_mask & model.live_masks_after[i + 1]
-        next_future_detcost = model.future_detcost[i + 1]
+        if context is not None:
+            evaluator.advance_past_fault(context, i)
+
+        ranked_states: list[tuple[float, float, int, float]] = []
         for state, (total, delta) in collapsed_probs.items():
             mismatch_mask = state ^ live_target_mask
-            penalty = _detcost_penalty(mismatch_mask=mismatch_mask, future_detcost=next_future_detcost)
+            if heuristic == "plain_detcost":
+                penalty = _detcost_penalty(
+                    mismatch_mask=mismatch_mask,
+                    future_detcost=model.plain_future_detcost[i + 1],
+                )
+            else:
+                assert evaluator is not None and context is not None
+                penalty = evaluator.evaluate(context, mismatch_mask)
             if penalty == math.inf:
                 rank_score = -math.inf
             else:
@@ -473,23 +807,19 @@ def decode_beam_search_detcost_ranked(
     margin = abs(final_delta)
     certified = margin > discarded_mass
 
-    if final_delta == 0.0:
-        return BeamDecodeResult(
-            predicted_logical=None,
-            certified=False,
-            margin=margin,
-            discarded_mass=discarded_mass,
-            max_width=model.max_width,
-            elapsed_seconds=time.perf_counter() - start_time,
-        )
-    return BeamDecodeResult(
-        predicted_logical=final_delta < 0.0,
-        certified=certified,
+    result = BeamDecodeResult(
+        predicted_logical=None if final_delta == 0.0 else (final_delta < 0.0),
+        certified=(False if final_delta == 0.0 else certified),
         margin=margin,
         discarded_mass=discarded_mass,
         max_width=model.max_width,
         elapsed_seconds=time.perf_counter() - start_time,
+        heuristic_calls=(0 if evaluator is None else evaluator.heuristic_calls - start_heuristic_calls),
+        cache_hits=(0 if evaluator is None else evaluator.cache_hits - start_cache_hits),
+        lp_calls=(0 if evaluator is None else evaluator.lp_calls - start_lp_calls),
+        lp_seconds=(0.0 if evaluator is None else evaluator.lp_seconds - start_lp_seconds),
     )
+    return result
 
 
 def _print_run_header(
@@ -498,10 +828,25 @@ def _print_run_header(
     args: argparse.Namespace,
     num_shots: int,
     log_stream,
+    evaluator: OptimalSingletonLPEvaluator | None,
 ) -> None:
     print(f"Running on circuit {args.circuit}", file=log_stream)
     print(f"Total Detectors:      {circuit.num_detectors}", file=log_stream)
     print(f"Total Observables:    {circuit.num_observables}", file=log_stream)
+    print(f"Heuristic:            {args.heuristic}", file=log_stream)
+    if args.heuristic == "opt_singleton_lp":
+        print(
+            f"Singleton LP Cache:   {'on' if not args.no_singleton_lp_cache else 'off'}",
+            file=log_stream,
+        )
+        if evaluator is not None and evaluator.cache_max_entries > 0:
+            print(f"Cache Max Entries:    {evaluator.cache_max_entries}", file=log_stream)
+        else:
+            print("Cache Max Entries:    unlimited", file=log_stream)
+        print(
+            f"Component Splitting:  {'on' if not args.no_singleton_lp_component_splitting else 'off'}",
+            file=log_stream,
+        )
     if args.in_file:
         print(f"Shot Input:           {args.in_file}", file=log_stream)
         print(f"Shot Input Format:    {args.in_format}", file=log_stream)
@@ -524,6 +869,7 @@ def _print_run_header(
 
 
 def run_experiment(args: argparse.Namespace) -> ExperimentSummary:
+    _require_stim()
     circuit = stim.Circuit.from_file(args.circuit)
     if circuit.num_observables != 1:
         raise ValueError(
@@ -532,11 +878,25 @@ def run_experiment(args: argparse.Namespace) -> ExperimentSummary:
         )
 
     model = _build_decoder_model(circuit)
+    evaluator = None
+    if args.heuristic == "opt_singleton_lp":
+        evaluator = OptimalSingletonLPEvaluator(
+            model,
+            use_cache=not args.no_singleton_lp_cache,
+            cache_max_entries=args.singleton_lp_cache_max_entries,
+            split_components=not args.no_singleton_lp_component_splitting,
+        )
     log_stream = sys.stderr if args.out_file == "-" else sys.stdout
 
     with tempfile.TemporaryDirectory() as temp_dir:
         shots = _load_shots(circuit, args, temp_dir=temp_dir)
-        _print_run_header(circuit=circuit, args=args, num_shots=len(shots), log_stream=log_stream)
+        _print_run_header(
+            circuit=circuit,
+            args=args,
+            num_shots=len(shots),
+            log_stream=log_stream,
+            evaluator=evaluator,
+        )
 
         num_errors = 0
         num_low_confidence = 0
@@ -546,10 +906,23 @@ def run_experiment(args: argparse.Namespace) -> ExperimentSummary:
         total_elapsed = 0.0
         total_triggered = 0
         max_width_seen = 0
+        total_heuristic_calls = 0
+        total_cache_hits = 0
+        total_lp_calls = 0
+        total_lp_seconds = 0.0
         predictions: list[bool | None] = []
 
         for shot_index, shot in enumerate(shots):
-            result = decode_beam_search_detcost_ranked(model, shot.det_mask, args.beam)
+            if args.singleton_lp_clear_cache_between_shots and evaluator is not None:
+                evaluator.clear_cache()
+
+            result = decode_beam_search_singleton_lp_ranked(
+                model,
+                shot.det_mask,
+                args.beam,
+                heuristic=args.heuristic,
+                evaluator=evaluator,
+            )
             predictions.append(result.predicted_logical)
 
             success: bool | None
@@ -570,28 +943,42 @@ def run_experiment(args: argparse.Namespace) -> ExperimentSummary:
                 num_certified += 1
 
             total_elapsed += result.elapsed_seconds
+            total_heuristic_calls += result.heuristic_calls
+            total_cache_hits += result.cache_hits
+            total_lp_calls += result.lp_calls
+            total_lp_seconds += result.lp_seconds
             triggered_dets = shot.det_mask.bit_count()
             total_triggered += triggered_dets
             max_width_seen = max(max_width_seen, result.max_width)
 
             shots_done = shot_index + 1
             error_rate_so_far = num_errors / num_scored_shots if num_scored_shots else 0.0
-            print(
+            progress = (
                 f"progress shots_done={shots_done}/{len(shots)} errors_so_far={num_errors} "
                 f"low_conf_so_far={num_low_confidence} scored_shots_so_far={num_scored_shots} "
-                f"error_rate_so_far={error_rate_so_far:.6f} elapsed_total_seconds={total_elapsed:.6f}",
-                file=log_stream,
+                f"error_rate_so_far={error_rate_so_far:.6f} elapsed_total_seconds={total_elapsed:.6f}"
             )
+            if args.print_heuristic_stats:
+                progress += (
+                    f" heuristic_calls_so_far={total_heuristic_calls} cache_hits_so_far={total_cache_hits} "
+                    f"lp_calls_so_far={total_lp_calls} lp_seconds_so_far={total_lp_seconds:.6f}"
+                )
+            print(progress, file=log_stream)
 
             if args.print_per_shot:
-                print(
+                line = (
                     f"shot={shot_index} triggered_detectors={triggered_dets} "
                     f"predicted_logical={result.predicted_logical} actual_logical={shot.actual_logical} "
                     f"success={success} certified={result.certified} "
                     f"margin={result.margin:.6e} discarded_mass={result.discarded_mass:.6e} "
-                    f"elapsed_seconds={result.elapsed_seconds:.6f}",
-                    file=log_stream,
+                    f"elapsed_seconds={result.elapsed_seconds:.6f}"
                 )
+                if args.print_heuristic_stats:
+                    line += (
+                        f" heuristic_calls={result.heuristic_calls} cache_hits={result.cache_hits} "
+                        f"lp_calls={result.lp_calls} lp_seconds={result.lp_seconds:.6f}"
+                    )
+                print(line, file=log_stream)
 
         if args.out_file:
             output_path, copy_to_stdout = _resolve_stdout_path_if_needed(
@@ -636,6 +1023,13 @@ def run_experiment(args: argparse.Namespace) -> ExperimentSummary:
         print("Logical Errors:       n/a", file=log_stream)
     print(f"Total Seconds:        {total_elapsed:.6f}", file=log_stream)
     print(f"Mean Seconds/Shot:    {total_elapsed / max(1, len(shots)):.6f}", file=log_stream)
+    if args.print_heuristic_stats:
+        print(f"Heuristic Calls:      {total_heuristic_calls}", file=log_stream)
+        print(f"LP Cache Hits:        {total_cache_hits}", file=log_stream)
+        print(f"LP Solves:            {total_lp_calls}", file=log_stream)
+        print(f"LP Seconds:           {total_lp_seconds:.6f}", file=log_stream)
+        if evaluator is not None:
+            print(f"Cache Entries:        {len(evaluator.cache)}", file=log_stream)
 
     return ExperimentSummary(
         predictions=predictions,
@@ -647,19 +1041,32 @@ def run_experiment(args: argparse.Namespace) -> ExperimentSummary:
         total_elapsed=total_elapsed,
         total_triggered=total_triggered,
         max_width_seen=max_width_seen,
+        total_heuristic_calls=total_heuristic_calls,
+        total_cache_hits=total_cache_hits,
+        total_lp_calls=total_lp_calls,
+        total_lp_seconds=total_lp_seconds,
     )
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run trellis beam decoding ranked by mass minus a detcost-style future penalty, "
+            "Run trellis beam decoding ranked by mass minus an exact optimal singleton-LP future penalty, "
             "with Stim-compatible shot-data I/O options."
         ),
         allow_abbrev=False,
     )
     parser.add_argument("--circuit", required=True, help="Path to the .stim circuit file.")
     parser.add_argument("--beam", type=int, default=1000, help="Beam width cutoff.")
+    parser.add_argument(
+        "--heuristic",
+        choices=("opt_singleton_lp", "plain_detcost"),
+        default="opt_singleton_lp",
+        help=(
+            "Future-penalty heuristic used for ranking beam states. "
+            "'opt_singleton_lp' uses the exact optimal singleton LP; 'plain_detcost' recovers the original decoder."
+        ),
+    )
     parser.add_argument(
         "--sample-num-shots",
         type=int,
@@ -736,6 +1143,32 @@ def _parse_args() -> argparse.Namespace:
         help=f"Format of the file written by --out ({STIM_RESULT_FORMATS_HELP}).",
     )
     parser.add_argument(
+        "--no-singleton-lp-cache",
+        action="store_true",
+        help="Disable reuse of exact singleton-LP values across shots.",
+    )
+    parser.add_argument(
+        "--singleton-lp-cache-max-entries",
+        type=int,
+        default=0,
+        help="Optional LRU cap on cached exact singleton-LP states. 0 means unlimited.",
+    )
+    parser.add_argument(
+        "--singleton-lp-clear-cache-between-shots",
+        action="store_true",
+        help="Clear the exact singleton-LP cache before every shot.",
+    )
+    parser.add_argument(
+        "--no-singleton-lp-component-splitting",
+        action="store_true",
+        help="Disable decomposition of the singleton LP into disconnected detector components.",
+    )
+    parser.add_argument(
+        "--print-heuristic-stats",
+        action="store_true",
+        help="Print exact singleton-LP and cache statistics during the run.",
+    )
+    parser.add_argument(
         "--print-per-shot",
         action="store_true",
         help="Print a detailed line per decoded shot.",
@@ -743,8 +1176,6 @@ def _parse_args() -> argparse.Namespace:
     args = parser.parse_args()
 
     if args.sample_num_shots is None:
-        # Preserve the original script's one-shot default while still allowing
-        # file input without requiring --sample-num-shots 0.
         args.sample_num_shots = 0 if args.in_file else 1
 
     if args.beam <= 0:
@@ -765,6 +1196,16 @@ def _parse_args() -> argparse.Namespace:
         raise ValueError("Cannot load observable flips from --obs-in without also providing --in.")
     if args.in_file == "-" and args.obs_in_file == "-":
         raise ValueError("At most one of --in and --obs-in may read from stdin.")
+    if args.singleton_lp_cache_max_entries < 0:
+        raise ValueError("--singleton-lp-cache-max-entries must be non-negative.")
+    if args.heuristic == "plain_detcost" and (
+        args.no_singleton_lp_cache
+        or args.singleton_lp_cache_max_entries
+        or args.singleton_lp_clear_cache_between_shots
+        or args.no_singleton_lp_component_splitting
+    ):
+        # Allowed but pointless; keep the CLI permissive.
+        pass
 
     num_shot_sources = int(args.sample_num_shots > 0) + int(bool(args.in_file))
     if num_shot_sources != 1:

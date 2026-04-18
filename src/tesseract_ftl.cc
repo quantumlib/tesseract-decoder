@@ -321,9 +321,8 @@ SingletonComponentSolveResult solve_singleton_component_lp(
       throw std::runtime_error("Constraint generation exceeded the number of unique constraints.");
     }
 
-    DenseSimplexResult simplex =
-        solve_dense_primal_packing_lp(num_local_detectors, constraints, selected_indices,
-                                      &seed_budgets);
+    DenseSimplexResult simplex = solve_dense_primal_packing_lp(num_local_detectors, constraints,
+                                                               selected_indices, &seed_budgets);
     result.simplex_solves++;
     if (simplex.unbounded) {
       result.unbounded = true;
@@ -430,8 +429,8 @@ std::string TesseractFTLConfig::str() {
   ss << "subset_detcost_size=" << subset_detcost_size << ", ";
   ss << "ignore_blocked_errors_in_heuristic=" << ignore_blocked_errors_in_heuristic << ", ";
   ss << "num_min_dets_to_consider=" << num_min_dets_to_consider << ", ";
-  ss << "detector_choice_policy="
-     << detector_choice_policy_to_string(detector_choice_policy) << ", ";
+  ss << "detector_choice_policy=" << detector_choice_policy_to_string(detector_choice_policy)
+     << ", ";
   ss << "error_order_policy=" << error_order_policy_to_string(error_order_policy) << ", ";
   ss << "root_det_order_count=" << root_det_order_count << ", ";
   ss << "root_det_order_depth=" << root_det_order_depth << ", ";
@@ -656,11 +655,10 @@ TesseractFTLDecoder::SingletonBuildResult TesseractFTLDecoder::build_singleton_c
     }
   }
   const auto candidate_stop_time = std::chrono::high_resolution_clock::now();
-  stats.component_candidate_total_seconds +=
-      std::chrono::duration_cast<std::chrono::microseconds>(candidate_stop_time -
-                                                            candidate_start_time)
-          .count() /
-      1e6;
+  stats.component_candidate_total_seconds += std::chrono::duration_cast<std::chrono::microseconds>(
+                                                 candidate_stop_time - candidate_start_time)
+                                                 .count() /
+                                             1e6;
 
   const auto union_start_time = std::chrono::high_resolution_clock::now();
   UnionFind uf(active_detectors.size());
@@ -711,8 +709,7 @@ TesseractFTLDecoder::SingletonBuildResult TesseractFTLDecoder::build_singleton_c
 
   const auto dedup_start_time = std::chrono::high_resolution_clock::now();
   std::vector<std::unordered_map<std::vector<int>, double, IntVectorHash<std::vector<int>>>>
-      min_rhs_by_pattern(
-      result.components.size());
+      min_rhs_by_pattern(result.components.size());
   std::vector<int> local_hits;
   local_hits.reserve(16);
 
@@ -786,10 +783,10 @@ TesseractFTLDecoder::SingletonBuildResult TesseractFTLDecoder::build_singleton_c
     }
   }
   const auto finalize_stop_time = std::chrono::high_resolution_clock::now();
-  stats.component_finalize_total_seconds +=
-      std::chrono::duration_cast<std::chrono::microseconds>(finalize_stop_time - finalize_start_time)
-          .count() /
-      1e6;
+  stats.component_finalize_total_seconds += std::chrono::duration_cast<std::chrono::microseconds>(
+                                                finalize_stop_time - finalize_start_time)
+                                                .count() /
+                                            1e6;
 
   return result;
 }
@@ -860,11 +857,10 @@ TesseractFTLDecoder::ExactSubsetSolution TesseractFTLDecoder::solve_exact_subset
         component.cheapest_constraint_for_local_detector, seed_budgets);
     const auto simplex_stop_time = std::chrono::high_resolution_clock::now();
     stats.simplex_calls++;
-    stats.simplex_total_seconds +=
-        std::chrono::duration_cast<std::chrono::microseconds>(simplex_stop_time -
-                                                              simplex_start_time)
-            .count() /
-        1e6;
+    stats.simplex_total_seconds += std::chrono::duration_cast<std::chrono::microseconds>(
+                                       simplex_stop_time - simplex_start_time)
+                                       .count() /
+                                   1e6;
     stats.lp_calls += component_result.simplex_solves;
 
     if (component_result.unbounded) {
@@ -963,8 +959,9 @@ std::vector<size_t> TesseractFTLDecoder::select_min_detectors(
     double budget;
   };
 
-  const size_t order_count =
-      depth < config.root_det_order_depth ? std::min(config.root_det_order_count, config.det_orders.size()) : 1;
+  const size_t order_count = depth < config.root_det_order_depth
+                                 ? std::min(config.root_det_order_count, config.det_orders.size())
+                                 : 1;
   std::vector<uint8_t> seen(num_detectors, 0);
   std::vector<CandidateDetector> candidates;
   candidates.reserve(detectors.count());
@@ -1411,7 +1408,8 @@ void TesseractFTLDecoder::decode_to_errors(const std::vector<uint64_t>& detectio
           continue;
         }
 
-        double child_h = project_from_exact_solution(exact_solution, child_detectors, prefix_blocked);
+        double child_h =
+            project_from_exact_solution(exact_solution, child_detectors, prefix_blocked);
         stats.projected_nodes_generated++;
         children_projected++;
         if (child_h == INF_D) {
@@ -1442,9 +1440,9 @@ void TesseractFTLDecoder::decode_to_errors(const std::vector<uint64_t>& detectio
 
         if (config.exact_child_refine_count > 0 &&
             children_exactly_refined < config.exact_child_refine_count) {
-          ExactSubsetSolution child_exact = solve_exact_subset_lp(
-              detector_state_arena[(size_t)child.detector_state_idx], prefix_blocked,
-              child.warm_solution_idx);
+          ExactSubsetSolution child_exact =
+              solve_exact_subset_lp(detector_state_arena[(size_t)child.detector_state_idx],
+                                    prefix_blocked, child.warm_solution_idx);
           if (child_exact.value == INF_D) {
             children_infeasible++;
             stats.total_children_infeasible++;

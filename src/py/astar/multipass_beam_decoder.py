@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import heapq
 import math
 import shutil
 import sys
@@ -45,6 +46,8 @@ class BeamDecodeResult:
     discarded_mass: float
     max_width: int
     elapsed_seconds: float
+    selected_pass: int = 1
+    diagnostic_lines: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -64,6 +67,10 @@ class ExperimentSummary:
     total_elapsed: float
     total_triggered: int
     max_width_seen: int
+
+
+HeuristicTables = tuple[dict[int, float], ...]
+CandidateStates = tuple[tuple[int, ...], ...]
 
 
 def _likelihood_cost(probability: float) -> float:
@@ -184,6 +191,421 @@ def _detcost_penalty(mismatch_mask: int, future_detcost: tuple[float, ...]) -> f
     return total
 
 
+def _candidate_state_limit(beam: int) -> int:
+    # One pass feeds a slightly wider neighborhood to the next pass, while still
+    # capping memory for long circuits.
+    return max(1, min(128, 2 * beam))
+
+
+def _top_ranked_entries(
+    entries: list[tuple[float, float, int, float]],
+    limit: int,
+) -> list[tuple[float, float, int, float]]:
+    if limit <= 0:
+        return []
+    if len(entries) <= limit:
+        return sorted(entries, reverse=True)
+    return heapq.nlargest(limit, entries)
+
+
+def _base_penalty_at_layer(
+    *,
+    model: DecoderModel,
+    live_target_masks: tuple[int, ...],
+    layer: int,
+    state: int,
+) -> float:
+    mismatch_mask = state ^ live_target_masks[layer]
+    return _detcost_penalty(mismatch_mask=mismatch_mask, future_detcost=model.future_detcost[layer])
+
+
+def _lookup_existing_penalty(
+    *,
+    model: DecoderModel,
+    live_target_masks: tuple[int, ...],
+    layer: int,
+    state: int,
+    heuristic_tables: HeuristicTables | None,
+) -> float:
+    penalty = _base_penalty_at_layer(
+        model=model,
+        live_target_masks=live_target_masks,
+        layer=layer,
+        state=state,
+    )
+    if heuristic_tables is not None:
+        refined = heuristic_tables[layer].get(state)
+        if refined is not None and refined > penalty:
+            penalty = refined
+    return penalty
+
+
+def _forward_beam_pass(
+    *,
+    model: DecoderModel,
+    actual_dets_mask: int,
+    live_target_masks: tuple[int, ...],
+    beam_width: int,
+    heuristic_tables: HeuristicTables | None,
+    collect_candidates: bool,
+    selected_pass: int,
+) -> tuple[BeamDecodeResult, CandidateStates, dict[str, float]]:
+    beam = [(0, 1.0, 1.0)]
+    discarded_mass = 0.0
+    candidate_limit = _candidate_state_limit(beam_width) if collect_candidates else 0
+
+    candidate_states_list: list[tuple[int, ...]] = [tuple() for _ in range(len(model.faults) + 1)]
+    candidate_states_list[0] = (0,)
+
+    stats: dict[str, float] = {
+        "ranked_states_total": 0.0,
+        "candidate_states_total": 1.0,
+        "layers_pruned": 0.0,
+        "peak_ranked_states": 0.0,
+        "states_using_refined_lb": 0.0,
+        "states_blocked_by_refined": 0.0,
+        "finite_penalty_gain_hits": 0.0,
+        "total_penalty_uplift": 0.0,
+        "max_penalty_uplift": 0.0,
+    }
+
+    for i, fault in enumerate(model.faults):
+        collapsed_probs: dict[int, list[float]] = {}
+        total_mass = 0.0
+        retiring_mask = model.retiring_masks[i]
+
+        if retiring_mask == 0:
+            for state, total, delta in beam:
+                absent_total = total * fault.q
+                absent_delta = delta * fault.q
+                total_mass += absent_total
+                entry = collapsed_probs.get(state)
+                if entry is None:
+                    collapsed_probs[state] = [absent_total, absent_delta]
+                else:
+                    entry[0] += absent_total
+                    entry[1] += absent_delta
+
+                toggled = state ^ fault.det_mask
+                present_total = total * fault.p
+                present_delta = delta * fault.delta_scale
+                total_mass += present_total
+                entry = collapsed_probs.get(toggled)
+                if entry is None:
+                    collapsed_probs[toggled] = [present_total, present_delta]
+                else:
+                    entry[0] += present_total
+                    entry[1] += present_delta
+        else:
+            expected_bits = actual_dets_mask & retiring_mask
+            keep_mask = ~retiring_mask
+            for state, total, delta in beam:
+                absent_total = total * fault.q
+                absent_delta = delta * fault.q
+                if (state & retiring_mask) == expected_bits:
+                    shrunk = state & keep_mask
+                    total_mass += absent_total
+                    entry = collapsed_probs.get(shrunk)
+                    if entry is None:
+                        collapsed_probs[shrunk] = [absent_total, absent_delta]
+                    else:
+                        entry[0] += absent_total
+                        entry[1] += absent_delta
+
+                toggled = state ^ fault.det_mask
+                present_total = total * fault.p
+                present_delta = delta * fault.delta_scale
+                if (toggled & retiring_mask) == expected_bits:
+                    shrunk = toggled & keep_mask
+                    total_mass += present_total
+                    entry = collapsed_probs.get(shrunk)
+                    if entry is None:
+                        collapsed_probs[shrunk] = [present_total, present_delta]
+                    else:
+                        entry[0] += present_total
+                        entry[1] += present_delta
+
+        if total_mass == 0.0:
+            return (
+                BeamDecodeResult(
+                    predicted_logical=None,
+                    certified=False,
+                    margin=0.0,
+                    discarded_mass=discarded_mass,
+                    max_width=model.max_width,
+                    elapsed_seconds=0.0,
+                    selected_pass=selected_pass,
+                ),
+                tuple(candidate_states_list),
+                stats,
+            )
+
+        ranked_states: list[tuple[float, float, int, float]] = []
+        next_live_target_mask = live_target_masks[i + 1]
+        next_future_detcost = model.future_detcost[i + 1]
+        next_heuristics = None if heuristic_tables is None else heuristic_tables[i + 1]
+
+        ranked_count = len(collapsed_probs)
+        stats["ranked_states_total"] += ranked_count
+        stats["peak_ranked_states"] = max(stats["peak_ranked_states"], float(ranked_count))
+
+        for state, (total, delta) in collapsed_probs.items():
+            mismatch_mask = state ^ next_live_target_mask
+            base_penalty = _detcost_penalty(mismatch_mask=mismatch_mask, future_detcost=next_future_detcost)
+            penalty = base_penalty
+
+            if next_heuristics is not None:
+                refined_penalty = next_heuristics.get(state)
+                if refined_penalty is not None and refined_penalty > penalty:
+                    penalty = refined_penalty
+                    stats["states_using_refined_lb"] += 1.0
+                    if refined_penalty == math.inf and base_penalty != math.inf:
+                        stats["states_blocked_by_refined"] += 1.0
+                    elif refined_penalty != math.inf and base_penalty != math.inf:
+                        uplift = refined_penalty - base_penalty
+                        stats["finite_penalty_gain_hits"] += 1.0
+                        stats["total_penalty_uplift"] += uplift
+                        stats["max_penalty_uplift"] = max(stats["max_penalty_uplift"], uplift)
+
+            if penalty == math.inf:
+                rank_score = -math.inf
+            else:
+                rank_score = math.log(total) - penalty
+            ranked_states.append((rank_score, total, state, delta))
+
+        top_needed = max(beam_width, candidate_limit)
+        top_entries = _top_ranked_entries(ranked_states, top_needed)
+
+        if collect_candidates:
+            candidate_slice = top_entries[:candidate_limit]
+            candidate_states_list[i + 1] = tuple(state for _, _, state, _ in candidate_slice)
+            stats["candidate_states_total"] += len(candidate_slice)
+
+        dropped_mass = 0.0
+        if len(ranked_states) > beam_width:
+            stats["layers_pruned"] += 1.0
+            kept = top_entries[:beam_width]
+            kept_mass = sum(total for _, total, _, _ in kept)
+            dropped_mass = total_mass - kept_mass
+        else:
+            kept = top_entries
+
+        inv_total_mass = 1.0 / total_mass
+        discarded_mass = (discarded_mass + dropped_mass) * inv_total_mass
+        beam = [
+            (state, total * inv_total_mass, delta * inv_total_mass)
+            for _, total, state, delta in kept
+        ]
+
+    candidate_states_list[-1] = (0,)
+
+    _, _, final_delta = next((entry for entry in beam if entry[0] == 0), (0, 0.0, 0.0))
+    margin = abs(final_delta)
+    certified = margin > discarded_mass
+
+    if final_delta == 0.0:
+        return (
+            BeamDecodeResult(
+                predicted_logical=None,
+                certified=False,
+                margin=margin,
+                discarded_mass=discarded_mass,
+                max_width=model.max_width,
+                elapsed_seconds=0.0,
+                selected_pass=selected_pass,
+            ),
+            tuple(candidate_states_list),
+            stats,
+        )
+
+    return (
+        BeamDecodeResult(
+            predicted_logical=final_delta < 0.0,
+            certified=certified,
+            margin=margin,
+            discarded_mass=discarded_mass,
+            max_width=model.max_width,
+            elapsed_seconds=0.0,
+            selected_pass=selected_pass,
+        ),
+        tuple(candidate_states_list),
+        stats,
+    )
+
+
+def _build_refined_lower_bounds(
+    *,
+    model: DecoderModel,
+    actual_dets_mask: int,
+    live_target_masks: tuple[int, ...],
+    candidate_states: CandidateStates,
+    existing_tables: HeuristicTables | None,
+) -> tuple[HeuristicTables, dict[str, float]]:
+    tables_list: list[dict[int, float]] = [dict() for _ in range(len(model.faults) + 1)]
+    tables_list[-1][0] = 0.0
+
+    stats: dict[str, float] = {
+        "candidate_states_total": float(sum(len(layer) for layer in candidate_states)),
+        "states_evaluated": 1.0,
+        "layers_with_candidates": 1.0,
+        "exact_successor_hits": 0.0,
+        "prior_successor_hits": 0.0,
+        "base_successor_hits": 0.0,
+        "states_improved": 0.0,
+        "states_ruled_out": 0.0,
+        "finite_gain_hits": 0.0,
+        "total_lb_gain": 0.0,
+        "max_lb_gain": 0.0,
+    }
+
+    for i in range(len(model.faults) - 1, -1, -1):
+        states_here = candidate_states[i]
+        if not states_here:
+            continue
+
+        stats["layers_with_candidates"] += 1.0
+        fault = model.faults[i]
+        retiring_mask = model.retiring_masks[i]
+        expected_bits = actual_dets_mask & retiring_mask
+        keep_mask = ~retiring_mask
+        next_refined = tables_list[i + 1]
+        current_refined = tables_list[i]
+
+        for state in states_here:
+            best = math.inf
+
+            if (state & retiring_mask) == expected_bits:
+                next_state = state & keep_mask
+                successor_penalty = _lookup_existing_penalty(
+                    model=model,
+                    live_target_masks=live_target_masks,
+                    layer=i + 1,
+                    state=next_state,
+                    heuristic_tables=existing_tables,
+                )
+                exact_successor = next_refined.get(next_state)
+                if exact_successor is not None and exact_successor > successor_penalty:
+                    successor_penalty = exact_successor
+                    stats["exact_successor_hits"] += 1.0
+                elif existing_tables is not None and next_state in existing_tables[i + 1]:
+                    stats["prior_successor_hits"] += 1.0
+                else:
+                    stats["base_successor_hits"] += 1.0
+                best = min(best, successor_penalty)
+
+            toggled = state ^ fault.det_mask
+            if (toggled & retiring_mask) == expected_bits:
+                next_state = toggled & keep_mask
+                successor_penalty = _lookup_existing_penalty(
+                    model=model,
+                    live_target_masks=live_target_masks,
+                    layer=i + 1,
+                    state=next_state,
+                    heuristic_tables=existing_tables,
+                )
+                exact_successor = next_refined.get(next_state)
+                if exact_successor is not None and exact_successor > successor_penalty:
+                    successor_penalty = exact_successor
+                    stats["exact_successor_hits"] += 1.0
+                elif existing_tables is not None and next_state in existing_tables[i + 1]:
+                    stats["prior_successor_hits"] += 1.0
+                else:
+                    stats["base_successor_hits"] += 1.0
+                best = min(best, fault.likelihood_cost + successor_penalty)
+
+            old_penalty = _lookup_existing_penalty(
+                model=model,
+                live_target_masks=live_target_masks,
+                layer=i,
+                state=state,
+                heuristic_tables=existing_tables,
+            )
+            new_penalty = best if best > old_penalty else old_penalty
+            current_refined[state] = new_penalty
+            stats["states_evaluated"] += 1.0
+
+            if new_penalty > old_penalty:
+                stats["states_improved"] += 1.0
+                if new_penalty == math.inf:
+                    stats["states_ruled_out"] += 1.0
+                elif old_penalty != math.inf:
+                    gain = new_penalty - old_penalty
+                    stats["finite_gain_hits"] += 1.0
+                    stats["total_lb_gain"] += gain
+                    stats["max_lb_gain"] = max(stats["max_lb_gain"], gain)
+
+    return tuple(tables_list), stats
+
+
+def _result_confidence_key(result: BeamDecodeResult) -> tuple[float, ...]:
+    return (
+        float(int(result.certified)),
+        float(int(result.predicted_logical is not None)),
+        result.margin - result.discarded_mass,
+        result.margin,
+        -result.discarded_mass,
+        float(result.selected_pass),
+    )
+
+
+def _format_forward_summary(
+    *,
+    shot_index: int | None,
+    pass_index: int,
+    num_passes: int,
+    beam_width: int,
+    candidate_limit: int,
+    stats: dict[str, float],
+    result: BeamDecodeResult,
+) -> str:
+    refined_hits = int(stats["states_using_refined_lb"])
+    finite_gain_hits = int(stats["finite_penalty_gain_hits"])
+    avg_gain = stats["total_penalty_uplift"] / max(1, finite_gain_hits)
+    return (
+        f"multipass shot={shot_index} pass={pass_index}/{num_passes} phase=forward "
+        f"beam={beam_width} candidate_limit={candidate_limit} ranked_states={int(stats['ranked_states_total'])} "
+        f"peak_layer_states={int(stats['peak_ranked_states'])} layers_pruned={int(stats['layers_pruned'])} "
+        f"refined_hits={refined_hits} refined_blocks={int(stats['states_blocked_by_refined'])} "
+        f"avg_penalty_gain={avg_gain:.6f} max_penalty_gain={stats['max_penalty_uplift']:.6f} "
+        f"prediction={result.predicted_logical} certified={result.certified} "
+        f"margin={result.margin:.6e} discarded_mass={result.discarded_mass:.6e}"
+    )
+
+
+def _format_backward_summary(
+    *,
+    shot_index: int | None,
+    pass_index: int,
+    num_passes: int,
+    stats: dict[str, float],
+) -> str:
+    finite_gain_hits = int(stats["finite_gain_hits"])
+    avg_gain = stats["total_lb_gain"] / max(1, finite_gain_hits)
+    return (
+        f"multipass shot={shot_index} pass={pass_index}/{num_passes} phase=backward "
+        f"candidate_states={int(stats['candidate_states_total'])} states_evaluated={int(stats['states_evaluated'])} "
+        f"layers_with_candidates={int(stats['layers_with_candidates'])} improved_states={int(stats['states_improved'])} "
+        f"ruled_out={int(stats['states_ruled_out'])} avg_lb_gain={avg_gain:.6f} "
+        f"max_lb_gain={stats['max_lb_gain']:.6f} successor_hits=(exact:{int(stats['exact_successor_hits'])},"
+        f"prior:{int(stats['prior_successor_hits'])},base:{int(stats['base_successor_hits'])})"
+    )
+
+
+def _format_selection_summary(
+    *,
+    shot_index: int | None,
+    chosen: BeamDecodeResult,
+    num_passes: int,
+) -> str:
+    confidence_gap = chosen.margin - chosen.discarded_mass
+    return (
+        f"multipass shot={shot_index} selection chosen_pass={chosen.selected_pass}/{num_passes} "
+        f"prediction={chosen.predicted_logical} certified={chosen.certified} "
+        f"confidence_gap={confidence_gap:.6e} margin={chosen.margin:.6e} "
+        f"discarded_mass={chosen.discarded_mass:.6e}"
+    )
+
+
 def _as_bool_2d(data: np.ndarray, *, expected_cols: int, description: str) -> np.ndarray:
     arr = np.asarray(data)
     if arr.ndim != 2:
@@ -218,7 +640,7 @@ def _read_detector_shot_arrays(
     num_detectors: int,
     num_observables: int,
 ) -> tuple[np.ndarray, np.ndarray | None]:
-    common_kwargs = dict(
+    flat = stim.read_shot_data_file(
         path=path,
         format=fmt,
         bit_packed=False,
@@ -227,24 +649,15 @@ def _read_detector_shot_arrays(
         num_observables=num_observables,
     )
 
+    expected_cols = num_detectors + num_observables
+    flat = _as_bool_2d(
+        flat,
+        expected_cols=expected_cols,
+        description="combined detector/observable input data",
+    )
     if num_observables:
-        try:
-            dets, obs = stim.read_shot_data_file(**common_kwargs, separate_observables=True)
-            return (
-                _as_bool_2d(dets, expected_cols=num_detectors, description="input detector data"),
-                _as_bool_2d(obs, expected_cols=num_observables, description="appended observable data"),
-            )
-        except TypeError:
-            flat = stim.read_shot_data_file(**common_kwargs)
-            flat = _as_bool_2d(
-                flat,
-                expected_cols=num_detectors + num_observables,
-                description="combined detector/observable input data",
-            )
-            return flat[:, :num_detectors], flat[:, num_detectors:]
-
-    flat = stim.read_shot_data_file(**common_kwargs)
-    return _as_bool_2d(flat, expected_cols=num_detectors, description="input detector data"), None
+        return flat[:, :num_detectors], flat[:, num_detectors:]
+    return flat, None
 
 
 def _read_observable_shot_array(*, path: str, fmt: str, num_observables: int) -> np.ndarray:
@@ -358,6 +771,9 @@ def decode_beam_search_detcost_ranked(
     model: DecoderModel,
     actual_dets_mask: int,
     L: int,
+    *,
+    num_passes: int = 1,
+    shot_index: int | None = None,
 ) -> BeamDecodeResult:
     start_time = time.perf_counter()
 
@@ -369,126 +785,78 @@ def decode_beam_search_detcost_ranked(
             discarded_mass=0.0,
             max_width=model.max_width,
             elapsed_seconds=time.perf_counter() - start_time,
+            selected_pass=1,
         )
 
-    beam = [(0, 1.0, 1.0)]
-    discarded_mass = 0.0
+    live_target_masks = tuple(actual_dets_mask & mask for mask in model.live_masks_after)
+    candidate_limit = _candidate_state_limit(L)
+    current_tables: HeuristicTables | None = None
+    per_pass_results: list[BeamDecodeResult] = []
+    diagnostic_lines: list[str] = []
 
-    for i, fault in enumerate(model.faults):
-        collapsed_probs: dict[int, list[float]] = {}
-        total_mass = 0.0
-        retiring_mask = model.retiring_masks[i]
+    for pass_index in range(1, num_passes + 1):
+        collect_candidates = pass_index < num_passes
+        pass_result, candidate_states, forward_stats = _forward_beam_pass(
+            model=model,
+            actual_dets_mask=actual_dets_mask,
+            live_target_masks=live_target_masks,
+            beam_width=L,
+            heuristic_tables=current_tables,
+            collect_candidates=collect_candidates,
+            selected_pass=pass_index,
+        )
+        per_pass_results.append(pass_result)
 
-        if retiring_mask == 0:
-            for state, total, delta in beam:
-                absent_total = total * fault.q
-                absent_delta = delta * fault.q
-                total_mass += absent_total
-                entry = collapsed_probs.get(state)
-                if entry is None:
-                    collapsed_probs[state] = [absent_total, absent_delta]
-                else:
-                    entry[0] += absent_total
-                    entry[1] += absent_delta
-
-                toggled = state ^ fault.det_mask
-                present_total = total * fault.p
-                present_delta = delta * fault.delta_scale
-                total_mass += present_total
-                entry = collapsed_probs.get(toggled)
-                if entry is None:
-                    collapsed_probs[toggled] = [present_total, present_delta]
-                else:
-                    entry[0] += present_total
-                    entry[1] += present_delta
-        else:
-            expected_bits = actual_dets_mask & retiring_mask
-            keep_mask = ~retiring_mask
-            for state, total, delta in beam:
-                absent_total = total * fault.q
-                absent_delta = delta * fault.q
-                if (state & retiring_mask) == expected_bits:
-                    shrunk = state & keep_mask
-                    total_mass += absent_total
-                    entry = collapsed_probs.get(shrunk)
-                    if entry is None:
-                        collapsed_probs[shrunk] = [absent_total, absent_delta]
-                    else:
-                        entry[0] += absent_total
-                        entry[1] += absent_delta
-
-                toggled = state ^ fault.det_mask
-                present_total = total * fault.p
-                present_delta = delta * fault.delta_scale
-                if (toggled & retiring_mask) == expected_bits:
-                    shrunk = toggled & keep_mask
-                    total_mass += present_total
-                    entry = collapsed_probs.get(shrunk)
-                    if entry is None:
-                        collapsed_probs[shrunk] = [present_total, present_delta]
-                    else:
-                        entry[0] += present_total
-                        entry[1] += present_delta
-
-        if total_mass == 0.0:
-            return BeamDecodeResult(
-                predicted_logical=None,
-                certified=False,
-                margin=0.0,
-                discarded_mass=discarded_mass,
-                max_width=model.max_width,
-                elapsed_seconds=time.perf_counter() - start_time,
+        if num_passes > 1:
+            diagnostic_lines.append(
+                _format_forward_summary(
+                    shot_index=shot_index,
+                    pass_index=pass_index,
+                    num_passes=num_passes,
+                    beam_width=L,
+                    candidate_limit=candidate_limit,
+                    stats=forward_stats,
+                    result=pass_result,
+                )
             )
 
-        ranked_states: list[tuple[float, float, int, float]] = []
-        live_target_mask = actual_dets_mask & model.live_masks_after[i + 1]
-        next_future_detcost = model.future_detcost[i + 1]
-        for state, (total, delta) in collapsed_probs.items():
-            mismatch_mask = state ^ live_target_mask
-            penalty = _detcost_penalty(mismatch_mask=mismatch_mask, future_detcost=next_future_detcost)
-            if penalty == math.inf:
-                rank_score = -math.inf
-            else:
-                rank_score = math.log(total) - penalty
-            ranked_states.append((rank_score, total, state, delta))
+        if collect_candidates:
+            current_tables, backward_stats = _build_refined_lower_bounds(
+                model=model,
+                actual_dets_mask=actual_dets_mask,
+                live_target_masks=live_target_masks,
+                candidate_states=candidate_states,
+                existing_tables=current_tables,
+            )
+            if num_passes > 1:
+                diagnostic_lines.append(
+                    _format_backward_summary(
+                        shot_index=shot_index,
+                        pass_index=pass_index,
+                        num_passes=num_passes,
+                        stats=backward_stats,
+                    )
+                )
 
-        dropped_mass = 0.0
-        if len(ranked_states) > L:
-            ranked_states.sort(reverse=True)
-            kept = ranked_states[:L]
-            beam = [(state, total, delta) for _, total, state, delta in kept]
-            kept_mass = sum(total for _, total, _, _ in kept)
-            dropped_mass = total_mass - kept_mass
-        else:
-            beam = [(state, total, delta) for _, total, state, delta in ranked_states]
-
-        inv_total_mass = 1.0 / total_mass
-        discarded_mass = (discarded_mass + dropped_mass) * inv_total_mass
-        beam = [
-            (state, total * inv_total_mass, delta * inv_total_mass)
-            for state, total, delta in beam
-        ]
-
-    _, _, final_delta = next((entry for entry in beam if entry[0] == 0), (0, 0.0, 0.0))
-    margin = abs(final_delta)
-    certified = margin > discarded_mass
-
-    if final_delta == 0.0:
-        return BeamDecodeResult(
-            predicted_logical=None,
-            certified=False,
-            margin=margin,
-            discarded_mass=discarded_mass,
-            max_width=model.max_width,
-            elapsed_seconds=time.perf_counter() - start_time,
+    chosen = max(per_pass_results, key=_result_confidence_key)
+    if num_passes > 1:
+        diagnostic_lines.append(
+            _format_selection_summary(
+                shot_index=shot_index,
+                chosen=chosen,
+                num_passes=num_passes,
+            )
         )
+
     return BeamDecodeResult(
-        predicted_logical=final_delta < 0.0,
-        certified=certified,
-        margin=margin,
-        discarded_mass=discarded_mass,
-        max_width=model.max_width,
+        predicted_logical=chosen.predicted_logical,
+        certified=chosen.certified,
+        margin=chosen.margin,
+        discarded_mass=chosen.discarded_mass,
+        max_width=chosen.max_width,
         elapsed_seconds=time.perf_counter() - start_time,
+        selected_pass=chosen.selected_pass,
+        diagnostic_lines=tuple(diagnostic_lines),
     )
 
 
@@ -520,6 +888,14 @@ def _print_run_header(
             f"Shot Range:           [{args.shot_range_begin}, {args.shot_range_end})",
             file=log_stream,
         )
+    print(f"Beam:                 {args.beam}", file=log_stream)
+    print(f"Num Passes:           {args.num_passes}", file=log_stream)
+    if args.num_passes > 1:
+        print(f"Pass Candidate Limit: {_candidate_state_limit(args.beam)}", file=log_stream)
+        print(
+            "Pass Logic:           forward beam -> candidate residual states -> backward Bellman lower bounds -> choose best-confidence pass",
+            file=log_stream,
+        )
     print(f"Num Shots:            {num_shots}", file=log_stream)
 
 
@@ -547,10 +923,27 @@ def run_experiment(args: argparse.Namespace) -> ExperimentSummary:
         total_triggered = 0
         max_width_seen = 0
         predictions: list[bool | None] = []
+        selected_pass_counts = [0] * (args.num_passes + 1)
+
+        detailed_multipass_for_all = args.print_per_shot or len(shots) <= 10
 
         for shot_index, shot in enumerate(shots):
-            result = decode_beam_search_detcost_ranked(model, shot.det_mask, args.beam)
+            result = decode_beam_search_detcost_ranked(
+                model,
+                shot.det_mask,
+                args.beam,
+                num_passes=args.num_passes,
+                shot_index=shot_index,
+            )
             predictions.append(result.predicted_logical)
+            selected_pass_counts[result.selected_pass] += 1
+
+            if result.diagnostic_lines:
+                if detailed_multipass_for_all or shot_index == 0:
+                    for line in result.diagnostic_lines:
+                        print(line, file=log_stream)
+                else:
+                    print(result.diagnostic_lines[-1], file=log_stream)
 
             success: bool | None
             if shot.actual_logical is None or result.predicted_logical is None:
@@ -576,18 +969,20 @@ def run_experiment(args: argparse.Namespace) -> ExperimentSummary:
 
             shots_done = shot_index + 1
             error_rate_so_far = num_errors / num_scored_shots if num_scored_shots else 0.0
-            print(
+            progress_line = (
                 f"progress shots_done={shots_done}/{len(shots)} errors_so_far={num_errors} "
                 f"low_conf_so_far={num_low_confidence} scored_shots_so_far={num_scored_shots} "
-                f"error_rate_so_far={error_rate_so_far:.6f} elapsed_total_seconds={total_elapsed:.6f}",
-                file=log_stream,
+                f"error_rate_so_far={error_rate_so_far:.6f} elapsed_total_seconds={total_elapsed:.6f}"
             )
+            if args.num_passes > 1:
+                progress_line += f" selected_pass={result.selected_pass}"
+            print(progress_line, file=log_stream)
 
             if args.print_per_shot:
                 print(
                     f"shot={shot_index} triggered_detectors={triggered_dets} "
                     f"predicted_logical={result.predicted_logical} actual_logical={shot.actual_logical} "
-                    f"success={success} certified={result.certified} "
+                    f"success={success} certified={result.certified} selected_pass={result.selected_pass} "
                     f"margin={result.margin:.6e} discarded_mass={result.discarded_mass:.6e} "
                     f"elapsed_seconds={result.elapsed_seconds:.6f}",
                     file=log_stream,
@@ -623,13 +1018,18 @@ def run_experiment(args: argparse.Namespace) -> ExperimentSummary:
                     file=log_stream,
                 )
 
-    print(f"Beam:                 {args.beam}", file=log_stream)
     print(f"Mean Triggered Dets:  {total_triggered / max(1, len(shots)):.2f}", file=log_stream)
     print(f"Max Width:            {max_width_seen}", file=log_stream)
     print(f"Certified Shots:      {num_certified}", file=log_stream)
     print(f"Low Confidence:       {num_low_confidence}", file=log_stream)
     print(f"Truth-Labeled Shots:  {num_truth_shots}", file=log_stream)
     print(f"Scored Shots:         {num_scored_shots}", file=log_stream)
+    if args.num_passes > 1:
+        selected_summary = " ".join(
+            f"P{pass_index}={count}"
+            for pass_index, count in enumerate(selected_pass_counts[1:], start=1)
+        )
+        print(f"Selected Passes:      {selected_summary}", file=log_stream)
     if num_truth_shots:
         print(f"Logical Errors:       {num_errors}", file=log_stream)
     else:
@@ -654,12 +1054,22 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Run trellis beam decoding ranked by mass minus a detcost-style future penalty, "
+            "optionally refined by multi-pass candidate-state Bellman backups, "
             "with Stim-compatible shot-data I/O options."
         ),
         allow_abbrev=False,
     )
     parser.add_argument("--circuit", required=True, help="Path to the .stim circuit file.")
     parser.add_argument("--beam", type=int, default=1000, help="Beam width cutoff.")
+    parser.add_argument(
+        "--num-passes",
+        type=int,
+        default=1,
+        help=(
+            "Number of forward/backward refinement passes. 1 reproduces the original single-pass beam search. "
+            "Larger values reuse beam states from one pass to sharpen the remaining-cost estimates of the next."
+        ),
+    )
     parser.add_argument(
         "--sample-num-shots",
         type=int,
@@ -749,6 +1159,8 @@ def _parse_args() -> argparse.Namespace:
 
     if args.beam <= 0:
         raise ValueError("--beam must be positive.")
+    if args.num_passes <= 0:
+        raise ValueError("--num-passes must be positive.")
     if args.sample_num_shots < 0:
         raise ValueError("--sample-num-shots must be non-negative.")
     if args.sample_seed is not None and args.sample_seed < 0:

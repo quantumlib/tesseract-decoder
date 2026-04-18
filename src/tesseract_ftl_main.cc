@@ -304,13 +304,15 @@ int main(int argc, char* argv[]) {
       .flag()
       .store_into(args.ignore_blocked_errors_in_heuristic);
   program.add_argument("--num-min-dets-to-consider")
-      .help("Experimental: when expanding a node, branch on the first N active detectors in the "
-            "selected detector order.")
+      .help(
+          "Experimental: when expanding a node, branch on the first N active detectors in the "
+          "selected detector order.")
       .default_value(size_t(1))
       .store_into(args.num_min_dets_to_consider);
   program.add_argument("--detector-choice-policy")
-      .help("Experimental detector pivot policy: order, fewest_incident_errors, "
-            "largest_budget, or largest_budget_per_incident.")
+      .help(
+          "Experimental detector pivot policy: order, fewest_incident_errors, "
+          "largest_budget, or largest_budget_per_incident.")
       .default_value(std::string("order"))
       .store_into(args.detector_choice_policy);
   program.add_argument("--error-order-policy")
@@ -326,8 +328,9 @@ int main(int argc, char* argv[]) {
       .default_value(size_t(0))
       .store_into(args.root_det_order_depth);
   program.add_argument("--exact-child-refine-count")
-      .help("Experimental exact mode: immediately LP-refine the first N generated children per "
-            "expanded node.")
+      .help(
+          "Experimental exact mode: immediately LP-refine the first N generated children per "
+          "expanded node.")
       .default_value(size_t(0))
       .store_into(args.exact_child_refine_count);
 
