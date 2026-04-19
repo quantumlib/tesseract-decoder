@@ -22,13 +22,6 @@
 #include "common.h"
 #include "stim.h"
 
-enum class TesseractTrellisPruneMode {
-  MergedStates,
-  KeepBest,
-  BranchEntries,
-  NoMerge,
-};
-
 enum class TesseractTrellisRankingMode {
   MassOnly,
   FutureDetcostRanked,
@@ -77,10 +70,8 @@ struct TesseractTrellisConfig {
   stim::DetectorErrorModel dem;
   size_t beam_width = 1024;
   double beam_eps = 0.0;
-  size_t merge_interval = 1;
   bool verbose = false;
   bool track_kept_state_stats = false;
-  TesseractTrellisPruneMode prune_mode = TesseractTrellisPruneMode::MergedStates;
   TesseractTrellisRankingMode ranking_mode = TesseractTrellisRankingMode::MassOnly;
 };
 

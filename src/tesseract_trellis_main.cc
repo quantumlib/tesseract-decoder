@@ -27,14 +27,6 @@
 
 namespace {
 
-TesseractTrellisPruneMode parse_prune_mode(const std::string& value) {
-  if (value == "merged") return TesseractTrellisPruneMode::MergedStates;
-  if (value == "keep-best") return TesseractTrellisPruneMode::KeepBest;
-  if (value == "branch") return TesseractTrellisPruneMode::BranchEntries;
-  if (value == "none") return TesseractTrellisPruneMode::NoMerge;
-  throw std::invalid_argument("Unknown trellis prune mode: " + value);
-}
-
 TesseractTrellisRankingMode parse_ranking_mode(const std::string& value) {
   if (value == "mass") return TesseractTrellisRankingMode::MassOnly;
   if (value == "future-detcost") return TesseractTrellisRankingMode::FutureDetcostRanked;
@@ -68,8 +60,6 @@ struct Args {
   size_t num_threads = 1;
   size_t beam_width = 1024;
   double beam_eps = 0.0;
-  size_t merge_interval = 1;
-  std::string prune_mode = "merged";
   std::string ranking_mode = "mass";
 
   bool verbose = false;
@@ -124,15 +114,7 @@ struct Args {
     if (!std::isfinite(beam_eps) || beam_eps < 0.0 || beam_eps >= 1.0) {
       throw std::invalid_argument("--beam-eps must satisfy 0 <= beam-eps < 1.");
     }
-    if (merge_interval == 0) {
-      throw std::invalid_argument("--merge-interval must be at least 1.");
-    }
-    parse_prune_mode(prune_mode);
     parse_ranking_mode(ranking_mode);
-    if (beam_eps != 0.0 && prune_mode != "merged") {
-      throw std::invalid_argument(
-          "--beam-eps is currently only supported with --prune-mode=merged.");
-    }
   }
 
   void extract(TesseractTrellisConfig& config, std::vector<stim::SparseShot>& shots,
@@ -166,10 +148,8 @@ struct Args {
 
     config.beam_width = beam_width;
     config.beam_eps = beam_eps;
-    config.merge_interval = merge_interval;
     config.verbose = verbose;
     config.track_kept_state_stats = print_stats;
-    config.prune_mode = parse_prune_mode(prune_mode);
     config.ranking_mode = parse_ranking_mode(ranking_mode);
 
     if (sample_num_shots > 0) {
@@ -296,24 +276,11 @@ int main(int argc, char* argv[]) {
   program.add_argument("--beam").default_value(size_t(1024)).store_into(args.beam_width);
   program.add_argument("--beam-eps")
       .help(
-          "With --prune-mode=merged, keep at most --beam states and also drop the suffix once "
-          "the kept prefix has accumulated at least (1 - beam-eps) of the total merged-state "
-          "mass. Use 0 to disable the mass-threshold cutoff.")
+          "Keep at most --beam merged states and also drop the suffix once the kept prefix has "
+          "accumulated at least (1 - beam-eps) of the total merged-state mass. Use 0 to disable "
+          "the mass-threshold cutoff.")
       .default_value(0.0)
       .store_into(args.beam_eps);
-  program.add_argument("--merge-interval").default_value(size_t(1)).store_into(args.merge_interval);
-  program.add_argument("--prune-mode")
-      .help(
-          "Trellis pruning mode: merged, keep-best, branch, or none. "
-          "merged sums probabilities of all branches with the same residual detection events. "
-          "keep-best keeps only the single highest-probability branch for each residual detection "
-          "state. "
-          "branch ranks branches individually, but still merges exact duplicate (state, "
-          "observable) entries first. "
-          "none skips even that exact-duplicate merge, so identical branches may occupy multiple "
-          "beam slots.")
-      .default_value(std::string("merged"))
-      .store_into(args.prune_mode);
   program.add_argument("--ranking-mode")
       .help("Trellis ranking mode: mass or future-detcost")
       .default_value(std::string("mass"))
