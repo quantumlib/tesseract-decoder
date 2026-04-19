@@ -57,29 +57,23 @@ struct Fault {
   std::vector<int> detectors;
 };
 
-struct WideStateGroup {
-  double mass;
-  double score;
-  size_t begin;
-  size_t end;
-};
-
 template <size_t Words>
 using FixedWideStateWords = std::array<uint64_t, Words>;
 
 template <size_t Words>
-struct FixedWidePackedMass {
+struct FixedWideStateEntry {
   FixedWideStateWords<Words> state_words{};
-  uint64_t obs_mask = 0;
-  double mass = 0.0;
+  double mass0 = 0.0;
+  double mass1 = 0.0;
   double penalty = 0.0;
+  double score = -INF;
 };
 
 template <size_t Words>
 struct CompiledWideLayerTemplate {
   double q = 0.0;
   double p = 0.0;
-  uint64_t obs_mask = 0;
+  bool toggles_observable = false;
   std::array<uint64_t, Words> surviving_masks{};
   std::array<uint8_t, Words> projection_dst_words{};
   std::array<uint8_t, Words> projection_dst_offsets{};
@@ -314,6 +308,11 @@ double score_mass_and_penalty(double mass, double penalty,
   return std::log(mass) - penalty;
 }
 
+template <size_t Words>
+TESSERACT_ALWAYS_INLINE double total_entry_mass(const FixedWideStateEntry<Words>& entry) {
+  return entry.mass0 + entry.mass1;
+}
+
 void reset_kept_state_stats(TesseractTrellisDecoder* decoder) {
   decoder->kept_state_sample_count = 0;
   decoder->kept_state_min = 0;
@@ -489,40 +488,35 @@ BranchPenaltyUpdate compute_compiled_wide_branch_update(
 }
 
 template <size_t Words>
-void normalize_compiled_items(std::vector<FixedWidePackedMass<Words>>* items) {
+void normalize_compiled_items(std::vector<FixedWideStateEntry<Words>>* items) {
   double total = 0.0;
   for (const auto& item : *items) {
-    total += item.mass;
+    total += total_entry_mass(item);
   }
   if (total == 0.0) {
     return;
   }
   for (auto& item : *items) {
-    item.mass /= total;
+    item.mass0 /= total;
+    item.mass1 /= total;
   }
 }
 
 template <size_t Words>
-void merge_equal_compiled_keys_inplace(std::vector<FixedWidePackedMass<Words>>* items) {
+void merge_equal_compiled_keys_inplace(std::vector<FixedWideStateEntry<Words>>* items) {
   if (items->empty()) {
     return;
   }
   std::sort(items->begin(), items->end(),
-            [](const FixedWidePackedMass<Words>& a, const FixedWidePackedMass<Words>& b) {
-              if (fixed_wide_state_less(a.state_words, b.state_words)) {
-                return true;
-              }
-              if (fixed_wide_state_less(b.state_words, a.state_words)) {
-                return false;
-              }
-              return a.obs_mask < b.obs_mask;
+            [](const FixedWideStateEntry<Words>& a, const FixedWideStateEntry<Words>& b) {
+              return fixed_wide_state_less(a.state_words, b.state_words);
             });
 
   size_t out = 0;
   for (size_t i = 1; i < items->size(); ++i) {
-    if ((*items)[i].obs_mask == (*items)[out].obs_mask &&
-        (*items)[i].state_words == (*items)[out].state_words) {
-      (*items)[out].mass += (*items)[i].mass;
+    if ((*items)[i].state_words == (*items)[out].state_words) {
+      (*items)[out].mass0 += (*items)[i].mass0;
+      (*items)[out].mass1 += (*items)[i].mass1;
     } else {
       ++out;
       if (out != i) {
@@ -534,111 +528,61 @@ void merge_equal_compiled_keys_inplace(std::vector<FixedWidePackedMass<Words>>* 
 }
 
 template <size_t Words>
-bool compiled_wide_state_group_score_greater(const std::vector<FixedWidePackedMass<Words>>& entries,
-                                             const WideStateGroup& a, const WideStateGroup& b) {
+bool compiled_state_score_greater(const FixedWideStateEntry<Words>& a,
+                                  const FixedWideStateEntry<Words>& b) {
   if (a.score != b.score) {
     return a.score > b.score;
   }
-  return fixed_wide_state_less(entries[a.begin].state_words, entries[b.begin].state_words);
+  return fixed_wide_state_less(a.state_words, b.state_words);
 }
 
 template <size_t Words>
-size_t trim_compiled_wide_state_groups_by_beam_and_mass(
-    const std::vector<FixedWidePackedMass<Words>>& entries, std::vector<WideStateGroup>* groups,
-    size_t beam_width, double beam_eps) {
-  if (groups->empty()) {
-    return 0;
-  }
-
-  double total_mass = 0.0;
-  if (beam_eps > 0.0) {
-    for (const auto& group : *groups) {
-      total_mass += group.mass;
-    }
-  }
-
-  if (groups->size() > beam_width) {
-    std::nth_element(groups->begin(), groups->begin() + beam_width, groups->end(),
-                     [&entries](const WideStateGroup& a, const WideStateGroup& b) {
-                       return compiled_wide_state_group_score_greater(entries, a, b);
-                     });
-    groups->resize(beam_width);
-  } else if (beam_eps <= 0.0) {
-    return groups->size();
-  }
-
-  if (beam_eps <= 0.0 || total_mass <= 0.0) {
-    return groups->size();
-  }
-
-  std::sort(groups->begin(), groups->end(),
-            [&entries](const WideStateGroup& a, const WideStateGroup& b) {
-              return compiled_wide_state_group_score_greater(entries, a, b);
-            });
-  const double retained_target_mass = total_mass * (1.0 - beam_eps);
-  double retained_mass = 0.0;
-  size_t keep_count = 0;
-  while (keep_count < groups->size()) {
-    retained_mass += (*groups)[keep_count].mass;
-    ++keep_count;
-    if (retained_mass >= retained_target_mass) {
-      break;
-    }
-  }
-  groups->resize(keep_count);
-  std::sort(groups->begin(), groups->end(),
-            [](const WideStateGroup& a, const WideStateGroup& b) { return a.begin < b.begin; });
-  return groups->size();
-}
-
-template <size_t Words>
-std::vector<WideStateGroup> collect_compiled_wide_state_groups(
-    const std::vector<FixedWidePackedMass<Words>>& entries,
-    TesseractTrellisRankingMode ranking_mode) {
-  std::vector<WideStateGroup> groups;
-  if (entries.empty()) {
-    return groups;
-  }
-  groups.reserve(entries.size());
-  size_t begin = 0;
-  while (begin < entries.size()) {
-    double mass = 0.0;
-    size_t end = begin;
-    while (end < entries.size() && entries[end].state_words == entries[begin].state_words) {
-      mass += entries[end].mass;
-      ++end;
-    }
-    groups.push_back(
-        {mass, score_mass_and_penalty(mass, entries[begin].penalty, ranking_mode), begin, end});
-    begin = end;
-  }
-  return groups;
-}
-
-template <size_t Words>
-size_t keep_top_compiled_states(std::vector<FixedWidePackedMass<Words>>* entries,
+size_t keep_top_compiled_states(std::vector<FixedWideStateEntry<Words>>* entries,
                                 size_t beam_width, double beam_eps,
                                 TesseractTrellisRankingMode ranking_mode) {
   if (entries->empty()) {
     return 0;
   }
-  auto groups = collect_compiled_wide_state_groups(*entries, ranking_mode);
-  const size_t kept_group_count =
-      trim_compiled_wide_state_groups_by_beam_and_mass(*entries, &groups, beam_width, beam_eps);
 
-  std::vector<FixedWidePackedMass<Words>> kept;
-  size_t kept_entries = 0;
-  for (const auto& group : groups) {
-    kept_entries += group.end - group.begin;
-  }
-  kept.reserve(kept_entries);
-  for (const auto& group : groups) {
-    for (size_t k = group.begin; k < group.end; ++k) {
-      kept.push_back(std::move((*entries)[k]));
+  double total_mass = 0.0;
+  for (auto& entry : *entries) {
+    const double mass = total_entry_mass(entry);
+    entry.score = score_mass_and_penalty(mass, entry.penalty, ranking_mode);
+    if (beam_eps > 0.0) {
+      total_mass += mass;
     }
   }
-  *entries = std::move(kept);
-  return kept_group_count;
+
+  if (entries->size() > beam_width) {
+    std::nth_element(entries->begin(), entries->begin() + beam_width, entries->end(),
+                     [](const FixedWideStateEntry<Words>& a, const FixedWideStateEntry<Words>& b) {
+                       return compiled_state_score_greater(a, b);
+                     });
+    entries->resize(beam_width);
+  } else if (beam_eps <= 0.0) {
+    return entries->size();
+  }
+
+  if (beam_eps <= 0.0 || total_mass <= 0.0) {
+    return entries->size();
+  }
+
+  std::sort(entries->begin(), entries->end(),
+            [](const FixedWideStateEntry<Words>& a, const FixedWideStateEntry<Words>& b) {
+              return compiled_state_score_greater(a, b);
+            });
+  const double retained_target_mass = total_mass * (1.0 - beam_eps);
+  double retained_mass = 0.0;
+  size_t keep_count = 0;
+  while (keep_count < entries->size()) {
+    retained_mass += total_entry_mass((*entries)[keep_count]);
+    ++keep_count;
+    if (retained_mass >= retained_target_mass) {
+      break;
+    }
+  }
+  entries->resize(keep_count);
+  return keep_count;
 }
 
 template <size_t Words>
@@ -655,7 +599,10 @@ std::vector<CompiledWideLayerTemplate<Words>> compile_wide_layers(
     CompiledWideLayerTemplate<Words> compiled;
     compiled.q = layer.q;
     compiled.p = layer.p;
-    compiled.obs_mask = layer.obs_mask;
+    if (layer.obs_mask > 1) {
+      throw std::invalid_argument("tesseract_trellis currently supports at most 1 observable");
+    }
+    compiled.toggles_observable = layer.obs_mask != 0;
 
     std::array<uint64_t, Words> surviving_masks{};
     for (uint32_t current_local : layer.surviving_local_indices) {
@@ -738,11 +685,11 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
                                                                      actual_detector_words);
     }
 
-    std::vector<FixedWidePackedMass<Words>> beam_entries;
-    std::vector<FixedWidePackedMass<Words>> next_entries;
+    std::vector<FixedWideStateEntry<Words>> beam_entries;
+    std::vector<FixedWideStateEntry<Words>> next_entries;
     beam_entries.reserve(decoder->config.beam_width * 2 + 2);
     next_entries.reserve(decoder->config.beam_width * 4 + 4);
-    beam_entries.push_back({{}, 0, 1.0, initial_penalty});
+    beam_entries.push_back({{}, 1.0, 0.0, initial_penalty});
     decoder->max_beam_size_seen = 1;
 
     const bool compute_penalties =
@@ -776,16 +723,28 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
           FixedWideStateWords<Words> projected_toggled = projected_state;
           xor_compiled_wide_state(&projected_toggled, layer.projected_fault_mask_words);
           next_entries.push_back(
-              {std::move(projected_state), item.obs_mask, item.mass * layer.q, update.absent_penalty});
-          next_entries.push_back({std::move(projected_toggled), item.obs_mask ^ layer.obs_mask,
-                                  item.mass * layer.p, update.present_penalty});
+              {std::move(projected_state), item.mass0 * layer.q, item.mass1 * layer.q,
+               update.absent_penalty});
+          if (layer.toggles_observable) {
+            next_entries.push_back({std::move(projected_toggled), item.mass1 * layer.p,
+                                    item.mass0 * layer.p, update.present_penalty});
+          } else {
+            next_entries.push_back({std::move(projected_toggled), item.mass0 * layer.p,
+                                    item.mass1 * layer.p, update.present_penalty});
+          }
         } else if (keep_absent) {
           next_entries.push_back(
-              {std::move(projected_state), item.obs_mask, item.mass * layer.q, update.absent_penalty});
+              {std::move(projected_state), item.mass0 * layer.q, item.mass1 * layer.q,
+               update.absent_penalty});
         } else if (keep_present) {
           xor_compiled_wide_state(&projected_state, layer.projected_fault_mask_words);
-          next_entries.push_back({std::move(projected_state), item.obs_mask ^ layer.obs_mask,
-                                  item.mass * layer.p, update.present_penalty});
+          if (layer.toggles_observable) {
+            next_entries.push_back({std::move(projected_state), item.mass1 * layer.p,
+                                    item.mass0 * layer.p, update.present_penalty});
+          } else {
+            next_entries.push_back({std::move(projected_state), item.mass0 * layer.p,
+                                    item.mass1 * layer.p, update.present_penalty});
+          }
         }
       }
       auto t1 = std::chrono::high_resolution_clock::now();
@@ -820,11 +779,8 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
       if (!fixed_wide_state_zero(item.state_words)) {
         continue;
       }
-      if (item.obs_mask == 0) {
-        decoder->total_mass_obs0 += item.mass;
-      } else if (item.obs_mask == 1) {
-        decoder->total_mass_obs1 += item.mass;
-      }
+      decoder->total_mass_obs0 += item.mass0;
+      decoder->total_mass_obs1 += item.mass1;
     }
     if (decoder->total_mass_obs0 == 0.0 && decoder->total_mass_obs1 == 0.0) {
       decoder->low_confidence_flag = true;
@@ -903,6 +859,9 @@ TesseractTrellisDecoder::TesseractTrellisDecoder(TesseractTrellisConfig config_)
   errors = get_errors_from_dem(config.dem.flattened());
   num_detectors = config.dem.count_detectors();
   num_observables = config.dem.count_observables();
+  if (num_observables > 1) {
+    throw std::invalid_argument("tesseract_trellis currently supports at most 1 observable");
+  }
 
   all_possible_detector_words.assign(num_state_words(num_detectors), 0);
   actual_detector_words_scratch.assign(all_possible_detector_words.size(), 0);
