@@ -84,7 +84,8 @@ struct CompiledWideLayerTemplate {
   std::array<uint8_t, Words> projection_dst_words{};
   std::array<uint8_t, Words> projection_dst_offsets{};
   std::array<uint64_t, Words> projected_fault_mask_words{};
-  std::vector<uint32_t> fault_detector_indices;
+  std::vector<uint32_t> fault_target_word_indices;
+  std::vector<uint64_t> fault_target_bit_masks;
   std::vector<uint8_t> fault_word_indices;
   std::vector<uint64_t> fault_bit_masks;
   std::vector<uint8_t> fault_was_active_before;
@@ -255,6 +256,14 @@ size_t num_state_words(size_t num_bits) {
   return (num_bits + 63) >> 6;
 }
 
+TESSERACT_ALWAYS_INLINE size_t detector_word_index(size_t detector) {
+  return detector >> 6;
+}
+
+TESSERACT_ALWAYS_INLINE uint64_t detector_word_mask(size_t detector) {
+  return uint64_t{1} << (detector & 63);
+}
+
 TESSERACT_ALWAYS_INLINE uint64_t compact_bits_u64(uint64_t value, uint64_t mask) {
 #if defined(__BMI2__) && \
     (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86))
@@ -275,14 +284,17 @@ TESSERACT_ALWAYS_INLINE uint64_t compact_bits_u64(uint64_t value, uint64_t mask)
 }
 
 double compute_initial_penalty_for_active_detectors(
-    const std::vector<int>& active_detectors, const boost::dynamic_bitset<>& actual_dets,
-    const std::vector<double>& initial_future_detcost) {
+    const std::vector<uint32_t>& active_detector_word_indices,
+    const std::vector<uint64_t>& active_detector_bit_masks,
+    const std::vector<double>& active_detector_costs,
+    const std::vector<uint64_t>& actual_detector_words) {
   double total = 0.0;
-  for (int detector : active_detectors) {
-    if (!actual_dets[(size_t)detector]) {
+  for (size_t k = 0; k < active_detector_costs.size(); ++k) {
+    if ((actual_detector_words[active_detector_word_indices[k]] & active_detector_bit_masks[k]) ==
+        0) {
       continue;
     }
-    double best = initial_future_detcost[(size_t)detector];
+    double best = active_detector_costs[k];
     if (best == INF) {
       return INF;
     }
@@ -436,17 +448,20 @@ FixedWideStateWords<Words> project_compiled_wide_state(
 template <size_t Words>
 BranchPenaltyUpdate compute_compiled_wide_branch_update(
     const FixedWideStateWords<Words>& base_state_words, double current_penalty,
-    const boost::dynamic_bitset<>& actual_dets, const CompiledWideLayerTemplate<Words>& layer,
+    const std::vector<uint64_t>& actual_detector_words,
+    const CompiledWideLayerTemplate<Words>& layer,
     bool compute_penalties) {
   BranchPenaltyUpdate update;
   update.absent_penalty = compute_penalties ? current_penalty : 0.0;
   update.present_penalty = compute_penalties ? current_penalty : 0.0;
 
-  for (size_t k = 0; k < layer.fault_detector_indices.size(); ++k) {
+  for (size_t k = 0; k < layer.fault_target_word_indices.size(); ++k) {
     const bool state_bit =
         layer.fault_was_active_before[k] &&
         ((base_state_words[layer.fault_word_indices[k]] & layer.fault_bit_masks[k]) != 0);
-    const bool target_bit = actual_dets[layer.fault_detector_indices[k]];
+    const bool target_bit =
+        (actual_detector_words[layer.fault_target_word_indices[k]] &
+         layer.fault_target_bit_masks[k]) != 0;
     const bool mismatch = state_bit ^ target_bit;
     const int32_t next_local = layer.next_local_indices[k];
 
@@ -659,7 +674,8 @@ std::vector<CompiledWideLayerTemplate<Words>> compile_wide_layers(
     }
 
     const auto& transition = layer.detcost_transition;
-    compiled.fault_detector_indices.reserve(transition.fault_local_indices.size());
+    compiled.fault_target_word_indices.reserve(transition.fault_local_indices.size());
+    compiled.fault_target_bit_masks.reserve(transition.fault_local_indices.size());
     compiled.fault_word_indices.reserve(transition.fault_local_indices.size());
     compiled.fault_bit_masks.reserve(transition.fault_local_indices.size());
     compiled.fault_was_active_before.reserve(transition.fault_local_indices.size());
@@ -667,7 +683,9 @@ std::vector<CompiledWideLayerTemplate<Words>> compile_wide_layers(
     compiled.current_costs = transition.current_costs;
     compiled.next_costs = transition.next_costs;
     for (uint32_t local : transition.fault_local_indices) {
-      compiled.fault_detector_indices.push_back((uint32_t)layer.current_active_detectors[local]);
+      const uint32_t detector = (uint32_t)layer.current_active_detectors[local];
+      compiled.fault_target_word_indices.push_back((uint32_t)detector_word_index(detector));
+      compiled.fault_target_bit_masks.push_back(detector_word_mask(detector));
       compiled.fault_word_indices.push_back(static_cast<uint8_t>(local >> 6));
       compiled.fault_bit_masks.push_back(uint64_t{1} << (local & 63));
       compiled.fault_was_active_before.push_back(local < layer.previous_width);
@@ -681,21 +699,32 @@ std::vector<CompiledWideLayerTemplate<Words>> compile_wide_layers(
 template <size_t Words>
 struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
   explicit CompiledWideKernel(std::vector<CompiledWideLayerTemplate<Words>> layers_,
-                              std::vector<int> initial_active_detectors_,
+                              std::vector<uint32_t> initial_detector_word_indices_,
+                              std::vector<uint64_t> initial_detector_bit_masks_,
+                              std::vector<double> initial_detector_costs_,
                               size_t max_frontier_width_)
       : layers(std::move(layers_)),
-        initial_active_detectors(std::move(initial_active_detectors_)),
+        initial_detector_word_indices(std::move(initial_detector_word_indices_)),
+        initial_detector_bit_masks(std::move(initial_detector_bit_masks_)),
+        initial_detector_costs(std::move(initial_detector_costs_)),
         max_frontier_width(max_frontier_width_) {}
 
   void decode_shot(TesseractTrellisDecoder* decoder,
                    const std::vector<uint64_t>& detections) const override {
-    boost::dynamic_bitset<> actual_dets(decoder->num_detectors);
+    auto& actual_detector_words = decoder->actual_detector_words_scratch;
+    std::fill(actual_detector_words.begin(), actual_detector_words.end(), 0);
     for (uint64_t d : detections) {
-      if (d >= decoder->num_detectors || !decoder->all_possible_detectors[d]) {
+      if (d >= decoder->num_detectors) {
         decoder->low_confidence_flag = true;
         return;
       }
-      actual_dets.flip((size_t)d);
+      const size_t word = detector_word_index((size_t)d);
+      const uint64_t mask = detector_word_mask((size_t)d);
+      if ((decoder->all_possible_detector_words[word] & mask) == 0) {
+        decoder->low_confidence_flag = true;
+        return;
+      }
+      actual_detector_words[word] ^= mask;
     }
 
     decoder->max_frontier_width_seen = max_frontier_width;
@@ -703,8 +732,10 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
     double initial_penalty = 0.0;
     if (decoder->config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked &&
         !layers.empty()) {
-      initial_penalty = compute_initial_penalty_for_active_detectors(
-          initial_active_detectors, actual_dets, decoder->initial_future_detcost);
+      initial_penalty = compute_initial_penalty_for_active_detectors(initial_detector_word_indices,
+                                                                     initial_detector_bit_masks,
+                                                                     initial_detector_costs,
+                                                                     actual_detector_words);
     }
 
     std::vector<FixedWidePackedMass<Words>> beam_entries;
@@ -731,7 +762,7 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
       for (const auto& item : beam_entries) {
         ++decoder->num_states_expanded;
         BranchPenaltyUpdate update = compute_compiled_wide_branch_update(
-            item.state_words, item.penalty, actual_dets, layer, compute_penalties);
+            item.state_words, item.penalty, actual_detector_words, layer, compute_penalties);
 
         if (!update.absent_valid && !update.present_valid) {
           continue;
@@ -806,12 +837,15 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
   }
 
   std::vector<CompiledWideLayerTemplate<Words>> layers;
-  std::vector<int> initial_active_detectors;
+  std::vector<uint32_t> initial_detector_word_indices;
+  std::vector<uint64_t> initial_detector_bit_masks;
+  std::vector<double> initial_detector_costs;
   size_t max_frontier_width;
 };
 
 std::unique_ptr<TesseractTrellisWideKernelBase> build_compiled_wide_kernel(
-    const std::vector<TesseractTrellisWideLayerTemplate>& layers, size_t max_frontier_width) {
+    const std::vector<TesseractTrellisWideLayerTemplate>& layers, size_t max_frontier_width,
+    const std::vector<double>& initial_future_detcost) {
   const size_t required_words = std::max<size_t>(1, num_state_words(max_frontier_width));
   if (required_words > kMaxCompiledWideStateWords) {
     throw std::invalid_argument("Wide trellis frontier requires " + std::to_string(required_words) +
@@ -820,21 +854,37 @@ std::unique_ptr<TesseractTrellisWideKernelBase> build_compiled_wide_kernel(
                                 " compiled words are enabled.");
   }
 
-  const std::vector<int> initial_active_detectors =
-      layers.empty() ? std::vector<int>{} : layers.front().current_active_detectors;
+  std::vector<uint32_t> initial_detector_word_indices;
+  std::vector<uint64_t> initial_detector_bit_masks;
+  std::vector<double> initial_detector_costs;
+  if (!layers.empty()) {
+    const auto& initial_active_detectors = layers.front().current_active_detectors;
+    initial_detector_word_indices.reserve(initial_active_detectors.size());
+    initial_detector_bit_masks.reserve(initial_active_detectors.size());
+    initial_detector_costs.reserve(initial_active_detectors.size());
+    for (int detector : initial_active_detectors) {
+      initial_detector_word_indices.push_back((uint32_t)detector_word_index((size_t)detector));
+      initial_detector_bit_masks.push_back(detector_word_mask((size_t)detector));
+      initial_detector_costs.push_back(initial_future_detcost[(size_t)detector]);
+    }
+  }
   switch (required_words) {
     case 1:
       return std::make_unique<CompiledWideKernel<1>>(
-          compile_wide_layers<1>(layers), initial_active_detectors, max_frontier_width);
+          compile_wide_layers<1>(layers), initial_detector_word_indices, initial_detector_bit_masks,
+          initial_detector_costs, max_frontier_width);
     case 2:
       return std::make_unique<CompiledWideKernel<2>>(
-          compile_wide_layers<2>(layers), initial_active_detectors, max_frontier_width);
+          compile_wide_layers<2>(layers), initial_detector_word_indices, initial_detector_bit_masks,
+          initial_detector_costs, max_frontier_width);
     case 3:
       return std::make_unique<CompiledWideKernel<3>>(
-          compile_wide_layers<3>(layers), initial_active_detectors, max_frontier_width);
+          compile_wide_layers<3>(layers), initial_detector_word_indices, initial_detector_bit_masks,
+          initial_detector_costs, max_frontier_width);
     case 4:
       return std::make_unique<CompiledWideKernel<4>>(
-          compile_wide_layers<4>(layers), initial_active_detectors, max_frontier_width);
+          compile_wide_layers<4>(layers), initial_detector_word_indices, initial_detector_bit_masks,
+          initial_detector_costs, max_frontier_width);
     default:
       throw std::invalid_argument("Unsupported compiled wide trellis word count.");
   }
@@ -854,10 +904,12 @@ TesseractTrellisDecoder::TesseractTrellisDecoder(TesseractTrellisConfig config_)
   num_detectors = config.dem.count_detectors();
   num_observables = config.dem.count_observables();
 
-  all_possible_detectors = boost::dynamic_bitset<>(num_detectors);
+  all_possible_detector_words.assign(num_state_words(num_detectors), 0);
+  actual_detector_words_scratch.assign(all_possible_detector_words.size(), 0);
   for (const auto& error : errors) {
     for (int d : error.symptom.detectors) {
-      all_possible_detectors[(size_t)d] = true;
+      all_possible_detector_words[detector_word_index((size_t)d)] |=
+          detector_word_mask((size_t)d);
     }
   }
 
@@ -865,10 +917,12 @@ TesseractTrellisDecoder::TesseractTrellisDecoder(TesseractTrellisConfig config_)
 
   size_t wide_frontier_width = 0;
   build_wide_layer_templates(faults, num_detectors, &wide_layer_templates, &wide_frontier_width);
+  std::vector<double> initial_future_detcost;
   build_future_detcost_transitions(faults, num_detectors, &wide_layer_templates,
                                    &initial_future_detcost);
   prepare_projected_fault_masks(&wide_layer_templates);
-  wide_kernel = build_compiled_wide_kernel(wide_layer_templates, wide_frontier_width);
+  wide_kernel =
+      build_compiled_wide_kernel(wide_layer_templates, wide_frontier_width, initial_future_detcost);
 }
 
 __attribute__((hot)) void TesseractTrellisDecoder::decode_shot(

@@ -15,7 +15,6 @@
 #ifndef TESSERACT_TRELLIS_DECODER_H
 #define TESSERACT_TRELLIS_DECODER_H
 
-#include <boost/dynamic_bitset.hpp>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -91,10 +90,10 @@ struct TesseractTrellisDecoder {
   std::vector<common::Error> errors;
   size_t num_observables = 0;
   size_t num_detectors = 0;
-  boost::dynamic_bitset<> all_possible_detectors;
+  std::vector<uint64_t> all_possible_detector_words;
+  std::vector<uint64_t> actual_detector_words_scratch;
   std::vector<TesseractTrellisWideLayerTemplate> wide_layer_templates;
   std::unique_ptr<TesseractTrellisWideKernelBase> wide_kernel;
-  std::vector<double> initial_future_detcost;
   std::vector<uint32_t> kept_state_histogram_scratch;
 };
 

@@ -149,7 +149,6 @@ cc_library(
     deps = [
         ":libcommon",
         ":libutils",
-        "@boost//:dynamic_bitset",
         "@stim//:stim_lib",
     ],
 )
@@ -163,7 +162,6 @@ cc_library(
     linkopts = OPT_LINKOPTS,
     deps = [
         ":libtesseract",
-        "@boost//:dynamic_bitset",
         "@highs",
     ],
 )
