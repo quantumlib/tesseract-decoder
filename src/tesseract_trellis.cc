@@ -75,6 +75,12 @@ struct BranchPenaltyUpdate {
   double present_penalty = 0.0;
 };
 
+struct FinalizeKeptStateStatsOnExit {
+  TesseractTrellisDecoder* decoder;
+
+  ~FinalizeKeptStateStatsOnExit();
+};
+
 std::vector<Fault> parse_faults(const std::vector<common::Error>& errors, size_t num_observables) {
   std::vector<Fault> faults;
   faults.reserve(errors.size());
@@ -662,6 +668,127 @@ double branch_score(const WidePackedMass& item, TesseractTrellisRankingMode rank
   return score_mass_and_penalty(item.mass, item.penalty, ranking_mode);
 }
 
+void reset_kept_state_stats(TesseractTrellisDecoder* decoder) {
+  decoder->kept_state_sample_count = 0;
+  decoder->kept_state_min = 0;
+  decoder->kept_state_median = 0;
+  decoder->kept_state_mean = 0;
+  decoder->kept_state_max = 0;
+  if (!decoder->config.track_kept_state_stats) {
+    return;
+  }
+
+  const size_t histogram_size = decoder->config.beam_width + 1;
+  if (decoder->kept_state_histogram_scratch.size() != histogram_size) {
+    decoder->kept_state_histogram_scratch.assign(histogram_size, 0);
+  } else {
+    std::fill(decoder->kept_state_histogram_scratch.begin(),
+              decoder->kept_state_histogram_scratch.end(), 0);
+  }
+}
+
+void record_kept_state_count(TesseractTrellisDecoder* decoder, size_t kept_states) {
+  if (!decoder->config.track_kept_state_stats) {
+    return;
+  }
+
+  kept_states = std::min(kept_states, decoder->config.beam_width);
+  if (decoder->kept_state_sample_count == 0) {
+    decoder->kept_state_min = kept_states;
+    decoder->kept_state_max = kept_states;
+  } else {
+    decoder->kept_state_min = std::min(decoder->kept_state_min, kept_states);
+    decoder->kept_state_max = std::max(decoder->kept_state_max, kept_states);
+  }
+  ++decoder->kept_state_sample_count;
+  decoder->kept_state_mean += kept_states;
+  ++decoder->kept_state_histogram_scratch[kept_states];
+}
+
+void finalize_kept_state_stats(TesseractTrellisDecoder* decoder) {
+  if (!decoder->config.track_kept_state_stats || decoder->kept_state_sample_count == 0) {
+    return;
+  }
+
+  decoder->kept_state_mean /= decoder->kept_state_sample_count;
+  const size_t lower_target = (decoder->kept_state_sample_count - 1) >> 1;
+  const size_t upper_target = decoder->kept_state_sample_count >> 1;
+  size_t seen = 0;
+  size_t lower = 0;
+  size_t upper = 0;
+  bool lower_found = false;
+  for (size_t kept_states = 0; kept_states < decoder->kept_state_histogram_scratch.size();
+       ++kept_states) {
+    seen += decoder->kept_state_histogram_scratch[kept_states];
+    if (!lower_found && seen > lower_target) {
+      lower = kept_states;
+      lower_found = true;
+    }
+    if (seen > upper_target) {
+      upper = kept_states;
+      break;
+    }
+  }
+  decoder->kept_state_median = 0.5 * (lower + upper);
+}
+
+FinalizeKeptStateStatsOnExit::~FinalizeKeptStateStatsOnExit() {
+  finalize_kept_state_stats(decoder);
+}
+
+bool small_state_group_score_greater(const SmallStateGroup& a, const SmallStateGroup& b) {
+  if (a.score != b.score) {
+    return a.score > b.score;
+  }
+  return a.state < b.state;
+}
+
+size_t trim_small_state_groups_by_beam_and_mass(std::vector<SmallStateGroup>* groups,
+                                                size_t beam_width, double beam_eps) {
+  if (groups->empty()) {
+    return 0;
+  }
+
+  double total_mass = 0.0;
+  if (beam_eps > 0.0) {
+    for (const auto& group : *groups) {
+      total_mass += group.mass;
+    }
+  }
+
+  if (groups->size() > beam_width) {
+    std::nth_element(groups->begin(), groups->begin() + beam_width, groups->end(),
+                     [](const SmallStateGroup& a, const SmallStateGroup& b) {
+                       return a.score > b.score;
+                     });
+    groups->resize(beam_width);
+  } else if (beam_eps <= 0.0) {
+    return groups->size();
+  }
+
+  if (beam_eps <= 0.0 || total_mass <= 0.0) {
+    return groups->size();
+  }
+
+  std::sort(groups->begin(), groups->end(), small_state_group_score_greater);
+  const double retained_target_mass = total_mass * (1.0 - beam_eps);
+  double retained_mass = 0.0;
+  size_t keep_count = 0;
+  while (keep_count < groups->size()) {
+    retained_mass += (*groups)[keep_count].mass;
+    ++keep_count;
+    if (retained_mass >= retained_target_mass) {
+      break;
+    }
+  }
+  groups->resize(keep_count);
+  std::sort(groups->begin(), groups->end(),
+            [](const SmallStateGroup& a, const SmallStateGroup& b) {
+              return a.begin < b.begin;
+            });
+  return groups->size();
+}
+
 std::vector<SmallStateGroup> collect_small_state_groups(
     const std::vector<PackedMass>& entries, TesseractTrellisRankingMode ranking_mode) {
   std::vector<SmallStateGroup> groups;
@@ -690,21 +817,14 @@ double state_score(const WideStateMass& item, TesseractTrellisRankingMode rankin
   return score_mass_and_penalty(item.mass, item.penalty, ranking_mode);
 }
 
-size_t keep_top_states(std::vector<PackedMass>& entries, size_t beam_width,
+size_t keep_top_states(std::vector<PackedMass>& entries, size_t beam_width, double beam_eps,
                        TesseractTrellisRankingMode ranking_mode) {
   if (entries.empty()) {
     return 0;
   }
   auto groups = collect_small_state_groups(entries, ranking_mode);
-  if (groups.size() <= beam_width) {
-    return groups.size();
-  }
-
-  std::nth_element(groups.begin(), groups.begin() + beam_width, groups.end(),
-                   [](const SmallStateGroup& a, const SmallStateGroup& b) {
-                     return a.score > b.score;
-                   });
-  groups.resize(beam_width);
+  const size_t kept_group_count =
+      trim_small_state_groups_by_beam_and_mass(&groups, beam_width, beam_eps);
 
   std::vector<PackedMass> kept;
   size_t kept_entries = 0;
@@ -718,23 +838,55 @@ size_t keep_top_states(std::vector<PackedMass>& entries, size_t beam_width,
     }
   }
   entries = std::move(kept);
-  return groups.size();
+  return kept_group_count;
 }
 
-size_t keep_top_states(std::vector<WidePackedMass>& entries, size_t beam_width,
+size_t keep_top_states(std::vector<WidePackedMass>& entries, size_t beam_width, double beam_eps,
                        TesseractTrellisRankingMode ranking_mode) {
   if (entries.empty()) {
     return 0;
   }
   auto totals = accumulate_state_masses_from_entries(entries);
-  if (totals.size() <= beam_width) {
+  double total_mass = 0.0;
+  if (beam_eps > 0.0) {
+    for (const auto& item : totals) {
+      total_mass += item.mass;
+    }
+  }
+
+  if (totals.size() > beam_width) {
+    std::nth_element(totals.begin(), totals.begin() + beam_width, totals.end(),
+                     [ranking_mode](const WideStateMass& a, const WideStateMass& b) {
+                       return state_score(a, ranking_mode) > state_score(b, ranking_mode);
+                     });
+    totals.resize(beam_width);
+  } else if (beam_eps <= 0.0) {
     return totals.size();
   }
-  std::nth_element(totals.begin(), totals.begin() + beam_width, totals.end(),
-                   [ranking_mode](const WideStateMass& a, const WideStateMass& b) {
-                     return state_score(a, ranking_mode) > state_score(b, ranking_mode);
-                   });
-  totals.resize(beam_width);
+
+  if (beam_eps > 0.0 && total_mass > 0.0) {
+    std::sort(totals.begin(), totals.end(),
+              [ranking_mode](const WideStateMass& a, const WideStateMass& b) {
+                double sa = state_score(a, ranking_mode);
+                double sb = state_score(b, ranking_mode);
+                if (sa != sb) {
+                  return sa > sb;
+                }
+                return wide_state_less(a.state_words, b.state_words);
+              });
+    const double retained_target_mass = total_mass * (1.0 - beam_eps);
+    double retained_mass = 0.0;
+    size_t keep_count = 0;
+    while (keep_count < totals.size()) {
+      retained_mass += totals[keep_count].mass;
+      ++keep_count;
+      if (retained_mass >= retained_target_mass) {
+        break;
+      }
+    }
+    totals.resize(keep_count);
+  }
+
   std::sort(totals.begin(), totals.end(), [](const WideStateMass& a, const WideStateMass& b) {
     return wide_state_less(a.state_words, b.state_words);
   });
@@ -953,6 +1105,7 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
   num_states_merged = 0;
   max_beam_size_seen = 0;
   max_frontier_width_seen = 0;
+  reset_kept_state_stats(this);
   time_expand_seconds = 0;
   time_collapse_seconds = 0;
   time_truncate_seconds = 0;
@@ -960,6 +1113,7 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
   predicted_obs_mask = 0;
   total_mass_obs0 = 0;
   total_mass_obs1 = 0;
+  FinalizeKeptStateStatsOnExit kept_state_stats_guard{this};
 
   if (has_small_layer_templates) {
     std::fill(scratch_small_current_target_bits.begin(), scratch_small_current_target_bits.end(),
@@ -1069,7 +1223,8 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
 
       size_t kept_states = 0;
       if (config.prune_mode == TesseractTrellisPruneMode::MergedStates) {
-        kept_states = keep_top_states(beam_entries, config.beam_width, config.ranking_mode);
+        kept_states =
+            keep_top_states(beam_entries, config.beam_width, config.beam_eps, config.ranking_mode);
       } else if (config.prune_mode == TesseractTrellisPruneMode::KeepBest) {
         keep_best_state_representatives(beam_entries, config.beam_width, config.ranking_mode);
       } else if (config.prune_mode == TesseractTrellisPruneMode::BranchEntries ||
@@ -1077,6 +1232,12 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
         keep_top_branch_entries(beam_entries, config.beam_width, config.ranking_mode);
       }
       normalize_items(beam_entries);
+      const size_t kept_state_sample =
+          beam_entries.empty()
+              ? 0
+              : (config.prune_mode == TesseractTrellisPruneMode::MergedStates ? kept_states
+                                                                              : beam_entries.size());
+      record_kept_state_count(this, kept_state_sample);
       if (beam_entries.empty()) {
         low_confidence_flag = true;
         return;
@@ -1205,7 +1366,8 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
 
       size_t kept_states = 0;
       if (config.prune_mode == TesseractTrellisPruneMode::MergedStates) {
-        kept_states = keep_top_states(beam_entries, config.beam_width, config.ranking_mode);
+        kept_states =
+            keep_top_states(beam_entries, config.beam_width, config.beam_eps, config.ranking_mode);
       } else if (config.prune_mode == TesseractTrellisPruneMode::KeepBest) {
         keep_best_state_representatives(beam_entries, config.beam_width, config.ranking_mode);
       } else if (config.prune_mode == TesseractTrellisPruneMode::BranchEntries ||
@@ -1213,6 +1375,12 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
         keep_top_branch_entries(beam_entries, config.beam_width, config.ranking_mode);
       }
       normalize_items(beam_entries);
+      const size_t kept_state_sample =
+          beam_entries.empty()
+              ? 0
+              : (config.prune_mode == TesseractTrellisPruneMode::MergedStates ? kept_states
+                                                                              : beam_entries.size());
+      record_kept_state_count(this, kept_state_sample);
       if (beam_entries.empty()) {
         low_confidence_flag = true;
         return;

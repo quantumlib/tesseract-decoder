@@ -14,6 +14,7 @@
 
 #include <argparse/argparse.hpp>
 #include <atomic>
+#include <cmath>
 #include <fstream>
 #include <memory>
 #include <nlohmann/json.hpp>
@@ -66,6 +67,7 @@ struct Args {
 
   size_t num_threads = 1;
   size_t beam_width = 1024;
+  double beam_eps = 0.0;
   size_t merge_interval = 1;
   std::string prune_mode = "merged";
   std::string ranking_mode = "mass";
@@ -119,11 +121,17 @@ struct Args {
     if (beam_width == 0) {
       throw std::invalid_argument("--beam must be at least 1.");
     }
+    if (!std::isfinite(beam_eps) || beam_eps < 0.0 || beam_eps >= 1.0) {
+      throw std::invalid_argument("--beam-eps must satisfy 0 <= beam-eps < 1.");
+    }
     if (merge_interval == 0) {
       throw std::invalid_argument("--merge-interval must be at least 1.");
     }
     parse_prune_mode(prune_mode);
     parse_ranking_mode(ranking_mode);
+    if (beam_eps != 0.0 && prune_mode != "merged") {
+      throw std::invalid_argument("--beam-eps is currently only supported with --prune-mode=merged.");
+    }
   }
 
   void extract(TesseractTrellisConfig& config, std::vector<stim::SparseShot>& shots,
@@ -156,8 +164,10 @@ struct Args {
     }
 
     config.beam_width = beam_width;
+    config.beam_eps = beam_eps;
     config.merge_interval = merge_interval;
     config.verbose = verbose;
+    config.track_kept_state_stats = print_stats;
     config.prune_mode = parse_prune_mode(prune_mode);
     config.ranking_mode = parse_ranking_mode(ranking_mode);
 
@@ -283,6 +293,13 @@ int main(int argc, char* argv[]) {
           std::thread::hardware_concurrency() == 0 ? 1 : std::thread::hardware_concurrency()))
       .store_into(args.num_threads);
   program.add_argument("--beam").default_value(size_t(1024)).store_into(args.beam_width);
+  program.add_argument("--beam-eps")
+      .help(
+          "With --prune-mode=merged, keep at most --beam states and also drop the suffix once "
+          "the kept prefix has accumulated at least (1 - beam-eps) of the total merged-state "
+          "mass. Use 0 to disable the mass-threshold cutoff.")
+      .default_value(0.0)
+      .store_into(args.beam_eps);
   program.add_argument("--merge-interval").default_value(size_t(1)).store_into(args.merge_interval);
   program.add_argument("--prune-mode")
       .help(
@@ -325,6 +342,10 @@ int main(int argc, char* argv[]) {
   std::vector<size_t> num_states_merged_per_shot(shots.size());
   std::vector<size_t> max_beam_size_per_shot(shots.size());
   std::vector<size_t> max_frontier_width_per_shot(shots.size());
+  std::vector<size_t> kept_state_min_per_shot(shots.size());
+  std::vector<double> kept_state_median_per_shot(shots.size());
+  std::vector<double> kept_state_mean_per_shot(shots.size());
+  std::vector<size_t> kept_state_max_per_shot(shots.size());
   std::vector<double> time_expand_per_shot(shots.size());
   std::vector<double> time_collapse_per_shot(shots.size());
   std::vector<double> time_truncate_per_shot(shots.size());
@@ -360,6 +381,10 @@ int main(int argc, char* argv[]) {
         num_states_merged_per_shot[shot_index] = decoder.num_states_merged;
         max_beam_size_per_shot[shot_index] = decoder.max_beam_size_seen;
         max_frontier_width_per_shot[shot_index] = decoder.max_frontier_width_seen;
+        kept_state_min_per_shot[shot_index] = decoder.kept_state_min;
+        kept_state_median_per_shot[shot_index] = decoder.kept_state_median;
+        kept_state_mean_per_shot[shot_index] = decoder.kept_state_mean;
+        kept_state_max_per_shot[shot_index] = decoder.kept_state_max;
         time_expand_per_shot[shot_index] = decoder.time_expand_seconds;
         time_collapse_per_shot[shot_index] = decoder.time_collapse_seconds;
         time_truncate_per_shot[shot_index] = decoder.time_truncate_seconds;
@@ -385,6 +410,11 @@ int main(int argc, char* argv[]) {
                     << " max_beam = " << max_beam_size_per_shot[shot_index]
                     << " frontier_width = " << max_frontier_width_per_shot[shot_index]
                     << " total_time_seconds = " << total_time_seconds << '\n';
+          std::cout << "kept_states"
+                    << " min=" << kept_state_min_per_shot[shot_index]
+                    << " median=" << kept_state_median_per_shot[shot_index]
+                    << " mean=" << kept_state_mean_per_shot[shot_index]
+                    << " max=" << kept_state_max_per_shot[shot_index] << '\n';
           std::cout << "branch_masses" << " obs0=" << mass0_predicted[shot_index]
                     << " obs1=" << mass1_predicted[shot_index] << '\n';
           std::cout << "phase_times_seconds" << " expand=" << time_expand_per_shot[shot_index]
@@ -405,6 +435,7 @@ int main(int argc, char* argv[]) {
     nlohmann::json stats_json = {{"circuit_path", args.circuit_path},
                                  {"dem_path", args.dem_path},
                                  {"beam_width", args.beam_width},
+                                 {"beam_eps", args.beam_eps},
                                  {"sample_seed", args.sample_seed},
                                  {"sample_num_shots", args.sample_num_shots},
                                  {"num_threads", args.num_threads},

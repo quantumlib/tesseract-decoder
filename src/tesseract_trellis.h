@@ -76,8 +76,10 @@ struct TesseractTrellisWideLayerTemplate {
 struct TesseractTrellisConfig {
   stim::DetectorErrorModel dem;
   size_t beam_width = 1024;
+  double beam_eps = 0.0;
   size_t merge_interval = 1;
   bool verbose = false;
+  bool track_kept_state_stats = false;
   TesseractTrellisPruneMode prune_mode = TesseractTrellisPruneMode::MergedStates;
   TesseractTrellisRankingMode ranking_mode = TesseractTrellisRankingMode::MassOnly;
 };
@@ -96,6 +98,11 @@ struct TesseractTrellisDecoder {
   size_t num_states_merged = 0;
   size_t max_beam_size_seen = 0;
   size_t max_frontier_width_seen = 0;
+  size_t kept_state_sample_count = 0;
+  size_t kept_state_min = 0;
+  double kept_state_median = 0;
+  double kept_state_mean = 0;
+  size_t kept_state_max = 0;
   double time_expand_seconds = 0;
   double time_collapse_seconds = 0;
   double time_truncate_seconds = 0;
@@ -117,6 +124,7 @@ struct TesseractTrellisDecoder {
   std::vector<uint64_t> scratch_small_expected_retiring_bits;
   std::vector<TesseractTrellisWideLayerTemplate> wide_layer_templates;
   std::vector<double> initial_future_detcost;
+  std::vector<uint32_t> kept_state_histogram_scratch;
 };
 
 #endif  // TESSERACT_TRELLIS_DECODER_H
