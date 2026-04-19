@@ -70,6 +70,16 @@ struct FixedWideStateEntry {
 };
 
 template <size_t Words>
+struct FixedWidePairBucket {
+  FixedWideStateWords<Words> key{};
+  double mass0[2]{};
+  double mass1[2]{};
+  double penalty[2]{};
+  uint8_t used_mask = 0;
+  bool occupied = false;
+};
+
+template <size_t Words>
 struct CompiledWideLayerTemplate {
   double q = 0.0;
   double p = 0.0;
@@ -313,6 +323,13 @@ TESSERACT_ALWAYS_INLINE double total_entry_mass(const FixedWideStateEntry<Words>
   return entry.mass0 + entry.mass1;
 }
 
+TESSERACT_ALWAYS_INLINE uint64_t mix_splitmix64(uint64_t value) {
+  value += 0x9e3779b97f4a7c15ULL;
+  value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
+  value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
+  return value ^ (value >> 31);
+}
+
 void reset_kept_state_stats(TesseractTrellisDecoder* decoder) {
   decoder->kept_state_sample_count = 0;
   decoder->kept_state_min = 0;
@@ -419,6 +436,72 @@ void xor_compiled_wide_state(FixedWideStateWords<Words>* state_words,
                              const std::array<uint64_t, Words>& mask_words) {
   for (size_t k = 0; k < Words; ++k) {
     (*state_words)[k] ^= mask_words[k];
+  }
+}
+
+template <size_t Words>
+TESSERACT_ALWAYS_INLINE uint64_t hash_fixed_wide_state(const FixedWideStateWords<Words>& state_words) {
+  uint64_t hash = 0x123456789abcdef0ULL;
+  for (size_t k = 0; k < Words; ++k) {
+    hash ^= mix_splitmix64(state_words[k] + 0x9e3779b97f4a7c15ULL * (k + 1));
+    hash = std::rotl(hash, 21);
+  }
+  return hash;
+}
+
+template <size_t Words>
+void ensure_pair_bucket_capacity(std::vector<FixedWidePairBucket<Words>>* buckets,
+                                 size_t num_parents) {
+  const size_t required = std::bit_ceil(std::max<size_t>(16, num_parents * 2));
+  if (buckets->size() < required) {
+    buckets->resize(required);
+  }
+}
+
+template <size_t Words>
+void clear_pair_buckets(std::vector<FixedWidePairBucket<Words>>* buckets,
+                        std::vector<size_t>* used_bucket_indices) {
+  for (size_t index : *used_bucket_indices) {
+    (*buckets)[index].occupied = false;
+    (*buckets)[index].used_mask = 0;
+  }
+  used_bucket_indices->clear();
+}
+
+template <size_t Words>
+TESSERACT_ALWAYS_INLINE size_t find_or_insert_pair_bucket(
+    std::vector<FixedWidePairBucket<Words>>* buckets, std::vector<size_t>* used_bucket_indices,
+    const FixedWideStateWords<Words>& key) {
+  const size_t mask = buckets->size() - 1;
+  size_t index = hash_fixed_wide_state(key) & mask;
+  while ((*buckets)[index].occupied) {
+    if ((*buckets)[index].key == key) {
+      return index;
+    }
+    index = (index + 1) & mask;
+  }
+
+  auto& bucket = (*buckets)[index];
+  bucket.occupied = true;
+  bucket.key = key;
+  bucket.used_mask = 0;
+  used_bucket_indices->push_back(index);
+  return index;
+}
+
+template <size_t Words>
+TESSERACT_ALWAYS_INLINE void accumulate_pair_bucket_slot(FixedWidePairBucket<Words>* bucket,
+                                                         uint8_t slot, double mass0, double mass1,
+                                                         double penalty) {
+  const uint8_t bit = (uint8_t)(1u << slot);
+  if ((bucket->used_mask & bit) == 0) {
+    bucket->mass0[slot] = mass0;
+    bucket->mass1[slot] = mass1;
+    bucket->penalty[slot] = penalty;
+    bucket->used_mask |= bit;
+  } else {
+    bucket->mass0[slot] += mass0;
+    bucket->mass1[slot] += mass1;
   }
 }
 
@@ -687,6 +770,8 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
 
     std::vector<FixedWideStateEntry<Words>> beam_entries;
     std::vector<FixedWideStateEntry<Words>> next_entries;
+    std::vector<FixedWidePairBucket<Words>> pair_buckets;
+    std::vector<size_t> used_bucket_indices;
     beam_entries.reserve(decoder->config.beam_width * 2 + 2);
     next_entries.reserve(decoder->config.beam_width * 4 + 4);
     beam_entries.push_back({{}, 1.0, 0.0, initial_penalty});
@@ -697,9 +782,10 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
     for (size_t layer_index = 0; layer_index < layers.size(); ++layer_index) {
       const auto& layer = layers[layer_index];
 
+      ensure_pair_bucket_capacity(&pair_buckets, beam_entries.size());
+      clear_pair_buckets(&pair_buckets, &used_bucket_indices);
+
       auto t0 = std::chrono::high_resolution_clock::now();
-      next_entries.clear();
-      next_entries.reserve(beam_entries.size() * 2);
 
       if (decoder->config.verbose) {
         std::cout << "expanding layer " << layer_index << " / " << (layers.size() - 1)
@@ -717,33 +803,29 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
 
         FixedWideStateWords<Words> projected_state =
             project_compiled_wide_state(item.state_words, layer);
+        FixedWideStateWords<Words> projected_toggled = projected_state;
+        xor_compiled_wide_state(&projected_toggled, layer.projected_fault_mask_words);
+        const bool projected_is_key = !fixed_wide_state_less(projected_toggled, projected_state);
+        const auto& bucket_key = projected_is_key ? projected_state : projected_toggled;
+        const uint8_t absent_slot = projected_is_key ? 0 : 1;
+        const uint8_t present_slot = projected_toggled == bucket_key ? 0 : 1;
+        const size_t bucket_index =
+            find_or_insert_pair_bucket(&pair_buckets, &used_bucket_indices, bucket_key);
+        auto& bucket = pair_buckets[bucket_index];
         const bool keep_absent = update.absent_valid && layer.q != 0.0;
         const bool keep_present = update.present_valid && layer.p != 0.0;
-        if (keep_absent && keep_present) {
-          FixedWideStateWords<Words> projected_toggled = projected_state;
-          xor_compiled_wide_state(&projected_toggled, layer.projected_fault_mask_words);
-          next_entries.push_back(
-              {std::move(projected_state), item.mass0 * layer.q, item.mass1 * layer.q,
-               update.absent_penalty});
+
+        if (keep_absent) {
+          accumulate_pair_bucket_slot(&bucket, absent_slot, item.mass0 * layer.q,
+                                      item.mass1 * layer.q, update.absent_penalty);
+        }
+        if (keep_present) {
           if (layer.toggles_observable) {
-            next_entries.push_back({std::move(projected_toggled), item.mass1 * layer.p,
-                                    item.mass0 * layer.p, update.present_penalty});
+            accumulate_pair_bucket_slot(&bucket, present_slot, item.mass1 * layer.p,
+                                        item.mass0 * layer.p, update.present_penalty);
           } else {
-            next_entries.push_back({std::move(projected_toggled), item.mass0 * layer.p,
-                                    item.mass1 * layer.p, update.present_penalty});
-          }
-        } else if (keep_absent) {
-          next_entries.push_back(
-              {std::move(projected_state), item.mass0 * layer.q, item.mass1 * layer.q,
-               update.absent_penalty});
-        } else if (keep_present) {
-          xor_compiled_wide_state(&projected_state, layer.projected_fault_mask_words);
-          if (layer.toggles_observable) {
-            next_entries.push_back({std::move(projected_state), item.mass1 * layer.p,
-                                    item.mass0 * layer.p, update.present_penalty});
-          } else {
-            next_entries.push_back({std::move(projected_state), item.mass0 * layer.p,
-                                    item.mass1 * layer.p, update.present_penalty});
+            accumulate_pair_bucket_slot(&bucket, present_slot, item.mass0 * layer.p,
+                                        item.mass1 * layer.p, update.present_penalty);
           }
         }
       }
@@ -751,9 +833,22 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
       decoder->time_expand_seconds +=
           std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() / 1e6;
 
-      beam_entries.swap(next_entries);
       auto t2a = std::chrono::high_resolution_clock::now();
-      merge_equal_compiled_keys_inplace(&beam_entries);
+      next_entries.clear();
+      next_entries.reserve(used_bucket_indices.size() * 2);
+      for (size_t index : used_bucket_indices) {
+        auto& bucket = pair_buckets[index];
+        if ((bucket.used_mask & 1u) != 0) {
+          next_entries.push_back({bucket.key, bucket.mass0[0], bucket.mass1[0], bucket.penalty[0]});
+        }
+        if ((bucket.used_mask & 2u) != 0) {
+          auto other_state = bucket.key;
+          xor_compiled_wide_state(&other_state, layer.projected_fault_mask_words);
+          next_entries.push_back(
+              {std::move(other_state), bucket.mass0[1], bucket.mass1[1], bucket.penalty[1]});
+        }
+      }
+      beam_entries.swap(next_entries);
       auto t2 = std::chrono::high_resolution_clock::now();
       decoder->time_collapse_seconds +=
           std::chrono::duration_cast<std::chrono::microseconds>(t2 - t2a).count() / 1e6;
