@@ -15,6 +15,7 @@
 #include "tesseract_trellis.h"
 
 #include <algorithm>
+#include <bit>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -26,11 +27,26 @@
 #include <iostream>
 #include <limits>
 #include <numeric>
+#include <string>
 #include <utility>
 
 #include "utils.h"
 
+struct TesseractTrellisWideKernelBase {
+  virtual ~TesseractTrellisWideKernelBase() = default;
+  virtual void decode_shot(TesseractTrellisDecoder* decoder,
+                           const std::vector<uint64_t>& detections) const = 0;
+};
+
 namespace {
+
+constexpr size_t kMaxCompiledWideStateWords = 4;
+
+#if defined(__GNUC__) || defined(__clang__)
+#define TESSERACT_ALWAYS_INLINE inline __attribute__((always_inline))
+#else
+#define TESSERACT_ALWAYS_INLINE inline
+#endif
 
 struct Fault {
   size_t error_index;
@@ -41,31 +57,40 @@ struct Fault {
   std::vector<int> detectors;
 };
 
-struct PackedMass {
-  uint64_t key;
-  double mass;
-  double penalty;
-};
-
-struct SmallStateGroup {
-  uint64_t state;
+struct WideStateGroup {
   double mass;
   double score;
   size_t begin;
   size_t end;
 };
 
-struct WidePackedMass {
-  std::vector<uint64_t> state_words;
-  uint64_t obs_mask;
-  double mass;
-  double penalty;
+template <size_t Words>
+using FixedWideStateWords = std::array<uint64_t, Words>;
+
+template <size_t Words>
+struct FixedWidePackedMass {
+  FixedWideStateWords<Words> state_words{};
+  uint64_t obs_mask = 0;
+  double mass = 0.0;
+  double penalty = 0.0;
 };
 
-struct WideStateMass {
-  std::vector<uint64_t> state_words;
-  double mass;
-  double penalty;
+template <size_t Words>
+struct CompiledWideLayerTemplate {
+  double q = 0.0;
+  double p = 0.0;
+  uint64_t obs_mask = 0;
+  std::array<uint64_t, Words> surviving_masks{};
+  std::array<uint8_t, Words> projection_dst_words{};
+  std::array<uint8_t, Words> projection_dst_offsets{};
+  std::array<uint64_t, Words> projected_fault_mask_words{};
+  std::vector<uint32_t> fault_detector_indices;
+  std::vector<uint8_t> fault_word_indices;
+  std::vector<uint64_t> fault_bit_masks;
+  std::vector<uint8_t> fault_was_active_before;
+  std::vector<int32_t> next_local_indices;
+  std::vector<double> current_costs;
+  std::vector<double> next_costs;
 };
 
 struct BranchPenaltyUpdate {
@@ -109,94 +134,6 @@ std::vector<Fault> parse_faults(const std::vector<common::Error>& errors, size_t
     faults.push_back(std::move(fault));
   }
   return faults;
-}
-
-bool build_small_layer_templates(const std::vector<Fault>& faults, size_t num_detectors,
-                                 std::vector<TesseractTrellisSmallLayerTemplate>* layers,
-                                 size_t* max_frontier_width_seen) {
-  std::vector<size_t> last_seen(num_detectors, std::numeric_limits<size_t>::max());
-  for (size_t i = 0; i < faults.size(); ++i) {
-    for (int d : faults[i].detectors) {
-      last_seen[d] = i;
-    }
-  }
-
-  std::vector<int> active_detectors;
-  active_detectors.reserve(num_detectors);
-  std::vector<int> global_to_local(num_detectors, -1);
-  layers->clear();
-  layers->reserve(faults.size());
-  *max_frontier_width_seen = 0;
-
-  for (size_t i = 0; i < faults.size(); ++i) {
-    const size_t previous_width = active_detectors.size();
-    for (int d : faults[i].detectors) {
-      if (global_to_local[d] == -1) {
-        global_to_local[d] = active_detectors.size();
-        active_detectors.push_back(d);
-      }
-    }
-
-    *max_frontier_width_seen = std::max(*max_frontier_width_seen, active_detectors.size());
-    if (*max_frontier_width_seen > 63) {
-      return false;
-    }
-
-    TesseractTrellisSmallLayerTemplate layer{
-        .q = std::exp(faults[i].log_q),
-        .p = std::exp(faults[i].log_p),
-        .obs_flip_bit = faults[i].obs_mask & 1,
-        .local_det_mask = 0,
-        .retiring_mask = 0,
-        .surviving_mask = 0,
-        .projected_fault_mask = 0,
-        .previous_width = previous_width,
-        .surviving_local_indices = {},
-        .current_active_detectors = active_detectors,
-        .next_frontier_costs = {},
-        .detcost_transition = {},
-    };
-    for (int d : faults[i].detectors) {
-      layer.local_det_mask ^= uint64_t{1} << global_to_local[d];
-    }
-    for (size_t local = 0; local < active_detectors.size(); ++local) {
-      const int d = active_detectors[local];
-      if (last_seen[d] == i) {
-        layer.retiring_mask ^= uint64_t{1} << local;
-      } else {
-        layer.surviving_local_indices.push_back((uint8_t)local);
-      }
-    }
-    uint64_t live_mask = (uint64_t{1} << active_detectors.size()) - 1;
-    layer.surviving_mask = live_mask & ~layer.retiring_mask;
-
-    std::vector<int> next_active;
-    next_active.reserve(layer.surviving_local_indices.size());
-    std::fill(global_to_local.begin(), global_to_local.end(), -1);
-    for (size_t next_local = 0; next_local < layer.surviving_local_indices.size(); ++next_local) {
-      int d = active_detectors[layer.surviving_local_indices[next_local]];
-      global_to_local[d] = next_local;
-      next_active.push_back(d);
-    }
-    active_detectors = std::move(next_active);
-    layers->push_back(std::move(layer));
-  }
-
-  return true;
-}
-
-void build_small_detector_layer_refs(
-    const std::vector<TesseractTrellisSmallLayerTemplate>& layers, size_t num_detectors,
-    std::vector<std::vector<TesseractTrellisSmallDetectorLayerRef>>* refs) {
-  refs->assign(num_detectors, {});
-  for (size_t layer_index = 0; layer_index < layers.size(); ++layer_index) {
-    const auto& layer = layers[layer_index];
-    for (size_t local = 0; local < layer.current_active_detectors.size(); ++local) {
-      int detector = layer.current_active_detectors[local];
-      (*refs)[(size_t)detector].push_back(
-          {static_cast<uint32_t>(layer_index), static_cast<uint8_t>(local)});
-    }
-  }
 }
 
 void build_wide_layer_templates(const std::vector<Fault>& faults, size_t num_detectors,
@@ -318,7 +255,7 @@ size_t num_state_words(size_t num_bits) {
   return (num_bits + 63) >> 6;
 }
 
-uint64_t compact_bits_u64(uint64_t value, uint64_t mask) {
+TESSERACT_ALWAYS_INLINE uint64_t compact_bits_u64(uint64_t value, uint64_t mask) {
 #if defined(__BMI2__) && \
     (defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86))
   return _pext_u64(value, mask);
@@ -337,81 +274,6 @@ uint64_t compact_bits_u64(uint64_t value, uint64_t mask) {
 #endif
 }
 
-bool get_state_bit(const std::vector<uint64_t>& state_words, size_t bit, size_t logical_width) {
-  if (bit >= logical_width) {
-    return false;
-  }
-  size_t word = bit >> 6;
-  if (word >= state_words.size()) {
-    return false;
-  }
-  return (state_words[word] >> (bit & 63)) & 1ULL;
-}
-
-void xor_state_words(std::vector<uint64_t>& state_words, const std::vector<uint64_t>& mask_words) {
-  if (state_words.size() < mask_words.size()) {
-    state_words.resize(mask_words.size(), 0);
-  }
-  for (size_t k = 0; k < mask_words.size(); ++k) {
-    state_words[k] ^= mask_words[k];
-  }
-}
-
-std::vector<uint64_t> project_wide_state(const std::vector<uint64_t>& state_words,
-                                         size_t logical_width,
-                                         const std::vector<uint32_t>& surviving_local_indices) {
-  std::vector<uint64_t> out(num_state_words(surviving_local_indices.size()), 0);
-  for (size_t next_local = 0; next_local < surviving_local_indices.size(); ++next_local) {
-    size_t current_local = (size_t)surviving_local_indices[next_local];
-    if (get_state_bit(state_words, current_local, logical_width)) {
-      out[next_local >> 6] ^= uint64_t{1} << (next_local & 63);
-    }
-  }
-  return out;
-}
-
-bool wide_state_less(const std::vector<uint64_t>& a, const std::vector<uint64_t>& b) {
-  if (a.size() != b.size()) {
-    return a.size() < b.size();
-  }
-  for (size_t k = a.size(); k-- > 0;) {
-    if (a[k] != b[k]) {
-      return a[k] < b[k];
-    }
-  }
-  return false;
-}
-
-bool wide_state_zero(const std::vector<uint64_t>& state_words) {
-  for (uint64_t word : state_words) {
-    if (word != 0) {
-      return false;
-    }
-  }
-  return true;
-}
-
-uint64_t project_small_state(uint64_t state, uint64_t surviving_mask) {
-  return compact_bits_u64(state, surviving_mask);
-}
-
-double compute_initial_penalty_for_target_bits(uint64_t target_bits,
-                                               const std::vector<int>& active_detectors,
-                                               const std::vector<double>& initial_future_detcost) {
-  double total = 0.0;
-  while (target_bits) {
-    uint64_t low_bit = target_bits & -target_bits;
-    size_t local = (size_t)std::countr_zero(low_bit);
-    target_bits ^= low_bit;
-    double best = initial_future_detcost[(size_t)active_detectors[local]];
-    if (best == INF) {
-      return INF;
-    }
-    total += best;
-  }
-  return total;
-}
-
 double compute_initial_penalty_for_active_detectors(
     const std::vector<int>& active_detectors, const boost::dynamic_bitset<>& actual_dets,
     const std::vector<double>& initial_future_detcost) {
@@ -427,226 +289,6 @@ double compute_initial_penalty_for_active_detectors(
     total += best;
   }
   return total;
-}
-
-BranchPenaltyUpdate compute_small_branch_update(uint64_t base_state, size_t previous_width,
-                                                double current_penalty,
-                                                uint64_t current_target_bits,
-                                                const TesseractTrellisDetcostTransition& transition,
-                                                bool compute_penalties) {
-  BranchPenaltyUpdate update;
-  update.absent_penalty = compute_penalties ? current_penalty : 0.0;
-  update.present_penalty = compute_penalties ? current_penalty : 0.0;
-
-  for (size_t k = 0; k < transition.fault_local_indices.size(); ++k) {
-    size_t local = transition.fault_local_indices[k];
-    bool state_bit = local < previous_width && ((base_state >> local) & 1ULL);
-    bool target_bit = (current_target_bits >> local) & 1ULL;
-    bool mismatch = state_bit ^ target_bit;
-    int32_t next_local = transition.next_local_indices[k];
-
-    if (next_local < 0) {
-      if (mismatch) {
-        update.absent_valid = false;
-      } else {
-        update.present_valid = false;
-      }
-    }
-
-    if (!compute_penalties) {
-      continue;
-    }
-
-    double prev_contrib = (local < previous_width && mismatch) ? transition.current_costs[k] : 0.0;
-    double absent_contrib = (next_local >= 0 && mismatch) ? transition.next_costs[k] : 0.0;
-    double present_contrib = (next_local >= 0 && !mismatch) ? transition.next_costs[k] : 0.0;
-    update.absent_penalty += absent_contrib - prev_contrib;
-    update.present_penalty += present_contrib - prev_contrib;
-  }
-
-  return update;
-}
-
-BranchPenaltyUpdate compute_wide_branch_update(const std::vector<uint64_t>& base_state_words,
-                                               size_t previous_width, double current_penalty,
-                                               const std::vector<int>& current_active_detectors,
-                                               const boost::dynamic_bitset<>& actual_dets,
-                                               const TesseractTrellisDetcostTransition& transition,
-                                               bool compute_penalties) {
-  BranchPenaltyUpdate update;
-  update.absent_penalty = compute_penalties ? current_penalty : 0.0;
-  update.present_penalty = compute_penalties ? current_penalty : 0.0;
-
-  for (size_t k = 0; k < transition.fault_local_indices.size(); ++k) {
-    size_t local = transition.fault_local_indices[k];
-    bool state_bit = get_state_bit(base_state_words, local, previous_width);
-    bool target_bit = actual_dets[(size_t)current_active_detectors[local]];
-    bool mismatch = state_bit ^ target_bit;
-    int32_t next_local = transition.next_local_indices[k];
-
-    if (next_local < 0) {
-      if (mismatch) {
-        update.absent_valid = false;
-      } else {
-        update.present_valid = false;
-      }
-    }
-
-    if (!compute_penalties) {
-      continue;
-    }
-
-    double prev_contrib = (local < previous_width && mismatch) ? transition.current_costs[k] : 0.0;
-    double absent_contrib = (next_local >= 0 && mismatch) ? transition.next_costs[k] : 0.0;
-    double present_contrib = (next_local >= 0 && !mismatch) ? transition.next_costs[k] : 0.0;
-    update.absent_penalty += absent_contrib - prev_contrib;
-    update.present_penalty += present_contrib - prev_contrib;
-  }
-
-  return update;
-}
-
-uint64_t pack_small_key(uint64_t state, uint64_t obs_flip_bit) {
-  return (state << 1) | (obs_flip_bit & 1ULL);
-}
-
-uint64_t unpack_small_state(uint64_t packed_key) {
-  return packed_key >> 1;
-}
-
-uint64_t unpack_small_obs(uint64_t packed_key) {
-  return packed_key & 1ULL;
-}
-
-void normalize_items(std::vector<PackedMass>& items) {
-  double total_mass = 0.0;
-  for (const auto& item : items) {
-    total_mass += item.mass;
-  }
-  if (total_mass == 0.0) {
-    items.clear();
-    return;
-  }
-  double inv = 1.0 / total_mass;
-  for (auto& item : items) {
-    item.mass *= inv;
-  }
-}
-
-void normalize_items(std::vector<WidePackedMass>& items) {
-  double total_mass = 0.0;
-  for (const auto& item : items) {
-    total_mass += item.mass;
-  }
-  if (total_mass == 0.0) {
-    items.clear();
-    return;
-  }
-  double inv = 1.0 / total_mass;
-  for (auto& item : items) {
-    item.mass *= inv;
-  }
-}
-
-void radix_sort_packed_masses_by_key(std::vector<PackedMass>& items) {
-  if (items.size() <= 1) {
-    return;
-  }
-
-  thread_local std::vector<PackedMass> buffer;
-  buffer.resize(items.size());
-
-  PackedMass* src = items.data();
-  PackedMass* dst = buffer.data();
-  constexpr size_t RADIX = 256;
-  std::array<size_t, RADIX> counts;
-
-  for (size_t shift = 0; shift < 64; shift += 8) {
-    counts.fill(0);
-    for (size_t k = 0; k < items.size(); ++k) {
-      ++counts[(src[k].key >> shift) & 0xFF];
-    }
-
-    size_t total = 0;
-    for (size_t k = 0; k < RADIX; ++k) {
-      size_t count = counts[k];
-      counts[k] = total;
-      total += count;
-    }
-
-    for (size_t k = 0; k < items.size(); ++k) {
-      dst[counts[(src[k].key >> shift) & 0xFF]++] = src[k];
-    }
-    std::swap(src, dst);
-  }
-}
-
-void merge_equal_keys_inplace(std::vector<PackedMass>& items) {
-  if (items.empty()) {
-    return;
-  }
-  radix_sort_packed_masses_by_key(items);
-  size_t out = 0;
-  for (size_t i = 1; i < items.size(); ++i) {
-    if (items[i].key == items[out].key) {
-      items[out].mass += items[i].mass;
-    } else {
-      ++out;
-      if (out != i) {
-        items[out] = std::move(items[i]);
-      }
-    }
-  }
-  items.resize(out + 1);
-}
-
-void merge_equal_keys_inplace(std::vector<WidePackedMass>& items) {
-  if (items.empty()) {
-    return;
-  }
-  std::sort(items.begin(), items.end(), [](const WidePackedMass& a, const WidePackedMass& b) {
-    if (wide_state_less(a.state_words, b.state_words)) {
-      return true;
-    }
-    if (wide_state_less(b.state_words, a.state_words)) {
-      return false;
-    }
-    return a.obs_mask < b.obs_mask;
-  });
-
-  size_t out = 0;
-  for (size_t i = 1; i < items.size(); ++i) {
-    if (items[i].obs_mask == items[out].obs_mask &&
-        items[i].state_words == items[out].state_words) {
-      items[out].mass += items[i].mass;
-    } else {
-      ++out;
-      if (out != i) {
-        items[out] = std::move(items[i]);
-      }
-    }
-  }
-  items.resize(out + 1);
-}
-
-std::vector<WideStateMass> accumulate_state_masses_from_entries(
-    const std::vector<WidePackedMass>& entries) {
-  std::vector<WideStateMass> totals;
-  if (entries.empty()) {
-    return totals;
-  }
-  totals.reserve(entries.size());
-  WideStateMass current{entries[0].state_words, entries[0].mass, entries[0].penalty};
-  for (size_t i = 1; i < entries.size(); ++i) {
-    if (entries[i].state_words == current.state_words) {
-      current.mass += entries[i].mass;
-    } else {
-      totals.push_back(std::move(current));
-      current = {entries[i].state_words, entries[i].mass, entries[i].penalty};
-    }
-  }
-  totals.push_back(std::move(current));
-  return totals;
 }
 
 double score_mass_and_penalty(double mass, double penalty,
@@ -728,184 +370,6 @@ FinalizeKeptStateStatsOnExit::~FinalizeKeptStateStatsOnExit() {
   finalize_kept_state_stats(decoder);
 }
 
-bool small_state_group_score_greater(const SmallStateGroup& a, const SmallStateGroup& b) {
-  if (a.score != b.score) {
-    return a.score > b.score;
-  }
-  return a.state < b.state;
-}
-
-size_t trim_small_state_groups_by_beam_and_mass(std::vector<SmallStateGroup>* groups,
-                                                size_t beam_width, double beam_eps) {
-  if (groups->empty()) {
-    return 0;
-  }
-
-  double total_mass = 0.0;
-  if (beam_eps > 0.0) {
-    for (const auto& group : *groups) {
-      total_mass += group.mass;
-    }
-  }
-
-  if (groups->size() > beam_width) {
-    std::nth_element(
-        groups->begin(), groups->begin() + beam_width, groups->end(),
-        [](const SmallStateGroup& a, const SmallStateGroup& b) { return a.score > b.score; });
-    groups->resize(beam_width);
-  } else if (beam_eps <= 0.0) {
-    return groups->size();
-  }
-
-  if (beam_eps <= 0.0 || total_mass <= 0.0) {
-    return groups->size();
-  }
-
-  std::sort(groups->begin(), groups->end(), small_state_group_score_greater);
-  const double retained_target_mass = total_mass * (1.0 - beam_eps);
-  double retained_mass = 0.0;
-  size_t keep_count = 0;
-  while (keep_count < groups->size()) {
-    retained_mass += (*groups)[keep_count].mass;
-    ++keep_count;
-    if (retained_mass >= retained_target_mass) {
-      break;
-    }
-  }
-  groups->resize(keep_count);
-  std::sort(groups->begin(), groups->end(),
-            [](const SmallStateGroup& a, const SmallStateGroup& b) { return a.begin < b.begin; });
-  return groups->size();
-}
-
-std::vector<SmallStateGroup> collect_small_state_groups(const std::vector<PackedMass>& entries,
-                                                        TesseractTrellisRankingMode ranking_mode) {
-  std::vector<SmallStateGroup> groups;
-  if (entries.empty()) {
-    return groups;
-  }
-  groups.reserve(entries.size());
-  size_t begin = 0;
-  while (begin < entries.size()) {
-    uint64_t state = unpack_small_state(entries[begin].key);
-    double mass = 0.0;
-    size_t end = begin;
-    while (end < entries.size() && unpack_small_state(entries[end].key) == state) {
-      mass += entries[end].mass;
-      ++end;
-    }
-    groups.push_back({state, mass,
-                      score_mass_and_penalty(mass, entries[begin].penalty, ranking_mode), begin,
-                      end});
-    begin = end;
-  }
-  return groups;
-}
-
-double state_score(const WideStateMass& item, TesseractTrellisRankingMode ranking_mode) {
-  return score_mass_and_penalty(item.mass, item.penalty, ranking_mode);
-}
-
-size_t keep_top_states(std::vector<PackedMass>& entries, size_t beam_width, double beam_eps,
-                       TesseractTrellisRankingMode ranking_mode) {
-  if (entries.empty()) {
-    return 0;
-  }
-  auto groups = collect_small_state_groups(entries, ranking_mode);
-  const size_t kept_group_count =
-      trim_small_state_groups_by_beam_and_mass(&groups, beam_width, beam_eps);
-
-  std::vector<PackedMass> kept;
-  size_t kept_entries = 0;
-  for (const auto& group : groups) {
-    kept_entries += group.end - group.begin;
-  }
-  kept.reserve(kept_entries);
-  for (const auto& group : groups) {
-    for (size_t k = group.begin; k < group.end; ++k) {
-      kept.push_back(std::move(entries[k]));
-    }
-  }
-  entries = std::move(kept);
-  return kept_group_count;
-}
-
-size_t keep_top_states(std::vector<WidePackedMass>& entries, size_t beam_width, double beam_eps,
-                       TesseractTrellisRankingMode ranking_mode) {
-  if (entries.empty()) {
-    return 0;
-  }
-  auto totals = accumulate_state_masses_from_entries(entries);
-  double total_mass = 0.0;
-  if (beam_eps > 0.0) {
-    for (const auto& item : totals) {
-      total_mass += item.mass;
-    }
-  }
-
-  if (totals.size() > beam_width) {
-    std::nth_element(totals.begin(), totals.begin() + beam_width, totals.end(),
-                     [ranking_mode](const WideStateMass& a, const WideStateMass& b) {
-                       return state_score(a, ranking_mode) > state_score(b, ranking_mode);
-                     });
-    totals.resize(beam_width);
-  } else if (beam_eps <= 0.0) {
-    return totals.size();
-  }
-
-  if (beam_eps > 0.0 && total_mass > 0.0) {
-    std::sort(totals.begin(), totals.end(),
-              [ranking_mode](const WideStateMass& a, const WideStateMass& b) {
-                double sa = state_score(a, ranking_mode);
-                double sb = state_score(b, ranking_mode);
-                if (sa != sb) {
-                  return sa > sb;
-                }
-                return wide_state_less(a.state_words, b.state_words);
-              });
-    const double retained_target_mass = total_mass * (1.0 - beam_eps);
-    double retained_mass = 0.0;
-    size_t keep_count = 0;
-    while (keep_count < totals.size()) {
-      retained_mass += totals[keep_count].mass;
-      ++keep_count;
-      if (retained_mass >= retained_target_mass) {
-        break;
-      }
-    }
-    totals.resize(keep_count);
-  }
-
-  std::sort(totals.begin(), totals.end(), [](const WideStateMass& a, const WideStateMass& b) {
-    return wide_state_less(a.state_words, b.state_words);
-  });
-
-  std::vector<WidePackedMass> kept;
-  kept.reserve(entries.size());
-  size_t ti = 0;
-  for (auto& item : entries) {
-    while (ti < totals.size() && wide_state_less(totals[ti].state_words, item.state_words)) {
-      ++ti;
-    }
-    if (ti < totals.size() && item.state_words == totals[ti].state_words) {
-      kept.push_back(std::move(item));
-    }
-  }
-  entries = std::move(kept);
-  return totals.size();
-}
-
-void prepare_projected_fault_masks(std::vector<TesseractTrellisSmallLayerTemplate>* layers) {
-  for (auto& layer : *layers) {
-    layer.projected_fault_mask = 0;
-    for (int32_t next_local : layer.detcost_transition.next_local_indices) {
-      if (next_local >= 0) {
-        layer.projected_fault_mask ^= uint64_t{1} << next_local;
-      }
-    }
-  }
-}
-
 void prepare_projected_fault_masks(std::vector<TesseractTrellisWideLayerTemplate>* layers) {
   for (auto& layer : *layers) {
     layer.projected_fault_mask_words.assign(num_state_words(layer.surviving_local_indices.size()),
@@ -919,7 +383,466 @@ void prepare_projected_fault_masks(std::vector<TesseractTrellisWideLayerTemplate
   }
 }
 
+template <size_t Words>
+bool fixed_wide_state_less(const FixedWideStateWords<Words>& a, const FixedWideStateWords<Words>& b) {
+  for (size_t k = Words; k-- > 0;) {
+    if (a[k] != b[k]) {
+      return a[k] < b[k];
+    }
+  }
+  return false;
+}
+
+template <size_t Words>
+bool fixed_wide_state_zero(const FixedWideStateWords<Words>& state_words) {
+  for (size_t k = 0; k < Words; ++k) {
+    if (state_words[k] != 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+template <size_t Words>
+void xor_compiled_wide_state(FixedWideStateWords<Words>* state_words,
+                             const std::array<uint64_t, Words>& mask_words) {
+  for (size_t k = 0; k < Words; ++k) {
+    (*state_words)[k] ^= mask_words[k];
+  }
+}
+
+template <size_t Words>
+FixedWideStateWords<Words> project_compiled_wide_state(
+    const FixedWideStateWords<Words>& state_words, const CompiledWideLayerTemplate<Words>& layer) {
+  FixedWideStateWords<Words> out{};
+  for (size_t src_word = 0; src_word < Words; ++src_word) {
+    const uint64_t mask = layer.surviving_masks[src_word];
+    if (mask == 0) {
+      continue;
+    }
+    const uint64_t packed = compact_bits_u64(state_words[src_word], mask);
+    const size_t dst_word = layer.projection_dst_words[src_word];
+    const uint8_t shift = layer.projection_dst_offsets[src_word];
+    out[dst_word] |= packed << shift;
+    if constexpr (Words > 1) {
+      if (shift != 0 && dst_word + 1 < Words) {
+        out[dst_word + 1] |= packed >> (64 - shift);
+      }
+    }
+  }
+  return out;
+}
+
+template <size_t Words>
+BranchPenaltyUpdate compute_compiled_wide_branch_update(
+    const FixedWideStateWords<Words>& base_state_words, double current_penalty,
+    const boost::dynamic_bitset<>& actual_dets, const CompiledWideLayerTemplate<Words>& layer,
+    bool compute_penalties) {
+  BranchPenaltyUpdate update;
+  update.absent_penalty = compute_penalties ? current_penalty : 0.0;
+  update.present_penalty = compute_penalties ? current_penalty : 0.0;
+
+  for (size_t k = 0; k < layer.fault_detector_indices.size(); ++k) {
+    const bool state_bit =
+        layer.fault_was_active_before[k] &&
+        ((base_state_words[layer.fault_word_indices[k]] & layer.fault_bit_masks[k]) != 0);
+    const bool target_bit = actual_dets[layer.fault_detector_indices[k]];
+    const bool mismatch = state_bit ^ target_bit;
+    const int32_t next_local = layer.next_local_indices[k];
+
+    if (next_local < 0) {
+      if (mismatch) {
+        update.absent_valid = false;
+      } else {
+        update.present_valid = false;
+      }
+    }
+
+    if (!compute_penalties) {
+      continue;
+    }
+
+    const double prev_contrib =
+        (layer.fault_was_active_before[k] && mismatch) ? layer.current_costs[k] : 0.0;
+    const double absent_contrib = (next_local >= 0 && mismatch) ? layer.next_costs[k] : 0.0;
+    const double present_contrib = (next_local >= 0 && !mismatch) ? layer.next_costs[k] : 0.0;
+    update.absent_penalty += absent_contrib - prev_contrib;
+    update.present_penalty += present_contrib - prev_contrib;
+  }
+
+  return update;
+}
+
+template <size_t Words>
+void normalize_compiled_items(std::vector<FixedWidePackedMass<Words>>* items) {
+  double total = 0.0;
+  for (const auto& item : *items) {
+    total += item.mass;
+  }
+  if (total == 0.0) {
+    return;
+  }
+  for (auto& item : *items) {
+    item.mass /= total;
+  }
+}
+
+template <size_t Words>
+void merge_equal_compiled_keys_inplace(std::vector<FixedWidePackedMass<Words>>* items) {
+  if (items->empty()) {
+    return;
+  }
+  std::sort(items->begin(), items->end(),
+            [](const FixedWidePackedMass<Words>& a, const FixedWidePackedMass<Words>& b) {
+              if (fixed_wide_state_less(a.state_words, b.state_words)) {
+                return true;
+              }
+              if (fixed_wide_state_less(b.state_words, a.state_words)) {
+                return false;
+              }
+              return a.obs_mask < b.obs_mask;
+            });
+
+  size_t out = 0;
+  for (size_t i = 1; i < items->size(); ++i) {
+    if ((*items)[i].obs_mask == (*items)[out].obs_mask &&
+        (*items)[i].state_words == (*items)[out].state_words) {
+      (*items)[out].mass += (*items)[i].mass;
+    } else {
+      ++out;
+      if (out != i) {
+        (*items)[out] = std::move((*items)[i]);
+      }
+    }
+  }
+  items->resize(out + 1);
+}
+
+template <size_t Words>
+bool compiled_wide_state_group_score_greater(const std::vector<FixedWidePackedMass<Words>>& entries,
+                                             const WideStateGroup& a, const WideStateGroup& b) {
+  if (a.score != b.score) {
+    return a.score > b.score;
+  }
+  return fixed_wide_state_less(entries[a.begin].state_words, entries[b.begin].state_words);
+}
+
+template <size_t Words>
+size_t trim_compiled_wide_state_groups_by_beam_and_mass(
+    const std::vector<FixedWidePackedMass<Words>>& entries, std::vector<WideStateGroup>* groups,
+    size_t beam_width, double beam_eps) {
+  if (groups->empty()) {
+    return 0;
+  }
+
+  double total_mass = 0.0;
+  if (beam_eps > 0.0) {
+    for (const auto& group : *groups) {
+      total_mass += group.mass;
+    }
+  }
+
+  if (groups->size() > beam_width) {
+    std::nth_element(groups->begin(), groups->begin() + beam_width, groups->end(),
+                     [&entries](const WideStateGroup& a, const WideStateGroup& b) {
+                       return compiled_wide_state_group_score_greater(entries, a, b);
+                     });
+    groups->resize(beam_width);
+  } else if (beam_eps <= 0.0) {
+    return groups->size();
+  }
+
+  if (beam_eps <= 0.0 || total_mass <= 0.0) {
+    return groups->size();
+  }
+
+  std::sort(groups->begin(), groups->end(),
+            [&entries](const WideStateGroup& a, const WideStateGroup& b) {
+              return compiled_wide_state_group_score_greater(entries, a, b);
+            });
+  const double retained_target_mass = total_mass * (1.0 - beam_eps);
+  double retained_mass = 0.0;
+  size_t keep_count = 0;
+  while (keep_count < groups->size()) {
+    retained_mass += (*groups)[keep_count].mass;
+    ++keep_count;
+    if (retained_mass >= retained_target_mass) {
+      break;
+    }
+  }
+  groups->resize(keep_count);
+  std::sort(groups->begin(), groups->end(),
+            [](const WideStateGroup& a, const WideStateGroup& b) { return a.begin < b.begin; });
+  return groups->size();
+}
+
+template <size_t Words>
+std::vector<WideStateGroup> collect_compiled_wide_state_groups(
+    const std::vector<FixedWidePackedMass<Words>>& entries,
+    TesseractTrellisRankingMode ranking_mode) {
+  std::vector<WideStateGroup> groups;
+  if (entries.empty()) {
+    return groups;
+  }
+  groups.reserve(entries.size());
+  size_t begin = 0;
+  while (begin < entries.size()) {
+    double mass = 0.0;
+    size_t end = begin;
+    while (end < entries.size() && entries[end].state_words == entries[begin].state_words) {
+      mass += entries[end].mass;
+      ++end;
+    }
+    groups.push_back(
+        {mass, score_mass_and_penalty(mass, entries[begin].penalty, ranking_mode), begin, end});
+    begin = end;
+  }
+  return groups;
+}
+
+template <size_t Words>
+size_t keep_top_compiled_states(std::vector<FixedWidePackedMass<Words>>* entries,
+                                size_t beam_width, double beam_eps,
+                                TesseractTrellisRankingMode ranking_mode) {
+  if (entries->empty()) {
+    return 0;
+  }
+  auto groups = collect_compiled_wide_state_groups(*entries, ranking_mode);
+  const size_t kept_group_count =
+      trim_compiled_wide_state_groups_by_beam_and_mass(*entries, &groups, beam_width, beam_eps);
+
+  std::vector<FixedWidePackedMass<Words>> kept;
+  size_t kept_entries = 0;
+  for (const auto& group : groups) {
+    kept_entries += group.end - group.begin;
+  }
+  kept.reserve(kept_entries);
+  for (const auto& group : groups) {
+    for (size_t k = group.begin; k < group.end; ++k) {
+      kept.push_back(std::move((*entries)[k]));
+    }
+  }
+  *entries = std::move(kept);
+  return kept_group_count;
+}
+
+template <size_t Words>
+std::vector<CompiledWideLayerTemplate<Words>> compile_wide_layers(
+    const std::vector<TesseractTrellisWideLayerTemplate>& layers) {
+  std::vector<CompiledWideLayerTemplate<Words>> compiled_layers;
+  compiled_layers.reserve(layers.size());
+  for (const auto& layer : layers) {
+    if (num_state_words(layer.current_active_detectors.size()) > Words ||
+        layer.projected_fault_mask_words.size() > Words) {
+      throw std::invalid_argument("Compiled wide kernel word count is smaller than the frontier.");
+    }
+
+    CompiledWideLayerTemplate<Words> compiled;
+    compiled.q = layer.q;
+    compiled.p = layer.p;
+    compiled.obs_mask = layer.obs_mask;
+
+    std::array<uint64_t, Words> surviving_masks{};
+    for (uint32_t current_local : layer.surviving_local_indices) {
+      surviving_masks[current_local >> 6] |= uint64_t{1} << (current_local & 63);
+    }
+    size_t next_offset = 0;
+    for (size_t src_word = 0; src_word < Words; ++src_word) {
+      compiled.surviving_masks[src_word] = surviving_masks[src_word];
+      compiled.projection_dst_words[src_word] = static_cast<uint8_t>(next_offset >> 6);
+      compiled.projection_dst_offsets[src_word] = static_cast<uint8_t>(next_offset & 63);
+      next_offset += std::popcount(surviving_masks[src_word]);
+    }
+
+    for (size_t k = 0; k < layer.projected_fault_mask_words.size(); ++k) {
+      compiled.projected_fault_mask_words[k] = layer.projected_fault_mask_words[k];
+    }
+
+    const auto& transition = layer.detcost_transition;
+    compiled.fault_detector_indices.reserve(transition.fault_local_indices.size());
+    compiled.fault_word_indices.reserve(transition.fault_local_indices.size());
+    compiled.fault_bit_masks.reserve(transition.fault_local_indices.size());
+    compiled.fault_was_active_before.reserve(transition.fault_local_indices.size());
+    compiled.next_local_indices = transition.next_local_indices;
+    compiled.current_costs = transition.current_costs;
+    compiled.next_costs = transition.next_costs;
+    for (uint32_t local : transition.fault_local_indices) {
+      compiled.fault_detector_indices.push_back((uint32_t)layer.current_active_detectors[local]);
+      compiled.fault_word_indices.push_back(static_cast<uint8_t>(local >> 6));
+      compiled.fault_bit_masks.push_back(uint64_t{1} << (local & 63));
+      compiled.fault_was_active_before.push_back(local < layer.previous_width);
+    }
+
+    compiled_layers.push_back(std::move(compiled));
+  }
+  return compiled_layers;
+}
+
+template <size_t Words>
+struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
+  explicit CompiledWideKernel(std::vector<CompiledWideLayerTemplate<Words>> layers_,
+                              std::vector<int> initial_active_detectors_,
+                              size_t max_frontier_width_)
+      : layers(std::move(layers_)),
+        initial_active_detectors(std::move(initial_active_detectors_)),
+        max_frontier_width(max_frontier_width_) {}
+
+  void decode_shot(TesseractTrellisDecoder* decoder,
+                   const std::vector<uint64_t>& detections) const override {
+    boost::dynamic_bitset<> actual_dets(decoder->num_detectors);
+    for (uint64_t d : detections) {
+      if (d >= decoder->num_detectors || !decoder->all_possible_detectors[d]) {
+        decoder->low_confidence_flag = true;
+        return;
+      }
+      actual_dets.flip((size_t)d);
+    }
+
+    decoder->max_frontier_width_seen = max_frontier_width;
+
+    double initial_penalty = 0.0;
+    if (decoder->config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked &&
+        !layers.empty()) {
+      initial_penalty = compute_initial_penalty_for_active_detectors(
+          initial_active_detectors, actual_dets, decoder->initial_future_detcost);
+    }
+
+    std::vector<FixedWidePackedMass<Words>> beam_entries;
+    std::vector<FixedWidePackedMass<Words>> next_entries;
+    beam_entries.reserve(decoder->config.beam_width * 2 + 2);
+    next_entries.reserve(decoder->config.beam_width * 4 + 4);
+    beam_entries.push_back({{}, 0, 1.0, initial_penalty});
+    decoder->max_beam_size_seen = 1;
+
+    const bool compute_penalties =
+        decoder->config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked;
+    for (size_t layer_index = 0; layer_index < layers.size(); ++layer_index) {
+      const auto& layer = layers[layer_index];
+
+      auto t0 = std::chrono::high_resolution_clock::now();
+      next_entries.clear();
+      next_entries.reserve(beam_entries.size() * 2);
+
+      if (decoder->config.verbose) {
+        std::cout << "expanding layer " << layer_index << " / " << (layers.size() - 1)
+                  << std::endl;
+        std::cout << "states to expand = " << beam_entries.size() << std::endl;
+      }
+      for (const auto& item : beam_entries) {
+        ++decoder->num_states_expanded;
+        BranchPenaltyUpdate update = compute_compiled_wide_branch_update(
+            item.state_words, item.penalty, actual_dets, layer, compute_penalties);
+
+        if (!update.absent_valid && !update.present_valid) {
+          continue;
+        }
+
+        FixedWideStateWords<Words> projected_state =
+            project_compiled_wide_state(item.state_words, layer);
+        const bool keep_absent = update.absent_valid && layer.q != 0.0;
+        const bool keep_present = update.present_valid && layer.p != 0.0;
+        if (keep_absent && keep_present) {
+          FixedWideStateWords<Words> projected_toggled = projected_state;
+          xor_compiled_wide_state(&projected_toggled, layer.projected_fault_mask_words);
+          next_entries.push_back(
+              {std::move(projected_state), item.obs_mask, item.mass * layer.q, update.absent_penalty});
+          next_entries.push_back({std::move(projected_toggled), item.obs_mask ^ layer.obs_mask,
+                                  item.mass * layer.p, update.present_penalty});
+        } else if (keep_absent) {
+          next_entries.push_back(
+              {std::move(projected_state), item.obs_mask, item.mass * layer.q, update.absent_penalty});
+        } else if (keep_present) {
+          xor_compiled_wide_state(&projected_state, layer.projected_fault_mask_words);
+          next_entries.push_back({std::move(projected_state), item.obs_mask ^ layer.obs_mask,
+                                  item.mass * layer.p, update.present_penalty});
+        }
+      }
+      auto t1 = std::chrono::high_resolution_clock::now();
+      decoder->time_expand_seconds +=
+          std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() / 1e6;
+
+      beam_entries.swap(next_entries);
+      auto t2a = std::chrono::high_resolution_clock::now();
+      merge_equal_compiled_keys_inplace(&beam_entries);
+      auto t2 = std::chrono::high_resolution_clock::now();
+      decoder->time_collapse_seconds +=
+          std::chrono::duration_cast<std::chrono::microseconds>(t2 - t2a).count() / 1e6;
+
+      const size_t kept_states = keep_top_compiled_states(
+          &beam_entries, decoder->config.beam_width, decoder->config.beam_eps,
+          decoder->config.ranking_mode);
+      normalize_compiled_items(&beam_entries);
+      record_kept_state_count(decoder, beam_entries.empty() ? 0 : kept_states);
+      if (beam_entries.empty()) {
+        decoder->low_confidence_flag = true;
+        return;
+      }
+      decoder->num_states_merged += kept_states;
+      decoder->max_beam_size_seen = std::max(decoder->max_beam_size_seen, kept_states);
+      auto t3 = std::chrono::high_resolution_clock::now();
+      decoder->time_truncate_seconds +=
+          std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count() / 1e6;
+    }
+
+    auto tr0 = std::chrono::high_resolution_clock::now();
+    for (const auto& item : beam_entries) {
+      if (!fixed_wide_state_zero(item.state_words)) {
+        continue;
+      }
+      if (item.obs_mask == 0) {
+        decoder->total_mass_obs0 += item.mass;
+      } else if (item.obs_mask == 1) {
+        decoder->total_mass_obs1 += item.mass;
+      }
+    }
+    if (decoder->total_mass_obs0 == 0.0 && decoder->total_mass_obs1 == 0.0) {
+      decoder->low_confidence_flag = true;
+      return;
+    }
+    decoder->predicted_obs_mask = decoder->total_mass_obs1 > decoder->total_mass_obs0 ? 1 : 0;
+    auto tr1 = std::chrono::high_resolution_clock::now();
+    decoder->time_reconstruct_seconds +=
+        std::chrono::duration_cast<std::chrono::microseconds>(tr1 - tr0).count() / 1e6;
+  }
+
+  std::vector<CompiledWideLayerTemplate<Words>> layers;
+  std::vector<int> initial_active_detectors;
+  size_t max_frontier_width;
+};
+
+std::unique_ptr<TesseractTrellisWideKernelBase> build_compiled_wide_kernel(
+    const std::vector<TesseractTrellisWideLayerTemplate>& layers, size_t max_frontier_width) {
+  const size_t required_words = std::max<size_t>(1, num_state_words(max_frontier_width));
+  if (required_words > kMaxCompiledWideStateWords) {
+    throw std::invalid_argument("Wide trellis frontier requires " + std::to_string(required_words) +
+                                " words, but only " +
+                                std::to_string(kMaxCompiledWideStateWords) +
+                                " compiled words are enabled.");
+  }
+
+  const std::vector<int> initial_active_detectors =
+      layers.empty() ? std::vector<int>{} : layers.front().current_active_detectors;
+  switch (required_words) {
+    case 1:
+      return std::make_unique<CompiledWideKernel<1>>(
+          compile_wide_layers<1>(layers), initial_active_detectors, max_frontier_width);
+    case 2:
+      return std::make_unique<CompiledWideKernel<2>>(
+          compile_wide_layers<2>(layers), initial_active_detectors, max_frontier_width);
+    case 3:
+      return std::make_unique<CompiledWideKernel<3>>(
+          compile_wide_layers<3>(layers), initial_active_detectors, max_frontier_width);
+    case 4:
+      return std::make_unique<CompiledWideKernel<4>>(
+          compile_wide_layers<4>(layers), initial_active_detectors, max_frontier_width);
+    default:
+      throw std::invalid_argument("Unsupported compiled wide trellis word count.");
+  }
+}
+
 }  // namespace
+
+TesseractTrellisDecoder::~TesseractTrellisDecoder() = default;
 
 TesseractTrellisDecoder::TesseractTrellisDecoder(TesseractTrellisConfig config_)
     : config(std::move(config_)) {
@@ -945,23 +868,11 @@ TesseractTrellisDecoder::TesseractTrellisDecoder(TesseractTrellisConfig config_)
   build_future_detcost_transitions(faults, num_detectors, &wide_layer_templates,
                                    &initial_future_detcost);
   prepare_projected_fault_masks(&wide_layer_templates);
-
-  size_t small_frontier_width = 0;
-  has_small_layer_templates =
-      num_observables <= 1 &&
-      build_small_layer_templates(faults, num_detectors, &small_layer_templates,
-                                  &small_frontier_width);
-  if (has_small_layer_templates) {
-    build_future_detcost_transitions(faults, num_detectors, &small_layer_templates, nullptr);
-    prepare_projected_fault_masks(&small_layer_templates);
-    build_small_detector_layer_refs(small_layer_templates, num_detectors,
-                                    &small_detector_layer_refs);
-    scratch_small_current_target_bits.assign(small_layer_templates.size(), 0);
-    scratch_small_expected_retiring_bits.assign(small_layer_templates.size(), 0);
-  }
+  wide_kernel = build_compiled_wide_kernel(wide_layer_templates, wide_frontier_width);
 }
 
-void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detections) {
+__attribute__((hot)) void TesseractTrellisDecoder::decode_shot(
+    const std::vector<uint64_t>& detections) {
   low_confidence_flag = false;
   num_states_expanded = 0;
   num_states_merged = 0;
@@ -976,247 +887,7 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
   total_mass_obs0 = 0;
   total_mass_obs1 = 0;
   FinalizeKeptStateStatsOnExit kept_state_stats_guard{this};
-
-  if (has_small_layer_templates) {
-    std::fill(scratch_small_current_target_bits.begin(), scratch_small_current_target_bits.end(),
-              0);
-    std::fill(scratch_small_expected_retiring_bits.begin(),
-              scratch_small_expected_retiring_bits.end(), 0);
-
-    for (uint64_t d : detections) {
-      if (d >= num_detectors || !all_possible_detectors[d]) {
-        low_confidence_flag = true;
-        return;
-      }
-      for (const auto& ref : small_detector_layer_refs[(size_t)d]) {
-        scratch_small_current_target_bits[ref.layer_index] ^= uint64_t{1} << ref.local_index;
-      }
-    }
-
-    for (size_t layer_index = 0; layer_index < small_layer_templates.size(); ++layer_index) {
-      const auto& layer = small_layer_templates[layer_index];
-      max_frontier_width_seen =
-          std::max(max_frontier_width_seen, layer.current_active_detectors.size());
-      scratch_small_expected_retiring_bits[layer_index] =
-          scratch_small_current_target_bits[layer_index] & layer.retiring_mask;
-    }
-
-    double initial_penalty = 0.0;
-    if (config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked &&
-        !small_layer_templates.empty()) {
-      initial_penalty = compute_initial_penalty_for_target_bits(
-          scratch_small_current_target_bits.front(),
-          small_layer_templates.front().current_active_detectors, initial_future_detcost);
-    }
-
-    std::vector<PackedMass> beam_entries;
-    std::vector<PackedMass> next_entries;
-    beam_entries.reserve(config.beam_width * 2 + 2);
-    next_entries.reserve(config.beam_width * 4 + 4);
-    beam_entries.push_back({pack_small_key(0, 0), 1.0, initial_penalty});
-    max_beam_size_seen = 1;
-
-    const bool compute_penalties =
-        config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked;
-    for (size_t layer_index = 0; layer_index < small_layer_templates.size(); ++layer_index) {
-      const auto& layer = small_layer_templates[layer_index];
-      const uint64_t current_target_bits = scratch_small_current_target_bits[layer_index];
-      const uint64_t expected_retiring_bits = scratch_small_expected_retiring_bits[layer_index];
-
-      auto t0 = std::chrono::high_resolution_clock::now();
-      next_entries.clear();
-      next_entries.reserve(beam_entries.size() * 2);
-      for (const auto& item : beam_entries) {
-        ++num_states_expanded;
-        const uint64_t base_state = unpack_small_state(item.key);
-        const uint64_t base_obs = unpack_small_obs(item.key);
-
-        BranchPenaltyUpdate update;
-        if (compute_penalties) {
-          update = compute_small_branch_update(base_state, layer.previous_width, item.penalty,
-                                               current_target_bits, layer.detcost_transition, true);
-        } else {
-          update.absent_valid =
-              (((base_state ^ expected_retiring_bits) & layer.retiring_mask) == 0);
-          uint64_t toggled_state = base_state ^ layer.local_det_mask;
-          update.present_valid =
-              (((toggled_state ^ expected_retiring_bits) & layer.retiring_mask) == 0);
-        }
-
-        if (!update.absent_valid && !update.present_valid) {
-          continue;
-        }
-
-        uint64_t projected_state = project_small_state(base_state, layer.surviving_mask);
-        if (update.absent_valid && layer.q != 0.0) {
-          next_entries.push_back({pack_small_key(projected_state, base_obs), item.mass * layer.q,
-                                  update.absent_penalty});
-        }
-        if (update.present_valid && layer.p != 0.0) {
-          next_entries.push_back({pack_small_key(projected_state ^ layer.projected_fault_mask,
-                                                 base_obs ^ layer.obs_flip_bit),
-                                  item.mass * layer.p, update.present_penalty});
-        }
-      }
-      auto t1 = std::chrono::high_resolution_clock::now();
-      time_expand_seconds +=
-          std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() / 1e6;
-
-      beam_entries.swap(next_entries);
-      auto t2a = std::chrono::high_resolution_clock::now();
-      merge_equal_keys_inplace(beam_entries);
-      auto t2 = std::chrono::high_resolution_clock::now();
-      time_collapse_seconds +=
-          std::chrono::duration_cast<std::chrono::microseconds>(t2 - t2a).count() / 1e6;
-
-      size_t kept_states =
-          keep_top_states(beam_entries, config.beam_width, config.beam_eps, config.ranking_mode);
-      normalize_items(beam_entries);
-      record_kept_state_count(this, beam_entries.empty() ? 0 : kept_states);
-      if (beam_entries.empty()) {
-        low_confidence_flag = true;
-        return;
-      }
-      num_states_merged += kept_states;
-      max_beam_size_seen = std::max(max_beam_size_seen, kept_states);
-      auto t3 = std::chrono::high_resolution_clock::now();
-      time_truncate_seconds +=
-          std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count() / 1e6;
-    }
-
-    auto tr0 = std::chrono::high_resolution_clock::now();
-    for (const auto& [packed_key, mass, penalty] : beam_entries) {
-      (void)penalty;
-      if (unpack_small_state(packed_key) != 0) {
-        continue;
-      }
-      if (unpack_small_obs(packed_key) == 0) {
-        total_mass_obs0 += mass;
-      } else {
-        total_mass_obs1 += mass;
-      }
-    }
-    if (total_mass_obs0 == 0.0 && total_mass_obs1 == 0.0) {
-      low_confidence_flag = true;
-      return;
-    }
-    predicted_obs_mask = total_mass_obs1 > total_mass_obs0 ? 1 : 0;
-    auto tr1 = std::chrono::high_resolution_clock::now();
-    time_reconstruct_seconds +=
-        std::chrono::duration_cast<std::chrono::microseconds>(tr1 - tr0).count() / 1e6;
-  } else {
-    boost::dynamic_bitset<> actual_dets(num_detectors);
-    for (uint64_t d : detections) {
-      if (d >= num_detectors || !all_possible_detectors[d]) {
-        low_confidence_flag = true;
-        return;
-      }
-      actual_dets.flip((size_t)d);
-    }
-    max_frontier_width_seen = 0;
-    for (const auto& layer : wide_layer_templates) {
-      max_frontier_width_seen =
-          std::max(max_frontier_width_seen, layer.current_active_detectors.size());
-    }
-
-    double initial_penalty = 0.0;
-    if (config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked &&
-        !wide_layer_templates.empty()) {
-      initial_penalty = compute_initial_penalty_for_active_detectors(
-          wide_layer_templates.front().current_active_detectors, actual_dets,
-          initial_future_detcost);
-    }
-
-    std::vector<WidePackedMass> beam_entries;
-    std::vector<WidePackedMass> next_entries;
-    beam_entries.reserve(config.beam_width * 2 + 2);
-    next_entries.reserve(config.beam_width * 4 + 4);
-    beam_entries.push_back({{}, 0, 1.0, initial_penalty});
-    max_beam_size_seen = 1;
-
-    for (size_t layer_index = 0; layer_index < wide_layer_templates.size(); ++layer_index) {
-      const auto& layer = wide_layer_templates[layer_index];
-      const bool compute_penalties =
-          config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked;
-
-      auto t0 = std::chrono::high_resolution_clock::now();
-      next_entries.clear();
-      next_entries.reserve(beam_entries.size() * 2);
-
-      if (config.verbose) {
-        std::cout << "expanding layer " << layer_index << " / " << (wide_layer_templates.size() - 1)
-                  << std::endl;
-        std::cout << "states to expand = " << beam_entries.size() << std::endl;
-      }
-      for (const auto& item : beam_entries) {
-        ++num_states_expanded;
-        BranchPenaltyUpdate update = compute_wide_branch_update(
-            item.state_words, layer.previous_width, item.penalty, layer.current_active_detectors,
-            actual_dets, layer.detcost_transition, compute_penalties);
-
-        if (!update.absent_valid && !update.present_valid) {
-          continue;
-        }
-
-        std::vector<uint64_t> projected_state = project_wide_state(
-            item.state_words, layer.previous_width, layer.surviving_local_indices);
-        if (update.absent_valid && layer.q != 0.0) {
-          next_entries.push_back(
-              {projected_state, item.obs_mask, item.mass * layer.q, update.absent_penalty});
-        }
-        if (update.present_valid && layer.p != 0.0) {
-          std::vector<uint64_t> projected_toggled = projected_state;
-          xor_state_words(projected_toggled, layer.projected_fault_mask_words);
-          next_entries.push_back({std::move(projected_toggled), item.obs_mask ^ layer.obs_mask,
-                                  item.mass * layer.p, update.present_penalty});
-        }
-      }
-      auto t1 = std::chrono::high_resolution_clock::now();
-      time_expand_seconds +=
-          std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count() / 1e6;
-
-      beam_entries.swap(next_entries);
-      auto t2a = std::chrono::high_resolution_clock::now();
-      merge_equal_keys_inplace(beam_entries);
-      auto t2 = std::chrono::high_resolution_clock::now();
-      time_collapse_seconds +=
-          std::chrono::duration_cast<std::chrono::microseconds>(t2 - t2a).count() / 1e6;
-
-      size_t kept_states =
-          keep_top_states(beam_entries, config.beam_width, config.beam_eps, config.ranking_mode);
-      normalize_items(beam_entries);
-      record_kept_state_count(this, beam_entries.empty() ? 0 : kept_states);
-      if (beam_entries.empty()) {
-        low_confidence_flag = true;
-        return;
-      }
-      num_states_merged += kept_states;
-      max_beam_size_seen = std::max(max_beam_size_seen, kept_states);
-      auto t3 = std::chrono::high_resolution_clock::now();
-      time_truncate_seconds +=
-          std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count() / 1e6;
-    }
-
-    auto tr0 = std::chrono::high_resolution_clock::now();
-    for (const auto& item : beam_entries) {
-      if (!wide_state_zero(item.state_words)) {
-        continue;
-      }
-      if (item.obs_mask == 0) {
-        total_mass_obs0 += item.mass;
-      } else if (item.obs_mask == 1) {
-        total_mass_obs1 += item.mass;
-      }
-    }
-    if (total_mass_obs0 == 0.0 && total_mass_obs1 == 0.0) {
-      low_confidence_flag = true;
-      return;
-    }
-    predicted_obs_mask = total_mass_obs1 > total_mass_obs0 ? 1 : 0;
-    auto tr1 = std::chrono::high_resolution_clock::now();
-    time_reconstruct_seconds +=
-        std::chrono::duration_cast<std::chrono::microseconds>(tr1 - tr0).count() / 1e6;
-  }
+  wide_kernel->decode_shot(this, detections);
 
   if (config.verbose) {
     std::cout << "trellis beam_width=" << config.beam_width

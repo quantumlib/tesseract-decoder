@@ -17,10 +17,13 @@
 
 #include <boost/dynamic_bitset.hpp>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "common.h"
 #include "stim.h"
+
+struct TesseractTrellisWideKernelBase;
 
 enum class TesseractTrellisRankingMode {
   MassOnly,
@@ -32,26 +35,6 @@ struct TesseractTrellisDetcostTransition {
   std::vector<int32_t> next_local_indices;
   std::vector<double> current_costs;
   std::vector<double> next_costs;
-};
-
-struct TesseractTrellisSmallLayerTemplate {
-  double q = 0;
-  double p = 0;
-  uint64_t obs_flip_bit = 0;
-  uint64_t local_det_mask = 0;
-  uint64_t retiring_mask = 0;
-  uint64_t surviving_mask = 0;
-  uint64_t projected_fault_mask = 0;
-  size_t previous_width = 0;
-  std::vector<uint8_t> surviving_local_indices;
-  std::vector<int> current_active_detectors;
-  std::vector<double> next_frontier_costs;
-  TesseractTrellisDetcostTransition detcost_transition;
-};
-
-struct TesseractTrellisSmallDetectorLayerRef {
-  uint32_t layer_index = 0;
-  uint8_t local_index = 0;
 };
 
 struct TesseractTrellisWideLayerTemplate {
@@ -77,6 +60,7 @@ struct TesseractTrellisConfig {
 
 struct TesseractTrellisDecoder {
   explicit TesseractTrellisDecoder(TesseractTrellisConfig config);
+  ~TesseractTrellisDecoder();
 
   void decode_shot(const std::vector<uint64_t>& detections);
   std::vector<int> decode(const std::vector<uint64_t>& detections);
@@ -108,12 +92,8 @@ struct TesseractTrellisDecoder {
   size_t num_observables = 0;
   size_t num_detectors = 0;
   boost::dynamic_bitset<> all_possible_detectors;
-  bool has_small_layer_templates = false;
-  std::vector<TesseractTrellisSmallLayerTemplate> small_layer_templates;
-  std::vector<std::vector<TesseractTrellisSmallDetectorLayerRef>> small_detector_layer_refs;
-  std::vector<uint64_t> scratch_small_current_target_bits;
-  std::vector<uint64_t> scratch_small_expected_retiring_bits;
   std::vector<TesseractTrellisWideLayerTemplate> wide_layer_templates;
+  std::unique_ptr<TesseractTrellisWideKernelBase> wide_kernel;
   std::vector<double> initial_future_detcost;
   std::vector<uint32_t> kept_state_histogram_scratch;
 };
