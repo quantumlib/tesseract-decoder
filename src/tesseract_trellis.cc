@@ -84,6 +84,8 @@ struct CompiledWideLayerTemplate {
   double q = 0.0;
   double p = 0.0;
   bool toggles_observable = false;
+  bool has_retiring_terms = false;
+  size_t surviving_term_count = 0;
   std::array<uint64_t, Words> surviving_masks{};
   std::array<uint8_t, Words> projection_dst_words{};
   std::array<uint8_t, Words> projection_dst_offsets{};
@@ -93,7 +95,6 @@ struct CompiledWideLayerTemplate {
   std::vector<uint8_t> fault_word_indices;
   std::vector<uint64_t> fault_bit_masks;
   std::vector<uint8_t> fault_was_active_before;
-  std::vector<int32_t> next_local_indices;
   std::vector<double> current_costs;
   std::vector<double> next_costs;
 };
@@ -527,17 +528,15 @@ FixedWideStateWords<Words> project_compiled_wide_state(
   return out;
 }
 
-template <size_t Words>
-BranchPenaltyUpdate compute_compiled_wide_branch_update(
+template <bool ComputePenalties, bool CheckRetiringTerms, size_t Words>
+TESSERACT_ALWAYS_INLINE BranchPenaltyUpdate compute_compiled_wide_branch_update(
     const FixedWideStateWords<Words>& base_state_words, double current_penalty,
-    const std::vector<uint64_t>& actual_detector_words,
-    const CompiledWideLayerTemplate<Words>& layer,
-    bool compute_penalties) {
+    const std::vector<uint64_t>& actual_detector_words, const CompiledWideLayerTemplate<Words>& layer) {
   BranchPenaltyUpdate update;
-  update.absent_penalty = compute_penalties ? current_penalty : 0.0;
-  update.present_penalty = compute_penalties ? current_penalty : 0.0;
+  update.absent_penalty = ComputePenalties ? current_penalty : 0.0;
+  update.present_penalty = ComputePenalties ? current_penalty : 0.0;
 
-  for (size_t k = 0; k < layer.fault_target_word_indices.size(); ++k) {
+  for (size_t k = 0; k < layer.surviving_term_count; ++k) {
     const bool state_bit =
         layer.fault_was_active_before[k] &&
         ((base_state_words[layer.fault_word_indices[k]] & layer.fault_bit_masks[k]) != 0);
@@ -545,29 +544,86 @@ BranchPenaltyUpdate compute_compiled_wide_branch_update(
         (actual_detector_words[layer.fault_target_word_indices[k]] &
          layer.fault_target_bit_masks[k]) != 0;
     const bool mismatch = state_bit ^ target_bit;
-    const int32_t next_local = layer.next_local_indices[k];
 
-    if (next_local < 0) {
+    if constexpr (ComputePenalties) {
+      const double prev_contrib =
+          (layer.fault_was_active_before[k] && mismatch) ? layer.current_costs[k] : 0.0;
+      const double next_contrib = mismatch ? layer.next_costs[k] : 0.0;
+      update.absent_penalty += next_contrib - prev_contrib;
+      update.present_penalty += (layer.next_costs[k] - next_contrib) - prev_contrib;
+    }
+  }
+
+  if constexpr (CheckRetiringTerms) {
+    for (size_t k = layer.surviving_term_count; k < layer.fault_target_word_indices.size(); ++k) {
+      const bool state_bit =
+          layer.fault_was_active_before[k] &&
+          ((base_state_words[layer.fault_word_indices[k]] & layer.fault_bit_masks[k]) != 0);
+      const bool target_bit =
+          (actual_detector_words[layer.fault_target_word_indices[k]] &
+           layer.fault_target_bit_masks[k]) != 0;
+      const bool mismatch = state_bit ^ target_bit;
+
       if (mismatch) {
         update.absent_valid = false;
       } else {
         update.present_valid = false;
       }
-    }
 
-    if (!compute_penalties) {
-      continue;
+      if constexpr (ComputePenalties) {
+        const double prev_contrib =
+            (layer.fault_was_active_before[k] && mismatch) ? layer.current_costs[k] : 0.0;
+        update.absent_penalty -= prev_contrib;
+        update.present_penalty -= prev_contrib;
+      }
     }
-
-    const double prev_contrib =
-        (layer.fault_was_active_before[k] && mismatch) ? layer.current_costs[k] : 0.0;
-    const double absent_contrib = (next_local >= 0 && mismatch) ? layer.next_costs[k] : 0.0;
-    const double present_contrib = (next_local >= 0 && !mismatch) ? layer.next_costs[k] : 0.0;
-    update.absent_penalty += absent_contrib - prev_contrib;
-    update.present_penalty += present_contrib - prev_contrib;
   }
 
   return update;
+}
+
+template <size_t Words, bool ComputePenalties, bool CheckRetiringTerms>
+void expand_compiled_layer_into_pair_buckets(
+    const std::vector<FixedWideStateEntry<Words>>& beam_entries,
+    std::vector<FixedWidePairBucket<Words>>* pair_buckets, std::vector<size_t>* used_bucket_indices,
+    const std::vector<uint64_t>& actual_detector_words, const CompiledWideLayerTemplate<Words>& layer,
+    TesseractTrellisDecoder* decoder) {
+  for (const auto& item : beam_entries) {
+    ++decoder->num_states_expanded;
+    BranchPenaltyUpdate update = compute_compiled_wide_branch_update<ComputePenalties, CheckRetiringTerms>(
+        item.state_words, item.penalty, actual_detector_words, layer);
+
+    if (!update.absent_valid && !update.present_valid) {
+      continue;
+    }
+
+    FixedWideStateWords<Words> projected_state = project_compiled_wide_state(item.state_words, layer);
+    FixedWideStateWords<Words> projected_toggled = projected_state;
+    xor_compiled_wide_state(&projected_toggled, layer.projected_fault_mask_words);
+    const bool projected_is_key = !fixed_wide_state_less(projected_toggled, projected_state);
+    const auto& bucket_key = projected_is_key ? projected_state : projected_toggled;
+    const uint8_t absent_slot = projected_is_key ? 0 : 1;
+    const uint8_t present_slot = projected_toggled == bucket_key ? 0 : 1;
+    const size_t bucket_index =
+        find_or_insert_pair_bucket(pair_buckets, used_bucket_indices, bucket_key);
+    auto& bucket = (*pair_buckets)[bucket_index];
+    const bool keep_absent = update.absent_valid && layer.q != 0.0;
+    const bool keep_present = update.present_valid && layer.p != 0.0;
+
+    if (keep_absent) {
+      accumulate_pair_bucket_slot(&bucket, absent_slot, item.mass0 * layer.q, item.mass1 * layer.q,
+                                  update.absent_penalty);
+    }
+    if (keep_present) {
+      if (layer.toggles_observable) {
+        accumulate_pair_bucket_slot(&bucket, present_slot, item.mass1 * layer.p, item.mass0 * layer.p,
+                                    update.present_penalty);
+      } else {
+        accumulate_pair_bucket_slot(&bucket, present_slot, item.mass0 * layer.p, item.mass1 * layer.p,
+                                    update.present_penalty);
+      }
+    }
+  }
 }
 
 template <size_t Words>
@@ -704,21 +760,36 @@ std::vector<CompiledWideLayerTemplate<Words>> compile_wide_layers(
     }
 
     const auto& transition = layer.detcost_transition;
-    compiled.fault_target_word_indices.reserve(transition.fault_local_indices.size());
-    compiled.fault_target_bit_masks.reserve(transition.fault_local_indices.size());
-    compiled.fault_word_indices.reserve(transition.fault_local_indices.size());
-    compiled.fault_bit_masks.reserve(transition.fault_local_indices.size());
-    compiled.fault_was_active_before.reserve(transition.fault_local_indices.size());
-    compiled.next_local_indices = transition.next_local_indices;
-    compiled.current_costs = transition.current_costs;
-    compiled.next_costs = transition.next_costs;
-    for (uint32_t local : transition.fault_local_indices) {
+    const size_t term_count = transition.fault_local_indices.size();
+    compiled.fault_target_word_indices.reserve(term_count);
+    compiled.fault_target_bit_masks.reserve(term_count);
+    compiled.fault_word_indices.reserve(term_count);
+    compiled.fault_bit_masks.reserve(term_count);
+    compiled.fault_was_active_before.reserve(term_count);
+    compiled.current_costs.reserve(term_count);
+    compiled.next_costs.reserve(term_count);
+    auto append_term = [&](size_t idx) {
+      const uint32_t local = transition.fault_local_indices[idx];
       const uint32_t detector = (uint32_t)layer.current_active_detectors[local];
       compiled.fault_target_word_indices.push_back((uint32_t)detector_word_index(detector));
       compiled.fault_target_bit_masks.push_back(detector_word_mask(detector));
       compiled.fault_word_indices.push_back(static_cast<uint8_t>(local >> 6));
       compiled.fault_bit_masks.push_back(uint64_t{1} << (local & 63));
       compiled.fault_was_active_before.push_back(local < layer.previous_width);
+      compiled.current_costs.push_back(transition.current_costs[idx]);
+      compiled.next_costs.push_back(transition.next_costs[idx]);
+    };
+    for (size_t idx = 0; idx < term_count; ++idx) {
+      if (transition.next_local_indices[idx] >= 0) {
+        append_term(idx);
+      }
+    }
+    compiled.surviving_term_count = compiled.fault_target_word_indices.size();
+    compiled.has_retiring_terms = compiled.surviving_term_count != term_count;
+    for (size_t idx = 0; idx < term_count; ++idx) {
+      if (transition.next_local_indices[idx] < 0) {
+        append_term(idx);
+      }
     }
 
     compiled_layers.push_back(std::move(compiled));
@@ -792,42 +863,24 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
                   << std::endl;
         std::cout << "states to expand = " << beam_entries.size() << std::endl;
       }
-      for (const auto& item : beam_entries) {
-        ++decoder->num_states_expanded;
-        BranchPenaltyUpdate update = compute_compiled_wide_branch_update(
-            item.state_words, item.penalty, actual_detector_words, layer, compute_penalties);
-
-        if (!update.absent_valid && !update.present_valid) {
-          continue;
+      if (compute_penalties) {
+        if (layer.has_retiring_terms) {
+          expand_compiled_layer_into_pair_buckets<Words, true, true>(
+              beam_entries, &pair_buckets, &used_bucket_indices, actual_detector_words, layer,
+              decoder);
+        } else {
+          expand_compiled_layer_into_pair_buckets<Words, true, false>(
+              beam_entries, &pair_buckets, &used_bucket_indices, actual_detector_words, layer,
+              decoder);
         }
-
-        FixedWideStateWords<Words> projected_state =
-            project_compiled_wide_state(item.state_words, layer);
-        FixedWideStateWords<Words> projected_toggled = projected_state;
-        xor_compiled_wide_state(&projected_toggled, layer.projected_fault_mask_words);
-        const bool projected_is_key = !fixed_wide_state_less(projected_toggled, projected_state);
-        const auto& bucket_key = projected_is_key ? projected_state : projected_toggled;
-        const uint8_t absent_slot = projected_is_key ? 0 : 1;
-        const uint8_t present_slot = projected_toggled == bucket_key ? 0 : 1;
-        const size_t bucket_index =
-            find_or_insert_pair_bucket(&pair_buckets, &used_bucket_indices, bucket_key);
-        auto& bucket = pair_buckets[bucket_index];
-        const bool keep_absent = update.absent_valid && layer.q != 0.0;
-        const bool keep_present = update.present_valid && layer.p != 0.0;
-
-        if (keep_absent) {
-          accumulate_pair_bucket_slot(&bucket, absent_slot, item.mass0 * layer.q,
-                                      item.mass1 * layer.q, update.absent_penalty);
-        }
-        if (keep_present) {
-          if (layer.toggles_observable) {
-            accumulate_pair_bucket_slot(&bucket, present_slot, item.mass1 * layer.p,
-                                        item.mass0 * layer.p, update.present_penalty);
-          } else {
-            accumulate_pair_bucket_slot(&bucket, present_slot, item.mass0 * layer.p,
-                                        item.mass1 * layer.p, update.present_penalty);
-          }
-        }
+      } else if (layer.has_retiring_terms) {
+        expand_compiled_layer_into_pair_buckets<Words, false, true>(
+            beam_entries, &pair_buckets, &used_bucket_indices, actual_detector_words, layer,
+            decoder);
+      } else {
+        expand_compiled_layer_into_pair_buckets<Words, false, false>(
+            beam_entries, &pair_buckets, &used_bucket_indices, actual_detector_words, layer,
+            decoder);
       }
       auto t1 = std::chrono::high_resolution_clock::now();
       decoder->time_expand_seconds +=
