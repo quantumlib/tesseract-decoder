@@ -757,10 +757,9 @@ size_t trim_small_state_groups_by_beam_and_mass(std::vector<SmallStateGroup>* gr
   }
 
   if (groups->size() > beam_width) {
-    std::nth_element(groups->begin(), groups->begin() + beam_width, groups->end(),
-                     [](const SmallStateGroup& a, const SmallStateGroup& b) {
-                       return a.score > b.score;
-                     });
+    std::nth_element(
+        groups->begin(), groups->begin() + beam_width, groups->end(),
+        [](const SmallStateGroup& a, const SmallStateGroup& b) { return a.score > b.score; });
     groups->resize(beam_width);
   } else if (beam_eps <= 0.0) {
     return groups->size();
@@ -783,14 +782,12 @@ size_t trim_small_state_groups_by_beam_and_mass(std::vector<SmallStateGroup>* gr
   }
   groups->resize(keep_count);
   std::sort(groups->begin(), groups->end(),
-            [](const SmallStateGroup& a, const SmallStateGroup& b) {
-              return a.begin < b.begin;
-            });
+            [](const SmallStateGroup& a, const SmallStateGroup& b) { return a.begin < b.begin; });
   return groups->size();
 }
 
-std::vector<SmallStateGroup> collect_small_state_groups(
-    const std::vector<PackedMass>& entries, TesseractTrellisRankingMode ranking_mode) {
+std::vector<SmallStateGroup> collect_small_state_groups(const std::vector<PackedMass>& entries,
+                                                        TesseractTrellisRankingMode ranking_mode) {
   std::vector<SmallStateGroup> groups;
   if (entries.empty()) {
     return groups;
@@ -805,9 +802,9 @@ std::vector<SmallStateGroup> collect_small_state_groups(
       mass += entries[end].mass;
       ++end;
     }
-    groups.push_back(
-        {state, mass, score_mass_and_penalty(mass, entries[begin].penalty, ranking_mode), begin,
-         end});
+    groups.push_back({state, mass,
+                      score_mass_and_penalty(mass, entries[begin].penalty, ranking_mode), begin,
+                      end});
     begin = end;
   }
   return groups;
@@ -1233,10 +1230,10 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
       }
       normalize_items(beam_entries);
       const size_t kept_state_sample =
-          beam_entries.empty()
-              ? 0
-              : (config.prune_mode == TesseractTrellisPruneMode::MergedStates ? kept_states
-                                                                              : beam_entries.size());
+          beam_entries.empty() ? 0
+                               : (config.prune_mode == TesseractTrellisPruneMode::MergedStates
+                                      ? kept_states
+                                      : beam_entries.size());
       record_kept_state_count(this, kept_state_sample);
       if (beam_entries.empty()) {
         low_confidence_flag = true;
@@ -1316,6 +1313,11 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
       next_entries.clear();
       next_entries.reserve(beam_entries.size() * 2);
 
+      if (config.verbose) {
+        std::cout << "expanding layer " << layer_index << " / " << (wide_layer_templates.size() - 1)
+                  << std::endl;
+        std::cout << "states to expand = " << beam_entries.size() << std::endl;
+      }
       for (const auto& item : beam_entries) {
         ++num_states_expanded;
         BranchPenaltyUpdate update = compute_wide_branch_update(
@@ -1376,10 +1378,10 @@ void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detection
       }
       normalize_items(beam_entries);
       const size_t kept_state_sample =
-          beam_entries.empty()
-              ? 0
-              : (config.prune_mode == TesseractTrellisPruneMode::MergedStates ? kept_states
-                                                                              : beam_entries.size());
+          beam_entries.empty() ? 0
+                               : (config.prune_mode == TesseractTrellisPruneMode::MergedStates
+                                      ? kept_states
+                                      : beam_entries.size());
       record_kept_state_count(this, kept_state_sample);
       if (beam_entries.empty()) {
         low_confidence_flag = true;

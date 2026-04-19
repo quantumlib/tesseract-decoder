@@ -8,7 +8,10 @@ def analyze_log(filename):
     errors = []
     
     current_errors = 0
+    current_low_conf = 0
+    
     pending_error_diff = None
+    pending_low_conf_diff = None
     
     # Parse the log file line by line
     with open(filename, 'r') as f:
@@ -18,33 +21,47 @@ def analyze_log(filename):
                 continue
                 
             if parts[0] == "num_shots":
-                # Find 'num_errors' and grab the value two indices over (past the '=')
-                idx = parts.index("num_errors")
-                errs = int(parts[idx + 2])
+                # Find 'num_errors' and 'num_low_confidence' and grab the values
+                idx_err = parts.index("num_errors")
+                errs = int(parts[idx_err + 2])
                 
-                # Calculate errors for this specific shot and store it as pending
+                idx_lc = parts.index("num_low_confidence")
+                lc = int(parts[idx_lc + 2])
+                
+                # Calculate diffs for this specific shot
                 pending_error_diff = errs - current_errors
+                pending_low_conf_diff = lc - current_low_conf
+                
                 current_errors = errs
+                current_low_conf = lc
                 
             elif parts[0] == "branch_masses":
-                # Parse out the values from obs0=... and obs1=...
                 obs0 = float(parts[1].split("=")[1])
                 obs1 = float(parts[2].split("=")[1])
-                norm = obs0 + obs1
-                if norm == 0:
-                  obs0 = 0.5
-                  obs1 = 0.5
+                
+                # Override if it was flagged as a low confidence shot
+                if pending_low_conf_diff is not None and pending_low_conf_diff > 0:
+                    obs0 = 0.5
+                    obs1 = 0.5
+                    # Count the low confidence increment as additional logical errors
+                    pending_error_diff += pending_low_conf_diff
                 else:
-                  obs0 /= norm
-                  obs1 /= norm
+                    norm = obs0 + obs1
+                    if norm == 0:
+                        obs0 = 0.5
+                        obs1 = 0.5
+                    else:
+                        obs0 /= norm
+                        obs1 /= norm
                 
                 # Only append if we just successfully parsed a num_shots line
                 if pending_error_diff is not None:
                     min_masses.append(min(obs0, obs1))
                     errors.append(pending_error_diff)
                     
-                    # Reset pending diff to ensure we don't double-count
+                    # Reset pending diffs to ensure we don't double-count
                     pending_error_diff = None
+                    pending_low_conf_diff = None
 
     min_masses = np.array(min_masses)
     errors = np.array(errors)

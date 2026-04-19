@@ -130,7 +130,8 @@ struct Args {
     parse_prune_mode(prune_mode);
     parse_ranking_mode(ranking_mode);
     if (beam_eps != 0.0 && prune_mode != "merged") {
-      throw std::invalid_argument("--beam-eps is currently only supported with --prune-mode=merged.");
+      throw std::invalid_argument(
+          "--beam-eps is currently only supported with --prune-mode=merged.");
     }
   }
 
@@ -410,8 +411,7 @@ int main(int argc, char* argv[]) {
                     << " max_beam = " << max_beam_size_per_shot[shot_index]
                     << " frontier_width = " << max_frontier_width_per_shot[shot_index]
                     << " total_time_seconds = " << total_time_seconds << '\n';
-          std::cout << "kept_states"
-                    << " min=" << kept_state_min_per_shot[shot_index]
+          std::cout << "kept_states" << " min=" << kept_state_min_per_shot[shot_index]
                     << " median=" << kept_state_median_per_shot[shot_index]
                     << " mean=" << kept_state_mean_per_shot[shot_index]
                     << " max=" << kept_state_max_per_shot[shot_index] << '\n';
