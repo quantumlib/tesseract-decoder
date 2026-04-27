@@ -43,7 +43,11 @@ permissions: read-all
 
 jobs:
   run-scorecard:
-    if: github.repository_owner == 'quantumlib'
+    # Skip fork PRs to avoid "Analysis configuration not found" errors.
+    if: >-
+      github.repository_owner == 'quantumlib' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.fork == false)
     name: Scorecard analyzer
     runs-on: ubuntu-24.04
     permissions:
@@ -52,7 +56,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Check out a copy of the git repository
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
@@ -60,20 +64,18 @@ jobs:
         # yamllint disable rule:line-length
         uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
         with:
-          # Save the results
           results_file: scorecard-results.sarif
           results_format: sarif
-          # See https://github.com/ossf/scorecard-action#publishing-results.
           publish_results: true
 
       - name: Upload results to code-scanning dashboard
         # yamllint disable rule:line-length
-        uses: github/codeql-action/upload-sarif@25a224b8085c21d4d61b7fc051468805fc3ac490 # codeql-bundle-v2.24.0
+        uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2
         with:
           sarif_file: scorecard-results.sarif
 
-  # Scorecard currently (ver. 2.4.x) doesn't allow submissions from jobs having
-  # steps that use "run:". To print to the summary, we need to use another job.
+  # Scorecard doesn't allow submissions from jobs having steps that use "run:".
+  # Printing a summary needs to use "run:", so we have to use a separate job.
   write-summary:
     name: Scorecard results
     needs: run-scorecard
