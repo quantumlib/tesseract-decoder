@@ -4,6 +4,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 def analyze_log(filename):
+    # Preemptively check if the file exists
+    if not os.path.isfile(filename):
+        print(f"File not found: {filename}")
+        return
+
     min_masses = []
     errors = []
     
@@ -20,48 +25,54 @@ def analyze_log(filename):
             if not parts:
                 continue
                 
-            if parts[0] == "num_shots":
-                # Find 'num_errors' and 'num_low_confidence' and grab the values
-                idx_err = parts.index("num_errors")
-                errs = int(parts[idx_err + 2])
-                
-                idx_lc = parts.index("num_low_confidence")
-                lc = int(parts[idx_lc + 2])
-                
-                # Calculate diffs for this specific shot
-                pending_error_diff = errs - current_errors
-                pending_low_conf_diff = lc - current_low_conf
-                
-                current_errors = errs
-                current_low_conf = lc
-                
-            elif parts[0] == "branch_masses":
-                obs0 = float(parts[1].split("=")[1])
-                obs1 = float(parts[2].split("=")[1])
-                
-                # Override if it was flagged as a low confidence shot
-                if pending_low_conf_diff is not None and pending_low_conf_diff > 0:
-                    obs0 = 0.5
-                    obs1 = 0.5
-                    # Count the low confidence increment as additional logical errors
-                    pending_error_diff += pending_low_conf_diff
-                else:
-                    norm = obs0 + obs1
-                    if norm == 0:
+            try:
+                if parts[0] == "num_shots":
+                    # Find 'num_errors' and 'num_low_confidence' and grab the values
+                    idx_err = parts.index("num_errors")
+                    errs = int(parts[idx_err + 2])
+                    
+                    idx_lc = parts.index("num_low_confidence")
+                    lc = int(parts[idx_lc + 2])
+                    
+                    # Calculate diffs for this specific shot
+                    pending_error_diff = errs - current_errors
+                    pending_low_conf_diff = lc - current_low_conf
+                    
+                    current_errors = errs
+                    current_low_conf = lc
+                    
+                elif parts[0] == "branch_masses":
+                    obs0 = float(parts[1].split("=")[1])
+                    obs1 = float(parts[2].split("=")[1])
+                    
+                    # Override if it was flagged as a low confidence shot
+                    if pending_low_conf_diff is not None and pending_low_conf_diff > 0:
                         obs0 = 0.5
                         obs1 = 0.5
+                        # Count the low confidence increment as additional logical errors
+                        pending_error_diff += pending_low_conf_diff
                     else:
-                        obs0 /= norm
-                        obs1 /= norm
-                
-                # Only append if we just successfully parsed a num_shots line
-                if pending_error_diff is not None:
-                    min_masses.append(min(obs0, obs1))
-                    errors.append(pending_error_diff)
+                        norm = obs0 + obs1
+                        if norm == 0:
+                            obs0 = 0.5
+                            obs1 = 0.5
+                        else:
+                            obs0 /= norm
+                            obs1 /= norm
                     
-                    # Reset pending diffs to ensure we don't double-count
-                    pending_error_diff = None
-                    pending_low_conf_diff = None
+                    # Only append if we just successfully parsed a num_shots line
+                    if pending_error_diff is not None:
+                        min_masses.append(min(obs0, obs1))
+                        errors.append(pending_error_diff)
+                        
+                        # Reset pending diffs to ensure we don't double-count
+                        pending_error_diff = None
+                        pending_low_conf_diff = None
+                        
+            except Exception:
+                # If anything fails (IndexError, ValueError, etc.) due to a malformed line, 
+                # immediately break and assume it's the end of the file.
+                break
 
     min_masses = np.array(min_masses)
     errors = np.array(errors)
