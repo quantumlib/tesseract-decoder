@@ -469,6 +469,12 @@ void add_tesseract_module(py::module& root) {
       .def_readwrite("low_confidence_flag", &TesseractDecoder::low_confidence_flag,
                      "A flag indicating if the decoder's prediction has low confidence.")
       .def_readwrite(
+          "num_pq_pushed", &TesseractDecoder::num_pq_pushed,
+          "The number of items pushed to the priority queue during the most recent decode.")
+      .def_readwrite(
+          "num_pq_popped", &TesseractDecoder::num_pq_popped,
+          "The number of items popped from the priority queue during the most recent decode.")
+      .def_readwrite(
           "predicted_errors_buffer", &TesseractDecoder::predicted_errors_buffer,
           "A buffer containing the predicted errors from the most recent decode operation.")
       .def_readwrite("errors", &TesseractDecoder::errors,

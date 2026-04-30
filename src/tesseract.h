@@ -60,7 +60,7 @@ class Node {
 };
 
 struct DetectorCostTuple {
-  uint32_t error_blocked;
+  uint8_t error_blocked;
   uint32_t detectors_count;
 };
 
@@ -97,6 +97,8 @@ struct TesseractDecoder {
                     std::vector<std::vector<int>>& obs_predicted);
 
   bool low_confidence_flag = false;
+  size_t num_pq_pushed = 0;
+  size_t num_pq_popped = 0;
   std::vector<size_t> predicted_errors_buffer;
   std::vector<size_t> dem_error_to_error;
   std::vector<size_t> error_to_dem_error;
