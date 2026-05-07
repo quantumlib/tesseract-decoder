@@ -5,27 +5,27 @@ The `tesseract_decoder.tesseract` module provides the Tesseract decoder, which e
 
 #### Class `tesseract.TesseractConfig`
 This class holds the configuration parameters that control the behavior of the Tesseract decoder.
-* `TesseractConfig(dem: stim.DetectorErrorModel, det_beam: int = INF_DET_BEAM, beam_climbing: bool = False, no_revisit_dets: bool = False, verbose: bool = False, pqlimit: int = sys.maxsize, det_orders: list[list[int]] = [], det_penalty: float = 0.0)`
+* `TesseractConfig(dem: stim.DetectorErrorModel, det_beam: int = 5, beam_climbing: bool = False, no_revisit_dets: bool = True, verbose: bool = False, merge_errors: bool = True, pqlimit: int = 200000, det_orders: list[list[int]] = [], det_penalty: float = 0.0, create_visualization: bool = False)`
 * `__str__()`
 
 Explanation of configuration arguments:
 * `dem`: This is a required argument that takes a `stim.DetectorErrorModel`. It provides the logical structure of the quantum error-correcting code, including the detectors and the relationships between them. This model is essential for the decoder to understand the syndrome and potential error locations.
-* `det_beam` - This integer value represents the beam search cutoff. It specifies a threshold for the number of "residual detection events" a node can have before it is pruned from the search. A lower `det_beam` value makes the search more aggressive, potentially sacrificing accuracy for speed. The default value `INF_DET_BEAM` means no beam cutoff is applied.
+* `det_beam` - This integer value represents the beam search cutoff. It specifies a threshold for the number of "residual detection events" a node can have before it is pruned from the search. A lower `det_beam` value makes the search more aggressive, potentially sacrificing accuracy for speed. The default value is `5`.
 * `beam_climbing` - A boolean flag that, when set to `True`, enables a heuristic called "beam climbing." This optimization causes the decoder to try different `det_beam` values (up to a maximum) to find a good decoding path. This can improve the decoder's chance of finding the most likely error, even with an initial narrow beam search.
-* `no_revisit_dets` - A boolean flag that, when `True`, activates a heuristic to prevent the decoder from revisiting nodes that have the same set of leftover detection events as a node it has already visited. This can help to reduce search redundancy and improve decoding speed.
+* `no_revisit_dets` - A boolean flag that, when `True`, activates a heuristic to prevent the decoder from revisiting nodes that have the same set of leftover detection events as a node it has already visited. This can help to reduce search redundancy and improve decoding speed. The default value is `True`.
 
 * `verbose` - A boolean flag that, when `True`, enables verbose logging. This is useful for debugging and understanding the decoder's internal behavior, as it will print information about the search process.
-* `pqlimit` - An integer that sets a limit on the number of nodes in the priority queue. This can be used to constrain the memory usage of the decoder. The default value is `sys.maxsize`, which means the size is effectively unbounded.
+* `merge_errors` - A boolean flag that, when `True`, merges error channels with identical syndrome patterns before decoding. This is enabled by default.
+* `pqlimit` - An integer that sets a limit on the number of nodes in the priority queue. This can be used to constrain the memory usage of the decoder. The default value is `200000`.
 * `det_orders` - A list of lists of integers, where each inner list represents an ordering of the detectors. This is used for "ensemble reordering," an optimization that tries different detector orderings to improve the search's convergence. The default is an empty list, meaning a single, fixed ordering is used.
 * `det_penalty` - A floating-point value that adds a cost for each residual detection event. This encourages the decoder to prioritize paths that resolve more detection events, steering the search towards more complete solutions. The default value is `0.0`, meaning no penalty is applied.
+* `create_visualization` - A boolean flag that enables decoder visualization output when set to `True`. The default value is `False`.
 
 **Example Usage**:
 
 ```python
 import tesseract_decoder.tesseract as tesseract
 import stim
-import sys
-
 dem = stim.DetectorErrorModel("""
     error(0.1) D0 D1
     error(0.2) D1 D2 L0
@@ -184,7 +184,7 @@ The `tesseract_decoder.simplex` module provides the Simplex-based decoder, which
 
 #### Class `simplex.SimplexConfig`
 This class holds the configuration parameters that control the behavior of the Simplex decoder.
-* `SimplexConfig(dem: stim.DetectorErrorModel, parallelize: bool = False, window_length: int = 0, window_slide_length: int = 0, verbose: bool = False)`
+* `SimplexConfig(dem: stim.DetectorErrorModel, parallelize: bool = False, window_length: int = 0, window_slide_length: int = 0, verbose: bool = False, merge_errors: bool = True)`
 * `__str__()`
 * `windowing_enabled() -> bool`
 
