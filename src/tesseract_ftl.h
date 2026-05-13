@@ -1,4 +1,3 @@
-
 // Copyright 2025 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,7 +31,7 @@
 #include "utils.h"
 #include "visualization.h"
 
-constexpr size_t DEFAULT_FTL_SUBSET_DETCOST_SIZE = 0;
+constexpr size_t DEFAULT_FTL_LB_LEVEL = 0;
 
 enum class FTLDetectorChoicePolicy : uint8_t {
   kOrder = 0,
@@ -67,8 +66,9 @@ struct TesseractFTLConfig {
   size_t exact_child_refine_count = 0;
 
   // 0 = delegate to the original Tesseract detcost heuristic.
-  // 1 = use the singleton fractional lower bound implemented in this file.
-  size_t subset_detcost_size = DEFAULT_FTL_SUBSET_DETCOST_SIZE;
+  // 1 = use the singleton fractional lower bound.
+  // 2 = use the parity local-polytope LP lower bound with lazy forbidden-set cuts.
+  size_t lb_level = DEFAULT_FTL_LB_LEVEL;
 
   std::string str();
 };
@@ -190,11 +190,25 @@ struct TesseractFTLDecoder {
     std::vector<int> cheapest_constraint_for_local_detector;
   };
 
+  struct ParityLPComponent {
+    std::vector<int> detectors;
+
+    // One variable per unique active-detector footprint. The representative error is kept only
+    // for diagnostics; the LP objective uses compressed_error_costs.
+    std::vector<int> representative_errors;
+    std::vector<double> compressed_error_costs;
+    size_t raw_error_count = 0;
+
+    std::vector<std::vector<int>> incident_local_errors;
+    std::vector<uint8_t> detector_parities;
+  };
+
   struct ExactSubsetSolution {
     double value = 0.0;
     size_t num_active_subsets = 0;
     size_t num_components = 0;
     size_t num_variables = 0;
+    size_t num_raw_variables = 0;
     size_t num_constraints = 0;
     std::vector<int> active_detectors;
     std::vector<double> detector_budgets;
@@ -203,6 +217,11 @@ struct TesseractFTLDecoder {
   struct SingletonBuildResult {
     bool feasible = true;
     std::vector<SingletonLPComponent> components;
+  };
+
+  struct ParityBuildResult {
+    bool feasible = true;
+    std::vector<ParityLPComponent> components;
   };
 
   struct DynamicBitsetHash {
@@ -220,7 +239,7 @@ struct TesseractFTLDecoder {
   mutable std::vector<uint64_t> candidate_error_marks;
   mutable uint64_t candidate_error_mark_epoch = 1;
 
-  // If subset_detcost_size == 0, delegate to the original Tesseract decoder.
+  // If lb_level == 0, delegate to the original Tesseract decoder.
   std::unique_ptr<TesseractDecoder> plain_delegate;
 
   void initialize_structures(size_t num_detectors);
@@ -231,6 +250,20 @@ struct TesseractFTLDecoder {
 
   SingletonBuildResult build_singleton_components(const boost::dynamic_bitset<>& detectors,
                                                   const std::vector<uint8_t>& blocked_flags);
+
+  ExactSubsetSolution solve_singleton_lower_bound(const boost::dynamic_bitset<>& detectors,
+                                                  const std::vector<uint8_t>& blocked_flags,
+                                                  int64_t warm_solution_idx);
+
+  ParityBuildResult build_parity_components(const boost::dynamic_bitset<>& detectors,
+                                            const std::vector<uint8_t>& blocked_flags);
+
+  double solve_parity_component_lp(const ParityLPComponent& component, size_t& num_constraints,
+                                   size_t& num_simplex_solves);
+
+  ExactSubsetSolution solve_parity_lower_bound(const boost::dynamic_bitset<>& detectors,
+                                               const std::vector<uint8_t>& blocked_flags,
+                                               ExactSubsetSolution singleton_seed);
 
   ExactSubsetSolution solve_exact_subset_lp(const boost::dynamic_bitset<>& detectors,
                                             const std::vector<uint8_t>& blocked_flags,

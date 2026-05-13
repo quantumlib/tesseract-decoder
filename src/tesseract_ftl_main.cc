@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <algorithm>
+#include <cassert>
 #include <argparse/argparse.hpp>
 #include <atomic>
 #include <fstream>
@@ -84,7 +85,7 @@ struct Args {
   bool no_revisit_dets = false;
   size_t pqlimit;
 
-  size_t subset_detcost_size = 0;
+  size_t lb_level = DEFAULT_FTL_LB_LEVEL;
   bool ignore_blocked_errors_in_heuristic = false;
   size_t num_min_dets_to_consider = 1;
   std::string detector_choice_policy = "order";
@@ -146,8 +147,8 @@ struct Args {
     if (beam_climbing && det_beam == INF_DET_BEAM) {
       throw std::invalid_argument("Beam climbing requires a finite beam");
     }
-    if (subset_detcost_size > 1) {
-      throw std::invalid_argument("This prototype currently supports --subset-detcost-size <= 1");
+    if (lb_level > 2) {
+      throw std::invalid_argument("--lb-level must be 0, 1, or 2");
     }
     if (num_min_dets_to_consider == 0) {
       throw std::invalid_argument("--num-min-dets-to-consider must be at least 1");
@@ -185,7 +186,7 @@ struct Args {
     }
 
     config.merge_errors = !no_merge_errors;
-    config.subset_detcost_size = subset_detcost_size;
+    config.lb_level = lb_level;
     config.ignore_blocked_errors_in_heuristic = ignore_blocked_errors_in_heuristic;
     config.num_min_dets_to_consider = num_min_dets_to_consider;
     config.detector_choice_policy = parse_detector_choice_policy(detector_choice_policy);
@@ -295,10 +296,12 @@ int main(int argc, char* argv[]) {
   program.add_argument("--no-merge-errors")
       .help("If provided, will not merge identical error mechanisms.")
       .store_into(args.no_merge_errors);
-  program.add_argument("--subset-detcost-size")
-      .help("0 = plain detcost delegate, 1 = singleton fractional lower bound")
-      .default_value(size_t(0))
-      .store_into(args.subset_detcost_size);
+  program.add_argument("--lb-level")
+      .help(
+          "0 = plain detcost delegate, 1 = singleton fractional lower bound, "
+          "2 = parity local-polytope LP lower bound")
+      .default_value(size_t(DEFAULT_FTL_LB_LEVEL))
+      .store_into(args.lb_level);
   program.add_argument("--ignore-blocked-errors-in-heuristic")
       .help("Experimental: ignore precedence-blocked errors when computing the FTL LP heuristic")
       .flag()
@@ -520,7 +523,7 @@ int main(int argc, char* argv[]) {
         {"pqlimit", args.pqlimit},
         {"num_det_orders", args.num_det_orders},
         {"det_order_seed", args.det_order_seed},
-        {"subset_detcost_size", args.subset_detcost_size},
+        {"lb_level", args.lb_level},
         {"ignore_blocked_errors_in_heuristic", args.ignore_blocked_errors_in_heuristic},
         {"num_min_dets_to_consider", args.num_min_dets_to_consider},
         {"detector_choice_policy", args.detector_choice_policy},
@@ -595,7 +598,7 @@ int main(int argc, char* argv[]) {
     std::cout << " num_low_confidence = " << num_low_confidence;
     if (has_obs) std::cout << " num_errors = " << num_errors;
     std::cout << " total_time_seconds = " << total_time_seconds;
-    if (args.subset_detcost_size > 0) {
+    if (args.lb_level > 0) {
       std::cout << " lp_calls = " << decoder_stats_total.lp_calls;
       std::cout << " lp_reinserts = " << decoder_stats_total.lp_reinserts;
       std::cout << " projected_nodes_generated = " << decoder_stats_total.projected_nodes_generated;
