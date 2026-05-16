@@ -27,6 +27,7 @@
 #include <iostream>
 #include <limits>
 #include <numeric>
+#include <queue>
 #include <string>
 #include <utility>
 
@@ -254,6 +255,195 @@ void build_future_detcost_transitions(const std::vector<Fault>& faults, size_t n
 
   if (initial_future_detcost != nullptr) {
     *initial_future_detcost = std::move(current_row);
+  }
+}
+
+struct ActiveDetcostEvent {
+  int detector = -1;
+  size_t valid_low = 0;
+  double cost = INF;
+};
+
+struct ActiveDetcostHeapEntry {
+  size_t valid_low = 0;
+  double cost = INF;
+
+  bool operator>(const ActiveDetcostHeapEntry& other) const {
+    return cost > other.cost || (cost == other.cost && valid_low > other.valid_low);
+  }
+};
+
+template <typename LayerT>
+void build_future_active_detcost_transitions(const std::vector<Fault>& faults, size_t num_detectors,
+                                             std::vector<LayerT>* layers,
+                                             std::vector<double>* initial_future_detcost) {
+  std::vector<size_t> first_seen(num_detectors, std::numeric_limits<size_t>::max());
+  for (size_t fault_index = 0; fault_index < faults.size(); ++fault_index) {
+    for (int detector : faults[fault_index].detectors) {
+      size_t& seen = first_seen[(size_t)detector];
+      if (seen == std::numeric_limits<size_t>::max()) {
+        seen = fault_index;
+      }
+    }
+  }
+
+  std::vector<std::vector<ActiveDetcostEvent>> events_by_high(faults.size());
+  std::vector<std::pair<size_t, int>> first_seen_and_detector;
+  std::vector<int> active_detectors;
+  for (size_t fault_index = 0; fault_index < faults.size(); ++fault_index) {
+    const auto& fault = faults[fault_index];
+    if (fault.detectors.empty()) {
+      continue;
+    }
+
+    first_seen_and_detector.clear();
+    first_seen_and_detector.reserve(fault.detectors.size());
+    for (int detector : fault.detectors) {
+      size_t seen = first_seen[(size_t)detector];
+      if (seen == std::numeric_limits<size_t>::max() || seen > fault_index) {
+        throw std::runtime_error("Invalid first-seen detector state while preparing detcost.");
+      }
+      first_seen_and_detector.push_back({seen, detector});
+    }
+    std::sort(first_seen_and_detector.begin(), first_seen_and_detector.end());
+    first_seen_and_detector.erase(
+        std::unique(first_seen_and_detector.begin(), first_seen_and_detector.end(),
+                    [](const auto& a, const auto& b) { return a.second == b.second; }),
+        first_seen_and_detector.end());
+
+    active_detectors.clear();
+    for (size_t pos = 0; pos < first_seen_and_detector.size();) {
+      const size_t low = first_seen_and_detector[pos].first;
+      while (pos < first_seen_and_detector.size() && first_seen_and_detector[pos].first == low) {
+        active_detectors.push_back(first_seen_and_detector[pos].second);
+        ++pos;
+      }
+      size_t high = fault_index;
+      if (pos < first_seen_and_detector.size()) {
+        high = std::min(high, first_seen_and_detector[pos].first - 1);
+      }
+      if (low > high || active_detectors.empty()) {
+        continue;
+      }
+      const double cost = fault.likelihood_cost / active_detectors.size();
+      auto& events = events_by_high[high];
+      events.reserve(events.size() + active_detectors.size());
+      for (int detector : active_detectors) {
+        events.push_back({detector, low, cost});
+      }
+    }
+  }
+
+  std::vector<std::priority_queue<ActiveDetcostHeapEntry,
+                                  std::vector<ActiveDetcostHeapEntry>,
+                                  std::greater<ActiveDetcostHeapEntry>>>
+      heaps(num_detectors);
+  std::vector<std::vector<double>> future_costs_by_layer(faults.size());
+
+  for (size_t layer_index = faults.size(); layer_index-- > 0;) {
+    for (const auto& event : events_by_high[layer_index]) {
+      heaps[(size_t)event.detector].push({event.valid_low, event.cost});
+    }
+
+    const auto& active = (*layers)[layer_index].current_active_detectors;
+    auto& costs = future_costs_by_layer[layer_index];
+    costs.resize(active.size(), INF);
+    for (size_t local = 0; local < active.size(); ++local) {
+      auto& heap = heaps[(size_t)active[local]];
+      while (!heap.empty() && heap.top().valid_low > layer_index) {
+        heap.pop();
+      }
+      if (!heap.empty()) {
+        costs[local] = heap.top().cost;
+      }
+    }
+  }
+
+  std::vector<double> initial(num_detectors, INF);
+  if (!layers->empty()) {
+    const auto& active = layers->front().current_active_detectors;
+    const auto& costs = future_costs_by_layer.front();
+    for (size_t local = 0; local < active.size(); ++local) {
+      initial[(size_t)active[local]] = costs[local];
+    }
+  }
+
+  for (size_t fault_index = 0; fault_index < faults.size(); ++fault_index) {
+    auto& layer = (*layers)[fault_index];
+    const auto& fault = faults[fault_index];
+
+    std::vector<int32_t> current_to_next(layer.current_active_detectors.size(), -1);
+    for (size_t next_local = 0; next_local < layer.surviving_local_indices.size(); ++next_local) {
+      current_to_next[(size_t)layer.surviving_local_indices[next_local]] = (int32_t)next_local;
+    }
+
+    layer.next_frontier_costs.resize(layer.surviving_local_indices.size(), INF);
+    if (fault_index + 1 < faults.size()) {
+      const auto& next_costs = future_costs_by_layer[fault_index + 1];
+      for (size_t next_local = 0; next_local < layer.surviving_local_indices.size(); ++next_local) {
+        if (next_local < next_costs.size()) {
+          layer.next_frontier_costs[next_local] = next_costs[next_local];
+        }
+      }
+    }
+
+    auto& transition = layer.detcost_transition;
+    transition.fault_local_indices.clear();
+    transition.next_local_indices.clear();
+    transition.current_costs.clear();
+    transition.next_costs.clear();
+    transition.fault_local_indices.reserve(fault.detectors.size());
+    transition.next_local_indices.reserve(fault.detectors.size());
+    transition.current_costs.reserve(fault.detectors.size());
+    transition.next_costs.reserve(fault.detectors.size());
+
+    for (int detector : fault.detectors) {
+      auto it = std::find(layer.current_active_detectors.begin(),
+                          layer.current_active_detectors.end(), detector);
+      if (it == layer.current_active_detectors.end()) {
+        throw std::runtime_error("Missing detector in active frontier while preparing detcost.");
+      }
+      uint32_t local = (uint32_t)std::distance(layer.current_active_detectors.begin(), it);
+      int32_t next_local = current_to_next[local];
+      double next_cost = INF;
+      if (next_local >= 0 && fault_index + 1 < faults.size() &&
+          (size_t)next_local < future_costs_by_layer[fault_index + 1].size()) {
+        next_cost = future_costs_by_layer[fault_index + 1][(size_t)next_local];
+      }
+      transition.fault_local_indices.push_back(local);
+      transition.next_local_indices.push_back(next_local);
+      transition.current_costs.push_back(future_costs_by_layer[fault_index][local]);
+      transition.next_costs.push_back(next_cost);
+    }
+  }
+
+  if (initial_future_detcost != nullptr) {
+    *initial_future_detcost = std::move(initial);
+  }
+}
+
+template <typename LayerT>
+void scale_future_detcost_transitions(std::vector<LayerT>* layers,
+                                      std::vector<double>* initial_future_detcost, double scale) {
+  if (scale == 1.0) {
+    return;
+  }
+  auto scale_value = [scale](double value) {
+    return std::isfinite(value) ? value * scale : value;
+  };
+  for (auto& value : *initial_future_detcost) {
+    value = scale_value(value);
+  }
+  for (auto& layer : *layers) {
+    for (auto& value : layer.next_frontier_costs) {
+      value = scale_value(value);
+    }
+    for (auto& value : layer.detcost_transition.current_costs) {
+      value = scale_value(value);
+    }
+    for (auto& value : layer.detcost_transition.next_costs) {
+      value = scale_value(value);
+    }
   }
 }
 
@@ -831,8 +1021,7 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
     decoder->max_frontier_width_seen = max_frontier_width;
 
     double initial_penalty = 0.0;
-    if (decoder->config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked &&
-        !layers.empty()) {
+    if (decoder->config.ranking_mode != TesseractTrellisRankingMode::MassOnly && !layers.empty()) {
       initial_penalty = compute_initial_penalty_for_active_detectors(initial_detector_word_indices,
                                                                      initial_detector_bit_masks,
                                                                      initial_detector_costs,
@@ -849,7 +1038,7 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
     decoder->max_beam_size_seen = 1;
 
     const bool compute_penalties =
-        decoder->config.ranking_mode == TesseractTrellisRankingMode::FutureDetcostRanked;
+        decoder->config.ranking_mode != TesseractTrellisRankingMode::MassOnly;
     for (size_t layer_index = 0; layer_index < layers.size(); ++layer_index) {
       const auto& layer = layers[layer_index];
 
@@ -889,6 +1078,8 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
       auto t2a = std::chrono::high_resolution_clock::now();
       next_entries.clear();
       next_entries.reserve(used_bucket_indices.size() * 2);
+      decoder->merge_calls += 1;
+      decoder->merge_input_candidates += beam_entries.size() * 2;
       for (size_t index : used_bucket_indices) {
         auto& bucket = pair_buckets[index];
         if ((bucket.used_mask & 1u) != 0) {
@@ -900,6 +1091,10 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
           next_entries.push_back(
               {std::move(other_state), bucket.mass0[1], bucket.mass1[1], bucket.penalty[1]});
         }
+      }
+      decoder->merge_output_candidates += next_entries.size();
+      if (next_entries.size() < beam_entries.size() * 2) {
+        decoder->merge_duplicate_layers += 1;
       }
       beam_entries.swap(next_entries);
       auto t2 = std::chrono::high_resolution_clock::now();
@@ -1024,9 +1219,17 @@ TesseractTrellisDecoder::TesseractTrellisDecoder(TesseractTrellisConfig config_)
 
   size_t wide_frontier_width = 0;
   build_wide_layer_templates(faults, num_detectors, &wide_layer_templates, &wide_frontier_width);
-  std::vector<double> initial_future_detcost;
-  build_future_detcost_transitions(faults, num_detectors, &wide_layer_templates,
-                                   &initial_future_detcost);
+  if (config.ranking_mode == TesseractTrellisRankingMode::FutureActiveDetcostRanked) {
+    build_future_active_detcost_transitions(faults, num_detectors, &wide_layer_templates,
+                                            &initial_future_detcost);
+  } else {
+    build_future_detcost_transitions(faults, num_detectors, &wide_layer_templates,
+                                     &initial_future_detcost);
+  }
+  if (config.ranking_mode != TesseractTrellisRankingMode::MassOnly) {
+    scale_future_detcost_transitions(&wide_layer_templates, &initial_future_detcost,
+                                     config.future_detcost_scale);
+  }
   prepare_projected_fault_masks(&wide_layer_templates);
   wide_kernel =
       build_compiled_wide_kernel(wide_layer_templates, wide_frontier_width, initial_future_detcost);
@@ -1047,6 +1250,10 @@ __attribute__((hot)) void TesseractTrellisDecoder::decode_shot(
   predicted_obs_mask = 0;
   total_mass_obs0 = 0;
   total_mass_obs1 = 0;
+  merge_calls = 0;
+  merge_input_candidates = 0;
+  merge_output_candidates = 0;
+  merge_duplicate_layers = 0;
   FinalizeKeptStateStatsOnExit kept_state_stats_guard{this};
   wide_kernel->decode_shot(this, detections);
 

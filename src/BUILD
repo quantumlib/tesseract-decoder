@@ -153,6 +153,38 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "libtesseract_trellis_gpu_stub",
+    srcs = ["tesseract_trellis_gpu_stub.cc"],
+    hdrs = ["tesseract_trellis_gpu.h"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    deps = [
+        ":libcommon",
+        ":libtesseract_trellis",
+        ":libutils",
+        "@stim//:stim_lib",
+    ],
+)
+
+objc_library(
+    name = "libtesseract_trellis_gpu_metal",
+    srcs = ["tesseract_trellis_gpu.mm"],
+    hdrs = ["tesseract_trellis_gpu.h"],
+    copts = OPT_COPTS + ["-fobjc-arc"],
+    sdk_frameworks = [
+        "CoreGraphics",
+        "Foundation",
+        "Metal",
+    ],
+    deps = [
+        ":libcommon",
+        ":libtesseract_trellis",
+        ":libutils",
+        "@stim//:stim_lib",
+    ],
+)
+
 
 cc_library(
     name = "libtesseract_ftl",
@@ -186,6 +218,25 @@ cc_binary(
     linkopts = OPT_LINKOPTS,
     deps = [
         ":libtesseract_trellis",
+        "@argparse",
+        "@nlohmann_json//:json",
+        "@stim//:stim_lib",
+    ],
+)
+
+cc_binary(
+    name = "tesseract_trellis_gpu",
+    srcs = ["tesseract_trellis_gpu_main.cc"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    deps = select({
+        "@platforms//os:macos": [
+            ":libtesseract_trellis_gpu_metal",
+        ],
+        "//conditions:default": [
+            ":libtesseract_trellis_gpu_stub",
+        ],
+    }) + [
         "@argparse",
         "@nlohmann_json//:json",
         "@stim//:stim_lib",

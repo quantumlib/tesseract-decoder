@@ -27,6 +27,7 @@ struct TesseractTrellisWideKernelBase;
 enum class TesseractTrellisRankingMode {
   MassOnly,
   FutureDetcostRanked,
+  FutureActiveDetcostRanked,
 };
 
 struct TesseractTrellisDetcostTransition {
@@ -52,6 +53,10 @@ struct TesseractTrellisConfig {
   stim::DetectorErrorModel dem;
   size_t beam_width = 1024;
   double beam_eps = 0.0;
+  double future_detcost_scale = 2.0;
+  size_t gpu_merge_period = 1000;
+  size_t gpu_dynamic_initial_beam_width = 0;
+  double gpu_dynamic_confidence_threshold = 0.0;
   bool verbose = false;
   bool track_kept_state_stats = false;
   TesseractTrellisRankingMode ranking_mode = TesseractTrellisRankingMode::MassOnly;
@@ -84,6 +89,10 @@ struct TesseractTrellisDecoder {
   uint64_t predicted_obs_mask = 0;
   double total_mass_obs0 = 0;
   double total_mass_obs1 = 0;
+  size_t merge_calls = 0;
+  size_t merge_input_candidates = 0;
+  size_t merge_output_candidates = 0;
+  size_t merge_duplicate_layers = 0;
 
   std::vector<size_t> dem_error_to_error;
   std::vector<size_t> error_to_dem_error;
@@ -93,6 +102,7 @@ struct TesseractTrellisDecoder {
   std::vector<uint64_t> all_possible_detector_words;
   std::vector<uint64_t> actual_detector_words_scratch;
   std::vector<TesseractTrellisWideLayerTemplate> wide_layer_templates;
+  std::vector<double> initial_future_detcost;
   std::unique_ptr<TesseractTrellisWideKernelBase> wide_kernel;
   std::vector<uint32_t> kept_state_histogram_scratch;
 };

@@ -30,6 +30,9 @@ namespace {
 TesseractTrellisRankingMode parse_ranking_mode(const std::string& value) {
   if (value == "mass") return TesseractTrellisRankingMode::MassOnly;
   if (value == "future-detcost") return TesseractTrellisRankingMode::FutureDetcostRanked;
+  if (value == "future-active-detcost") {
+    return TesseractTrellisRankingMode::FutureActiveDetcostRanked;
+  }
   throw std::invalid_argument("Unknown trellis ranking mode: " + value);
 }
 
@@ -60,6 +63,7 @@ struct Args {
   size_t num_threads = 1;
   size_t beam_width = 1024;
   double beam_eps = 0.0;
+  double future_detcost_scale = 2.0;
   std::string ranking_mode = "mass";
 
   bool verbose = false;
@@ -114,6 +118,9 @@ struct Args {
     if (!std::isfinite(beam_eps) || beam_eps < 0.0 || beam_eps >= 1.0) {
       throw std::invalid_argument("--beam-eps must satisfy 0 <= beam-eps < 1.");
     }
+    if (!std::isfinite(future_detcost_scale) || future_detcost_scale < 0.0) {
+      throw std::invalid_argument("--future-detcost-scale must be finite and nonnegative.");
+    }
     parse_ranking_mode(ranking_mode);
   }
 
@@ -148,6 +155,7 @@ struct Args {
 
     config.beam_width = beam_width;
     config.beam_eps = beam_eps;
+    config.future_detcost_scale = future_detcost_scale;
     config.verbose = verbose;
     config.track_kept_state_stats = print_stats;
     config.ranking_mode = parse_ranking_mode(ranking_mode);
@@ -282,9 +290,13 @@ int main(int argc, char* argv[]) {
       .default_value(0.0)
       .store_into(args.beam_eps);
   program.add_argument("--ranking-mode")
-      .help("Trellis ranking mode: mass or future-detcost")
+      .help("Trellis ranking mode: mass, future-detcost, or future-active-detcost")
       .default_value(std::string("mass"))
       .store_into(args.ranking_mode);
+  program.add_argument("--future-detcost-scale")
+      .help("Multiplier applied to future detector-cost ranking penalties.")
+      .default_value(2.0)
+      .store_into(args.future_detcost_scale);
   program.add_argument("--verbose").flag().store_into(args.verbose);
   program.add_argument("--print-stats").flag().store_into(args.print_stats);
 
@@ -318,6 +330,10 @@ int main(int argc, char* argv[]) {
   std::vector<double> time_collapse_per_shot(shots.size());
   std::vector<double> time_truncate_per_shot(shots.size());
   std::vector<double> time_reconstruct_per_shot(shots.size());
+  std::vector<size_t> merge_calls_per_shot(shots.size());
+  std::vector<size_t> merge_input_candidates_per_shot(shots.size());
+  std::vector<size_t> merge_output_candidates_per_shot(shots.size());
+  std::vector<size_t> merge_duplicate_layers_per_shot(shots.size());
   std::vector<std::atomic<bool>> low_confidence(shots.size());
   const stim::DetectorErrorModel original_dem = config.dem.flattened();
   std::vector<std::unique_ptr<TesseractTrellisDecoder>> decoders(args.num_threads);
@@ -357,6 +373,10 @@ int main(int argc, char* argv[]) {
         time_collapse_per_shot[shot_index] = decoder.time_collapse_seconds;
         time_truncate_per_shot[shot_index] = decoder.time_truncate_seconds;
         time_reconstruct_per_shot[shot_index] = decoder.time_reconstruct_seconds;
+        merge_calls_per_shot[shot_index] = decoder.merge_calls;
+        merge_input_candidates_per_shot[shot_index] = decoder.merge_input_candidates;
+        merge_output_candidates_per_shot[shot_index] = decoder.merge_output_candidates;
+        merge_duplicate_layers_per_shot[shot_index] = decoder.merge_duplicate_layers;
       },
       [&](size_t shot_index) {
         if (writer) {
@@ -399,17 +419,33 @@ int main(int argc, char* argv[]) {
 
   bool print_final_stats = true;
   if (!args.stats_out_fname.empty()) {
+    size_t merge_calls_total = 0;
+    size_t merge_input_candidates_total = 0;
+    size_t merge_output_candidates_total = 0;
+    size_t merge_duplicate_layers_total = 0;
+    for (size_t k = 0; k < shot; ++k) {
+      merge_calls_total += merge_calls_per_shot[k];
+      merge_input_candidates_total += merge_input_candidates_per_shot[k];
+      merge_output_candidates_total += merge_output_candidates_per_shot[k];
+      merge_duplicate_layers_total += merge_duplicate_layers_per_shot[k];
+    }
     nlohmann::json stats_json = {{"circuit_path", args.circuit_path},
                                  {"dem_path", args.dem_path},
                                  {"beam_width", args.beam_width},
                                  {"beam_eps", args.beam_eps},
+                                 {"future_detcost_scale", args.future_detcost_scale},
+                                 {"ranking_mode", args.ranking_mode},
                                  {"sample_seed", args.sample_seed},
                                  {"sample_num_shots", args.sample_num_shots},
                                  {"num_threads", args.num_threads},
                                  {"num_errors", num_errors},
                                  {"num_low_confidence", num_low_confidence},
                                  {"num_shots", shot},
-                                 {"total_time_seconds", total_time_seconds}};
+                                 {"total_time_seconds", total_time_seconds},
+                                 {"merge_calls", merge_calls_total},
+                                 {"merge_input_candidates", merge_input_candidates_total},
+                                 {"merge_output_candidates", merge_output_candidates_total},
+                                 {"merge_duplicate_layers", merge_duplicate_layers_total}};
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;
       print_final_stats = false;
