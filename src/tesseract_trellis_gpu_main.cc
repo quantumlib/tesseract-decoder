@@ -85,13 +85,12 @@ struct Args {
   std::string stats_out_fname = "";
 
   size_t num_threads = 1;
-  size_t gpu_shot_batch_size = 256;
-  size_t gpu_merge_period = 1000;
+  size_t gpu_shot_batch_size = 1024;
+  size_t gpu_merge_period = 10000;
   size_t beam_width = 1024;
   size_t adaptive_beam_width = 0;
   double adaptive_confidence_threshold = 0.0;
   bool adaptive_dynamic_beam = false;
-  double beam_eps = 0.0;
   double future_detcost_scale = 2.0;
   std::string ranking_mode = "mass";
 
@@ -160,9 +159,6 @@ struct Args {
         adaptive_confidence_threshold > 1.0) {
       throw std::invalid_argument("--adaptive-confidence-threshold must satisfy 0 <= threshold <= 1.");
     }
-    if (!std::isfinite(beam_eps) || beam_eps < 0.0 || beam_eps >= 1.0) {
-      throw std::invalid_argument("--beam-eps must satisfy 0 <= beam-eps < 1.");
-    }
     if (!std::isfinite(future_detcost_scale) || future_detcost_scale < 0.0) {
       throw std::invalid_argument("--future-detcost-scale must be finite and nonnegative.");
     }
@@ -199,7 +195,6 @@ struct Args {
     }
 
     config.beam_width = adaptive_dynamic_beam ? adaptive_beam_width : beam_width;
-    config.beam_eps = beam_eps;
     config.future_detcost_scale = future_detcost_scale;
     config.gpu_merge_period = gpu_merge_period;
     if (adaptive_dynamic_beam) {
@@ -333,11 +328,11 @@ int main(int argc, char* argv[]) {
       .store_into(args.num_threads);
   program.add_argument("--gpu-shot-batch")
       .help("Batch this many shots together in the GPU-oriented runtime path.")
-      .default_value(size_t(256))
+      .default_value(size_t(1024))
       .store_into(args.gpu_shot_batch_size);
   program.add_argument("--gpu-merge-period")
       .help("In the GPU-oriented runtime, only do exact duplicate-state merge every N layers.")
-      .default_value(size_t(1000))
+      .default_value(size_t(10000))
       .store_into(args.gpu_merge_period);
   program.add_argument("--beam").default_value(size_t(1024)).store_into(args.beam_width);
   program.add_argument("--adaptive-beam")
@@ -357,13 +352,6 @@ int main(int argc, char* argv[]) {
           "confidence is at or below --adaptive-confidence-threshold.")
       .flag()
       .store_into(args.adaptive_dynamic_beam);
-  program.add_argument("--beam-eps")
-      .help(
-          "Keep at most --beam merged states and also drop the suffix once the kept prefix has "
-          "accumulated at least (1 - beam-eps) of the total merged-state mass. Use 0 to disable "
-          "the mass-threshold cutoff.")
-      .default_value(0.0)
-      .store_into(args.beam_eps);
   program.add_argument("--ranking-mode")
       .help("Trellis ranking mode: mass, future-detcost, or future-active-detcost")
       .default_value(std::string("mass"))
@@ -747,7 +735,6 @@ int main(int argc, char* argv[]) {
                                  {"dem_path", args.dem_path},
                                  {"beam_width", args.beam_width},
                                  {"gpu_max_beam_width", config.beam_width},
-                                 {"beam_eps", args.beam_eps},
                                  {"future_detcost_scale", args.future_detcost_scale},
                                  {"ranking_mode", args.ranking_mode},
                                  {"sample_seed", args.sample_seed},

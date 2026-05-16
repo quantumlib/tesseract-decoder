@@ -54,7 +54,7 @@ struct TesseractTrellisConfig {
   size_t beam_width = 1024;
   double beam_eps = 0.0;
   double future_detcost_scale = 2.0;
-  size_t gpu_merge_period = 1000;
+  size_t gpu_merge_period = 10000;
   size_t gpu_dynamic_initial_beam_width = 0;
   double gpu_dynamic_confidence_threshold = 0.0;
   bool verbose = false;

@@ -75,16 +75,24 @@ struct MetalBeamEntry {
   float log_mass0;
   float log_mass1;
   float penalty;
-  float pad;
+  float log_total_mass;
 };
 
 struct MetalChildCandidate {
   uint64_t state_words[kMaxCompiledWideStateWords];
   float log_mass0;
   float log_mass1;
+  float log_total_mass;
   float penalty;
   float score;
   uint32_t valid;
+};
+
+struct MetalFinalObsMass {
+  float log_mass0;
+  float log_mass1;
+  uint32_t valid;
+  uint32_t pad;
 };
 
 struct MetalBatchLaunchConfig {
@@ -146,6 +154,7 @@ struct MetalContext {
   id<MTLComputePipelineState> persistent_pipeline = nil;
   id<MTLComputePipelineState> persistent_histogram_pipeline = nil;
   id<MTLComputePipelineState> persistent_streaming_histogram_pipeline = nil;
+  id<MTLComputePipelineState> final_obs_pipeline = nil;
   id<MTLBuffer> detector_words_buffer = nil;
   id<MTLBuffer> input_buffer = nil;
   id<MTLBuffer> output_buffer = nil;
@@ -156,6 +165,7 @@ struct MetalContext {
   id<MTLBuffer> batch_input_buffer = nil;
   id<MTLBuffer> batch_next_buffer = nil;
   id<MTLBuffer> batch_output_buffer = nil;
+  id<MTLBuffer> batch_final_obs_buffer = nil;
   id<MTLBuffer> persistent_layers_buffer = nil;
   id<MTLBuffer> persistent_terms_buffer = nil;
   size_t batch_capacity = 0;
@@ -476,14 +486,15 @@ void append_child_candidates_as_entries(const MetalChildCandidate* child_ptr, si
 }
 
 bool should_exact_merge_layer(size_t merge_period, size_t layer_index, size_t num_layers) {
+  (void)num_layers;
   if (merge_period <= 1) {
     return true;
   }
-  return layer_index + 1 == num_layers || ((layer_index + 1) % merge_period) == 0;
+  return ((layer_index + 1) % merge_period) == 0;
 }
 
 bool can_use_gpu_topk_without_merge(const TesseractTrellisConfig& config) {
-  return config.beam_eps == 0.0 && config.beam_width <= 100000;
+  return config.beam_width <= 100000;
 }
 
 bool can_use_persistent_gpu_segment(const TesseractTrellisConfig& config) {
@@ -518,19 +529,15 @@ bool compiled_state_score_greater(const GpuBeamEntry& a, const GpuBeamEntry& b, 
   return fixed_wide_state_less(a.state_words, b.state_words, num_words);
 }
 
-size_t keep_top_compiled_states(std::vector<GpuBeamEntry>* entries, size_t beam_width, double beam_eps,
+size_t keep_top_compiled_states(std::vector<GpuBeamEntry>* entries, size_t beam_width,
                                 TesseractTrellisRankingMode ranking_mode, size_t num_words) {
   if (entries->empty()) {
     return 0;
   }
 
-  double total_mass = 0.0;
   for (auto& entry : *entries) {
     const double mass = total_entry_mass(entry);
     entry.score = score_mass_and_penalty(mass, entry.penalty, ranking_mode);
-    if (beam_eps > 0.0) {
-      total_mass += mass;
-    }
   }
 
   if (entries->size() > beam_width) {
@@ -539,29 +546,8 @@ size_t keep_top_compiled_states(std::vector<GpuBeamEntry>* entries, size_t beam_
                        return compiled_state_score_greater(a, b, num_words);
                      });
     entries->resize(beam_width);
-  } else if (beam_eps <= 0.0) {
-    return entries->size();
   }
-
-  if (beam_eps <= 0.0 || total_mass <= 0.0) {
-    return entries->size();
-  }
-
-  std::sort(entries->begin(), entries->end(), [&](const GpuBeamEntry& a, const GpuBeamEntry& b) {
-    return compiled_state_score_greater(a, b, num_words);
-  });
-  const double retained_target_mass = total_mass * (1.0 - beam_eps);
-  double retained_mass = 0.0;
-  size_t keep_count = 0;
-  while (keep_count < entries->size()) {
-    retained_mass += total_entry_mass((*entries)[keep_count]);
-    ++keep_count;
-    if (retained_mass >= retained_target_mass) {
-      break;
-    }
-  }
-  entries->resize(keep_count);
-  return keep_count;
+  return entries->size();
 }
 
 std::vector<GpuCompiledLayer> compile_gpu_layers(
@@ -675,16 +661,24 @@ struct MetalBeamEntry {
   float log_mass0;
   float log_mass1;
   float penalty;
-  float pad;
+  float log_total_mass;
 };
 
 struct MetalChildCandidate {
   ulong state_words[kMaxWords];
   float log_mass0;
   float log_mass1;
+  float log_total_mass;
   float penalty;
   float score;
   uint valid;
+};
+
+struct MetalFinalObsMass {
+  float log_mass0;
+  float log_mass1;
+  uint valid;
+  uint pad;
 };
 
 struct MetalBatchLaunchConfig {
@@ -793,21 +787,19 @@ inline float logaddexp_metal(float a, float b) {
   return m + log(exp(a - m) + exp(b - m));
 }
 
-inline float score_mass_and_penalty_metal(float log_mass0,
-                                          float log_mass1,
-                                          float penalty,
-                                          uint ranking_mode) {
-  const float log_mass = logaddexp_metal(log_mass0, log_mass1);
-  if (!isfinite(log_mass)) {
+inline float score_total_mass_and_penalty_metal(float log_total_mass,
+                                                float penalty,
+                                                uint ranking_mode) {
+  if (!isfinite(log_total_mass)) {
     return -INFINITY;
   }
   if (ranking_mode == 0u) {
-    return log_mass;
+    return log_total_mass;
   }
   if (!isfinite(penalty)) {
     return -INFINITY;
   }
-  return log_mass - penalty;
+  return log_total_mass - penalty;
 }
 
 inline float confidence_margin_from_log_masses(float log_mass0, float log_mass1) {
@@ -865,6 +857,15 @@ inline bool state_words_less_desc(device const MetalChildCandidate& a,
   return false;
 }
 
+inline bool thread_beam_entry_state_is_zero(thread const MetalBeamEntry& entry) {
+  for (uint k = 0; k < kMaxWords; ++k) {
+    if (entry.state_words[k] != 0ul) {
+      return false;
+    }
+  }
+  return true;
+}
+
 inline bool child_less_for_sort(device const MetalChildCandidate* children,
                                 threadgroup const float* scores, ushort a, ushort b,
                                 uint shot_base) {
@@ -874,6 +875,74 @@ inline bool child_less_for_sort(device const MetalChildCandidate* children,
     return sa < sb;
   }
   return state_words_less_desc(children[shot_base + a], children[shot_base + b]);
+}
+
+struct TransitionEffects {
+  bool absent_valid;
+  bool present_valid;
+  float absent_penalty;
+  float present_penalty;
+};
+
+inline TransitionEffects compute_transition_effects_local(
+    thread const MetalBeamEntry& parent,
+    device const ulong* actual_detector_words,
+    device const GpuTransitionTerm* terms,
+    thread const GpuLayerConfig& layer) {
+  TransitionEffects effects;
+  effects.absent_valid = true;
+  effects.present_valid = true;
+  effects.absent_penalty = layer.compute_penalties ? parent.penalty : 0.0f;
+  effects.present_penalty = layer.compute_penalties ? parent.penalty : 0.0f;
+
+  if (layer.compute_penalties != 0) {
+    for (uint k = 0; k < layer.surviving_term_count; k++) {
+      GpuTransitionTerm term = terms[k];
+      bool state_bit = term.fault_was_active_before != 0 &&
+                       ((parent.state_words[term.fault_word_index] & term.fault_bit_mask) != 0);
+      bool target_bit =
+          (actual_detector_words[term.fault_target_word_index] & term.fault_target_bit_mask) != 0;
+      bool mismatch = state_bit ^ target_bit;
+      float prev_contrib =
+          (term.fault_was_active_before != 0 && mismatch) ? term.current_cost : 0.0f;
+      float next_contrib = mismatch ? term.next_cost : 0.0f;
+      effects.absent_penalty += next_contrib - prev_contrib;
+      effects.present_penalty += (term.next_cost - next_contrib) - prev_contrib;
+    }
+    for (uint k = layer.surviving_term_count; k < layer.num_terms; k++) {
+      GpuTransitionTerm term = terms[k];
+      bool state_bit = term.fault_was_active_before != 0 &&
+                       ((parent.state_words[term.fault_word_index] & term.fault_bit_mask) != 0);
+      bool target_bit =
+          (actual_detector_words[term.fault_target_word_index] & term.fault_target_bit_mask) != 0;
+      bool mismatch = state_bit ^ target_bit;
+      float prev_contrib =
+          (term.fault_was_active_before != 0 && mismatch) ? term.current_cost : 0.0f;
+      effects.absent_penalty -= prev_contrib;
+      effects.present_penalty -= prev_contrib;
+      if (mismatch) {
+        effects.absent_valid = false;
+      } else {
+        effects.present_valid = false;
+      }
+    }
+  } else if (layer.has_retiring_terms != 0) {
+    for (uint k = layer.surviving_term_count; k < layer.num_terms; k++) {
+      GpuTransitionTerm term = terms[k];
+      bool state_bit = term.fault_was_active_before != 0 &&
+                       ((parent.state_words[term.fault_word_index] & term.fault_bit_mask) != 0);
+      bool target_bit =
+          (actual_detector_words[term.fault_target_word_index] & term.fault_target_bit_mask) != 0;
+      bool mismatch = state_bit ^ target_bit;
+      if (mismatch) {
+        effects.absent_valid = false;
+      } else {
+        effects.present_valid = false;
+      }
+    }
+  }
+
+  return effects;
 }
 
 kernel void expand_trellis_layer(
@@ -934,6 +1003,7 @@ kernel void expand_trellis_layer(
   }
   absent_child.log_mass0 = parent.log_mass0 + layer.log_q;
   absent_child.log_mass1 = parent.log_mass1 + layer.log_q;
+  absent_child.log_total_mass = parent.log_total_mass + layer.log_q;
   absent_child.penalty = absent_penalty;
   absent_child.score = 0.0f;
   absent_child.valid = absent_valid && layer.q != 0.0f ? 1u : 0u;
@@ -945,6 +1015,7 @@ kernel void expand_trellis_layer(
     present_child.log_mass0 = parent.log_mass0 + layer.log_p;
     present_child.log_mass1 = parent.log_mass1 + layer.log_p;
   }
+  present_child.log_total_mass = parent.log_total_mass + layer.log_p;
   present_child.penalty = present_penalty;
   present_child.score = 0.0f;
   present_child.valid = present_valid && layer.p != 0.0f ? 1u : 0u;
@@ -1022,6 +1093,7 @@ kernel void expand_trellis_layer_batched(
   }
   absent_child.log_mass0 = parent.log_mass0 + layer.log_q;
   absent_child.log_mass1 = parent.log_mass1 + layer.log_q;
+  absent_child.log_total_mass = parent.log_total_mass + layer.log_q;
   absent_child.penalty = absent_penalty;
   absent_child.score = 0.0f;
   absent_child.valid = absent_valid && layer.q != 0.0f ? 1u : 0u;
@@ -1033,6 +1105,7 @@ kernel void expand_trellis_layer_batched(
     present_child.log_mass0 = parent.log_mass0 + layer.log_p;
     present_child.log_mass1 = parent.log_mass1 + layer.log_p;
   }
+  present_child.log_total_mass = parent.log_total_mass + layer.log_p;
   present_child.penalty = present_penalty;
   present_child.score = 0.0f;
   present_child.valid = present_valid && layer.p != 0.0f ? 1u : 0u;
@@ -1067,9 +1140,9 @@ kernel void select_top_children_batched(
   for (uint i = tid; i < sort_count; i += threads_per_group) {
     order[i] = static_cast<ushort>(i);
     if (i < child_count && children[shot_base + i].valid != 0u) {
-      scores[i] = score_mass_and_penalty_metal(children[shot_base + i].log_mass0,
-                                               children[shot_base + i].log_mass1,
-                                               children[shot_base + i].penalty, launch.ranking_mode);
+      scores[i] = score_total_mass_and_penalty_metal(
+          children[shot_base + i].log_total_mass, children[shot_base + i].penalty,
+          launch.ranking_mode);
     } else {
       scores[i] = -INFINITY;
     }
@@ -1117,6 +1190,7 @@ kernel void select_top_children_batched(
         }
         next_beam_entries[beam_base + out].log_mass0 = child.log_mass0;
         next_beam_entries[beam_base + out].log_mass1 = child.log_mass1;
+        next_beam_entries[beam_base + out].log_total_mass = child.log_total_mass;
         next_beam_entries[beam_base + out].penalty = child.penalty;
       }
       parent_counts[shot] = valid_kept;
@@ -1166,40 +1240,12 @@ kernel void run_trellis_layers_persistent(
       const uint child_index = shot_child_base + local_parent * 2u;
       MetalBeamEntry parent = current_beam[parent_index];
 
-      bool absent_valid = true;
-      bool present_valid = true;
-      float absent_penalty = layer.compute_penalties ? parent.penalty : 0.0f;
-      float present_penalty = layer.compute_penalties ? parent.penalty : 0.0f;
-
-      for (uint k = 0; k < layer.num_terms; k++) {
-        GpuTransitionTerm term = terms[layer.term_offset + k];
-        bool state_bit = term.fault_was_active_before != 0 &&
-                         ((parent.state_words[term.fault_word_index] & term.fault_bit_mask) != 0);
-        bool target_bit =
-            (actual_detector_words[term.fault_target_word_index] & term.fault_target_bit_mask) != 0;
-        bool mismatch = state_bit ^ target_bit;
-
-        if (layer.compute_penalties != 0) {
-          float prev_contrib =
-              (term.fault_was_active_before != 0 && mismatch) ? term.current_cost : 0.0f;
-          if (k < layer.surviving_term_count) {
-            float next_contrib = mismatch ? term.next_cost : 0.0f;
-            absent_penalty += next_contrib - prev_contrib;
-            present_penalty += (term.next_cost - next_contrib) - prev_contrib;
-          } else {
-            absent_penalty -= prev_contrib;
-            present_penalty -= prev_contrib;
-          }
-        }
-
-        if (k >= layer.surviving_term_count) {
-          if (mismatch) {
-            absent_valid = false;
-          } else {
-            present_valid = false;
-          }
-        }
-      }
+      const TransitionEffects effects = compute_transition_effects_local(
+          parent, actual_detector_words, terms + layer.term_offset, layer);
+      const bool absent_valid = effects.absent_valid;
+      const bool present_valid = effects.present_valid;
+      const float absent_penalty = effects.absent_penalty;
+      const float present_penalty = effects.present_penalty;
 
       thread ulong projected_state[kMaxWords];
       project_state_local(projected_state, parent.state_words, layer);
@@ -1215,11 +1261,12 @@ kernel void run_trellis_layers_persistent(
       }
       absent_child.log_mass0 = parent.log_mass0 + layer.log_q;
       absent_child.log_mass1 = parent.log_mass1 + layer.log_q;
+      absent_child.log_total_mass = parent.log_total_mass + layer.log_q;
       absent_child.penalty = absent_penalty;
       absent_child.valid = absent_valid && layer.q != 0.0f ? 1u : 0u;
       if (absent_child.valid != 0u) {
-        const float score = score_mass_and_penalty_metal(
-            absent_child.log_mass0, absent_child.log_mass1, absent_child.penalty, launch.ranking_mode);
+        const float score = score_total_mass_and_penalty_metal(
+            absent_child.log_total_mass, absent_child.penalty, launch.ranking_mode);
         absent_child.score = score;
       } else {
         absent_child.score = -INFINITY;
@@ -1232,11 +1279,12 @@ kernel void run_trellis_layers_persistent(
         present_child.log_mass0 = parent.log_mass0 + layer.log_p;
         present_child.log_mass1 = parent.log_mass1 + layer.log_p;
       }
+      present_child.log_total_mass = parent.log_total_mass + layer.log_p;
       present_child.penalty = present_penalty;
       present_child.valid = present_valid && layer.p != 0.0f ? 1u : 0u;
       if (present_child.valid != 0u) {
-        const float score = score_mass_and_penalty_metal(
-            present_child.log_mass0, present_child.log_mass1, present_child.penalty, launch.ranking_mode);
+        const float score = score_total_mass_and_penalty_metal(
+            present_child.log_total_mass, present_child.penalty, launch.ranking_mode);
         present_child.score = score;
       } else {
         present_child.score = -INFINITY;
@@ -1307,6 +1355,7 @@ kernel void run_trellis_layers_persistent(
           }
           next_beam[shot_beam_base + out].log_mass0 = child.log_mass0;
           next_beam[shot_beam_base + out].log_mass1 = child.log_mass1;
+          next_beam[shot_beam_base + out].log_total_mass = child.log_total_mass;
           next_beam[shot_beam_base + out].penalty = child.penalty;
         }
         parent_counts[shot] = min(active_beam_limit_shared, valid_kept);
@@ -1384,40 +1433,12 @@ kernel void run_trellis_layers_persistent_histogram(
       const uint child_index = shot_child_base + local_parent * 2u;
       MetalBeamEntry parent = current_beam[parent_index];
 
-      bool absent_valid = true;
-      bool present_valid = true;
-      float absent_penalty = layer.compute_penalties ? parent.penalty : 0.0f;
-      float present_penalty = layer.compute_penalties ? parent.penalty : 0.0f;
-
-      for (uint k = 0; k < layer.num_terms; k++) {
-        GpuTransitionTerm term = terms[layer.term_offset + k];
-        bool state_bit = term.fault_was_active_before != 0 &&
-                         ((parent.state_words[term.fault_word_index] & term.fault_bit_mask) != 0);
-        bool target_bit =
-            (actual_detector_words[term.fault_target_word_index] & term.fault_target_bit_mask) != 0;
-        bool mismatch = state_bit ^ target_bit;
-
-        if (layer.compute_penalties != 0) {
-          float prev_contrib =
-              (term.fault_was_active_before != 0 && mismatch) ? term.current_cost : 0.0f;
-          if (k < layer.surviving_term_count) {
-            float next_contrib = mismatch ? term.next_cost : 0.0f;
-            absent_penalty += next_contrib - prev_contrib;
-            present_penalty += (term.next_cost - next_contrib) - prev_contrib;
-          } else {
-            absent_penalty -= prev_contrib;
-            present_penalty -= prev_contrib;
-          }
-        }
-
-        if (k >= layer.surviving_term_count) {
-          if (mismatch) {
-            absent_valid = false;
-          } else {
-            present_valid = false;
-          }
-        }
-      }
+      const TransitionEffects effects = compute_transition_effects_local(
+          parent, actual_detector_words, terms + layer.term_offset, layer);
+      const bool absent_valid = effects.absent_valid;
+      const bool present_valid = effects.present_valid;
+      const float absent_penalty = effects.absent_penalty;
+      const float present_penalty = effects.present_penalty;
 
       thread ulong projected_state[kMaxWords];
       project_state_local(projected_state, parent.state_words, layer);
@@ -1433,11 +1454,12 @@ kernel void run_trellis_layers_persistent_histogram(
       }
       absent_child.log_mass0 = parent.log_mass0 + layer.log_q;
       absent_child.log_mass1 = parent.log_mass1 + layer.log_q;
+      absent_child.log_total_mass = parent.log_total_mass + layer.log_q;
       absent_child.penalty = absent_penalty;
       absent_child.valid = absent_valid && layer.q != 0.0f ? 1u : 0u;
       if (absent_child.valid != 0u) {
-        const float score = score_mass_and_penalty_metal(
-            absent_child.log_mass0, absent_child.log_mass1, absent_child.penalty, launch.ranking_mode);
+        const float score = score_total_mass_and_penalty_metal(
+            absent_child.log_total_mass, absent_child.penalty, launch.ranking_mode);
         absent_child.score = score;
         scores[local_parent * 2u] = score;
         if (score > -INFINITY) {
@@ -1457,11 +1479,12 @@ kernel void run_trellis_layers_persistent_histogram(
         present_child.log_mass0 = parent.log_mass0 + layer.log_p;
         present_child.log_mass1 = parent.log_mass1 + layer.log_p;
       }
+      present_child.log_total_mass = parent.log_total_mass + layer.log_p;
       present_child.penalty = present_penalty;
       present_child.valid = present_valid && layer.p != 0.0f ? 1u : 0u;
       if (present_child.valid != 0u) {
-        const float score = score_mass_and_penalty_metal(
-            present_child.log_mass0, present_child.log_mass1, present_child.penalty, launch.ranking_mode);
+        const float score = score_total_mass_and_penalty_metal(
+            present_child.log_total_mass, present_child.penalty, launch.ranking_mode);
         present_child.score = score;
         scores[local_parent * 2u + 1u] = score;
         if (score > -INFINITY) {
@@ -1526,6 +1549,7 @@ kernel void run_trellis_layers_persistent_histogram(
           }
           next_beam[shot_beam_base + out].log_mass0 = child.log_mass0;
           next_beam[shot_beam_base + out].log_mass1 = child.log_mass1;
+          next_beam[shot_beam_base + out].log_total_mass = child.log_total_mass;
           next_beam[shot_beam_base + out].penalty = child.penalty;
         }
       }
@@ -1601,6 +1625,7 @@ kernel void run_trellis_layers_persistent_histogram(
             }
             next_beam[shot_beam_base + out].log_mass0 = child.log_mass0;
             next_beam[shot_beam_base + out].log_mass1 = child.log_mass1;
+            next_beam[shot_beam_base + out].log_total_mass = child.log_total_mass;
             next_beam[shot_beam_base + out].penalty = child.penalty;
           }
         } else if (bin == cutoff_bin_shared) {
@@ -1614,6 +1639,7 @@ kernel void run_trellis_layers_persistent_histogram(
             }
             next_beam[shot_beam_base + out].log_mass0 = child.log_mass0;
             next_beam[shot_beam_base + out].log_mass1 = child.log_mass1;
+            next_beam[shot_beam_base + out].log_total_mass = child.log_total_mass;
             next_beam[shot_beam_base + out].penalty = child.penalty;
           }
         }
@@ -1696,40 +1722,12 @@ kernel void run_trellis_layers_persistent_streaming_histogram(
       const uint child_index = shot_child_base + local_parent * 2u;
       MetalBeamEntry parent = current_beam[parent_index];
 
-      bool absent_valid = true;
-      bool present_valid = true;
-      float absent_penalty = layer.compute_penalties ? parent.penalty : 0.0f;
-      float present_penalty = layer.compute_penalties ? parent.penalty : 0.0f;
-
-      for (uint k = 0; k < layer.num_terms; k++) {
-        GpuTransitionTerm term = terms[layer.term_offset + k];
-        bool state_bit = term.fault_was_active_before != 0 &&
-                         ((parent.state_words[term.fault_word_index] & term.fault_bit_mask) != 0);
-        bool target_bit =
-            (actual_detector_words[term.fault_target_word_index] & term.fault_target_bit_mask) != 0;
-        bool mismatch = state_bit ^ target_bit;
-
-        if (layer.compute_penalties != 0) {
-          float prev_contrib =
-              (term.fault_was_active_before != 0 && mismatch) ? term.current_cost : 0.0f;
-          if (k < layer.surviving_term_count) {
-            float next_contrib = mismatch ? term.next_cost : 0.0f;
-            absent_penalty += next_contrib - prev_contrib;
-            present_penalty += (term.next_cost - next_contrib) - prev_contrib;
-          } else {
-            absent_penalty -= prev_contrib;
-            present_penalty -= prev_contrib;
-          }
-        }
-
-        if (k >= layer.surviving_term_count) {
-          if (mismatch) {
-            absent_valid = false;
-          } else {
-            present_valid = false;
-          }
-        }
-      }
+      const TransitionEffects effects = compute_transition_effects_local(
+          parent, actual_detector_words, terms + layer.term_offset, layer);
+      const bool absent_valid = effects.absent_valid;
+      const bool present_valid = effects.present_valid;
+      const float absent_penalty = effects.absent_penalty;
+      const float present_penalty = effects.present_penalty;
 
       thread ulong projected_state[kMaxWords];
       project_state_local(projected_state, parent.state_words, layer);
@@ -1745,11 +1743,12 @@ kernel void run_trellis_layers_persistent_streaming_histogram(
       }
       absent_child.log_mass0 = parent.log_mass0 + layer.log_q;
       absent_child.log_mass1 = parent.log_mass1 + layer.log_q;
+      absent_child.log_total_mass = parent.log_total_mass + layer.log_q;
       absent_child.penalty = absent_penalty;
       absent_child.valid = absent_valid && layer.q != 0.0f ? 1u : 0u;
       if (absent_child.valid != 0u) {
-        const float score = score_mass_and_penalty_metal(
-            absent_child.log_mass0, absent_child.log_mass1, absent_child.penalty, launch.ranking_mode);
+        const float score = score_total_mass_and_penalty_metal(
+            absent_child.log_total_mass, absent_child.penalty, launch.ranking_mode);
         absent_child.score = score;
         if (score > -INFINITY) {
           thread_min_score = min(thread_min_score, score);
@@ -1767,11 +1766,12 @@ kernel void run_trellis_layers_persistent_streaming_histogram(
         present_child.log_mass0 = parent.log_mass0 + layer.log_p;
         present_child.log_mass1 = parent.log_mass1 + layer.log_p;
       }
+      present_child.log_total_mass = parent.log_total_mass + layer.log_p;
       present_child.penalty = present_penalty;
       present_child.valid = present_valid && layer.p != 0.0f ? 1u : 0u;
       if (present_child.valid != 0u) {
-        const float score = score_mass_and_penalty_metal(
-            present_child.log_mass0, present_child.log_mass1, present_child.penalty, launch.ranking_mode);
+        const float score = score_total_mass_and_penalty_metal(
+            present_child.log_total_mass, present_child.penalty, launch.ranking_mode);
         present_child.score = score;
         if (score > -INFINITY) {
           thread_min_score = min(thread_min_score, score);
@@ -1834,6 +1834,7 @@ kernel void run_trellis_layers_persistent_streaming_histogram(
           }
           next_beam[shot_beam_base + out].log_mass0 = child.log_mass0;
           next_beam[shot_beam_base + out].log_mass1 = child.log_mass1;
+          next_beam[shot_beam_base + out].log_total_mass = child.log_total_mass;
           next_beam[shot_beam_base + out].penalty = child.penalty;
         }
       }
@@ -1909,6 +1910,7 @@ kernel void run_trellis_layers_persistent_streaming_histogram(
             }
             next_beam[shot_beam_base + out].log_mass0 = child.log_mass0;
             next_beam[shot_beam_base + out].log_mass1 = child.log_mass1;
+            next_beam[shot_beam_base + out].log_total_mass = child.log_total_mass;
             next_beam[shot_beam_base + out].penalty = child.penalty;
           }
         } else if (bin == cutoff_bin_shared) {
@@ -1922,6 +1924,7 @@ kernel void run_trellis_layers_persistent_streaming_histogram(
             }
             next_beam[shot_beam_base + out].log_mass0 = child.log_mass0;
             next_beam[shot_beam_base + out].log_mass1 = child.log_mass1;
+            next_beam[shot_beam_base + out].log_total_mass = child.log_total_mass;
             next_beam[shot_beam_base + out].penalty = child.penalty;
           }
         }
@@ -1946,6 +1949,84 @@ kernel void run_trellis_layers_persistent_streaming_histogram(
     for (uint i = tid; i < current_count; i += threads_per_group) {
       beam_a[shot_beam_base + i] = beam_b[shot_beam_base + i];
     }
+  }
+}
+
+kernel void reduce_final_observable_masses_batched(
+    device const MetalBeamEntry* beam_entries [[buffer(0)]],
+    device const uint* parent_counts [[buffer(1)]],
+    device MetalFinalObsMass* final_obs [[buffer(2)]],
+    constant MetalBatchLaunchConfig& launch [[buffer(3)]],
+    uint tid [[thread_index_in_threadgroup]],
+    uint threads_per_group [[threads_per_threadgroup]],
+    uint shot [[threadgroup_position_in_grid]]) {
+  if (shot >= launch.num_shots) {
+    return;
+  }
+  threadgroup float local_max0[1024];
+  threadgroup float local_max1[1024];
+  threadgroup float local_sum0[1024];
+  threadgroup float local_sum1[1024];
+
+  const uint beam_base = shot * launch.beam_width;
+  const uint count = min(parent_counts[shot], launch.beam_width);
+  float thread_max0 = -INFINITY;
+  float thread_max1 = -INFINITY;
+  for (uint i = tid; i < count; i += threads_per_group) {
+    const MetalBeamEntry entry = beam_entries[beam_base + i];
+    if (!thread_beam_entry_state_is_zero(entry)) {
+      continue;
+    }
+    thread_max0 = max(thread_max0, entry.log_mass0);
+    thread_max1 = max(thread_max1, entry.log_mass1);
+  }
+  local_max0[tid] = thread_max0;
+  local_max1[tid] = thread_max1;
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+
+  for (uint stride = threads_per_group >> 1u; stride > 0; stride >>= 1u) {
+    if (tid < stride) {
+      local_max0[tid] = max(local_max0[tid], local_max0[tid + stride]);
+      local_max1[tid] = max(local_max1[tid], local_max1[tid + stride]);
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+  }
+
+  const float max0 = local_max0[0];
+  const float max1 = local_max1[0];
+  float thread_sum0 = 0.0f;
+  float thread_sum1 = 0.0f;
+  for (uint i = tid; i < count; i += threads_per_group) {
+    const MetalBeamEntry entry = beam_entries[beam_base + i];
+    if (!thread_beam_entry_state_is_zero(entry)) {
+      continue;
+    }
+    if (isfinite(max0) && isfinite(entry.log_mass0)) {
+      thread_sum0 += exp(entry.log_mass0 - max0);
+    }
+    if (isfinite(max1) && isfinite(entry.log_mass1)) {
+      thread_sum1 += exp(entry.log_mass1 - max1);
+    }
+  }
+  local_sum0[tid] = thread_sum0;
+  local_sum1[tid] = thread_sum1;
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+
+  for (uint stride = threads_per_group >> 1u; stride > 0; stride >>= 1u) {
+    if (tid < stride) {
+      local_sum0[tid] += local_sum0[tid + stride];
+      local_sum1[tid] += local_sum1[tid + stride];
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+  }
+
+  if (tid == 0) {
+    MetalFinalObsMass out;
+    out.log_mass0 = (local_sum0[0] > 0.0f && isfinite(max0)) ? max0 + log(local_sum0[0]) : -INFINITY;
+    out.log_mass1 = (local_sum1[0] > 0.0f && isfinite(max1)) ? max1 + log(local_sum1[0]) : -INFINITY;
+    out.valid = (isfinite(out.log_mass0) || isfinite(out.log_mass1)) ? 1u : 0u;
+    out.pad = 0u;
+    final_obs[shot] = out;
   }
 }
 
@@ -1986,9 +2067,11 @@ std::unique_ptr<MetalContext> create_metal_context(size_t detector_word_count, s
         [library newFunctionWithName:@"run_trellis_layers_persistent_histogram"];
     id<MTLFunction> persistent_streaming_histogram_function =
         [library newFunctionWithName:@"run_trellis_layers_persistent_streaming_histogram"];
+    id<MTLFunction> final_obs_function =
+        [library newFunctionWithName:@"reduce_final_observable_masses_batched"];
     if (function == nil || batch_function == nil || batch_select_function == nil ||
         persistent_function == nil || persistent_histogram_function == nil ||
-        persistent_streaming_histogram_function == nil) {
+        persistent_streaming_histogram_function == nil || final_obs_function == nil) {
       *error_message = "Metal shader function expand_trellis_layer not found";
       return nullptr;
     }
@@ -2031,6 +2114,12 @@ std::unique_ptr<MetalContext> create_metal_context(size_t detector_word_count, s
           "Metal persistent streaming histogram pipeline creation failed: " + ns_error_string(error);
       return nullptr;
     }
+    id<MTLComputePipelineState> final_obs_pipeline =
+        [device newComputePipelineStateWithFunction:final_obs_function error:&error];
+    if (final_obs_pipeline == nil) {
+      *error_message = "Metal final observable pipeline creation failed: " + ns_error_string(error);
+      return nullptr;
+    }
 
     id<MTLCommandQueue> queue = [device newCommandQueue];
     if (queue == nil) {
@@ -2047,6 +2136,7 @@ std::unique_ptr<MetalContext> create_metal_context(size_t detector_word_count, s
     ctx->persistent_pipeline = persistent_pipeline;
     ctx->persistent_histogram_pipeline = persistent_histogram_pipeline;
     ctx->persistent_streaming_histogram_pipeline = persistent_streaming_histogram_pipeline;
+    ctx->final_obs_pipeline = final_obs_pipeline;
     ctx->detector_word_count = detector_word_count;
     ctx->detector_words_buffer =
         [device newBufferWithLength:sizeof(uint64_t) * detector_word_count
@@ -2072,7 +2162,7 @@ bool ensure_batch_capacity(MetalContext* ctx, size_t num_shots, size_t beam_widt
       ctx->batch_next_buffer != nil && ctx->batch_output_buffer != nil &&
       ctx->batch_detector_words_buffer != nil &&
       ctx->batch_parent_counts_buffer != nil && ctx->batch_beam_limits_buffer != nil &&
-      ctx->batch_beam_growth_counts_buffer != nil) {
+      ctx->batch_beam_growth_counts_buffer != nil && ctx->batch_final_obs_buffer != nil) {
     return true;
   }
   ctx->batch_capacity = std::max(ctx->batch_capacity, num_shots);
@@ -2098,10 +2188,13 @@ bool ensure_batch_capacity(MetalContext* ctx, size_t num_shots, size_t beam_widt
       [ctx->device
           newBufferWithLength:sizeof(MetalChildCandidate) * beam_width * 2 * ctx->batch_capacity
                      options:MTLResourceStorageModeShared];
+  ctx->batch_final_obs_buffer =
+      [ctx->device newBufferWithLength:sizeof(MetalFinalObsMass) * ctx->batch_capacity
+                               options:MTLResourceStorageModeShared];
   if (ctx->batch_detector_words_buffer == nil || ctx->batch_parent_counts_buffer == nil ||
       ctx->batch_beam_limits_buffer == nil || ctx->batch_beam_growth_counts_buffer == nil ||
       ctx->batch_input_buffer == nil || ctx->batch_next_buffer == nil ||
-      ctx->batch_output_buffer == nil) {
+      ctx->batch_output_buffer == nil || ctx->batch_final_obs_buffer == nil) {
     *error_message = "Metal batch buffer allocation failed";
     return false;
   }
@@ -2352,7 +2445,7 @@ void TesseractTrellisGpuDecoder::decode_shot(const std::vector<uint64_t>& detect
       beam_ptr[i].log_mass0 = metal_log_mass(beam_entries[i].mass0);
       beam_ptr[i].log_mass1 = metal_log_mass(beam_entries[i].mass1);
       beam_ptr[i].penalty = static_cast<float>(beam_entries[i].penalty);
-      beam_ptr[i].pad = 0.0f;
+      beam_ptr[i].log_total_mass = metal_log_mass(total_entry_mass(beam_entries[i]));
     }
 
     @autoreleasepool {
@@ -2409,8 +2502,8 @@ void TesseractTrellisGpuDecoder::decode_shot(const std::vector<uint64_t>& detect
         std::chrono::duration_cast<std::chrono::microseconds>(t2 - t2a).count() / 1e6;
 
     const size_t kept_states =
-        keep_top_compiled_states(&beam_entries, config.beam_width, config.beam_eps,
-                                 config.ranking_mode, impl->num_words);
+        keep_top_compiled_states(&beam_entries, config.beam_width, config.ranking_mode,
+                                 impl->num_words);
     normalize_compiled_items(&beam_entries);
     record_kept_state_count(this, &impl->kept_state_histogram, beam_entries.empty() ? 0 : kept_states);
     if (beam_entries.empty()) {
@@ -2602,7 +2695,7 @@ void TesseractTrellisGpuDecoder::decode_shots_batched(
           beam_ptr[dst].log_mass0 = metal_log_mass(scratch.beam_entries[i].mass0);
           beam_ptr[dst].log_mass1 = metal_log_mass(scratch.beam_entries[i].mass1);
           beam_ptr[dst].penalty = static_cast<float>(scratch.beam_entries[i].penalty);
-          beam_ptr[dst].pad = 0.0f;
+          beam_ptr[dst].log_total_mass = metal_log_mass(total_entry_mass(scratch.beam_entries[i]));
         }
       }
     };
@@ -2753,8 +2846,7 @@ void TesseractTrellisGpuDecoder::decode_shots_batched(
                 ? std::max<size_t>(1, std::min<size_t>(config.beam_width, beam_limits_ptr[local_shot]))
                 : config.beam_width;
         const size_t kept_states = keep_top_compiled_states(
-            &scratch.next_entries, active_beam_width, config.beam_eps, config.ranking_mode,
-            impl->num_words);
+            &scratch.next_entries, active_beam_width, config.ranking_mode, impl->num_words);
         normalize_compiled_items(&scratch.next_entries);
         (void)kept_states;
         if (scratch.next_entries.empty()) {
@@ -2771,60 +2863,98 @@ void TesseractTrellisGpuDecoder::decode_shots_batched(
       layer_index += 1;
     }
 
+    bool final_obs_resolved_on_gpu = false;
     if (gpu_state_resident) {
-      for (size_t local_shot = 0; local_shot < batch_size; ++local_shot) {
-        auto& scratch = impl->shot_scratch[local_shot];
-        const size_t kept_states = parent_counts_ptr[local_shot];
-        scratch.invalid = kept_states == 0;
-        scratch.beam_entries.clear();
-        float log_shift = -std::numeric_limits<float>::infinity();
-        for (size_t i = 0; i < kept_states; ++i) {
-          const size_t src = local_shot * config.beam_width + i;
-          log_shift = std::max(log_shift, beam_ptr[src].log_mass0);
-          log_shift = std::max(log_shift, beam_ptr[src].log_mass1);
-        }
-        for (size_t i = 0; i < kept_states; ++i) {
-          const size_t src = local_shot * config.beam_width + i;
-          GpuBeamEntry entry{};
-          for (size_t k = 0; k < kMaxCompiledWideStateWords; ++k) {
-            entry.state_words[k] = beam_ptr[src].state_words[k];
+      @autoreleasepool {
+        id<MTLCommandBuffer> command_buffer = [impl->metal->command_queue commandBuffer];
+        id<MTLComputeCommandEncoder> encoder = [command_buffer computeCommandEncoder];
+        [encoder setComputePipelineState:impl->metal->final_obs_pipeline];
+        [encoder setBuffer:impl->metal->batch_input_buffer offset:0 atIndex:0];
+        [encoder setBuffer:impl->metal->batch_parent_counts_buffer offset:0 atIndex:1];
+        [encoder setBuffer:impl->metal->batch_final_obs_buffer offset:0 atIndex:2];
+        [encoder setBytes:&launch length:sizeof(MetalBatchLaunchConfig) atIndex:3];
+        const NSUInteger final_width = preferred_sort_threadgroup_width(
+            impl->metal->final_obs_pipeline.maxTotalThreadsPerThreadgroup, config.beam_width);
+        [encoder dispatchThreadgroups:MTLSizeMake(batch_size, 1, 1)
+               threadsPerThreadgroup:MTLSizeMake(final_width, 1, 1)];
+        [encoder endEncoding];
+        [command_buffer commit];
+        [command_buffer waitUntilCompleted];
+        if (command_buffer.error != nil) {
+          impl->gpu_enabled = false;
+          impl->backend = "cpu-fallback (Metal final reduction failed: " +
+                          ns_error_string(command_buffer.error) + ")";
+          for (size_t i = start; i < start + batch_size; ++i) {
+            decode_shot(shots[i].hits);
+            obs_predicted_masks[i] = predicted_obs_mask;
+            if (obs0_masses != nullptr) {
+              (*obs0_masses)[i] = total_mass_obs0;
+            }
+            if (obs1_masses != nullptr) {
+              (*obs1_masses)[i] = total_mass_obs1;
+            }
           }
-          entry.mass0 = exp_shifted(beam_ptr[src].log_mass0, log_shift);
-          entry.mass1 = exp_shifted(beam_ptr[src].log_mass1, log_shift);
-          entry.penalty = beam_ptr[src].penalty;
-          scratch.beam_entries.push_back(entry);
+          return;
         }
       }
-    }
-
-    for (size_t local_shot = 0; local_shot < batch_size; ++local_shot) {
-      auto& scratch = impl->shot_scratch[local_shot];
-      if (scratch.invalid) {
-        obs_predicted_masks[start + local_shot] = 0;
-        if (obs0_masses != nullptr) {
-          (*obs0_masses)[start + local_shot] = 0.0;
-        }
-        if (obs1_masses != nullptr) {
-          (*obs1_masses)[start + local_shot] = 0.0;
-        }
-        continue;
-      }
-      double total_mass_obs0 = 0.0;
-      double total_mass_obs1 = 0.0;
-      for (const auto& item : scratch.beam_entries) {
-        if (!fixed_wide_state_zero(item.state_words, impl->num_words)) {
+      const auto* final_obs_ptr =
+          static_cast<const MetalFinalObsMass*>([impl->metal->batch_final_obs_buffer contents]);
+      for (size_t local_shot = 0; local_shot < batch_size; ++local_shot) {
+        const auto& final_obs = final_obs_ptr[local_shot];
+        if (final_obs.valid == 0) {
+          obs_predicted_masks[start + local_shot] = 0;
+          if (obs0_masses != nullptr) {
+            (*obs0_masses)[start + local_shot] = 0.0;
+          }
+          if (obs1_masses != nullptr) {
+            (*obs1_masses)[start + local_shot] = 0.0;
+          }
           continue;
         }
-        total_mass_obs0 += item.mass0;
-        total_mass_obs1 += item.mass1;
+        const float log_shift = std::max(final_obs.log_mass0, final_obs.log_mass1);
+        const double total_mass_obs0 = exp_shifted(final_obs.log_mass0, log_shift);
+        const double total_mass_obs1 = exp_shifted(final_obs.log_mass1, log_shift);
+        if (obs0_masses != nullptr) {
+          (*obs0_masses)[start + local_shot] = total_mass_obs0;
+        }
+        if (obs1_masses != nullptr) {
+          (*obs1_masses)[start + local_shot] = total_mass_obs1;
+        }
+        obs_predicted_masks[start + local_shot] = final_obs.log_mass1 > final_obs.log_mass0 ? 1 : 0;
       }
-      if (obs0_masses != nullptr) {
-        (*obs0_masses)[start + local_shot] = total_mass_obs0;
+      final_obs_resolved_on_gpu = true;
+    }
+
+    if (!final_obs_resolved_on_gpu) {
+      for (size_t local_shot = 0; local_shot < batch_size; ++local_shot) {
+        auto& scratch = impl->shot_scratch[local_shot];
+        if (scratch.invalid) {
+          obs_predicted_masks[start + local_shot] = 0;
+          if (obs0_masses != nullptr) {
+            (*obs0_masses)[start + local_shot] = 0.0;
+          }
+          if (obs1_masses != nullptr) {
+            (*obs1_masses)[start + local_shot] = 0.0;
+          }
+          continue;
+        }
+        double total_mass_obs0 = 0.0;
+        double total_mass_obs1 = 0.0;
+        for (const auto& item : scratch.beam_entries) {
+          if (!fixed_wide_state_zero(item.state_words, impl->num_words)) {
+            continue;
+          }
+          total_mass_obs0 += item.mass0;
+          total_mass_obs1 += item.mass1;
+        }
+        if (obs0_masses != nullptr) {
+          (*obs0_masses)[start + local_shot] = total_mass_obs0;
+        }
+        if (obs1_masses != nullptr) {
+          (*obs1_masses)[start + local_shot] = total_mass_obs1;
+        }
+        obs_predicted_masks[start + local_shot] = total_mass_obs1 > total_mass_obs0 ? 1 : 0;
       }
-      if (obs1_masses != nullptr) {
-        (*obs1_masses)[start + local_shot] = total_mass_obs1;
-      }
-      obs_predicted_masks[start + local_shot] = total_mass_obs1 > total_mass_obs0 ? 1 : 0;
     }
     if (dynamic_beam_enabled) {
       impl->dynamic_beam_limit_samples.reserve(impl->dynamic_beam_limit_samples.size() + batch_size);
