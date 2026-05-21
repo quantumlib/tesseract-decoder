@@ -71,6 +71,7 @@ pybind_library(
         "visualization.pybind.h",
         "tesseract.pybind.h",
         "tesseract_sinter_compat.pybind.h",
+        "multi_pass_sinter_compat.pybind.h",
     ],
     copts = OPT_COPTS,
     deps = [
@@ -78,6 +79,7 @@ pybind_library(
         ":libutils",
         ":libsimplex",
         ":libtesseract",
+        ":libmulti_pass_tesseract_decoder",
     ],
 )
 
@@ -129,6 +131,35 @@ cc_library(
         ":libutils",
         ":libviz",
         "@boost//:dynamic_bitset",
+    ],
+)
+
+cc_library(
+    name = "libmulti_pass_tesseract_decoder",
+    srcs = ["multi_pass_tesseract_decoder.cc"],
+    hdrs = ["multi_pass_tesseract_decoder.h"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    deps = [
+        ":libtesseract",
+        ":libtanner_graph",
+        ":liberror_correlations",
+        ":libdem_decomposition",
+        "@stim//:stim_lib",
+    ],
+)
+
+cc_test(
+    name = "multi_pass_tesseract_decoder_tests",
+    srcs = ["multi_pass_tesseract_decoder.test.cc"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    data = ["//:testdata"],
+    deps = [
+        ":libmulti_pass_tesseract_decoder",
+        "@gtest",
+        "@gtest//:gtest_main",
+        "@stim//:stim_lib",
     ],
 )
 

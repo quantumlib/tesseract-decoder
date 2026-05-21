@@ -113,6 +113,11 @@ target_include_directories(dem_decomposition PUBLIC ${TESSERACT_SRC_DIR})
 target_compile_options(dem_decomposition PRIVATE ${OPT_COPTS})
 target_link_libraries(dem_decomposition PUBLIC bern_utils libstim)
 
+add_library(multi_pass_tesseract_decoder ${TESSERACT_SRC_DIR}/multi_pass_tesseract_decoder.cc ${TESSERACT_SRC_DIR}/multi_pass_tesseract_decoder.h)
+target_include_directories(multi_pass_tesseract_decoder PUBLIC ${TESSERACT_SRC_DIR})
+target_compile_options(multi_pass_tesseract_decoder PRIVATE ${OPT_COPTS})
+target_link_libraries(multi_pass_tesseract_decoder PUBLIC tesseract_lib tanner_graph error_correlations dem_decomposition libstim)
+
 add_library(tesseract_lib ${TESSERACT_SRC_DIR}/tesseract.cc ${TESSERACT_SRC_DIR}/tesseract.h)
 target_include_directories(tesseract_lib PUBLIC ${TESSERACT_SRC_DIR})
 target_compile_options(tesseract_lib PRIVATE ${OPT_COPTS})
@@ -137,6 +142,7 @@ target_link_libraries(simplex_bin PRIVATE common simplex argparse::argparse nloh
 pybind11_add_module(_core MODULE ${TESSERACT_SRC_DIR}/tesseract.pybind.cc)
 target_compile_options(_core PRIVATE ${OPT_COPTS})
 target_include_directories(_core PRIVATE ${TESSERACT_SRC_DIR})
+target_link_libraries(_core PRIVATE common utils simplex tesseract_lib multi_pass_tesseract_decoder)
 set_target_properties(_core PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/tesseract_decoder
     LIBRARY_OUTPUT_DIRECTORY_DEBUG ${PROJECT_SOURCE_DIR}/tesseract_decoder
@@ -167,4 +173,8 @@ add_test(NAME tanner_graph_test COMMAND tanner_graph_test)
 add_executable(error_correlations_test ${TESSERACT_SRC_DIR}/error_correlations.test.cc)
 target_link_libraries(error_correlations_test PRIVATE error_correlations GTest::gtest_main libstim)
 add_test(NAME error_correlations_test COMMAND error_correlations_test)
+
+add_executable(multi_pass_tesseract_decoder_test ${TESSERACT_SRC_DIR}/multi_pass_tesseract_decoder.test.cc)
+target_link_libraries(multi_pass_tesseract_decoder_test PRIVATE multi_pass_tesseract_decoder GTest::gtest_main libstim)
+add_test(NAME multi_pass_tesseract_decoder_test COMMAND multi_pass_tesseract_decoder_test)
 
