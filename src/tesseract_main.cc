@@ -639,7 +639,11 @@ int main(int argc, char* argv[]) {
                                  {"num_low_confidence", num_low_confidence},
                                  {"num_shots", shot},
                                  {"num_threads", args.num_threads},
-                                 {"sample_num_shots", args.sample_num_shots}};
+                                 {"sample_num_shots", args.sample_num_shots},
+                                 {"sparsify_errors", args.sparsify_errors},
+                                 {"sparsify_base_degree", args.sparsify_base_degree},
+                                 {"sparsify_max_degree", args.sparsify_max_degree},
+                                 {"sparsify_reactivate_limit", args.sparsify_reactivate_limit}};
 
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;
