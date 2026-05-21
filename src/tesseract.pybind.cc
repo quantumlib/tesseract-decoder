@@ -21,6 +21,7 @@
 #include "pybind11/detail/common.h"
 #include "simplex.pybind.h"
 #include "tesseract_sinter_compat.pybind.h"
+#include "multi_pass_sinter_compat.pybind.h"
 #include "utils.pybind.h"
 #include "visualization.pybind.h"
 
@@ -33,6 +34,7 @@ PYBIND11_MODULE(_core, tesseract) {
   add_visualization_module(tesseract);
   add_tesseract_module(tesseract);
   pybind_sinter_compat(tesseract);
+  tesseract::pybind_multi_pass_sinter_compat(tesseract);
   try {
     tesseract.attr("demutil") = py::module::import("tesseract_decoder.utils");
   } catch (...) {

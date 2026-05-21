@@ -59,3 +59,8 @@ config_setting(
         "@platforms//cpu:x86_64",
     ],
 )
+filegroup(
+    name = "testdata",
+    srcs = glob(["testdata/**/*"]),
+    visibility = ["//visibility:public"],
+)

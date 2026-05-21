@@ -39,3 +39,6 @@ user.bazelrc
 src/tesseract_decoder*.so
 
 MODULE.bazel.lock
+build/
+_core.so
+*.egg-info/
