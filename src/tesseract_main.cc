@@ -82,11 +82,16 @@ struct Args {
   bool verbose = false;
   bool print_stats = false;
 
+  bool sparsify_errors = false;
+  int sparsify_base_degree = -1;
+  int sparsify_max_degree = -1;
+  int sparsify_reactivate_limit = -1;
+
   bool has_observables() {
     return append_observables || !obs_in_fname.empty() || (sample_num_shots > 0);
   }
 
-  void validate() {
+  void validate(const argparse::ArgumentParser& program) {
     if (circuit_path.empty() and dem_path.empty()) {
       throw std::invalid_argument("Must provide at least one of --circuit or --dem");
     }
@@ -141,6 +146,34 @@ struct Args {
     }
     if (beam_climbing and det_beam == INF_DET_BEAM) {
       throw std::invalid_argument("Beam climbing requires a finite beam");
+    }
+
+    bool has_base = program.is_used("--sparsify-base-degree");
+    bool has_max = program.is_used("--sparsify-max-degree");
+    bool has_limit = program.is_used("--sparsify-reactivate-limit");
+
+    if (!sparsify_errors) {
+      if (has_base || has_max || has_limit) {
+        throw std::invalid_argument(
+            "Cannot use --sparsify-base-degree, --sparsify-max-degree, or "
+            "--sparsify-reactivate-limit without --sparsify-errors");
+      }
+    } else {
+      if (!has_base) {
+        throw std::invalid_argument("Must specify --sparsify-base-degree when --sparsify-errors is enabled.");
+      }
+      if (!has_limit) {
+        throw std::invalid_argument("Must specify --sparsify-reactivate-limit when --sparsify-errors is enabled.");
+      }
+      if (sparsify_base_degree < 0) {
+        throw std::invalid_argument("--sparsify-base-degree must be >= 0.");
+      }
+      if (sparsify_reactivate_limit < 0) {
+        throw std::invalid_argument("--sparsify-reactivate-limit must be >= 0.");
+      }
+      if (has_max && sparsify_max_degree < sparsify_base_degree) {
+        throw std::invalid_argument("--sparsify-max-degree must be >= --sparsify-base-degree.");
+      }
     }
   }
 
@@ -297,6 +330,11 @@ struct Args {
 
     config.pqlimit = pqlimit;
     config.verbose = verbose;
+
+    config.sparsify_errors = sparsify_errors;
+    config.sparsify_base_degree = sparsify_base_degree;
+    config.sparsify_max_degree = sparsify_max_degree;
+    config.sparsify_reactivate_limit = sparsify_reactivate_limit;
   }
 };
 
@@ -468,6 +506,26 @@ int main(int argc, char* argv[]) {
       .flag()
       .store_into(args.print_stats);
 
+  program.add_argument("--sparsify-errors")
+      .help("Enables per-shot sparse error activation.")
+      .flag()
+      .store_into(args.sparsify_errors);
+  program.add_argument("--sparsify-base-degree")
+      .help("Maximum detector degree for mandatory errors. Errors with degree <= K are always enabled for every shot.")
+      .metavar("K")
+      .scan<'i', int>()
+      .store_into(args.sparsify_base_degree);
+  program.add_argument("--sparsify-max-degree")
+      .help("Maximum detector degree for optional errors that may be reactivated. Errors with degree > M are never enabled.")
+      .metavar("M")
+      .scan<'i', int>()
+      .store_into(args.sparsify_max_degree);
+  program.add_argument("--sparsify-reactivate-limit")
+      .help("Maximum number of optional errors to reactivate per shot.")
+      .metavar("N")
+      .scan<'i', int>()
+      .store_into(args.sparsify_reactivate_limit);
+
   try {
     program.parse_args(argc, argv);
   } catch (const std::exception& err) {
@@ -475,7 +533,7 @@ int main(int argc, char* argv[]) {
     std::cerr << program;
     return EXIT_FAILURE;
   }
-  args.validate();
+  args.validate(program);
   TesseractConfig config;
   std::vector<stim::SparseShot> shots;
   std::unique_ptr<stim::MeasureRecordWriter> writer;

@@ -86,14 +86,15 @@ bool Node::operator>(const Node& other) const {
 }
 
 double TesseractDecoder::get_detcost(
-    size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const {
+    size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples,
+    const std::vector<std::vector<int>>& cur_d2e) const {
   double min_cost = INF;
   uint32_t min_det_cost_det_count = std::numeric_limits<uint32_t>::max();
   double error_cost;
   ErrorCost ec;
   DetectorCostTuple dct;
 
-  for (int ei : d2e[d]) {
+  for (int ei : cur_d2e[d]) {
     ec = error_costs[ei];
     if (ec.likelihood_cost * min_det_cost_det_count >=
         min_cost * errors[ei].symptom.detectors.size())
@@ -209,9 +210,32 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
       eneighbors[ei].push_back(d);
     }
   }
+
+  if (config.sparsify_errors) {
+    sparsify_mandatory_errors.clear();
+    sparsify_optional_errors.clear();
+    for (size_t ei = 0; ei < num_errors; ++ei) {
+      int degree = errors[ei].symptom.detectors.size();
+      if (degree <= config.sparsify_base_degree) {
+        sparsify_mandatory_errors.push_back(ei);
+      } else if (degree > config.sparsify_base_degree &&
+                 (config.sparsify_max_degree == -1 || degree <= config.sparsify_max_degree)) {
+        sparsify_optional_errors.push_back(ei);
+      }
+    }
+    sparse_error_active.assign(num_errors, 0);
+    sparse_d2e.resize(num_detectors);
+  }
 }
 
 void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
+  if (config.sparsify_errors) {
+    build_sparse_d2e(detections);
+    active_d2e = &sparse_d2e;
+  } else {
+    active_d2e = &d2e;
+  }
+
   std::vector<size_t> best_errors;
   double best_cost = std::numeric_limits<double>::max();
   if (config.det_orders.empty()) {
@@ -262,14 +286,15 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections)
 
 void TesseractDecoder::flip_detectors_and_block_errors(
     size_t detector_order, int64_t error_chain_idx, boost::dynamic_bitset<>& detectors,
-    std::vector<DetectorCostTuple>& detector_cost_tuples) const {
+    std::vector<DetectorCostTuple>& detector_cost_tuples,
+    const std::vector<std::vector<int>>& cur_d2e) const {
   int64_t walker_idx = error_chain_idx;
   while (walker_idx != -1) {
     const auto& node = error_chain_arena[walker_idx];
     size_t ei = node.error_index;
     size_t min_detector = node.min_detector;
 
-    for (int oei : d2e[min_detector]) {
+    for (int oei : cur_d2e[min_detector]) {
       detector_cost_tuples[oei].error_blocked = 1;
       if (oei == ei) break;
     }
@@ -283,6 +308,12 @@ void TesseractDecoder::flip_detectors_and_block_errors(
 
 void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
                                         size_t detector_order, size_t detector_beam) {
+  if (config.sparsify_errors && active_d2e == &d2e) {
+    build_sparse_d2e(detections);
+    active_d2e = &sparse_d2e;
+  }
+  const auto& cur_d2e = *active_d2e;
+
   predicted_errors_buffer.clear();
   low_confidence_flag = false;
   error_chain_arena.clear();
@@ -303,14 +334,14 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
           " references a detector >= num_detectors (= " + std::to_string(num_detectors) + ").");
     }
     initial_detectors[d] = true;
-    for (int ei : d2e[d]) {
+    for (int ei : cur_d2e[d]) {
       ++initial_detector_cost_tuples[ei].detectors_count;
     }
   }
 
   double initial_cost = 0;
   for (size_t d : detections) {
-    initial_cost += get_detcost(d, initial_detector_cost_tuples);
+    initial_cost += get_detcost(d, initial_detector_cost_tuples, cur_d2e);
   }
 
   if (initial_cost == INF) {
@@ -336,7 +367,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
     boost::dynamic_bitset<> detectors = initial_detectors;
     std::vector<DetectorCostTuple> detector_cost_tuples(num_errors);
     flip_detectors_and_block_errors(detector_order, node.error_chain_idx, detectors,
-                                    detector_cost_tuples);
+                                    detector_cost_tuples, cur_d2e);
 
     if (node.num_dets == 0) {
       if (config.create_visualization) {
@@ -412,7 +443,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
 
     for (size_t d = 0; d < num_detectors; ++d) {
       if (!detectors[d]) continue;
-      for (int ei : d2e[d]) {
+      for (int ei : cur_d2e[d]) {
         ++detector_cost_tuples[ei].detectors_count;
       }
     }
@@ -430,13 +461,13 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
     size_t prev_ei = std::numeric_limits<size_t>::max();
     std::vector<double> detector_cost_cache(num_detectors, -1);
 
-    for (int ei : d2e[min_detector]) {
+    for (int ei : cur_d2e[min_detector]) {
       if (detector_cost_tuples[ei].error_blocked) continue;
 
       if (prev_ei != std::numeric_limits<size_t>::max()) {
         for (int d : edets[prev_ei]) {
           int fired = detectors[d] ? 1 : -1;
-          for (int oei : d2e[d]) {
+          for (int oei : cur_d2e[d]) {
             next_detector_cost_tuples[oei].detectors_count += fired;
           }
         }
@@ -453,7 +484,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
         next_detectors[d] = !next_detectors[d];
         int fired = next_detectors[d] ? 1 : -1;
         next_num_dets += fired;
-        for (int oei : d2e[d]) {
+        for (int oei : cur_d2e[d]) {
           next_detector_cost_tuples[oei].detectors_count += fired;
         }
       }
@@ -467,21 +498,21 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
       for (int d : edets[ei]) {
         if (detectors[d]) {
           if (detector_cost_cache[d] == -1) {
-            detector_cost_cache[d] = get_detcost(d, detector_cost_tuples);
+            detector_cost_cache[d] = get_detcost(d, detector_cost_tuples, cur_d2e);
           }
           next_cost -= detector_cost_cache[d];
         } else {
-          next_cost += get_detcost(d, next_detector_cost_tuples);
+          next_cost += get_detcost(d, next_detector_cost_tuples, cur_d2e);
         }
       }
 
       for (int od : eneighbors[ei]) {
         if (!detectors[od] || !next_detectors[od]) continue;
         if (detector_cost_cache[od] == -1) {
-          detector_cost_cache[od] = get_detcost(od, detector_cost_tuples);
+          detector_cost_cache[od] = get_detcost(od, detector_cost_tuples, cur_d2e);
         }
         next_cost -= detector_cost_cache[od];
-        next_cost += get_detcost(od, next_detector_cost_tuples);
+        next_cost += get_detcost(od, next_detector_cost_tuples, cur_d2e);
       }
 
       if (next_cost == INF) continue;
@@ -567,5 +598,74 @@ void TesseractDecoder::decode_shots(std::vector<stim::SparseShot>& shots,
   obs_predicted.resize(shots.size());
   for (size_t i = 0; i < shots.size(); ++i) {
     obs_predicted[i] = decode(shots[i].hits);
+  }
+}
+
+void TesseractDecoder::build_sparse_d2e(const std::vector<uint64_t>& detections) {
+  std::vector<uint8_t> shot_dets(num_detectors, 0);
+  for (uint64_t d : detections) {
+    if (d < num_detectors) {
+      shot_dets[d] = 1;
+    }
+  }
+
+  std::fill(sparse_error_active.begin(), sparse_error_active.end(), 0);
+
+  for (int ei : sparsify_mandatory_errors) {
+    sparse_error_active[ei] = 1;
+  }
+
+  struct OptionalErrorCandidate {
+    int error_index;
+    int overlap;
+    int degree;
+    double likelihood_cost;
+  };
+
+  std::vector<OptionalErrorCandidate> candidates;
+  candidates.reserve(sparsify_optional_errors.size());
+
+  for (int ei : sparsify_optional_errors) {
+    int overlap = 0;
+    for (int d : errors[ei].symptom.detectors) {
+      if (shot_dets[d]) {
+        overlap++;
+      }
+    }
+    if (overlap > 0) {
+      candidates.push_back({
+          ei,
+          overlap,
+          static_cast<int>(errors[ei].symptom.detectors.size()),
+          errors[ei].likelihood_cost
+      });
+    }
+  }
+
+  std::sort(candidates.begin(), candidates.end(), [](const OptionalErrorCandidate& a, const OptionalErrorCandidate& b) {
+    if (a.overlap != b.overlap) {
+      return a.overlap > b.overlap;
+    }
+    if (a.degree != b.degree) {
+      return a.degree < b.degree;
+    }
+    if (a.likelihood_cost != b.likelihood_cost) {
+      return a.likelihood_cost < b.likelihood_cost;
+    }
+    return a.error_index < b.error_index;
+  });
+
+  size_t limit = std::min(static_cast<size_t>(config.sparsify_reactivate_limit), candidates.size());
+  for (size_t i = 0; i < limit; ++i) {
+    sparse_error_active[candidates[i].error_index] = 1;
+  }
+
+  for (size_t d = 0; d < num_detectors; ++d) {
+    sparse_d2e[d].clear();
+    for (int ei : d2e[d]) {
+      if (sparse_error_active[ei]) {
+        sparse_d2e[d].push_back(ei);
+      }
+    }
   }
 }

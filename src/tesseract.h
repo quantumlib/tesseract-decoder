@@ -16,6 +16,7 @@
 #define TESSERACT_DECODER_H
 
 #include <boost/dynamic_bitset.hpp>
+#include <cstdint>
 #include <queue>
 #include <string>
 #include <unordered_map>
@@ -43,6 +44,11 @@ struct TesseractConfig {
   std::vector<std::vector<size_t>> det_orders;
   double det_penalty = 0;
   bool create_visualization = false;
+
+  bool sparsify_errors = false;
+  int sparsify_base_degree = -1;
+  int sparsify_max_degree = -1;
+  int sparsify_reactivate_limit = -1;
 
   std::string str();
 };
@@ -109,6 +115,12 @@ struct TesseractDecoder {
   }
 
   std::vector<std::vector<int>> d2e;
+  std::vector<std::vector<int>> sparse_d2e;
+  const std::vector<std::vector<int>>* active_d2e = &d2e;
+  std::vector<uint8_t> sparse_error_active;
+  std::vector<int> sparsify_mandatory_errors;
+  std::vector<int> sparsify_optional_errors;
+
   std::vector<std::vector<int>> eneighbors;
   std::vector<std::vector<int>> edets;
   size_t num_errors;
@@ -116,10 +128,15 @@ struct TesseractDecoder {
   std::vector<common::ErrorChainNode> error_chain_arena;
 
   void initialize_structures(size_t num_detectors);
-  double get_detcost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const;
+  double get_detcost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples,
+                     const std::vector<std::vector<int>>& cur_d2e) const;
   void flip_detectors_and_block_errors(size_t detector_order, int64_t error_chain_idx,
                                        boost::dynamic_bitset<>& detectors,
-                                       std::vector<DetectorCostTuple>& detector_cost_tuples) const;
+                                       std::vector<DetectorCostTuple>& detector_cost_tuples,
+                                       const std::vector<std::vector<int>>& cur_d2e) const;
+
+ private:
+  void build_sparse_d2e(const std::vector<uint64_t>& detections);
 };
 
 #endif  // TESSERACT_DECODER_H
