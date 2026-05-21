@@ -3,6 +3,7 @@ project(tesseract_decoder LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include cstdint")
 
 include(FetchContent)
 find_package(Threads REQUIRED)
@@ -73,7 +74,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 
-set(OPT_COPTS -Ofast -fno-fast-math -march=native)
+set(OPT_COPTS -Ofast -fno-fast-math -march=native -include cstdint)
 
 set(TESSERACT_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -92,6 +93,25 @@ add_library(visualization ${TESSERACT_SRC_DIR}/visualization.cc ${TESSERACT_SRC_
 target_include_directories(visualization PUBLIC ${TESSERACT_SRC_DIR})
 target_compile_options(visualization PRIVATE ${OPT_COPTS})
 target_link_libraries(visualization PUBLIC common boost_headers)
+
+add_library(bern_utils ${TESSERACT_SRC_DIR}/bern_utils.cc ${TESSERACT_SRC_DIR}/bern_utils.h)
+target_include_directories(bern_utils PUBLIC ${TESSERACT_SRC_DIR})
+target_compile_options(bern_utils PRIVATE ${OPT_COPTS})
+
+add_library(error_correlations ${TESSERACT_SRC_DIR}/error_correlations.cc ${TESSERACT_SRC_DIR}/error_correlations.h)
+target_include_directories(error_correlations PUBLIC ${TESSERACT_SRC_DIR})
+target_compile_options(error_correlations PRIVATE ${OPT_COPTS})
+target_link_libraries(error_correlations PUBLIC libstim)
+
+add_library(tanner_graph ${TESSERACT_SRC_DIR}/tanner_graph.cc ${TESSERACT_SRC_DIR}/tanner_graph.h)
+target_include_directories(tanner_graph PUBLIC ${TESSERACT_SRC_DIR})
+target_compile_options(tanner_graph PRIVATE ${OPT_COPTS})
+target_link_libraries(tanner_graph PUBLIC libstim)
+
+add_library(dem_decomposition ${TESSERACT_SRC_DIR}/dem_decomposition.cc ${TESSERACT_SRC_DIR}/dem_decomposition.h)
+target_include_directories(dem_decomposition PUBLIC ${TESSERACT_SRC_DIR})
+target_compile_options(dem_decomposition PRIVATE ${OPT_COPTS})
+target_link_libraries(dem_decomposition PUBLIC bern_utils libstim)
 
 add_library(tesseract_lib ${TESSERACT_SRC_DIR}/tesseract.cc ${TESSERACT_SRC_DIR}/tesseract.h)
 target_include_directories(tesseract_lib PUBLIC ${TESSERACT_SRC_DIR})
@@ -117,13 +137,12 @@ target_link_libraries(simplex_bin PRIVATE common simplex argparse::argparse nloh
 pybind11_add_module(_core MODULE ${TESSERACT_SRC_DIR}/tesseract.pybind.cc)
 target_compile_options(_core PRIVATE ${OPT_COPTS})
 target_include_directories(_core PRIVATE ${TESSERACT_SRC_DIR})
-target_link_libraries(_core PRIVATE common utils simplex tesseract_lib)
 set_target_properties(_core PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/src
-    LIBRARY_OUTPUT_DIRECTORY_DEBUG ${PROJECT_SOURCE_DIR}/src
-    LIBRARY_OUTPUT_DIRECTORY_RELEASE ${PROJECT_SOURCE_DIR}/src
-    LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL ${PROJECT_SOURCE_DIR}/src
-    LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO ${PROJECT_SOURCE_DIR}/src
+    LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/tesseract_decoder
+    LIBRARY_OUTPUT_DIRECTORY_DEBUG ${PROJECT_SOURCE_DIR}/tesseract_decoder
+    LIBRARY_OUTPUT_DIRECTORY_RELEASE ${PROJECT_SOURCE_DIR}/tesseract_decoder
+    LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL ${PROJECT_SOURCE_DIR}/tesseract_decoder
+    LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO ${PROJECT_SOURCE_DIR}/tesseract_decoder
 )
 
 # === Tests ===
@@ -136,4 +155,16 @@ add_test(NAME common_test COMMAND common_test)
 add_executable(tesseract_test ${TESSERACT_SRC_DIR}/tesseract.test.cc)
 target_link_libraries(tesseract_test PRIVATE tesseract_lib simplex GTest::gtest_main)
 add_test(NAME tesseract_test COMMAND tesseract_test)
+
+add_executable(dem_decomposition_test ${TESSERACT_SRC_DIR}/dem_decomposition.test.cc)
+target_link_libraries(dem_decomposition_test PRIVATE dem_decomposition GTest::gtest_main libstim)
+add_test(NAME dem_decomposition_test COMMAND dem_decomposition_test)
+
+add_executable(tanner_graph_test ${TESSERACT_SRC_DIR}/tanner_graph.test.cc)
+target_link_libraries(tanner_graph_test PRIVATE tanner_graph GTest::gtest_main libstim)
+add_test(NAME tanner_graph_test COMMAND tanner_graph_test)
+
+add_executable(error_correlations_test ${TESSERACT_SRC_DIR}/error_correlations.test.cc)
+target_link_libraries(error_correlations_test PRIVATE error_correlations GTest::gtest_main libstim)
+add_test(NAME error_correlations_test COMMAND error_correlations_test)
 
