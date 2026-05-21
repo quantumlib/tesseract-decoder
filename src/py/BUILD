@@ -17,6 +17,22 @@ load("@rules_python//python:pip.bzl", "compile_pip_requirements")
 load("@rules_python//python:py_library.bzl", "py_library")
 load("@rules_python//python:py_binary.bzl", "py_binary")
 
+genrule(
+    name = "copy_core_so",
+    srcs = ["//src:_core"],
+    outs = ["tesseract_decoder/_core.so"],
+    cmd = "cp $< $@",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "tesseract_decoder",
+    srcs = glob(["tesseract_decoder/**/*.py"]),
+    data = [":copy_core_so"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
 py_library(
     name = "shared_decoding_tests",
     srcs = ["shared_decoding_tests.py"],
@@ -25,7 +41,7 @@ py_library(
         "@pypi//pytest",
         "@pypi//stim",
         "@pypi//numpy",
-        "//src:lib_tesseract_decoder",
+        ":tesseract_decoder",
     ],
     imports = ["..", "."],
 )
@@ -38,7 +54,7 @@ py_test(
     deps = [
         "@pypi//pytest",
         "@pypi//stim",
-        "//src:lib_tesseract_decoder",
+        ":tesseract_decoder",
     ],
     imports = ["..", "."],
 )
@@ -50,7 +66,7 @@ py_test(
     deps = [
         "@pypi//pytest",
         "@pypi//stim",
-        "//src:lib_tesseract_decoder",
+        ":tesseract_decoder",
     ],
     imports = ["..", "."],
 )
@@ -62,7 +78,7 @@ py_test(
     deps = [
         "@pypi//pytest",
         "@pypi//stim",
-        "//src:lib_tesseract_decoder",
+        ":tesseract_decoder",
         ":shared_decoding_tests",
     ],
     imports = ["..", "."],
@@ -75,7 +91,7 @@ py_test(
     deps = [
         "@pypi//pytest",
         "@pypi//stim",
-        "//src:lib_tesseract_decoder",
+        ":tesseract_decoder",
         ":shared_decoding_tests",
     ],
     imports = ["..", "."],
@@ -88,7 +104,20 @@ py_test(
         "@pypi//pytest",
         "@pypi//stim",
         "@pypi//sinter",
-        "//src:lib_tesseract_decoder",
+        ":tesseract_decoder",
+    ],
+    imports = ["..", "."],
+)
+
+py_test(
+    name = "multi_pass_bindings_test",
+    srcs = ["multi_pass_bindings_test.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//stim",
+        "@pypi//numpy",
+        ":tesseract_decoder",
     ],
     imports = ["..", "."],
 )
@@ -110,7 +139,7 @@ py_binary(
     name = "generate_stubs",
     srcs = ["generate_stubs.py"],
     deps = [
-        "//src:lib_tesseract_decoder",
+        ":tesseract_decoder",
         "@pypi//pybind11_stubgen",
         "@pypi//stim",
     ],
@@ -119,12 +148,14 @@ py_binary(
 
 STUB_FILES = [
     "__init__.pyi",
-    "common.pyi",
-    "simplex.pyi",
-    "tesseract.pyi",
-    "tesseract_sinter_compat.pyi",
-    "utils.pyi",
-    "viz.pyi",
+    "sinter_decoders.pyi",
+    "_core/__init__.pyi",
+    "_core/common.pyi",
+    "_core/simplex.pyi",
+    "_core/tesseract.pyi",
+    "_core/tesseract_sinter_compat.pyi",
+    "_core/utils.pyi",
+    "_core/viz.pyi",
 ]
 
 genrule(

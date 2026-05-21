@@ -29,19 +29,76 @@ import pytest
 
 def _find_stub_files():
     """Find all .pyi stub files in the data runfiles."""
-    # Find the src/py/tesseract_decoder-stubs/*.pyi files in the Bazel tree.
-    pattern_genrule = os.path.join(
-            os.environ["TEST_SRCDIR"],
-            os.environ["TEST_WORKSPACE"],
-            "src",
-            "py",
-            "tesseract_decoder-stubs",
-            "*.pyi",
-        )
-    files = glob.glob(pattern_genrule)
+    # Find the src/py/tesseract_decoder-stubs/**/*.pyi files in the Bazel tree.
+    stubs_dir = os.path.join(
+        os.environ["TEST_SRCDIR"],
+        os.environ["TEST_WORKSPACE"],
+        "src",
+        "py",
+        "tesseract_decoder-stubs",
+    )
+    pattern_genrule = os.path.join(stubs_dir, "**", "*.pyi")
+    files = glob.glob(pattern_genrule, recursive=True)
     assert files, f"No stub files found in {pattern_genrule}"
-    return files
+    return stubs_dir, files
 
+
+@pytest.fixture(scope="session")
+def stub_files_info():
+    """Collect all generated .pyi stub files and the base directory."""
+    stubs_dir, files = _find_stub_files()
+    if not files:
+        pytest.skip(
+            "No .pyi stub files found. Run "
+            "'bazel run //src/py:generate_stubs -- --output-dir src' first."
+        )
+    return stubs_dir, files
+
+@pytest.fixture(scope="session")
+def stub_files(stub_files_info):
+    """Just the files list for backwards compatibility with other tests."""
+    return stub_files_info[1]
+
+
+class TestStubFilesExist:
+    """Tests that stub files exist and are valid Python."""
+
+    def test_stubs_generated(self, stub_files):
+        """At least one .pyi stub file should exist."""
+        assert len(stub_files) > 0
+
+    EXPECTED_STUBS = [
+        "__init__.pyi",
+        "sinter_decoders.pyi",
+        "_core/__init__.pyi",
+        "_core/common.pyi",
+        "_core/simplex.pyi",
+        "_core/tesseract.pyi",
+        "_core/tesseract_sinter_compat.pyi",
+        "_core/utils.pyi",
+        "_core/viz.pyi",
+    ]
+
+    @pytest.mark.parametrize("filename", EXPECTED_STUBS)
+    def test_expected_stub_exists(self, stub_files_info, filename):
+        """Each expected submodule stub file should be generated."""
+        stubs_dir, files = stub_files_info
+        rel_paths = [os.path.relpath(f, stubs_dir) for f in files]
+        assert filename in rel_paths, (
+            f"Missing expected stub file: {filename}. "
+            f"Found: {rel_paths}"
+        )
+
+    def test_stubs_are_valid_python(self, stub_files):
+        """All .pyi files should be parseable as valid Python."""
+        for stub_path in stub_files:
+            with open(stub_path, "r") as f:
+                content = f.read()
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                basename = os.path.basename(stub_path)
+                pytest.fail(f"Stub file {basename} has invalid syntax: {e}")
 
 def _collect_all_names(pyi_files):
     """Collect all defined names from a list of .pyi files."""
@@ -65,57 +122,6 @@ def _collect_all_names(pyi_files):
                         )
     return all_names
 
-
-@pytest.fixture(scope="session")
-def stub_files():
-    """Collect all generated .pyi stub files."""
-    files = _find_stub_files()
-    if not files:
-        pytest.skip(
-            "No .pyi stub files found. Run "
-            "'bazel run //src/py:generate_stubs -- --output-dir src' first."
-        )
-    return files
-
-
-class TestStubFilesExist:
-    """Tests that stub files exist and are valid Python."""
-
-    def test_stubs_generated(self, stub_files):
-        """At least one .pyi stub file should exist."""
-        assert len(stub_files) > 0
-
-    EXPECTED_STUBS = [
-        "__init__.pyi",
-        "common.pyi",
-        "simplex.pyi",
-        "tesseract.pyi",
-        "tesseract_sinter_compat.pyi",
-        "utils.pyi",
-        "viz.pyi",
-    ]
-
-    @pytest.mark.parametrize("filename", EXPECTED_STUBS)
-    def test_expected_stub_exists(self, stub_files, filename):
-        """Each expected submodule stub file should be generated."""
-        basenames = [os.path.basename(f) for f in stub_files]
-        assert filename in basenames, (
-            f"Missing expected stub file: {filename}. "
-            f"Found: {basenames}"
-        )
-
-    def test_stubs_are_valid_python(self, stub_files):
-        """All .pyi files should be parseable as valid Python."""
-        for stub_path in stub_files:
-            with open(stub_path, "r") as f:
-                content = f.read()
-            try:
-                ast.parse(content)
-            except SyntaxError as e:
-                basename = os.path.basename(stub_path)
-                pytest.fail(f"Stub file {basename} has invalid syntax: {e}")
-
-
 class TestStubContents:
     """Tests that the generated stubs contain the expected symbols."""
 
@@ -126,6 +132,8 @@ class TestStubContents:
         "TesseractDecoder",
         "TesseractSinterCompiledDecoder",
         "TesseractSinterDecoder",
+        "MultiPassSinterCompiledDecoder",
+        "MultiPassSinterDecoder",
         "SimplexConfig",
         "SimplexDecoder",
         "DetOrder",
@@ -141,6 +149,7 @@ class TestStubContents:
             f"Expected symbol '{symbol}' not found in stub files. "
             f"Found names: {sorted(all_names)}"
         )
+
 
 
 if __name__ == "__main__":
