@@ -114,11 +114,11 @@ target_compile_options(simplex_bin PRIVATE ${OPT_COPTS})
 target_link_libraries(simplex_bin PRIVATE common simplex argparse::argparse nlohmann_json::nlohmann_json)
 
 # === Python module ===
-pybind11_add_module(tesseract_decoder MODULE ${TESSERACT_SRC_DIR}/tesseract.pybind.cc)
-target_compile_options(tesseract_decoder PRIVATE ${OPT_COPTS})
-target_include_directories(tesseract_decoder PRIVATE ${TESSERACT_SRC_DIR})
-target_link_libraries(tesseract_decoder PRIVATE common utils simplex tesseract_lib)
-set_target_properties(tesseract_decoder PROPERTIES
+pybind11_add_module(_core MODULE ${TESSERACT_SRC_DIR}/tesseract.pybind.cc)
+target_compile_options(_core PRIVATE ${OPT_COPTS})
+target_include_directories(_core PRIVATE ${TESSERACT_SRC_DIR})
+target_link_libraries(_core PRIVATE common utils simplex tesseract_lib)
+set_target_properties(_core PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/src
     LIBRARY_OUTPUT_DIRECTORY_DEBUG ${PROJECT_SOURCE_DIR}/src
     LIBRARY_OUTPUT_DIRECTORY_RELEASE ${PROJECT_SOURCE_DIR}/src
