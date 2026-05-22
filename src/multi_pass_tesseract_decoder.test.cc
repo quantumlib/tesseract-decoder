@@ -269,3 +269,29 @@ TEST(MultiPassTesseractDecoderTest, BoundaryConditionAndCappingTest) {
     std::vector<uint64_t> hits = {0};
     ASSERT_NO_THROW(decoder.decode(hits));
 }
+
+TEST(MultiPassTesseractDecoderTest, IntermediatePassLeakageTest) {
+    stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 D1 L0
+        error(0.01) D0
+        error(0.2) D1 L0
+        detector D0
+        detector D1
+        logical_observable L0
+    )DEM");
+
+    auto classifier = [](int index, const std::vector<double>& coords, const std::string& tag) -> int {
+        return index;
+    };
+
+    TesseractConfig config;
+    config.dem = dem;
+
+    MultiPassTesseractDecoder decoder(dem, 3, classifier, config, 1, DetOrder::DetIndex, 12345, SchedulingStrategy::Causal);
+
+    std::vector<uint64_t> hits = {0};
+    decoder.decode(hits);
+
+    // Rigorously assert that prior LLR reweights occurred successfully on the raw un-decomposed DEM!
+    ASSERT_GT(decoder.get_last_shot_num_reweights(), 0);
+}

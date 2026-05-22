@@ -53,7 +53,6 @@ void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
   // std::cout << "DEBUG decomposed:\n" << decomposed << std::endl;
   stim::DetectorErrorModel merged = merge_indistinguishable_errors(decomposed);
   // std::cout << "DEBUG merged:\n" << merged << std::endl;
-  ImpliedProbsMap raw_correlations = process_dem_correlations(merged);
 
   std::set<int> unique_classes;
   for (int c : detector_classes)
@@ -81,6 +80,8 @@ void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
       // std::cout << "DEBUG: Assigned Global Det " << i << " to Component " << cid << std::endl;
     }
   }
+
+  ImpliedProbsMap raw_correlations = process_dem_correlations(flattened, global_det_to_comp_id);
 
   auto component_dems_raw = split_dem_by_component(merged, [&](int d) {
     return (d >= 0 && (size_t)d < total_global_detectors) ? global_det_to_comp_id[d] : -1;
