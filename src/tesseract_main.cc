@@ -533,6 +533,13 @@ int main(int argc, char* argv[]) {
                                                    ? tesseract::SchedulingStrategy::Static
                                                    : tesseract::SchedulingStrategy::Causal;
 
+  // Validate stabilizer component count at the CLI interface layer when multi-pass is requested.
+  // We enforce this validation here to fail fast and cleanly for command-line users, whilst
+  // preserving core library constructor flexibility to allow programmatic and C++ unit testing.
+  if (args.multipass) {
+    tesseract::MultiPassTesseractDecoder::validate_annotations(config.dem, classifier);
+  }
+
   auto start_global_time = std::chrono::high_resolution_clock::now();
 
   size_t shot = parallel_for_shots_in_order(

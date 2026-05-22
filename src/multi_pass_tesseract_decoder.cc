@@ -25,6 +25,36 @@ MultiPassTesseractDecoder::MultiPassTesseractDecoder(
   initialize(dem, classifier);
 }
 
+void MultiPassTesseractDecoder::validate_annotations(const stim::DetectorErrorModel& dem,
+                                                     const DetectorClassifier& classifier) {
+  stim::DetectorErrorModel flattened = dem.flattened();
+  size_t total_global_detectors = (size_t)flattened.count_detectors();
+
+  std::set<uint64_t> all_ids;
+  std::map<uint64_t, std::string> tags;
+  for (const auto& inst : flattened.instructions) {
+    if (inst.type == stim::DemInstructionType::DEM_DETECTOR) {
+      uint64_t d = inst.target_data[0].val();
+      all_ids.insert(d);
+      tags[d] = inst.tag;
+    }
+  }
+  auto coords_map = flattened.get_detector_coordinates(all_ids);
+
+  std::set<int> unique_classes;
+  for (size_t i = 0; i < total_global_detectors; ++i) {
+    std::vector<double> c = coords_map.count(i) ? coords_map.at(i) : std::vector<double>{};
+    std::string t = tags.count(i) ? tags.at(i) : "";
+    int cls = classifier((int)i, c, t);
+    if (cls != -1) unique_classes.insert(cls);
+  }
+  if (unique_classes.size() < 2) {
+    throw std::invalid_argument(
+        "Multi-pass decoding requires an annotated Stim circuit/DEM with at least "
+        "2 stabilizer components.");
+  }
+}
+
 void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
                                            const DetectorClassifier& classifier) {
   stim::DetectorErrorModel flattened = dem.flattened();
@@ -63,11 +93,6 @@ void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
   for (int c : unique_classes) class_to_comp_id[c] = next_comp_id++;
 
   size_t num_components = unique_classes.size();
-  if (num_components < 2) {
-    throw std::invalid_argument(
-        "Multi-pass decoding requires an annotated Stim circuit/DEM with at least 2 stabilizer "
-        "components.");
-  }
   component_decoders.resize(num_components);
 
   global_det_to_comp_id.assign(total_global_detectors, -1);
@@ -93,71 +118,48 @@ void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
   for (size_t i = 0; i < component_decoders.size(); ++i) {
     auto& cd = component_decoders[i];
 
-    std::vector<int> sorted_global_dets(cd.component_detectors.begin(),
-                                        cd.component_detectors.end());
-    std::sort(sorted_global_dets.begin(), sorted_global_dets.end());
-    for (size_t local_idx = 0; local_idx < sorted_global_dets.size(); ++local_idx) {
-      cd.global_to_local_det[sorted_global_dets[local_idx]] = (int)local_idx;
+    for (size_t global_d = 0; global_d < total_global_detectors; ++global_d) {
+      cd.global_to_local_det[global_d] = (int)global_d;
     }
 
     stim::DetectorErrorModel local_dem;
-    // MUST append detector instructions for ALL local detectors first to set count_detectors()
-    // correctly
-    for (size_t local_idx = 0; local_idx < sorted_global_dets.size(); ++local_idx) {
-      int global_d = sorted_global_dets[local_idx];
+    for (size_t global_d = 0; global_d < total_global_detectors; ++global_d) {
       std::vector<double> c =
           coords_map.count(global_d) ? coords_map.at(global_d) : std::vector<double>{};
       std::string t = tags.count(global_d) ? tags.at(global_d) : "";
-      local_dem.append_detector_instruction(c, stim::DemTarget::relative_detector_id(local_idx), t);
+      local_dem.append_detector_instruction(c, stim::DemTarget::relative_detector_id(global_d), t);
     }
 
     for (const auto& inst : component_dems_raw[i].instructions) {
       if (inst.type == stim::DemInstructionType::DEM_ERROR) {
-        std::vector<stim::DemTarget> local_targets;
         bool has_obs = false;
         for (const auto& t : inst.target_data) {
-          if (t.is_relative_detector_id()) {
-            int global_d = t.val();
-            local_targets.push_back(
-                stim::DemTarget::relative_detector_id(cd.global_to_local_det.at(global_d)));
-          } else {
-            local_targets.push_back(t);
-            if (t.is_observable_id()) has_obs = true;
-          }
+          if (t.is_observable_id()) has_obs = true;
         }
         if (has_obs) cd.affects_observable = true;
-        local_dem.append_error_instruction(inst.arg_data[0], local_targets, inst.tag);
+        local_dem.append_error_instruction(inst.arg_data[0], inst.target_data, inst.tag);
       } else if (inst.type == stim::DemInstructionType::DEM_LOGICAL_OBSERVABLE) {
         local_dem.append_dem_instruction(inst);
       }
     }
 
-    // std::cout << "DEBUG: local_dem " << i << " : " << local_dem << std::endl;
-
     TesseractConfig config = base_config;
     config.dem = local_dem;
     config.merge_errors = true;
-    config.det_orders = build_det_orders(config.dem, num_det_orders, det_order_method, seed + i);
+    config.det_orders = build_det_orders(config.dem, num_det_orders, det_order_method, seed);
 
     cd.decoder = std::make_unique<TesseractDecoder>(config);
-    // std::cout << "DEBUG: Component " << i << " initialized with " << cd.decoder->errors.size() <<
-    // " errors and " << config.dem.count_detectors() << " detectors." << std::endl;
-    /*
-    for (size_t ei = 0; ei < cd.decoder->errors.size(); ei++) {
-        // std::cout << "  Comp " << i << " Err " << ei << ": D";
-        for (int d : cd.decoder->errors[ei].symptom.detectors) // std::cout << d << " ";
-        // std::cout << std::endl;
+    if (base_config.verbose) {
+      std::cout << "DEBUG: Component " << i << " initialized with " << cd.decoder->errors.size()
+                << " errors and " << config.dem.count_detectors() << " detectors." << std::endl;
     }
-    */
     cd.error_index_to_rules.resize(cd.decoder->errors.size());
 
     for (size_t ei = 0; ei < cd.decoder->errors.size(); ++ei) {
       cd.original_costs.push_back(cd.decoder->errors[ei].likelihood_cost);
-      Hyperedge local_symptom = cd.decoder->errors[ei].symptom.detectors;
-      Hyperedge global_symptom;
-      for (int local_d : local_symptom) global_symptom.push_back(sorted_global_dets[local_d]);
+      Hyperedge global_symptom = cd.decoder->errors[ei].symptom.detectors;
       std::sort(global_symptom.begin(), global_symptom.end());
-      cd.symptom_to_error_index[global_symptom] = ei;
+      cd.symptom_to_error_index[global_symptom].push_back(ei);
     }
   }
 
@@ -167,19 +169,27 @@ void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
     int causal_comp = -1;
     if (!causal_symptom.empty()) causal_comp = global_det_to_comp_id[causal_symptom[0]];
     if (causal_comp == -1) continue;
+
     auto it = component_decoders[causal_comp].symptom_to_error_index.find(causal_symptom);
     if (it == component_decoders[causal_comp].symptom_to_error_index.end()) continue;
-    size_t causal_err_idx = it->second;
-    for (const auto& imp : implied_probs) {
-      Hyperedge target_symptom = imp.affected_hyperedge;
-      std::sort(target_symptom.begin(), target_symptom.end());
-      int target_comp = -1;
-      if (!target_symptom.empty()) target_comp = global_det_to_comp_id[target_symptom[0]];
-      if (target_comp == -1) continue;
-      auto t_it = component_decoders[target_comp].symptom_to_error_index.find(target_symptom);
-      if (t_it != component_decoders[target_comp].symptom_to_error_index.end()) {
-        component_decoders[causal_comp].error_index_to_rules[causal_err_idx].push_back(
-            {(size_t)target_comp, t_it->second, imp.probability});
+
+    // Loop through all degenerate causal error indices!
+    for (size_t causal_err_idx : it->second) {
+      for (const auto& imp : implied_probs) {
+        Hyperedge target_symptom = imp.affected_hyperedge;
+        std::sort(target_symptom.begin(), target_symptom.end());
+        int target_comp = -1;
+        if (!target_symptom.empty()) target_comp = global_det_to_comp_id[target_symptom[0]];
+        if (target_comp == -1) continue;
+
+        auto t_it = component_decoders[target_comp].symptom_to_error_index.find(target_symptom);
+        if (t_it != component_decoders[target_comp].symptom_to_error_index.end()) {
+          // Loop through all degenerate target error indices and add rules to each!
+          for (size_t target_err_idx : t_it->second) {
+            component_decoders[causal_comp].error_index_to_rules[causal_err_idx].push_back(
+                {(size_t)target_comp, target_err_idx, imp.probability});
+          }
+        }
       }
     }
   }
@@ -240,27 +250,49 @@ void MultiPassTesseractDecoder::build_causal_schedule() {
 
 std::vector<int> MultiPassTesseractDecoder::decode(const std::vector<uint64_t>& detections) {
   last_shot_num_reweights = 0;
-  // 1. Multi-Pass Loop: Earlier passes only bias the final pass.
+
+  // 1. Multi-Pass Loop: Sequentially schedules component passes and propagates priors.
   for (size_t pass = 0; pass < num_passes; ++pass) {
     bool is_final_pass = (pass == num_passes - 1);
 
+    // Decode scheduled components for the current pass layer using persistent local buffers.
     for (size_t comp_idx : pass_schedule[pass]) {
       auto& cd = component_decoders[comp_idx];
       std::vector<uint64_t> local_dets;
       for (uint64_t d : detections) {
-        if (cd.global_to_local_det.count((int)d)) {
-          local_dets.push_back((uint64_t)cd.global_to_local_det.at((int)d));
+        if (cd.component_detectors.count((int)d)) {
+          local_dets.push_back(d);
         }
       }
 
-      // Perform decoding for this component in this pass.
       cd.decoder->decode_to_errors(local_dets);
+      component_predictions[comp_idx] = cd.decoder->predicted_errors_buffer;
+    }
 
-      if (is_final_pass) {
-        // Track components that decode in the final pass for extraction.
-        final_pass_active_components.push_back(comp_idx);
-      } else {
-        // If this is NOT the final pass, use the results for reweighting, then discard them.
+    if (!is_final_pass) {
+      // Step A: Apply Damped Fractional Memory to previously modified priors.
+      // Smoothly decay current modifications back toward the baseline to prevent message
+      // saturation.
+      double gamma =
+          0.5;  // Tunable decay factor: 1.0 is strict isolation, 0.0 is full accumulation.
+
+      for (size_t m_comp_idx : modified_component_indices) {
+        auto& cd = component_decoders[m_comp_idx];
+        if (!cd.shot_all_modified_error_indices.empty()) {
+          for (size_t idx : cd.shot_all_modified_error_indices) {
+            double baseline_cost = cd.original_costs[idx];
+            double current_cost = cd.decoder->errors[idx].likelihood_cost;
+            cd.decoder->errors[idx].likelihood_cost =
+                gamma * baseline_cost + (1.0 - gamma) * current_cost;
+          }
+          cd.decoder->update_internal_costs(cd.shot_all_modified_error_indices);
+          // Retain tracking indices so the final Surgical Reset completely clears cross-shot state.
+        }
+      }
+
+      // Step B: Broadcast reweighting rules derived strictly from the latest predictions.
+      for (size_t comp_idx : pass_schedule[pass]) {
+        auto& cd = component_decoders[comp_idx];
         for (size_t dem_err_idx : cd.decoder->predicted_errors_buffer) {
           size_t internal_err_idx = cd.decoder->dem_error_to_error.at(dem_err_idx);
           if (internal_err_idx == std::numeric_limits<size_t>::max()) continue;
@@ -268,43 +300,49 @@ std::vector<int> MultiPassTesseractDecoder::decode(const std::vector<uint64_t>& 
           for (const auto& rule : cd.error_index_to_rules[internal_err_idx]) {
             auto& target_cd = component_decoders[rule.target_comp_idx];
 
-            // Track modified components only once per shot.
-            if (target_cd.modified_error_indices.empty()) {
-              modified_component_indices.push_back(rule.target_comp_idx);
-            }
+            modified_component_indices.push_back(rule.target_comp_idx);
 
-            // Cap probability at 0.499 to prevent negative costs in the engine.
-            target_cd.decoder->errors[rule.target_error_idx].set_with_probability(
-                std::min(rule.conditional_prob, 0.499));
-            target_cd.modified_error_indices.push_back(rule.target_error_idx);
-            last_shot_num_reweights++;
+            // Apply Max-Prob Rule safely for concurrent rules within this pass layer.
+            double current_p = target_cd.decoder->errors[rule.target_error_idx].get_probability();
+            if (rule.conditional_prob > current_p) {
+              target_cd.decoder->errors[rule.target_error_idx].set_with_probability(
+                  std::min(rule.conditional_prob, 0.5));
+              target_cd.shot_all_modified_error_indices.push_back(rule.target_error_idx);
+              last_shot_num_reweights++;
+            }
           }
         }
-        // Clear the buffer so these intermediate decisions don't contribute to the final
-        // prediction.
-        cd.decoder->predicted_errors_buffer.clear();
       }
-    }
 
-    // Sync modified costs for the next pass.
-    if (!is_final_pass) {
+      // Step C: Deduplicate modified tracking vectors and synchronize internal graph costs.
+      std::sort(modified_component_indices.begin(), modified_component_indices.end());
+      modified_component_indices.erase(
+          std::unique(modified_component_indices.begin(), modified_component_indices.end()),
+          modified_component_indices.end());
+
       for (size_t m_comp_idx : modified_component_indices) {
         auto& cd = component_decoders[m_comp_idx];
-        if (!cd.modified_error_indices.empty()) {
-          cd.decoder->update_internal_costs(cd.modified_error_indices);
+        if (!cd.shot_all_modified_error_indices.empty()) {
+          std::sort(cd.shot_all_modified_error_indices.begin(),
+                    cd.shot_all_modified_error_indices.end());
+          cd.shot_all_modified_error_indices.erase(
+              std::unique(cd.shot_all_modified_error_indices.begin(),
+                          cd.shot_all_modified_error_indices.end()),
+              cd.shot_all_modified_error_indices.end());
+          cd.decoder->update_internal_costs(cd.shot_all_modified_error_indices);
         }
       }
     }
   }
 
-  // 2. Unified Logical Extraction: Collect final-pass predictions from only active components.
+  // 2. Unified Logical Extraction: Collect final predictions from ALL components that ran during
+  // the shot.
   std::set<int> flipped_observables;
-  for (size_t comp_idx : final_pass_active_components) {
+  for (const auto& [comp_idx, preds] : component_predictions) {
     auto& cd = component_decoders[comp_idx];
-    if (cd.decoder->predicted_errors_buffer.empty()) continue;
+    if (preds.empty()) continue;
 
-    std::vector<int> local_flips =
-        cd.decoder->get_flipped_observables(cd.decoder->predicted_errors_buffer);
+    std::vector<int> local_flips = cd.decoder->get_flipped_observables(preds);
     for (int obs : local_flips) {
       if (flipped_observables.count(obs))
         flipped_observables.erase(obs);
@@ -313,17 +351,19 @@ std::vector<int> MultiPassTesseractDecoder::decode(const std::vector<uint64_t>& 
     }
   }
 
-  // 3. Surgical Reset: Restore modified costs for the next shot.
+  // 3. Surgical Reset: Restore modified costs to leave the internal structures pristine for the
+  // next shot.
   for (size_t m_comp_idx : modified_component_indices) {
     auto& cd = component_decoders[m_comp_idx];
-    for (size_t idx : cd.modified_error_indices) {
-      cd.decoder->errors[idx].likelihood_cost = cd.original_costs[idx];
+    if (!cd.shot_all_modified_error_indices.empty()) {
+      for (size_t idx : cd.shot_all_modified_error_indices) {
+        cd.decoder->errors[idx].likelihood_cost = cd.original_costs[idx];
+      }
+      cd.decoder->update_internal_costs(cd.shot_all_modified_error_indices);
+      cd.shot_all_modified_error_indices.clear();
     }
-    cd.decoder->update_internal_costs(cd.modified_error_indices);
-    cd.modified_error_indices.clear();
   }
 
-  // Clear shot-level tracking vectors.
   modified_component_indices.clear();
   final_pass_active_components.clear();
 
