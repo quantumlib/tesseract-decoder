@@ -247,3 +247,25 @@ TEST(MultiPassTesseractDecoderTest, PerfectResetSurfaceCode) {
         ASSERT_GT(total_reweights_in_test, 0) << "Test was trivial for d=" << d << ". No reweighting occurred.";
     }
 }
+
+TEST(MultiPassTesseractDecoderTest, BoundaryConditionAndCappingTest) {
+    stim::DetectorErrorModel dem(R"DEM(
+        error(0.49) D0 D1 L0
+        error(0.5) D0
+        detector D0
+        detector D1
+        logical_observable L0
+    )DEM");
+
+    auto classifier = [](int index, const std::vector<double>& coords, const std::string& tag) -> int {
+        return index;
+    };
+
+    TesseractConfig config;
+    config.dem = dem;
+
+    MultiPassTesseractDecoder decoder(dem, 2, classifier, config, 1, DetOrder::DetIndex, 12345, SchedulingStrategy::Causal);
+
+    std::vector<uint64_t> hits = {0};
+    ASSERT_NO_THROW(decoder.decode(hits));
+}
