@@ -166,6 +166,67 @@ Here are some tips for improving performance:
 *   *DEM usage frequency output*: if `--dem-out` is specified, outputs estimated error frequencies.
 *   *Statistics output*: includes number of shots, errors, low confidence shots, and processing time.
 
+---
+
+## Multi-Pass Graph Shattering
+
+For loopy 3D syndrome hypergraphs (such as circuit-level color codes under circuit noise), monolithic MWPM/beam search scales exponentially slow. Tesseract implements **Multi-Pass Graph Shattering** to sever physical error correlation edges, breaking the monolithic graph into independent, planar-like CSS stabilizer components. 
+
+Priors (LLRs) are dynamically updated and propagated between passes using conditional probabilities to preserve physical logical accuracy while delivering up to **$1,000\times$ decoding speedups**.
+
+### ⚠️ Strict Annotation Requirements (Limitations)
+To decode using graph shattering, Tesseract **must** be able to classify detectors into basis components. The input Stim circuit or Detector Error Model (DEM) **MUST** be annotated using one of the following conventions:
+1. **Basis Tags**: Detector instructions must contain standard basis metadata tags (e.g. `detector(0, 0) D0 {"basis": "X"}` or `detector(0, 0) D1 {"basis": "Z"}`).
+2. **Coordinate Conventions (Chromobius Style)**: Detector coordinates must contain at least 4 dimensions, where the 4th coordinate represents `color + 3 * basis` (Component 0: `0 <= coords[3] <= 2`, Component 1: `3 <= coords[3] <= 5`).
+
+If an unannotated circuit/DEM is supplied with `--multipass` enabled, Tesseract will fail fast and throw a clear `std::invalid_argument` exception.
+
+### CLI Options
+*   `--multipass`: Enable multi-pass graph shattering (default = false).
+*   `--num-passes`, `--num_passes`: Number of prior propagation passes (default = 2).
+    *   `1`: Uncorrelated independent CSS decoding (planar speedup, no reweighting).
+    *   `2`: Standard causally reweighted prior propagation decoding.
+    *   *Note: values > 2 are experimental and were never systematically benchmarked.*
+*   `--multipass-strategy`, `--multipass_strategy`: Causal or static pass scheduling (default = causal).
+    *   `causal` (Recommended): Dynamically schedules stabilizer components sequentially based on physical prior causal flow (Component 0 decodes first, updates prior edge weights, Component 1 decodes using those LLRs).
+    *   `static`: Decodes all components in parallel without dynamic pass-to-pass LLR updates.
+
+### CLI Examples
+
+**1. Running Multi-Pass on Basis-Tag Annotated Surface Codes (using Long-Beam Settings):**
+```bash
+./bazel-bin/src/tesseract \
+    --circuit testdata/annotated_surface_codes/style=surface_code,d=5,basis=X,num_rounds=10,max_qubits_per_module=49,total_qubits=64,k=1,noise=SI1000,p=0.00100.stim \
+    --sample-num-shots 1000 \
+    --multipass \
+    --num-passes 2 \
+    --multipass-strategy causal \
+    --pqlimit 1000000 \
+    --beam 20 \
+    --beam-climbing \
+    --no-revisit-dets \
+    --num-det-orders 21 \
+    --print-stats
+```
+
+**2. Running Multi-Pass on Coordinate-Annotated Color Codes (using Long-Beam Settings):**
+```bash
+./bazel-bin/src/tesseract \
+    --circuit testdata/colorcodes/r=5,d=5,p=0.003,noise=si1000,c=midout_color_code_X,q=23,gates=cz.stim \
+    --sample-num-shots 1000 \
+    --multipass \
+    --num-passes 2 \
+    --multipass-strategy causal \
+    --pqlimit 1000000 \
+    --beam 20 \
+    --beam-climbing \
+    --no-revisit-dets \
+    --num-det-orders 21 \
+    --print-stats
+```
+
+---
+
 ## Python Interface
 
 [Full Python wrapper documentation](src/py/README.md)
