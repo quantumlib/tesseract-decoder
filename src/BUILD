@@ -251,6 +251,7 @@ cc_binary(
     linkopts = OPT_LINKOPTS,
     deps = [
         ":libtesseract",
+        ":libmulti_pass_tesseract_decoder",
         "@argparse",
         "@nlohmann_json//:json",
         "@stim//:stim_lib",
