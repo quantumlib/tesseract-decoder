@@ -31,6 +31,11 @@ py_library(
     data = [":copy_core_so"],
     imports = ["."],
     visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//stim",
+        "@pypi//numpy",
+        "@pypi//sinter",
+    ],
 )
 
 py_library(

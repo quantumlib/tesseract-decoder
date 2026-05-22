@@ -21,12 +21,13 @@ enum class SchedulingStrategy {
 
 class MultiPassTesseractDecoder {
  public:
-  MultiPassTesseractDecoder(const stim::DetectorErrorModel& dem, size_t num_passes,
-                            const DetectorClassifier& classifier,
-                            const TesseractConfig& base_config = TesseractConfig(),
-                            size_t num_det_orders = 1, DetOrder det_order_method = DetOrder::DetBFS,
-                            uint64_t seed = 0,
-                            SchedulingStrategy strategy = SchedulingStrategy::Static);
+  MultiPassTesseractDecoder(
+      const stim::DetectorErrorModel& dem, size_t num_passes,
+      const DetectorClassifier& classifier,
+      const TesseractConfig& base_config = TesseractConfig(),
+      size_t num_det_orders = 1, DetOrder det_order_method = DetOrder::DetBFS,
+      uint64_t seed = 0,
+      SchedulingStrategy strategy = SchedulingStrategy::Static);
 
   std::vector<int> decode(const std::vector<uint64_t>& detections);
 
@@ -36,12 +37,8 @@ class MultiPassTesseractDecoder {
   static void validate_annotations(const stim::DetectorErrorModel& dem,
                                    const DetectorClassifier& classifier);
 
-  size_t get_last_shot_num_reweights() const {
-    return last_shot_num_reweights;
-  }
-  size_t num_components() const {
-    return component_decoders.size();
-  }
+  size_t get_last_shot_num_reweights() const { return last_shot_num_reweights; }
+  size_t num_components() const { return component_decoders.size(); }
 
  private:
   struct LocalReweightRule {
@@ -77,7 +74,8 @@ class MultiPassTesseractDecoder {
   std::vector<std::vector<size_t>> pass_schedule;
   std::vector<int> global_det_to_comp_id;
 
-  void initialize(const stim::DetectorErrorModel& dem, const DetectorClassifier& classifier);
+  void initialize(const stim::DetectorErrorModel& dem,
+                  const DetectorClassifier& classifier);
   void build_static_schedule();
   void build_causal_schedule();
 
@@ -94,16 +92,17 @@ class MultiPassDebugger {
   static size_t num_components(const MultiPassTesseractDecoder& decoder) {
     return decoder.component_decoders.size();
   }
-  static const TesseractDecoder& get_component_decoder(const MultiPassTesseractDecoder& decoder,
-                                                       size_t i) {
+  static const TesseractDecoder& get_component_decoder(
+      const MultiPassTesseractDecoder& decoder, size_t i) {
     return *decoder.component_decoders[i].decoder;
   }
   static const std::vector<size_t>& get_modified_component_indices(
       const MultiPassTesseractDecoder& decoder) {
     return decoder.modified_component_indices;
   }
-  static const MultiPassTesseractDecoder::ComponentDecoder& get_component_decoder_full(
-      const MultiPassTesseractDecoder& decoder, size_t i) {
+  static const MultiPassTesseractDecoder::ComponentDecoder&
+  get_component_decoder_full(const MultiPassTesseractDecoder& decoder,
+                             size_t i) {
     return decoder.component_decoders[i];
   }
 };

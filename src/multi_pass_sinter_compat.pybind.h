@@ -126,7 +126,8 @@ void pybind_multi_pass_sinter_compat(py::module& m) {
     py::class_<MultiPassSinterCompiledDecoder>(m, "MultiPassSinterCompiledDecoder")
         .def_property_readonly("num_components", &MultiPassSinterCompiledDecoder::num_components)
         .def("decode_shots_bit_packed", &MultiPassSinterCompiledDecoder::decode_shots_bit_packed,
-             py::kw_only(), py::arg("bit_packed_detection_event_data"));
+             py::kw_only(), py::arg("bit_packed_detection_event_data"),
+             py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>());
 
     py::class_<MultiPassSinterDecoder>(m, "MultiPassSinterDecoder")
         .def(py::init<size_t>(), py::arg("num_passes") = 2)
