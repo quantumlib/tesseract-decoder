@@ -14,10 +14,10 @@
 
 
 import stim
-from _tesseract_py_util.decompose_errors import \
+from .decompose_errors import \
     decompose_errors_for_stim_surface_code_coords as \
     decompose_errors_for_stim_surface_code_coords
-from _tesseract_py_util.decompose_errors import \
+from .decompose_errors import \
     decompose_errors_using_last_coordinate_index as \
     decompose_errors_using_last_coordinate_index
 
