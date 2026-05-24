@@ -413,7 +413,7 @@ TEST(TesseractDetcostTest, ComparesRatiosNotRawCosts) {
   for (int ei : dec.d2e[0]) tuples[ei].detectors_count++;
   for (int ei : dec.d2e[1]) tuples[ei].detectors_count++;
 
-  double got = dec.get_detcost(0, tuples, *dec.active_d2e);
+  double got = dec.get_detcost(0, tuples);
   double expected = 5.230557212477344 / 2.0;  // from D0 D1 D3
 
   EXPECT_NEAR(got, expected, 1e-12);

@@ -86,15 +86,14 @@ bool Node::operator>(const Node& other) const {
 }
 
 double TesseractDecoder::get_detcost(size_t d,
-                                     const std::vector<DetectorCostTuple>& detector_cost_tuples,
-                                     const std::vector<std::vector<int>>& cur_d2e) const {
+                                     const std::vector<DetectorCostTuple>& detector_cost_tuples) const {
   double min_cost = INF;
   uint32_t min_det_cost_det_count = std::numeric_limits<uint32_t>::max();
   double error_cost;
   ErrorCost ec;
   DetectorCostTuple dct;
 
-  for (int ei : cur_d2e[d]) {
+  for (int ei : (*active_d2e)[d]) {
     ec = error_costs[ei];
     if (ec.likelihood_cost * min_det_cost_det_count >=
         min_cost * errors[ei].symptom.detectors.size())
@@ -286,15 +285,14 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections)
 
 void TesseractDecoder::flip_detectors_and_block_errors(
     size_t detector_order, int64_t error_chain_idx, boost::dynamic_bitset<>& detectors,
-    std::vector<DetectorCostTuple>& detector_cost_tuples,
-    const std::vector<std::vector<int>>& cur_d2e) const {
+    std::vector<DetectorCostTuple>& detector_cost_tuples) const {
   int64_t walker_idx = error_chain_idx;
   while (walker_idx != -1) {
     const auto& node = error_chain_arena[walker_idx];
     size_t ei = node.error_index;
     size_t min_detector = node.min_detector;
 
-    for (int oei : cur_d2e[min_detector]) {
+    for (int oei : (*active_d2e)[min_detector]) {
       detector_cost_tuples[oei].error_blocked = 1;
       if (oei == ei) break;
     }
@@ -308,7 +306,7 @@ void TesseractDecoder::flip_detectors_and_block_errors(
 
 void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
                                         size_t detector_order, size_t detector_beam) {
-  if (config.sparsify_errors && active_d2e == &d2e) {
+  if (config.sparsify_errors && (active_d2e == &d2e || detections != last_detections)) {
     build_sparse_d2e(detections);
     active_d2e = &sparse_d2e;
   }
@@ -341,7 +339,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
 
   double initial_cost = 0;
   for (size_t d : detections) {
-    initial_cost += get_detcost(d, initial_detector_cost_tuples, cur_d2e);
+    initial_cost += get_detcost(d, initial_detector_cost_tuples);
   }
 
   if (initial_cost == INF) {
@@ -367,7 +365,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
     boost::dynamic_bitset<> detectors = initial_detectors;
     std::vector<DetectorCostTuple> detector_cost_tuples(num_errors);
     flip_detectors_and_block_errors(detector_order, node.error_chain_idx, detectors,
-                                    detector_cost_tuples, cur_d2e);
+                                    detector_cost_tuples);
 
     if (node.num_dets == 0) {
       if (config.create_visualization) {
@@ -498,21 +496,21 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
       for (int d : edets[ei]) {
         if (detectors[d]) {
           if (detector_cost_cache[d] == -1) {
-            detector_cost_cache[d] = get_detcost(d, detector_cost_tuples, cur_d2e);
+            detector_cost_cache[d] = get_detcost(d, detector_cost_tuples);
           }
           next_cost -= detector_cost_cache[d];
         } else {
-          next_cost += get_detcost(d, next_detector_cost_tuples, cur_d2e);
+          next_cost += get_detcost(d, next_detector_cost_tuples);
         }
       }
 
       for (int od : eneighbors[ei]) {
         if (!detectors[od] || !next_detectors[od]) continue;
         if (detector_cost_cache[od] == -1) {
-          detector_cost_cache[od] = get_detcost(od, detector_cost_tuples, cur_d2e);
+          detector_cost_cache[od] = get_detcost(od, detector_cost_tuples);
         }
         next_cost -= detector_cost_cache[od];
-        next_cost += get_detcost(od, next_detector_cost_tuples, cur_d2e);
+        next_cost += get_detcost(od, next_detector_cost_tuples);
       }
 
       if (next_cost == INF) continue;
@@ -602,6 +600,7 @@ void TesseractDecoder::decode_shots(std::vector<stim::SparseShot>& shots,
 }
 
 void TesseractDecoder::build_sparse_d2e(const std::vector<uint64_t>& detections) {
+  last_detections = detections;
   std::vector<uint8_t> shot_dets(num_detectors, 0);
   for (uint64_t d : detections) {
     if (d < num_detectors) {
