@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <argparse/argparse.hpp>
 #include <atomic>
+#include <cmath>
 #include <fstream>
 #include <memory>
 #include <nlohmann/json.hpp>
@@ -160,15 +161,14 @@ struct Args {
       }
     } else {
       if (!has_base) {
-        throw std::invalid_argument("Must specify --sparsify-base-degree when --sparsify-errors is enabled.");
-      }
-      if (!has_limit) {
-        throw std::invalid_argument("Must specify --sparsify-reactivate-limit when --sparsify-errors is enabled.");
+        throw std::invalid_argument(
+            "Must specify --sparsify-base-degree when --sparsify-errors is enabled.");
       }
       if (sparsify_base_degree < 0) {
         throw std::invalid_argument("--sparsify-base-degree must be >= 0.");
       }
-      if (sparsify_reactivate_limit < 0) {
+      // Only throw if the user explicitly provided a negative limit
+      if (has_limit && sparsify_reactivate_limit < 0) {
         throw std::invalid_argument("--sparsify-reactivate-limit must be >= 0.");
       }
       if (has_max && sparsify_max_degree < sparsify_base_degree) {
@@ -334,6 +334,15 @@ struct Args {
     config.sparsify_errors = sparsify_errors;
     config.sparsify_base_degree = sparsify_base_degree;
     config.sparsify_max_degree = sparsify_max_degree;
+
+    // Apply heuristic estimate for number of errors if sparsify_errors is enabled but no limit was
+    // provided
+    if (sparsify_errors && sparsify_reactivate_limit < 0) {
+      double k = sparsify_base_degree;
+      double num_detectors = config.dem.count_detectors();
+      sparsify_reactivate_limit =
+          static_cast<int>(std::round((std::pow(4.5, k - 2.0) / 3.0) * num_detectors));
+    }
     config.sparsify_reactivate_limit = sparsify_reactivate_limit;
   }
 };
@@ -511,12 +520,16 @@ int main(int argc, char* argv[]) {
       .flag()
       .store_into(args.sparsify_errors);
   program.add_argument("--sparsify-base-degree")
-      .help("Maximum detector degree for mandatory errors. Errors with degree <= K are always enabled for every shot.")
+      .help(
+          "Maximum detector degree for mandatory errors. Errors with degree <= K are always "
+          "enabled for every shot.")
       .metavar("K")
       .scan<'i', int>()
       .store_into(args.sparsify_base_degree);
   program.add_argument("--sparsify-max-degree")
-      .help("Maximum detector degree for optional errors that may be reactivated. Errors with degree > M are never enabled.")
+      .help(
+          "Maximum detector degree for optional errors that may be reactivated. Errors with degree "
+          "> M are never enabled.")
       .metavar("M")
       .scan<'i', int>()
       .store_into(args.sparsify_max_degree);

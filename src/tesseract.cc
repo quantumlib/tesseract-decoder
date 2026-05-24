@@ -85,9 +85,9 @@ bool Node::operator>(const Node& other) const {
   return cost > other.cost || (cost == other.cost && num_dets < other.num_dets);
 }
 
-double TesseractDecoder::get_detcost(
-    size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples,
-    const std::vector<std::vector<int>>& cur_d2e) const {
+double TesseractDecoder::get_detcost(size_t d,
+                                     const std::vector<DetectorCostTuple>& detector_cost_tuples,
+                                     const std::vector<std::vector<int>>& cur_d2e) const {
   double min_cost = INF;
   uint32_t min_det_cost_det_count = std::numeric_limits<uint32_t>::max();
   double error_cost;
@@ -633,27 +633,24 @@ void TesseractDecoder::build_sparse_d2e(const std::vector<uint64_t>& detections)
       }
     }
     if (overlap > 0) {
-      candidates.push_back({
-          ei,
-          overlap,
-          static_cast<int>(errors[ei].symptom.detectors.size()),
-          errors[ei].likelihood_cost
-      });
+      candidates.push_back({ei, overlap, static_cast<int>(errors[ei].symptom.detectors.size()),
+                            errors[ei].likelihood_cost});
     }
   }
 
-  std::sort(candidates.begin(), candidates.end(), [](const OptionalErrorCandidate& a, const OptionalErrorCandidate& b) {
-    if (a.overlap != b.overlap) {
-      return a.overlap > b.overlap;
-    }
-    if (a.degree != b.degree) {
-      return a.degree < b.degree;
-    }
-    if (a.likelihood_cost != b.likelihood_cost) {
-      return a.likelihood_cost < b.likelihood_cost;
-    }
-    return a.error_index < b.error_index;
-  });
+  std::sort(candidates.begin(), candidates.end(),
+            [](const OptionalErrorCandidate& a, const OptionalErrorCandidate& b) {
+              if (a.overlap != b.overlap) {
+                return a.overlap > b.overlap;
+              }
+              if (a.degree != b.degree) {
+                return a.degree < b.degree;
+              }
+              if (a.likelihood_cost != b.likelihood_cost) {
+                return a.likelihood_cost < b.likelihood_cost;
+              }
+              return a.error_index < b.error_index;
+            });
 
   size_t limit = std::min(static_cast<size_t>(config.sparsify_reactivate_limit), candidates.size());
   for (size_t i = 0; i < limit; ++i) {
