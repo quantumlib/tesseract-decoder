@@ -463,4 +463,3 @@ TEST(TesseractSparsifyTest, HighDegreeErrorRemoved) {
     EXPECT_EQ(got, expected);
   }
 }
-

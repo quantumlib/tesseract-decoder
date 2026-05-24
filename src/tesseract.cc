@@ -85,8 +85,8 @@ bool Node::operator>(const Node& other) const {
   return cost > other.cost || (cost == other.cost && num_dets < other.num_dets);
 }
 
-double TesseractDecoder::get_detcost(size_t d,
-                                     const std::vector<DetectorCostTuple>& detector_cost_tuples) const {
+double TesseractDecoder::get_detcost(
+    size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const {
   double min_cost = INF;
   uint32_t min_det_cost_det_count = std::numeric_limits<uint32_t>::max();
   double error_cost;
