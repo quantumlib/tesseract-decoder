@@ -462,4 +462,23 @@ TEST(TesseractSparsifyTest, HighDegreeErrorRemoved) {
     std::vector<size_t> expected = {0, 1, 2, 3};
     EXPECT_EQ(got, expected);
   }
+
+  // Case 3: With sparsification and limit = 1
+  // The degree 4 error (optional) IS reactivated because limit is 1, so it should be preferred
+  // again.
+  {
+    TesseractConfig cfg;
+    cfg.dem = dem;
+    cfg.merge_errors = false;
+    cfg.sparsify_errors = true;
+    cfg.sparsify_base_degree = 2;
+    cfg.sparsify_max_degree = 4;
+    cfg.sparsify_reactivate_limit = 1;
+    TesseractDecoder dec(cfg);
+
+    dec.decode_to_errors({0, 1, 2, 3});
+
+    std::vector<size_t> expected = {4};
+    EXPECT_EQ(dec.predicted_errors_buffer, expected);
+  }
 }
