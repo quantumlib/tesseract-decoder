@@ -102,7 +102,6 @@ struct TesseractDecoder {
   void decode_shots(std::vector<stim::SparseShot>& shots,
                     std::vector<std::vector<int>>& obs_predicted);
 
-  std::vector<uint64_t> last_detections;
   bool low_confidence_flag = false;
   std::vector<size_t> predicted_errors_buffer;
   std::vector<size_t> dem_error_to_error;
@@ -117,7 +116,6 @@ struct TesseractDecoder {
 
   std::vector<std::vector<int>> d2e;
   std::vector<std::vector<int>> sparse_d2e;
-  const std::vector<std::vector<int>>* active_d2e = &d2e;
   std::vector<uint8_t> sparse_error_active;
   std::vector<int> sparsify_mandatory_errors;
   std::vector<int> sparsify_optional_errors;
@@ -130,12 +128,18 @@ struct TesseractDecoder {
 
   void initialize_structures(size_t num_detectors);
   double get_detcost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const;
+  double get_detcost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples,
+                     const std::vector<std::vector<int>>& active_d2e) const;
   void flip_detectors_and_block_errors(size_t detector_order, int64_t error_chain_idx,
                                        boost::dynamic_bitset<>& detectors,
-                                       std::vector<DetectorCostTuple>& detector_cost_tuples) const;
+                                       std::vector<DetectorCostTuple>& detector_cost_tuples,
+                                       const std::vector<std::vector<int>>& active_d2e) const;
 
  private:
   void build_sparse_d2e(const std::vector<uint64_t>& detections);
+  void decode_to_errors_with_graph(const std::vector<uint64_t>& detections, size_t detector_order,
+                                   size_t detector_beam,
+                                   const std::vector<std::vector<int>>& active_d2e);
 };
 
 #endif  // TESSERACT_DECODER_H
