@@ -418,3 +418,67 @@ TEST(TesseractDetcostTest, ComparesRatiosNotRawCosts) {
 
   EXPECT_NEAR(got, expected, 1e-12);
 }
+
+TEST(TesseractSparsifyTest, HighDegreeErrorRemoved) {
+  stim::DetectorErrorModel dem = stim::DetectorErrorModel(R"DEM(
+    error(0.1) D0
+    error(0.1) D1
+    error(0.1) D2
+    error(0.1) D3
+    error(0.01) D0 D1 D2 D3
+  )DEM");
+
+  // Case 1: Without sparsification (default)
+  // Should prefer the degree 4 error (Error 4) because it has lower cost than 4 degree-1 errors.
+  {
+    TesseractConfig cfg;
+    cfg.dem = dem;
+    cfg.merge_errors = false;
+    cfg.sparsify_errors = false;
+    TesseractDecoder dec(cfg);
+
+    dec.decode_to_errors({0, 1, 2, 3});
+
+    std::vector<size_t> expected = {4};
+    EXPECT_EQ(dec.predicted_errors_buffer, expected);
+  }
+
+  // Case 2: With sparsification and limit = 0
+  // The degree 4 error (optional) is NOT reactivated, so it must use the 4 degree-1 errors.
+  {
+    TesseractConfig cfg;
+    cfg.dem = dem;
+    cfg.merge_errors = false;
+    cfg.sparsify_errors = true;
+    cfg.sparsify_base_degree = 2;
+    cfg.sparsify_max_degree = 4;
+    cfg.sparsify_reactivate_limit = 0;
+    TesseractDecoder dec(cfg);
+
+    dec.decode_to_errors({0, 1, 2, 3});
+
+    std::vector<size_t> got = dec.predicted_errors_buffer;
+    std::sort(got.begin(), got.end());
+    std::vector<size_t> expected = {0, 1, 2, 3};
+    EXPECT_EQ(got, expected);
+  }
+
+  // Case 3: With sparsification and limit = 1
+  // The degree 4 error (optional) IS reactivated because limit is 1, so it should be preferred
+  // again.
+  {
+    TesseractConfig cfg;
+    cfg.dem = dem;
+    cfg.merge_errors = false;
+    cfg.sparsify_errors = true;
+    cfg.sparsify_base_degree = 2;
+    cfg.sparsify_max_degree = 4;
+    cfg.sparsify_reactivate_limit = 1;
+    TesseractDecoder dec(cfg);
+
+    dec.decode_to_errors({0, 1, 2, 3});
+
+    std::vector<size_t> expected = {4};
+    EXPECT_EQ(dec.predicted_errors_buffer, expected);
+  }
+}
