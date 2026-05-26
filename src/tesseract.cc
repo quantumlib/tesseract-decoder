@@ -90,9 +90,9 @@ double TesseractDecoder::get_detcost(
   return get_detcost(d, detector_cost_tuples, d2e);
 }
 
-double TesseractDecoder::get_detcost(
-    size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples,
-    const std::vector<std::vector<int>>& active_d2e) const {
+double TesseractDecoder::get_detcost(size_t d,
+                                     const std::vector<DetectorCostTuple>& detector_cost_tuples,
+                                     const std::vector<std::vector<int>>& active_d2e) const {
   double min_cost = INF;
   uint32_t min_det_cost_det_count = std::numeric_limits<uint32_t>::max();
   double error_cost;
