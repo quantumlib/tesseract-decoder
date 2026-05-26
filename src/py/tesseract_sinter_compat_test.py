@@ -687,5 +687,96 @@ def test_sinter_collect_different_dems():
         assert results.json_metadata["d"] == expected_distances[i]
 
 
+def test_tesseract_sinter_decoder_sparsify_attributes():
+    decoder = TesseractSinterDecoder(
+        sparsify_errors=True,
+        sparsify_base_degree=2,
+        sparsify_max_degree=4,
+        sparsify_reactivate_limit=10,
+    )
+    assert decoder.sparsify_errors is True
+    assert decoder.sparsify_base_degree == 2
+    assert decoder.sparsify_max_degree == 4
+    assert decoder.sparsify_reactivate_limit == 10
+
+    # Test equality
+    decoder2 = TesseractSinterDecoder(
+        sparsify_errors=True,
+        sparsify_base_degree=2,
+        sparsify_max_degree=4,
+        sparsify_reactivate_limit=10,
+    )
+    assert decoder == decoder2
+
+    decoder3 = TesseractSinterDecoder(
+        sparsify_errors=True,
+        sparsify_base_degree=3,  # different
+        sparsify_max_degree=4,
+        sparsify_reactivate_limit=10,
+    )
+    assert decoder != decoder3
+
+    # Test pickle
+    import pickle
+
+    dumped = pickle.dumps(decoder)
+    loaded = pickle.loads(dumped)
+    assert decoder == loaded
+
+
+def test_make_tesseract_sinter_decoders_dict_contains_sparsify():
+    decoders = make_tesseract_sinter_decoders_dict()
+    assert "tesseract-long-beam-sparsify3" in decoders
+    assert "tesseract-long-beam-sparsify2" in decoders
+    assert "tesseract-short-beam-sparsify3" in decoders
+    assert "tesseract-short-beam-sparsify2" in decoders
+
+    d_long3 = decoders["tesseract-long-beam-sparsify3"]
+    assert d_long3.sparsify_errors is True
+    assert d_long3.sparsify_base_degree == 3
+    assert d_long3.sparsify_max_degree == -1
+    assert d_long3.sparsify_reactivate_limit == -1
+    assert d_long3.det_beam == 20
+
+    d_short2 = decoders["tesseract-short-beam-sparsify2"]
+    assert d_short2.sparsify_errors is True
+    assert d_short2.sparsify_base_degree == 2
+    assert d_short2.sparsify_max_degree == -1
+    assert d_short2.sparsify_reactivate_limit == -1
+    assert d_short2.det_beam == 15
+
+
+@pytest.mark.parametrize(
+    "decoder_name",
+    [
+        "tesseract-long-beam-sparsify3",
+        "tesseract-long-beam-sparsify2",
+        "tesseract-short-beam-sparsify3",
+        "tesseract-short-beam-sparsify2",
+    ],
+)
+def test_sinter_decode_with_sparsify_decoders(decoder_name):
+    # Test that the new decoders can actually run and decode a simple repetition code.
+    circuit = stim.Circuit.generated(
+        "repetition_code:memory",
+        rounds=3,
+        distance=3,
+        after_clifford_depolarization=0.01,
+    )
+
+    result = sample_decode(
+        circuit_obj=circuit,
+        circuit_path=None,
+        dem_obj=circuit.detector_error_model(decompose_errors=True),
+        dem_path=None,
+        num_shots=100,
+        decoder=decoder_name,
+        custom_decoders=make_tesseract_sinter_decoders_dict(),
+    )
+    assert result.discards == 0
+    assert result.shots == 100
+    assert 0 <= result.errors <= 10
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))

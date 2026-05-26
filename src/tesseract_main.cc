@@ -334,16 +334,10 @@ struct Args {
     config.sparsify_errors = sparsify_errors;
     config.sparsify_base_degree = sparsify_base_degree;
     config.sparsify_max_degree = sparsify_max_degree;
-
-    // Apply heuristic estimate for number of errors if sparsify_errors is enabled but no limit was
-    // provided
-    if (sparsify_errors && sparsify_reactivate_limit < 0) {
-      double k = sparsify_base_degree;
-      double num_detectors = config.dem.count_detectors();
-      sparsify_reactivate_limit =
-          static_cast<int>(std::round((std::pow(4.5, k - 2.0) / 3.0) * num_detectors));
-    }
     config.sparsify_reactivate_limit = sparsify_reactivate_limit;
+
+    config.sparsify_reactivate_limit = config.get_sparsify_reactivate_limit();
+    sparsify_reactivate_limit = config.sparsify_reactivate_limit;
   }
 };
 

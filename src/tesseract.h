@@ -50,6 +50,7 @@ struct TesseractConfig {
   int sparsify_max_degree = -1;
   int sparsify_reactivate_limit = -1;
 
+  int get_sparsify_reactivate_limit() const;
   std::string str();
 };
 

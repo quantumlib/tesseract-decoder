@@ -286,5 +286,85 @@ def test_test_simplex_decode_batch_with_mismatched_syndrome_size():
     )
 
 
+def test_create_tesseract_config_sparsify_defaults():
+    config = tesseract_decoder.tesseract.TesseractConfig()
+    assert config.sparsify_errors is False
+    assert config.sparsify_base_degree == -1
+    assert config.sparsify_max_degree == -1
+    assert config.sparsify_reactivate_limit == -1
+
+
+def test_create_tesseract_config_sparsify_custom():
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        sparsify_errors=True,
+        sparsify_base_degree=2,
+        sparsify_max_degree=4,
+        sparsify_reactivate_limit=10,
+    )
+    assert config.sparsify_errors is True
+    assert config.sparsify_base_degree == 2
+    assert config.sparsify_max_degree == 4
+    assert config.sparsify_reactivate_limit == 10
+
+
+def test_get_sparsify_reactivate_limit_heuristic():
+    # We need a DEM to test this because it depends on number of detectors.
+    # _DETECTOR_ERROR_MODEL has 2 detectors (D0, D1)
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        _DETECTOR_ERROR_MODEL,
+        sparsify_errors=True,
+        sparsify_base_degree=2,  # k=2
+        sparsify_reactivate_limit=-1,  # use heuristic
+    )
+    # Heuristic formula: round((4.5^(k-2) / 3) * num_detectors)
+    # For k=2, num_detectors=2:
+    # round((4.5^0 / 3) * 2) = round((1/3) * 2) = round(2/3) = round(0.666...) = 1
+    assert config.get_sparsify_reactivate_limit() == 1
+
+    # Test with k=3
+    config.sparsify_base_degree = 3
+    # round((4.5^1 / 3) * 2) = round((4.5/3) * 2) = round(1.5 * 2) = round(3.0) = 3
+    assert config.get_sparsify_reactivate_limit() == 3
+
+    # Test when sparsify_errors is False
+    config.sparsify_errors = False
+    assert config.get_sparsify_reactivate_limit() == -1
+
+    # Test when explicitly set
+    config.sparsify_errors = True
+    config.sparsify_reactivate_limit = 5
+    assert config.get_sparsify_reactivate_limit() == 5
+
+    # Test validation: sparsify_base_degree < 0 throws
+    config.sparsify_reactivate_limit = -1
+    config.sparsify_base_degree = -1
+    with pytest.raises(ValueError, match="sparsify_base_degree must be >= 0"):
+        config.get_sparsify_reactivate_limit()
+
+
+def test_get_sparsify_reactivate_limit_empty_dem():
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        sparsify_errors=True,
+        sparsify_base_degree=2,
+        sparsify_reactivate_limit=-1,
+    )
+    assert config.get_sparsify_reactivate_limit() == 0
+
+
+def test_decoder_compilation_validation():
+    # sparsify_base_degree < 0 throws
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        _DETECTOR_ERROR_MODEL, sparsify_errors=True, sparsify_base_degree=-1
+    )
+    with pytest.raises(ValueError, match="sparsify_base_degree must be >= 0"):
+        config.compile_decoder()
+
+    # sparsify_max_degree < sparsify_base_degree throws
+    config.sparsify_base_degree = 3
+    config.sparsify_max_degree = 2
+    with pytest.raises(ValueError, match="sparsify_max_degree must be >= sparsify_base_degree"):
+        config.compile_decoder()
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))

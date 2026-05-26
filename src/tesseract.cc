@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <boost/functional/hash.hpp>  // For boost::hash_range
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 #include <functional>  // For std::hash (though not strictly necessary here, but good practice)
 #include <iostream>
@@ -69,6 +70,22 @@ std::string TesseractConfig::str() {
   ss << "create_visualization=" << config.create_visualization;
   ss << ")";
   return ss.str();
+}
+
+int TesseractConfig::get_sparsify_reactivate_limit() const {
+  if (sparsify_reactivate_limit >= 0) {
+    return sparsify_reactivate_limit;
+  }
+  if (!sparsify_errors) {
+    return -1;
+  }
+  if (sparsify_base_degree < 0) {
+    throw std::invalid_argument(
+        "sparsify_base_degree must be >= 0 when sparsify_errors is enabled.");
+  }
+  double k = sparsify_base_degree;
+  double num_detectors = dem.count_detectors();
+  return static_cast<int>(std::round((std::pow(4.5, k - 2.0) / 3.0) * num_detectors));
 }
 
 std::string Node::str() {
@@ -217,6 +234,18 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
   }
 
   if (config.sparsify_errors) {
+    if (config.sparsify_base_degree < 0) {
+      throw std::invalid_argument(
+          "sparsify_base_degree must be >= 0 when sparsify_errors is enabled.");
+    }
+    if (config.sparsify_max_degree >= 0 &&
+        config.sparsify_max_degree < config.sparsify_base_degree) {
+      throw std::invalid_argument(
+          "sparsify_max_degree must be >= sparsify_base_degree.");
+    }
+
+    config.sparsify_reactivate_limit = config.get_sparsify_reactivate_limit();
+
     sparsify_mandatory_errors.clear();
     sparsify_optional_errors.clear();
     for (size_t ei = 0; ei < num_errors; ++ei) {
