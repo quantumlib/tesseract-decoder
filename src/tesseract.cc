@@ -240,8 +240,7 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
     }
     if (config.sparsify_max_degree >= 0 &&
         config.sparsify_max_degree < config.sparsify_base_degree) {
-      throw std::invalid_argument(
-          "sparsify_max_degree must be >= sparsify_base_degree.");
+      throw std::invalid_argument("sparsify_max_degree must be >= sparsify_base_degree.");
     }
 
     config.sparsify_reactivate_limit = config.get_sparsify_reactivate_limit();

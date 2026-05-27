@@ -140,11 +140,9 @@ struct TesseractSinterDecoder {
   // Constructor with parameters
   TesseractSinterDecoder(int det_beam, bool beam_climbing, bool no_revisit_dets, bool verbose,
                          bool merge_errors, size_t pqlimit, double det_penalty,
-                         bool create_visualization,
-                         bool sparsify_errors, int sparsify_base_degree,
+                         bool create_visualization, bool sparsify_errors, int sparsify_base_degree,
                          int sparsify_max_degree, int sparsify_reactivate_limit,
-                         size_t num_det_orders,
-                         DetOrder det_order_method, uint64_t seed)
+                         size_t num_det_orders, DetOrder det_order_method, uint64_t seed)
       : det_beam(det_beam),
         beam_climbing(beam_climbing),
         no_revisit_dets(no_revisit_dets),
@@ -185,14 +183,20 @@ struct TesseractSinterDecoder {
     std::vector<std::vector<size_t>> det_orders =
         build_det_orders(stim_dem, num_det_orders, det_order_method, seed);
 
-    TesseractConfig local_config = {
-        stim_dem,                  det_beam,
-        beam_climbing,             no_revisit_dets,
-        verbose,                   merge_errors,
-        pqlimit,                   det_orders,
-        det_penalty,               create_visualization,
-        sparsify_errors,           sparsify_base_degree,
-        sparsify_max_degree,       sparsify_reactivate_limit};
+    TesseractConfig local_config = {stim_dem,
+                                    det_beam,
+                                    beam_climbing,
+                                    no_revisit_dets,
+                                    verbose,
+                                    merge_errors,
+                                    pqlimit,
+                                    det_orders,
+                                    det_penalty,
+                                    create_visualization,
+                                    sparsify_errors,
+                                    sparsify_base_degree,
+                                    sparsify_max_degree,
+                                    sparsify_reactivate_limit};
     auto decoder = std::make_unique<TesseractDecoder>(local_config);
 
     return TesseractSinterCompiledDecoder{
@@ -225,14 +229,20 @@ struct TesseractSinterDecoder {
     std::vector<std::vector<size_t>> det_orders =
         build_det_orders(stim_dem, num_det_orders, det_order_method, seed);
 
-    TesseractConfig local_config = {
-        stim_dem,                  det_beam,
-        beam_climbing,             no_revisit_dets,
-        verbose,                   merge_errors,
-        pqlimit,                   det_orders,
-        det_penalty,               create_visualization,
-        sparsify_errors,           sparsify_base_degree,
-        sparsify_max_degree,       sparsify_reactivate_limit};
+    TesseractConfig local_config = {stim_dem,
+                                    det_beam,
+                                    beam_climbing,
+                                    no_revisit_dets,
+                                    verbose,
+                                    merge_errors,
+                                    pqlimit,
+                                    det_orders,
+                                    det_penalty,
+                                    create_visualization,
+                                    sparsify_errors,
+                                    sparsify_base_degree,
+                                    sparsify_max_degree,
+                                    sparsify_reactivate_limit};
     TesseractDecoder decoder(local_config);
 
     // Calculate expected number of bytes per shot for detectors and observables.
@@ -333,19 +343,17 @@ void pybind_sinter_compat(py::module& root) {
       .def(py::init<>(), R"pbdoc(
             Initializes a new TesseractSinterDecoder instance with a default TesseractConfig.
           )pbdoc")
-      .def(
-          py::init<int, bool, bool, bool, bool, size_t, double, bool,
-                   bool, int, int, int,
-                   size_t, DetOrder, uint64_t>(),
-          py::arg("det_beam") = DEFAULT_DET_BEAM, py::arg("beam_climbing") = false,
-          py::arg("no_revisit_dets") = true, py::arg("verbose") = false,
-          py::arg("merge_errors") = true, py::arg("pqlimit") = DEFAULT_PQLIMIT,
-          py::arg("det_penalty") = 0.0, py::arg("create_visualization") = false,
-          py::arg("sparsify_errors") = false, py::arg("sparsify_base_degree") = -1,
-          py::arg("sparsify_max_degree") = -1, py::arg("sparsify_reactivate_limit") = -1,
-          py::arg("num_det_orders") = 0, py::arg("det_order_method") = DetOrder::DetBFS,
-          py::arg("seed") = 2384753,
-          R"pbdoc(
+      .def(py::init<int, bool, bool, bool, bool, size_t, double, bool, bool, int, int, int, size_t,
+                    DetOrder, uint64_t>(),
+           py::arg("det_beam") = DEFAULT_DET_BEAM, py::arg("beam_climbing") = false,
+           py::arg("no_revisit_dets") = true, py::arg("verbose") = false,
+           py::arg("merge_errors") = true, py::arg("pqlimit") = DEFAULT_PQLIMIT,
+           py::arg("det_penalty") = 0.0, py::arg("create_visualization") = false,
+           py::arg("sparsify_errors") = false, py::arg("sparsify_base_degree") = -1,
+           py::arg("sparsify_max_degree") = -1, py::arg("sparsify_reactivate_limit") = -1,
+           py::arg("num_det_orders") = 0, py::arg("det_order_method") = DetOrder::DetBFS,
+           py::arg("seed") = 2384753,
+           R"pbdoc(
             Initializes a new TesseractSinterDecoder instance with custom TesseractConfig parameters.
            )pbdoc")
       .def("compile_decoder_for_dem", &TesseractSinterDecoder::compile_decoder_for_dem,
@@ -383,7 +391,8 @@ void pybind_sinter_compat(py::module& root) {
       .def_readwrite("sparsify_errors", &TesseractSinterDecoder::sparsify_errors)
       .def_readwrite("sparsify_base_degree", &TesseractSinterDecoder::sparsify_base_degree)
       .def_readwrite("sparsify_max_degree", &TesseractSinterDecoder::sparsify_max_degree)
-      .def_readwrite("sparsify_reactivate_limit", &TesseractSinterDecoder::sparsify_reactivate_limit)
+      .def_readwrite("sparsify_reactivate_limit",
+                     &TesseractSinterDecoder::sparsify_reactivate_limit)
       .def_readwrite("num_det_orders", &TesseractSinterDecoder::num_det_orders)
       .def_readwrite("det_order_method", &TesseractSinterDecoder::det_order_method)
       .def_readwrite("seed", &TesseractSinterDecoder::seed)
@@ -395,10 +404,10 @@ void pybind_sinter_compat(py::module& root) {
           [](const TesseractSinterDecoder& self) -> py::tuple {  // __getstate__
             return py::make_tuple(self.det_beam, self.beam_climbing, self.no_revisit_dets,
                                   self.verbose, self.merge_errors, self.pqlimit, self.det_penalty,
-                                  self.create_visualization,
-                                  self.sparsify_errors, self.sparsify_base_degree,
-                                  self.sparsify_max_degree, self.sparsify_reactivate_limit,
-                                  self.num_det_orders, self.det_order_method, self.seed);
+                                  self.create_visualization, self.sparsify_errors,
+                                  self.sparsify_base_degree, self.sparsify_max_degree,
+                                  self.sparsify_reactivate_limit, self.num_det_orders,
+                                  self.det_order_method, self.seed);
           },
           [](py::tuple t) {  // __setstate__
             if (t.size() != 15) {

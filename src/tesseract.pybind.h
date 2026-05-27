@@ -38,9 +38,9 @@ TesseractConfig tesseract_config_maker_no_dem(
     bool verbose = false, bool merge_errors = true,
     size_t pqlimit = std::numeric_limits<size_t>::max(),
     std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
-    double det_penalty = 0.0, bool create_visualization = false,
-    bool sparsify_errors = false, int sparsify_base_degree = -1,
-    int sparsify_max_degree = -1, int sparsify_reactivate_limit = -1) {
+    double det_penalty = 0.0, bool create_visualization = false, bool sparsify_errors = false,
+    int sparsify_base_degree = -1, int sparsify_max_degree = -1,
+    int sparsify_reactivate_limit = -1) {
   stim::DetectorErrorModel empty_dem;
   if (det_orders.empty()) {
     det_orders = build_det_orders(empty_dem, 20, DetOrder::DetBFS, 2384753);
@@ -56,9 +56,9 @@ TesseractConfig tesseract_config_maker(
     bool no_revisit_dets = false, bool verbose = false, bool merge_errors = true,
     size_t pqlimit = std::numeric_limits<size_t>::max(),
     std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
-    double det_penalty = 0.0, bool create_visualization = false,
-    bool sparsify_errors = false, int sparsify_base_degree = -1,
-    int sparsify_max_degree = -1, int sparsify_reactivate_limit = -1) {
+    double det_penalty = 0.0, bool create_visualization = false, bool sparsify_errors = false,
+    int sparsify_base_degree = -1, int sparsify_max_degree = -1,
+    int sparsify_reactivate_limit = -1) {
   stim::DetectorErrorModel input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
   if (det_orders.empty()) {
     det_orders = build_det_orders(input_dem, 20, DetOrder::DetBFS, 2384753);
@@ -90,9 +90,9 @@ void add_tesseract_module(py::module& root) {
            py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = true,
            py::arg("verbose") = false, py::arg("merge_errors") = true, py::arg("pqlimit") = 200000,
            py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0,
-           py::arg("create_visualization") = false,
-           py::arg("sparsify_errors") = false, py::arg("sparsify_base_degree") = -1,
-           py::arg("sparsify_max_degree") = -1, py::arg("sparsify_reactivate_limit") = -1,
+           py::arg("create_visualization") = false, py::arg("sparsify_errors") = false,
+           py::arg("sparsify_base_degree") = -1, py::arg("sparsify_max_degree") = -1,
+           py::arg("sparsify_reactivate_limit") = -1,
            R"pbdoc(
              The constructor for the `TesseractConfig` class without a `dem` argument.
              This creates an empty `DetectorErrorModel` by default.
@@ -132,9 +132,9 @@ void add_tesseract_module(py::module& root) {
            py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = true,
            py::arg("verbose") = false, py::arg("merge_errors") = true, py::arg("pqlimit") = 200000,
            py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0,
-           py::arg("create_visualization") = false,
-           py::arg("sparsify_errors") = false, py::arg("sparsify_base_degree") = -1,
-           py::arg("sparsify_max_degree") = -1, py::arg("sparsify_reactivate_limit") = -1,
+           py::arg("create_visualization") = false, py::arg("sparsify_errors") = false,
+           py::arg("sparsify_base_degree") = -1, py::arg("sparsify_max_degree") = -1,
+           py::arg("sparsify_reactivate_limit") = -1,
            R"pbdoc(
             The constructor for the `TesseractConfig` class.
 
