@@ -724,6 +724,45 @@ def test_tesseract_sinter_decoder_sparsify_attributes():
     assert decoder == loaded
 
 
+def test_tesseract_sinter_decoder_old_positional_constructor_order():
+    decoder = TesseractSinterDecoder(
+        20,
+        True,
+        True,
+        False,
+        True,
+        1_000_000,
+        0.0,
+        False,
+        21,
+        tesseract_decoder.utils.DetOrder.DetIndex,
+        2384753,
+    )
+    assert decoder.num_det_orders == 21
+    assert decoder.det_order_method == tesseract_decoder.utils.DetOrder.DetIndex
+    assert decoder.seed == 2384753
+    assert decoder.sparsify_errors is False
+    assert decoder.sparsify_base_degree == -1
+    assert decoder.sparsify_max_degree == -1
+    assert decoder.sparsify_reactivate_limit == -1
+
+
+def test_sinter_compile_sparsify_config_reaches_decoder():
+    dem = stim.DetectorErrorModel("""
+        error(0.1) D0
+        detector(0, 0, 0) D0
+    """)
+    decoder = TesseractSinterDecoder(
+        sparsify_errors=True,
+        sparsify_base_degree=2,
+        sparsify_reactivate_limit=-1,
+    )
+    compiled = decoder.compile_decoder_for_dem(dem=dem)
+    assert compiled.decoder.config.sparsify_errors is True
+    assert compiled.decoder.config.sparsify_base_degree == 2
+    assert compiled.decoder.config.sparsify_reactivate_limit == 0
+
+
 def test_make_tesseract_sinter_decoders_dict_contains_sparsify():
     decoders = make_tesseract_sinter_decoders_dict()
     assert "tesseract-long-beam-sparsify3" in decoders

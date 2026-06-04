@@ -73,6 +73,9 @@ std::string TesseractConfig::str() {
 }
 
 int TesseractConfig::get_sparsify_reactivate_limit() const {
+  if (sparsify_reactivate_limit < -1) {
+    throw std::invalid_argument("sparsify_reactivate_limit must be >= -1.");
+  }
   if (sparsify_reactivate_limit >= 0) {
     return sparsify_reactivate_limit;
   }
@@ -237,6 +240,12 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
     if (config.sparsify_base_degree < 0) {
       throw std::invalid_argument(
           "sparsify_base_degree must be >= 0 when sparsify_errors is enabled.");
+    }
+    if (config.sparsify_max_degree < -1) {
+      throw std::invalid_argument("sparsify_max_degree must be >= -1.");
+    }
+    if (config.sparsify_reactivate_limit < -1) {
+      throw std::invalid_argument("sparsify_reactivate_limit must be >= -1.");
     }
     if (config.sparsify_max_degree >= 0 &&
         config.sparsify_max_degree < config.sparsify_base_degree) {

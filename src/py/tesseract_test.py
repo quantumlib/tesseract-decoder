@@ -351,6 +351,81 @@ def test_get_sparsify_reactivate_limit_empty_dem():
     assert config.get_sparsify_reactivate_limit() == 0
 
 
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        (
+            {"sparsify_reactivate_limit": -2},
+            "sparsify_reactivate_limit must be >= -1",
+        ),
+        ({"sparsify_max_degree": -2}, "sparsify_max_degree must be >= -1"),
+    ],
+)
+def test_sparsify_negative_sentinels_rejected(kwargs, message):
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        _DETECTOR_ERROR_MODEL,
+        sparsify_errors=True,
+        sparsify_base_degree=2,
+        **kwargs,
+    )
+    with pytest.raises(ValueError, match=message):
+        config.compile_decoder()
+
+
+def test_compile_decoder_resolves_auto_sparsify_reactivate_limit():
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        _DETECTOR_ERROR_MODEL,
+        sparsify_errors=True,
+        sparsify_base_degree=2,
+        sparsify_reactivate_limit=-1,
+    )
+    decoder = config.compile_decoder()
+    assert (
+        decoder.config.sparsify_reactivate_limit
+        == config.get_sparsify_reactivate_limit()
+    )
+
+
+def test_python_sparsify_changes_predicted_error_set():
+    dem = stim.DetectorErrorModel("""
+        error(0.1) D0
+        error(0.1) D1
+        error(0.1) D2
+        error(0.1) D3
+        error(0.01) D0 D1 D2 D3
+    """)
+    syndrome = np.array([1, 1, 1, 1], dtype=bool)
+
+    dense = tesseract_decoder.tesseract.TesseractConfig(
+        dem,
+        merge_errors=False,
+    ).compile_decoder()
+    dense.decode_to_errors(syndrome)
+    assert list(dense.predicted_errors_buffer) == [4]
+
+    sparse0 = tesseract_decoder.tesseract.TesseractConfig(
+        dem,
+        merge_errors=False,
+        sparsify_errors=True,
+        sparsify_base_degree=2,
+        sparsify_max_degree=4,
+        sparsify_reactivate_limit=0,
+    ).compile_decoder()
+    sparse0.decode_to_errors(syndrome)
+    assert sorted(sparse0.predicted_errors_buffer) == [0, 1, 2, 3]
+
+    sparse1 = tesseract_decoder.tesseract.TesseractConfig(
+        dem,
+        merge_errors=False,
+        sparsify_errors=True,
+        sparsify_base_degree=2,
+        sparsify_max_degree=4,
+        sparsify_reactivate_limit=1,
+    ).compile_decoder()
+    sparse1.decode_to_errors(syndrome)
+    assert list(sparse1.predicted_errors_buffer) == [4]
+
+
 def test_decoder_compilation_validation():
     # sparsify_base_degree < 0 throws
     config = tesseract_decoder.tesseract.TesseractConfig(

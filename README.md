@@ -159,6 +159,32 @@ Here are some tips for improving performance:
 *   *At most two errors per detector*: enable `--at-most-two-errors-per-detector` to improve
     performance.
 *   *Priority Queue limit*: use `--pqlimit` to limit the size of the priority queue.
+*   *Error sparsification*: enable `--sparsify-errors` to always keep low-degree errors while
+    selectively reactivating high-degree errors per shot. This can improve runtime on DEMs with
+    many high-degree errors, at the cost of a tunable accuracy/speed tradeoff.
+
+Example with error sparsification:
+
+```bash
+./tesseract \
+    --circuit circuit_file.stim \
+    --sample-num-shots 10000 \
+    --beam 20 \
+    --beam-climbing \
+    --sparsify-errors \
+    --sparsify-base-degree 3 \
+    --print-stats
+```
+
+`--sparsify-base-degree K` is required when `--sparsify-errors` is enabled. Errors touching at most
+`K` detectors are always active. Errors above `K` are optional and are ranked per shot by overlap
+with the fired detectors.
+
+`--sparsify-reactivate-limit M` caps the number of optional high-degree errors reactivated per
+shot. If omitted, Tesseract uses `round((4.5^(K - 2) / 3) * num_detectors)`.
+
+`--sparsify-max-degree D` optionally excludes optional errors above degree `D`. If omitted, optional
+errors are not capped by degree.
 
 ### Output Formats
 
@@ -196,6 +222,16 @@ dem = stim.DetectorErrorModel("""
 
 # 2. Create the decoder configuration
 config = tesseract.TesseractConfig(dem=dem, det_beam=50)
+
+# Optional sparse variant for high-degree DEMs
+sparse_config = tesseract.TesseractConfig(
+    dem=dem,
+    det_beam=50,
+    sparsify_errors=True,
+    sparsify_base_degree=3,
+    sparsify_reactivate_limit=-1,  # Use the built-in heuristic.
+)
+print(sparse_config.get_sparsify_reactivate_limit())
 
 # 3. Create a decoder instance
 decoder = config.compile_decoder()
@@ -235,7 +271,12 @@ if __name__ == "__main__":
     p = 0.005
     # These are the sensible defaults given by make_tesseract_sinter_decoders_dict().
     # Note that `tesseract-short-beam` and `tesseract-long-beam` are the two sets of parameters used in the [Tesseract paper](https://arxiv.org/pdf/2503.10988).
-    decoders = ['tesseract', 'tesseract-long-beam', 'tesseract-short-beam']
+    decoders = [
+        'tesseract',
+        'tesseract-long-beam',
+        'tesseract-short-beam',
+        'tesseract-long-beam-sparsify3',
+    ]
     decoder_dict = make_tesseract_sinter_decoders_dict()
     # You can also make your own custom Tesseract Decoder to-be-used with Sinter.
     decoders.append('custom-tesseract-decoder')
@@ -248,6 +289,9 @@ if __name__ == "__main__":
         num_det_orders=5,
         det_order_method=tesseract_decoder.utils.DetOrder.DetIndex,
         seed=2384753,
+        sparsify_errors=True,
+        sparsify_base_degree=3,
+        sparsify_reactivate_limit=-1,
     )
 
     for distance in [3, 5, 7]:
@@ -350,6 +394,14 @@ tesseract_config = tesseract.TesseractConfig(
 ```
 For `det_order`, you can use two other options of `DetIndex` and `DetCoordinate` as well.
 These values balance decoding speed and accuracy across the benchmarks reported in the paper and can be adjusted for specific use cases.
+
+The Sinter decoder dictionary also provides sparsified variants:
+`tesseract-long-beam-sparsify3`, `tesseract-long-beam-sparsify2`,
+`tesseract-short-beam-sparsify3`, and `tesseract-short-beam-sparsify2`. The suffix indicates the
+sparsification base degree.
+
+Equivalent Python configs can enable sparsification with `sparsify_errors=True`,
+`sparsify_base_degree=2` or `3`, and `sparsify_reactivate_limit=-1` to use the built-in heuristic.
 ## Help
 
 *   Do you have a feature request or want to report a bug? [Open an issue on
