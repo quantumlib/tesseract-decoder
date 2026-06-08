@@ -225,8 +225,10 @@ struct Args {
           std::cout << ")" << std::endl;
         }
       }
-      DetOrder order = DetOrder::DetBFS;
-      if (det_order_index) {
+      DetOrder order = DetOrder::DetIndex;
+      if (det_order_bfs) {
+        order = DetOrder::DetBFS;
+      } else if (det_order_index) {
         order = DetOrder::DetIndex;
       } else if (det_order_coordinate) {
         order = DetOrder::DetCoordinate;
@@ -353,11 +355,13 @@ int main(int argc, char* argv[]) {
       .default_value(size_t(1))
       .store_into(args.num_det_orders);
   program.add_argument("--det-order-bfs")
-      .help("Use BFS-based detector ordering (default if no method specified)")
+      .help("Use BFS-based detector ordering")
       .flag()
       .store_into(args.det_order_bfs);
   program.add_argument("--det-order-index")
-      .help("Randomly choose increasing or decreasing detector index order")
+      .help(
+          "Randomly choose increasing or decreasing detector index order "
+          "(default if no method specified)")
       .flag()
       .store_into(args.det_order_index);
   program.add_argument("--det-order-coordinate")

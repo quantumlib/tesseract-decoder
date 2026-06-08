@@ -113,7 +113,7 @@ Example with Advanced Options:
         --pqlimit 1000000 \
         --no-revisit-dets \
         --det-order-seed 232852747 \
-        --det-order-index --num-det-orders 24 \
+        --num-det-orders 24 \
         --circuit circuit_file.stim \
         --sample-seed 232856747 \
         --sample-num-shots 10000 \
