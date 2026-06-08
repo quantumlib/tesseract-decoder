@@ -760,7 +760,13 @@ def test_sinter_compile_sparsify_config_reaches_decoder():
     compiled = decoder.compile_decoder_for_dem(dem=dem)
     assert compiled.decoder.config.sparsify_errors is True
     assert compiled.decoder.config.sparsify_base_degree == 2
-    assert compiled.decoder.config.sparsify_reactivate_limit == 0
+    assert (
+        compiled.decoder.config.sparsify_reactivate_limit
+        == tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(
+            dem.num_detectors,
+            2,
+        )
+    )
 
 
 def test_make_tesseract_sinter_decoders_dict_contains_sparsify():

@@ -335,9 +335,6 @@ struct Args {
     config.sparsify_base_degree = sparsify_base_degree;
     config.sparsify_max_degree = sparsify_max_degree;
     config.sparsify_reactivate_limit = sparsify_reactivate_limit;
-
-    config.sparsify_reactivate_limit = config.get_sparsify_reactivate_limit();
-    sparsify_reactivate_limit = config.sparsify_reactivate_limit;
   }
 };
 

@@ -75,6 +75,9 @@ void add_tesseract_module(py::module& root) {
 
   m.attr("INF_DET_BEAM") = INF_DET_BEAM;
   m.doc() = "A sentinel value indicating an infinite beam size for the decoder.";
+  m.def("suggest_sparsify_reactivate_limit", &suggest_sparsify_reactivate_limit,
+        py::arg("num_detectors"), py::arg("sparsify_base_degree"),
+        "Returns the suggested number of optional high-degree errors to reactivate per shot.");
 
   py::class_<TesseractConfig>(m, "TesseractConfig", R"pbdoc(
         Configuration object for the `TesseractDecoder`.
@@ -201,8 +204,6 @@ void add_tesseract_module(py::module& root) {
       .def_readwrite("sparsify_reactivate_limit", &TesseractConfig::sparsify_reactivate_limit,
                      "Maximum number of optional errors to reactivate per shot. Use -1 for "
                      "heuristic default.")
-      .def("get_sparsify_reactivate_limit", &TesseractConfig::get_sparsify_reactivate_limit,
-           "Returns the resolved reactivate limit, applying the heuristic if it is set to -1.")
       .def("__str__", &TesseractConfig::str)
       .def("compile_decoder", &_compile_tesseract_decoder_helper,
            py::return_value_policy::take_ownership,

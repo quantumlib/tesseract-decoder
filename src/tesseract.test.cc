@@ -419,6 +419,13 @@ TEST(TesseractDetcostTest, ComparesRatiosNotRawCosts) {
   EXPECT_NEAR(got, expected, 1e-12);
 }
 
+TEST(TesseractSparsifyTest, SuggestReactivateLimit) {
+  EXPECT_EQ(suggest_sparsify_reactivate_limit(2, 2), 1);
+  EXPECT_EQ(suggest_sparsify_reactivate_limit(2, 3), 3);
+  EXPECT_EQ(suggest_sparsify_reactivate_limit(0, 2), 0);
+  EXPECT_THROW(suggest_sparsify_reactivate_limit(2, -1), std::invalid_argument);
+}
+
 TEST(TesseractSparsifyTest, HighDegreeErrorRemoved) {
   stim::DetectorErrorModel dem = stim::DetectorErrorModel(R"DEM(
     error(0.1) D0

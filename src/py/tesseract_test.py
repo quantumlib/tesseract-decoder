@@ -307,48 +307,13 @@ def test_create_tesseract_config_sparsify_custom():
     assert config.sparsify_reactivate_limit == 10
 
 
-def test_get_sparsify_reactivate_limit_heuristic():
-    # We need a DEM to test this because it depends on number of detectors.
-    # _DETECTOR_ERROR_MODEL has 2 detectors (D0, D1)
-    config = tesseract_decoder.tesseract.TesseractConfig(
-        _DETECTOR_ERROR_MODEL,
-        sparsify_errors=True,
-        sparsify_base_degree=2,  # k=2
-        sparsify_reactivate_limit=-1,  # use heuristic
-    )
+def test_suggest_sparsify_reactivate_limit():
     # Heuristic formula: round((4.5^(k-2) / 3) * num_detectors)
-    # For k=2, num_detectors=2:
-    # round((4.5^0 / 3) * 2) = round((1/3) * 2) = round(2/3) = round(0.666...) = 1
-    assert config.get_sparsify_reactivate_limit() == 1
-
-    # Test with k=3
-    config.sparsify_base_degree = 3
-    # round((4.5^1 / 3) * 2) = round((4.5/3) * 2) = round(1.5 * 2) = round(3.0) = 3
-    assert config.get_sparsify_reactivate_limit() == 3
-
-    # Test when sparsify_errors is False
-    config.sparsify_errors = False
-    assert config.get_sparsify_reactivate_limit() == -1
-
-    # Test when explicitly set
-    config.sparsify_errors = True
-    config.sparsify_reactivate_limit = 5
-    assert config.get_sparsify_reactivate_limit() == 5
-
-    # Test validation: sparsify_base_degree < 0 throws
-    config.sparsify_reactivate_limit = -1
-    config.sparsify_base_degree = -1
+    assert tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(2, 2) == 1
+    assert tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(2, 3) == 3
+    assert tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(0, 2) == 0
     with pytest.raises(ValueError, match="sparsify_base_degree must be >= 0"):
-        config.get_sparsify_reactivate_limit()
-
-
-def test_get_sparsify_reactivate_limit_empty_dem():
-    config = tesseract_decoder.tesseract.TesseractConfig(
-        sparsify_errors=True,
-        sparsify_base_degree=2,
-        sparsify_reactivate_limit=-1,
-    )
-    assert config.get_sparsify_reactivate_limit() == 0
+        tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(2, -1)
 
 
 @pytest.mark.parametrize(
@@ -382,8 +347,22 @@ def test_compile_decoder_resolves_auto_sparsify_reactivate_limit():
     decoder = config.compile_decoder()
     assert (
         decoder.config.sparsify_reactivate_limit
-        == config.get_sparsify_reactivate_limit()
+        == tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(
+            _DETECTOR_ERROR_MODEL.num_detectors,
+            2,
+        )
     )
+
+
+def test_compile_decoder_preserves_explicit_sparsify_reactivate_limit():
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        _DETECTOR_ERROR_MODEL,
+        sparsify_errors=True,
+        sparsify_base_degree=2,
+        sparsify_reactivate_limit=10,
+    )
+    decoder = config.compile_decoder()
+    assert decoder.config.sparsify_reactivate_limit == 10
 
 
 def test_python_sparsify_changes_predicted_error_set():

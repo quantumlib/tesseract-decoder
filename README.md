@@ -223,15 +223,15 @@ dem = stim.DetectorErrorModel("""
 # 2. Create the decoder configuration
 config = tesseract.TesseractConfig(dem=dem, det_beam=50)
 
-# Optional sparse variant for high-degree DEMs
-sparse_config = tesseract.TesseractConfig(
+# To enable sparse activation for high-degree DEMs:
+config = tesseract.TesseractConfig(
     dem=dem,
     det_beam=50,
     sparsify_errors=True,
     sparsify_base_degree=3,
     sparsify_reactivate_limit=-1,  # Use the built-in heuristic.
 )
-print(sparse_config.get_sparsify_reactivate_limit())
+print(tesseract.suggest_sparsify_reactivate_limit(dem.num_detectors, 3))
 
 # 3. Create a decoder instance
 decoder = config.compile_decoder()

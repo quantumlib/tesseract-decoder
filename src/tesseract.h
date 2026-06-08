@@ -32,6 +32,8 @@ constexpr size_t INF_DET_BEAM = std::numeric_limits<uint16_t>::max();
 constexpr int DEFAULT_DET_BEAM = 5;
 constexpr size_t DEFAULT_PQLIMIT = 200000;
 
+int suggest_sparsify_reactivate_limit(size_t num_detectors, int sparsify_base_degree);
+
 struct TesseractConfig {
   stim::DetectorErrorModel dem;
   int det_beam = DEFAULT_DET_BEAM;
@@ -50,7 +52,6 @@ struct TesseractConfig {
   int sparsify_max_degree = -1;
   int sparsify_reactivate_limit = -1;
 
-  int get_sparsify_reactivate_limit() const;
   std::string str();
 };
 

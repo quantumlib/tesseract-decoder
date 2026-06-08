@@ -7,7 +7,6 @@ The `tesseract_decoder.tesseract` module provides the Tesseract decoder, which e
 This class holds the configuration parameters that control the behavior of the Tesseract decoder.
 * `TesseractConfig(dem: stim.DetectorErrorModel, det_beam: int = 5, beam_climbing: bool = False, no_revisit_dets: bool = True, verbose: bool = False, merge_errors: bool = True, pqlimit: int = 200000, det_orders: list[list[int]] = [], det_penalty: float = 0.0, create_visualization: bool = False, sparsify_errors: bool = False, sparsify_base_degree: int = -1, sparsify_max_degree: int = -1, sparsify_reactivate_limit: int = -1)`
 * `__str__()`
-* `get_sparsify_reactivate_limit() -> int`
 
 Explanation of configuration arguments:
 * `dem`: This is a required argument that takes a `stim.DetectorErrorModel`. It provides the logical structure of the quantum error-correcting code, including the detectors and the relationships between them. This model is essential for the decoder to understand the syndrome and potential error locations.
@@ -25,7 +24,9 @@ Explanation of configuration arguments:
 * `sparsify_base_degree` - Required when `sparsify_errors=True`. Errors with detector degree less than or equal to this value are always active.
 * `sparsify_max_degree` - Optional maximum degree for reactivated errors. Use `-1` for no maximum degree cap.
 * `sparsify_reactivate_limit` - Maximum number of optional high-degree errors to reactivate per shot. Use `-1` to apply the built-in heuristic.
-* `get_sparsify_reactivate_limit()` - Returns the effective reactivation limit, applying the heuristic when `sparsify_reactivate_limit == -1`.
+
+Module-level helper:
+* `suggest_sparsify_reactivate_limit(num_detectors, sparsify_base_degree)` - Returns the suggested reactivation limit for a detector count and base degree. The decoder applies this suggestion when `sparsify_reactivate_limit == -1`.
 
 **Example Usage**:
 
@@ -75,7 +76,10 @@ config3 = tesseract.TesseractConfig(
     sparsify_base_degree=3,
     sparsify_reactivate_limit=-1,
 )
-print(f"Effective sparsify reactivation limit: {config3.get_sparsify_reactivate_limit()}")
+print(
+    "Suggested sparsify reactivation limit:",
+    tesseract.suggest_sparsify_reactivate_limit(dem.num_detectors, 3),
+)
 decoder = config3.compile_decoder()
 ```
 
