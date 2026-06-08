@@ -23,7 +23,7 @@ build_with_bazel()
 
 setup(
     name="tesseract_decoder",
-    version="0.1.1",
+    version="0.1.4",
     package_dir={"": "src/py"},
     packages=find_packages(where="src/py"),
     install_requires=[

@@ -84,7 +84,7 @@ struct MultiPassSinterDecoder {
         }
 
         std::vector<int> classification;
-        if (py::isinstance<py::function>(detector_classifier)) {
+        if (!detector_classifier.is_none()) {
             uint64_t num_dets = stim_dem.count_detectors();
             
             std::set<uint64_t> detector_ids;
