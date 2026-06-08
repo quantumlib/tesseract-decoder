@@ -178,7 +178,10 @@ Example with error sparsification:
 
 `--sparsify-base-degree K` is required when `--sparsify-errors` is enabled. Errors touching at most
 `K` detectors are always active. Errors above `K` are optional and are ranked per shot by overlap
-with the fired detectors.
+with the fired detectors. In the surface code (or other 'mostly graphlike' codes) try K = 2. In the
+color code or bivariate bicycle codes, try K = 3. In general, it is recommended to set K to the number
+of activated detectors created by a single data qubit error in the bulk, restricting to X or Z errors
+only for CSS codes.
 
 `--sparsify-reactivate-limit M` caps the number of optional high-degree errors reactivated per
 shot. If omitted, Tesseract uses `round((4.5^(K - 2) / 3) * num_detectors)`.
