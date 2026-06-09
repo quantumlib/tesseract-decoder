@@ -426,6 +426,24 @@ TEST(TesseractSparsifyTest, SuggestReactivateLimit) {
   EXPECT_THROW(suggest_sparsify_reactivate_limit(2, -1), std::invalid_argument);
 }
 
+TEST(tesseract, InfinitePqlimitDoesNotReserveMaxVector) {
+  stim::DetectorErrorModel dem = stim::DetectorErrorModel(R"DEM(
+    error(0.1) D0
+    error(0.1) D1
+    error(0.2) D0 D1 L0
+  )DEM");
+
+  TesseractConfig cfg;
+  cfg.dem = dem;
+  cfg.merge_errors = false;
+  cfg.pqlimit = std::numeric_limits<size_t>::max();
+  TesseractDecoder dec(cfg);
+
+  EXPECT_NO_THROW(dec.decode_to_errors({0, 1}));
+  std::vector<size_t> expected = {2};
+  EXPECT_EQ(dec.predicted_errors_buffer, expected);
+}
+
 TEST(TesseractSparsifyTest, HighDegreeErrorRemoved) {
   stim::DetectorErrorModel dem = stim::DetectorErrorModel(R"DEM(
     error(0.1) D0
