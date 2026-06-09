@@ -628,6 +628,18 @@ int main(int argc, char* argv[]) {
     out << est_dem << '\n';
   }
 
+  int effective_sparsify_reactivate_limit = config.sparsify_reactivate_limit;
+  for (const auto& decoder : decoders) {
+    if (decoder) {
+      effective_sparsify_reactivate_limit = decoder->config.sparsify_reactivate_limit;
+      break;
+    }
+  }
+  if (config.sparsify_errors && effective_sparsify_reactivate_limit == -1) {
+    effective_sparsify_reactivate_limit = suggest_sparsify_reactivate_limit(
+        config.dem.count_detectors(), config.sparsify_base_degree);
+  }
+
   bool print_final_stats = true;
   if (!args.stats_out_fname.empty()) {
     nlohmann::json stats_json = {{"circuit_path", args.circuit_path},
@@ -651,7 +663,8 @@ int main(int argc, char* argv[]) {
                                  {"sparsify_errors", args.sparsify_errors},
                                  {"sparsify_base_degree", args.sparsify_base_degree},
                                  {"sparsify_max_degree", args.sparsify_max_degree},
-                                 {"sparsify_reactivate_limit", args.sparsify_reactivate_limit}};
+                                 {"sparsify_reactivate_limit",
+                                  effective_sparsify_reactivate_limit}};
 
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;
