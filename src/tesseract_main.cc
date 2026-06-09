@@ -642,29 +642,29 @@ int main(int argc, char* argv[]) {
 
   bool print_final_stats = true;
   if (!args.stats_out_fname.empty()) {
-    nlohmann::json stats_json = {{"circuit_path", args.circuit_path},
-                                 {"dem_path", args.dem_path},
-                                 {"max_errors", args.max_errors},
-                                 {"sample_seed", args.sample_seed},
+    nlohmann::json stats_json = {
+        {"circuit_path", args.circuit_path},
+        {"dem_path", args.dem_path},
+        {"max_errors", args.max_errors},
+        {"sample_seed", args.sample_seed},
 
-                                 {"det_beam", args.det_beam},
-                                 {"det_penalty", args.det_penalty},
-                                 {"beam_climbing", args.beam_climbing},
-                                 {"no_revisit_dets", args.no_revisit_dets},
-                                 {"pqlimit", args.pqlimit},
-                                 {"num_det_orders", args.num_det_orders},
-                                 {"det_order_seed", args.det_order_seed},
-                                 {"total_time_seconds", total_time_seconds},
-                                 {"num_errors", num_errors},
-                                 {"num_low_confidence", num_low_confidence},
-                                 {"num_shots", shot},
-                                 {"num_threads", args.num_threads},
-                                 {"sample_num_shots", args.sample_num_shots},
-                                 {"sparsify_errors", args.sparsify_errors},
-                                 {"sparsify_base_degree", args.sparsify_base_degree},
-                                 {"sparsify_max_degree", args.sparsify_max_degree},
-                                 {"sparsify_reactivate_limit",
-                                  effective_sparsify_reactivate_limit}};
+        {"det_beam", args.det_beam},
+        {"det_penalty", args.det_penalty},
+        {"beam_climbing", args.beam_climbing},
+        {"no_revisit_dets", args.no_revisit_dets},
+        {"pqlimit", args.pqlimit},
+        {"num_det_orders", args.num_det_orders},
+        {"det_order_seed", args.det_order_seed},
+        {"total_time_seconds", total_time_seconds},
+        {"num_errors", num_errors},
+        {"num_low_confidence", num_low_confidence},
+        {"num_shots", shot},
+        {"num_threads", args.num_threads},
+        {"sample_num_shots", args.sample_num_shots},
+        {"sparsify_errors", args.sparsify_errors},
+        {"sparsify_base_degree", args.sparsify_base_degree},
+        {"sparsify_max_degree", args.sparsify_max_degree},
+        {"sparsify_reactivate_limit", effective_sparsify_reactivate_limit}};
 
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;
