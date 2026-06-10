@@ -514,6 +514,14 @@ The default decoder dictionary also includes sparsified variants:
 `tesseract-long-beam-sparsify3`, `tesseract-long-beam-sparsify2`,
 `tesseract-short-beam-sparsify3`, and `tesseract-short-beam-sparsify2`.
 
+As a quick rule of thumb, use the non-sparsified decoders as the safest baseline. Use `sparsify2`
+for surface-code-like or mostly graphlike DEMs, and use `sparsify3` for color-code,
+bivariate-bicycle-code, or other DEMs where a typical bulk data error activates about three
+detectors. Within either family, prefer the long-beam variants when accuracy matters more and the
+short-beam variants when runtime matters more. See the root README's
+[Performance Optimization](../../README.md#performance-optimization) section for the full
+sparsification details.
+
 ```python
 import sinter
 import stim
