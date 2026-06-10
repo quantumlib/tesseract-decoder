@@ -234,10 +234,13 @@ config = tesseract.TesseractConfig(
     sparsify_base_degree=3,
     sparsify_reactivate_limit=-1,  # Use the built-in heuristic.
 )
-print(tesseract.suggest_sparsify_reactivate_limit(dem.num_detectors, 3))
 
 # 3. Create a decoder instance
 decoder = config.compile_decoder()
+print(
+    "Resolved sparsify reactivation limit:",
+    decoder.config.sparsify_reactivate_limit,
+)
 
 # 4. Simulate detector outcomes
 syndrome = np.array([0, 1, 1], dtype=bool)

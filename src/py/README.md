@@ -76,11 +76,11 @@ config3 = tesseract.TesseractConfig(
     sparsify_base_degree=3,
     sparsify_reactivate_limit=-1,
 )
-print(
-    "Suggested sparsify reactivation limit:",
-    tesseract.suggest_sparsify_reactivate_limit(dem.num_detectors, 3),
-)
 decoder = config3.compile_decoder()
+print(
+    "Resolved sparsify reactivation limit:",
+    decoder.config.sparsify_reactivate_limit,
+)
 ```
 
 #### Class `tesseract.TesseractDecoder`
