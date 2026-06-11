@@ -423,7 +423,35 @@ TEST(TesseractSparsifyTest, SuggestReactivateLimit) {
   EXPECT_EQ(suggest_sparsify_reactivate_limit(2, 2), 1);
   EXPECT_EQ(suggest_sparsify_reactivate_limit(2, 3), 3);
   EXPECT_EQ(suggest_sparsify_reactivate_limit(0, 2), 0);
+  EXPECT_EQ(suggest_sparsify_reactivate_limit(1, std::numeric_limits<int>::max()),
+            std::numeric_limits<int>::max());
   EXPECT_THROW(suggest_sparsify_reactivate_limit(2, -1), std::invalid_argument);
+}
+
+TEST(TesseractSparsifyTest, AutoReactivateLimitClampedToErrorCount) {
+  stim::DetectorErrorModel dem = stim::DetectorErrorModel(R"DEM(
+    error(0.1) D0
+    detector(0, 0, 0) D0
+    detector(1, 0, 0) D1
+    detector(2, 0, 0) D2
+    detector(3, 0, 0) D3
+    detector(4, 0, 0) D4
+    detector(5, 0, 0) D5
+    detector(6, 0, 0) D6
+    detector(7, 0, 0) D7
+    detector(8, 0, 0) D8
+    detector(9, 0, 0) D9
+  )DEM");
+
+  TesseractConfig cfg;
+  cfg.dem = dem;
+  cfg.merge_errors = false;
+  cfg.sparsify_errors = true;
+  cfg.sparsify_base_degree = 3;
+  cfg.sparsify_reactivate_limit = -1;
+  TesseractDecoder dec(cfg);
+
+  EXPECT_EQ(dec.config.sparsify_reactivate_limit, 1);
 }
 
 TEST(tesseract, InfinitePqlimitDoesNotReserveMaxVector) {

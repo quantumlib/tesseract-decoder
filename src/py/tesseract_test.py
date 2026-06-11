@@ -47,6 +47,12 @@ def test_create_tesseract_config():
     assert config.det_penalty == 0
     assert config.create_visualization is False
     assert len(config.det_orders) == 20
+    assert config.det_orders == tesseract_decoder.utils.build_det_orders(
+        _DETECTOR_ERROR_MODEL,
+        20,
+        tesseract_decoder.utils.DetOrder.DetIndex,
+        2384753,
+    )
 
 
 def test_create_tesseract_config_with_dem():
@@ -312,6 +318,10 @@ def test_suggest_sparsify_reactivate_limit():
     assert tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(2, 2) == 1
     assert tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(2, 3) == 3
     assert tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(0, 2) == 0
+    assert (
+        tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(1, 10_000)
+        == 2_147_483_647
+    )
     with pytest.raises(ValueError, match="sparsify_base_degree must be >= 0"):
         tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(2, -1)
 
@@ -323,7 +333,10 @@ def test_suggest_sparsify_reactivate_limit():
             {"sparsify_reactivate_limit": -2},
             "sparsify_reactivate_limit must be >= -1",
         ),
-        ({"sparsify_max_degree": -2}, "sparsify_max_degree must be >= -1"),
+        (
+            {"sparsify_max_degree": -2},
+            "sparsify_max_degree must be >= -1",
+        ),
     ],
 )
 def test_sparsify_negative_sentinels_rejected(kwargs, message):
@@ -347,9 +360,12 @@ def test_compile_decoder_resolves_auto_sparsify_reactivate_limit():
     decoder = config.compile_decoder()
     assert (
         decoder.config.sparsify_reactivate_limit
-        == tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(
-            _DETECTOR_ERROR_MODEL.num_detectors,
-            2,
+        == min(
+            tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(
+                _DETECTOR_ERROR_MODEL.num_detectors,
+                2,
+            ),
+            _DETECTOR_ERROR_MODEL.num_errors,
         )
     )
 

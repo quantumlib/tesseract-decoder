@@ -33,6 +33,7 @@ def test_tesseract_sinter_obj_exists():
     decoder = TesseractSinterDecoder()
     assert hasattr(decoder, "compile_decoder_for_dem")
     assert hasattr(decoder, "decode_via_files")
+    assert decoder.det_order_method == tesseract_decoder.utils.DetOrder.DetIndex
 
 
 @pytest.mark.parametrize("use_custom_config", [False, True])
@@ -762,9 +763,12 @@ def test_sinter_compile_sparsify_config_reaches_decoder():
     assert compiled.decoder.config.sparsify_base_degree == 2
     assert (
         compiled.decoder.config.sparsify_reactivate_limit
-        == tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(
-            dem.num_detectors,
-            2,
+        == min(
+            tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(
+                dem.num_detectors,
+                2,
+            ),
+            dem.num_errors,
         )
     )
 

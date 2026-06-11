@@ -76,9 +76,25 @@ int suggest_sparsify_reactivate_limit(size_t num_detectors, int sparsify_base_de
   if (sparsify_base_degree < 0) {
     throw std::invalid_argument("sparsify_base_degree must be >= 0.");
   }
-  double k = sparsify_base_degree;
-  return static_cast<int>(
-      std::round((std::pow(4.5, k - 2.0) / 3.0) * static_cast<double>(num_detectors)));
+  if (num_detectors == 0) {
+    return 0;
+  }
+  double exponent = static_cast<double>(sparsify_base_degree) - 2.0;
+  double max_result = static_cast<double>(std::numeric_limits<int>::max());
+  double log_result =
+      exponent * std::log(4.5) - std::log(3.0) + std::log(static_cast<double>(num_detectors));
+  if (log_result >= std::log(max_result)) {
+    return std::numeric_limits<int>::max();
+  }
+  double result = (std::pow(4.5, exponent) / 3.0) * static_cast<double>(num_detectors);
+  if (!std::isfinite(result)) {
+    return std::numeric_limits<int>::max();
+  }
+  double rounded = std::round(result);
+  if (rounded >= max_result) {
+    return std::numeric_limits<int>::max();
+  }
+  return static_cast<int>(rounded);
 }
 
 std::string Node::str() {
@@ -243,8 +259,11 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
     }
 
     if (config.sparsify_reactivate_limit == -1) {
-      config.sparsify_reactivate_limit = suggest_sparsify_reactivate_limit(
+      int suggested_reactivate_limit = suggest_sparsify_reactivate_limit(
           config.dem.count_detectors(), config.sparsify_base_degree);
+      int error_count_limit = static_cast<int>(
+          std::min(num_errors, static_cast<size_t>(std::numeric_limits<int>::max())));
+      config.sparsify_reactivate_limit = std::min(suggested_reactivate_limit, error_count_limit);
     }
 
     sparsify_mandatory_errors.clear();

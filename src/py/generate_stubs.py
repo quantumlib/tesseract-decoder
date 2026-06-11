@@ -88,7 +88,7 @@ def main():
 
     # Build argv for pybind11-stubgen CLI.
     # --enum-class-locations maps enum names to their fully-qualified module path
-    # so pybind11-stubgen can resolve default values like <DetOrder.DetBFS: 0>.
+    # so pybind11-stubgen can resolve default values like <DetOrder.DetIndex: 1>.
     stubgen_argv = [
         "pybind11-stubgen",
         "tesseract_decoder",

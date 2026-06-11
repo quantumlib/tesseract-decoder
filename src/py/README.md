@@ -23,10 +23,10 @@ Explanation of configuration arguments:
 * `sparsify_errors` - Enables per-shot sparse error activation. When enabled, all errors up to `sparsify_base_degree` are always active, and selected higher-degree errors are reactivated per shot.
 * `sparsify_base_degree` - Required when `sparsify_errors=True`. Errors with detector degree less than or equal to this value are always active.
 * `sparsify_max_degree` - Optional maximum degree for reactivated errors. Use `-1` for no maximum degree cap.
-* `sparsify_reactivate_limit` - Maximum number of optional high-degree errors to reactivate per shot. Use `-1` to apply the built-in heuristic.
+* `sparsify_reactivate_limit` - Maximum number of optional high-degree errors to reactivate per shot. Use `-1` to apply the built-in heuristic, clamped to the number of errors in the compiled error model.
 
 Module-level helper:
-* `suggest_sparsify_reactivate_limit(num_detectors, sparsify_base_degree)` - Returns the suggested reactivation limit for a detector count and base degree. The decoder applies this suggestion when `sparsify_reactivate_limit == -1`.
+* `suggest_sparsify_reactivate_limit(num_detectors, sparsify_base_degree)` - Returns the suggested reactivation limit for a detector count and base degree. The decoder applies this suggestion, clamped to the compiled error count, when `sparsify_reactivate_limit == -1`.
 
 **Example Usage**:
 

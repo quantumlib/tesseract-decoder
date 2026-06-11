@@ -134,7 +134,7 @@ struct TesseractSinterDecoder {
         sparsify_max_degree(-1),
         sparsify_reactivate_limit(-1),
         num_det_orders(0),
-        det_order_method(DetOrder::DetBFS),
+        det_order_method(DetOrder::DetIndex),
         seed(2384753) {}
 
   // Constructor with parameters
@@ -350,7 +350,7 @@ void pybind_sinter_compat(py::module& root) {
            py::arg("no_revisit_dets") = true, py::arg("verbose") = false,
            py::arg("merge_errors") = true, py::arg("pqlimit") = DEFAULT_PQLIMIT,
            py::arg("det_penalty") = 0.0, py::arg("create_visualization") = false,
-           py::arg("num_det_orders") = 0, py::arg("det_order_method") = DetOrder::DetBFS,
+           py::arg("num_det_orders") = 0, py::arg("det_order_method") = DetOrder::DetIndex,
            py::arg("seed") = 2384753, py::arg("sparsify_errors") = false,
            py::arg("sparsify_base_degree") = -1, py::arg("sparsify_max_degree") = -1,
            py::arg("sparsify_reactivate_limit") = -1,

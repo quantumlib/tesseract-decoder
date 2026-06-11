@@ -43,7 +43,7 @@ TesseractConfig tesseract_config_maker_no_dem(
     int sparsify_reactivate_limit = -1) {
   stim::DetectorErrorModel empty_dem;
   if (det_orders.empty()) {
-    det_orders = build_det_orders(empty_dem, 20, DetOrder::DetBFS, 2384753);
+    det_orders = build_det_orders(empty_dem, 20, DetOrder::DetIndex, 2384753);
   }
   return TesseractConfig({empty_dem, det_beam, beam_climbing, no_revisit_dets, verbose,
                           merge_errors, pqlimit, det_orders, det_penalty, create_visualization,
@@ -61,7 +61,7 @@ TesseractConfig tesseract_config_maker(
     int sparsify_reactivate_limit = -1) {
   stim::DetectorErrorModel input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
   if (det_orders.empty()) {
-    det_orders = build_det_orders(input_dem, 20, DetOrder::DetBFS, 2384753);
+    det_orders = build_det_orders(input_dem, 20, DetOrder::DetIndex, 2384753);
   }
   return TesseractConfig({input_dem, det_beam, beam_climbing, no_revisit_dets, verbose,
                           merge_errors, pqlimit, det_orders, det_penalty, create_visualization,

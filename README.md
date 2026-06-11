@@ -232,7 +232,7 @@ config = tesseract.TesseractConfig(
     det_beam=50,
     sparsify_errors=True,
     sparsify_base_degree=3,
-    sparsify_reactivate_limit=-1,  # Use the built-in heuristic.
+    sparsify_reactivate_limit=-1,  # Use the built-in heuristic, clamped to error count.
 )
 
 # 3. Create a decoder instance
@@ -401,7 +401,8 @@ tesseract_config = tesseract.TesseractConfig(
     no_revisit_dets=True,
 )
 ```
-For `det_order`, you can use two other options of `DetIndex` and `DetCoordinate` as well.
+`DetIndex` is the default detector ordering. You can also pass `DetBFS` or `DetCoordinate`
+explicitly.
 These values balance decoding speed and accuracy across the benchmarks reported in the paper and can be adjusted for specific use cases.
 
 The Sinter decoder dictionary also provides sparsified variants:
@@ -417,7 +418,8 @@ short-beam variants when runtime matters more. See the
 [Performance Optimization](#performance-optimization) section for the full sparsification details.
 
 Equivalent Python configs can enable sparsification with `sparsify_errors=True`,
-`sparsify_base_degree=2` or `3`, and `sparsify_reactivate_limit=-1` to use the built-in heuristic.
+`sparsify_base_degree=2` or `3`, and `sparsify_reactivate_limit=-1` to use the built-in heuristic
+clamped to the compiled error count.
 ## Help
 
 *   Do you have a feature request or want to report a bug? [Open an issue on
