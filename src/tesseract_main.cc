@@ -639,10 +639,10 @@ int main(int argc, char* argv[]) {
   if (config.sparsify_errors && effective_sparsify_reactivate_limit == -1) {
     effective_sparsify_reactivate_limit = suggest_sparsify_reactivate_limit(
         config.dem.count_detectors(), config.sparsify_base_degree);
-    effective_sparsify_reactivate_limit =
-        std::min(effective_sparsify_reactivate_limit,
-                 static_cast<int>(std::min(config.dem.count_errors(),
-                                           static_cast<size_t>(std::numeric_limits<int>::max()))));
+    effective_sparsify_reactivate_limit = std::min(
+        effective_sparsify_reactivate_limit,
+        static_cast<int>(std::min<uint64_t>(
+            config.dem.count_errors(), static_cast<uint64_t>(std::numeric_limits<int>::max()))));
   }
 
   bool print_final_stats = true;
