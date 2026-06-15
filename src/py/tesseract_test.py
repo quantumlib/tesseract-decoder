@@ -47,6 +47,12 @@ def test_create_tesseract_config():
     assert config.det_penalty == 0
     assert config.create_visualization is False
     assert len(config.det_orders) == 20
+    assert config.det_orders == tesseract_decoder.utils.build_det_orders(
+        _DETECTOR_ERROR_MODEL,
+        20,
+        tesseract_decoder.utils.DetOrder.DetIndex,
+        2384753,
+    )
 
 
 def test_create_tesseract_config_with_dem():
@@ -284,6 +290,179 @@ def test_test_simplex_decode_batch_with_mismatched_syndrome_size():
         tesseract_decoder.tesseract.TesseractDecoder,
         tesseract_decoder.tesseract.TesseractConfig,
     )
+
+
+def test_create_tesseract_config_sparsify_defaults():
+    config = tesseract_decoder.tesseract.TesseractConfig()
+    assert config.sparsify_errors is False
+    assert config.sparsify_base_degree == -1
+    assert config.sparsify_max_degree == -1
+    assert config.sparsify_reactivate_limit == -1
+
+
+def test_create_tesseract_config_sparsify_custom():
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        sparsify_errors=True,
+        sparsify_base_degree=2,
+        sparsify_max_degree=4,
+        sparsify_reactivate_limit=10,
+    )
+    assert config.sparsify_errors is True
+    assert config.sparsify_base_degree == 2
+    assert config.sparsify_max_degree == 4
+    assert config.sparsify_reactivate_limit == 10
+
+
+def test_suggest_sparsify_reactivate_limit():
+    # Heuristic formula: round((4.5^(k-2) / 3) * num_detectors)
+    assert tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(2, 2) == 1
+    assert tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(2, 3) == 3
+    assert tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(0, 2) == 0
+    assert (
+        tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(1, 10_000)
+        == 2_147_483_647
+    )
+    with pytest.raises(ValueError, match="sparsify_base_degree must be >= 0"):
+        tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(2, -1)
+
+
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        (
+            {"sparsify_reactivate_limit": -2},
+            "sparsify_reactivate_limit must be >= -1",
+        ),
+        (
+            {"sparsify_max_degree": -2},
+            "sparsify_max_degree must be >= -1",
+        ),
+    ],
+)
+def test_sparsify_negative_sentinels_rejected(kwargs, message):
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        _DETECTOR_ERROR_MODEL,
+        sparsify_errors=True,
+        sparsify_base_degree=2,
+        **kwargs,
+    )
+    with pytest.raises(ValueError, match=message):
+        config.compile_decoder()
+
+
+def test_compile_decoder_resolves_auto_sparsify_reactivate_limit():
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        _DETECTOR_ERROR_MODEL,
+        sparsify_errors=True,
+        sparsify_base_degree=2,
+        sparsify_reactivate_limit=-1,
+    )
+    decoder = config.compile_decoder()
+    assert (
+        decoder.config.sparsify_reactivate_limit
+        == min(
+            tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(
+                _DETECTOR_ERROR_MODEL.num_detectors,
+                2,
+            ),
+            _DETECTOR_ERROR_MODEL.num_errors,
+        )
+    )
+
+
+def test_compile_decoder_caps_auto_sparsify_reactivate_limit_at_error_count():
+    dem = stim.DetectorErrorModel("""
+        error(0.1) D0
+        detector(0, 0, 0) D0
+        detector(1, 0, 0) D1
+        detector(2, 0, 0) D2
+        detector(3, 0, 0) D3
+        detector(4, 0, 0) D4
+        detector(5, 0, 0) D5
+        detector(6, 0, 0) D6
+        detector(7, 0, 0) D7
+        detector(8, 0, 0) D8
+        detector(9, 0, 0) D9
+    """)
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        dem,
+        merge_errors=False,
+        sparsify_errors=True,
+        sparsify_base_degree=10_000,
+        sparsify_reactivate_limit=-1,
+    )
+    decoder = config.compile_decoder()
+    assert decoder.config.sparsify_reactivate_limit == dem.num_errors
+
+
+def test_compile_decoder_preserves_explicit_sparsify_reactivate_limit():
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        _DETECTOR_ERROR_MODEL,
+        sparsify_errors=True,
+        sparsify_base_degree=2,
+        sparsify_reactivate_limit=10,
+    )
+    decoder = config.compile_decoder()
+    assert decoder.config.sparsify_reactivate_limit == 10
+
+
+def test_python_sparsify_changes_predicted_error_set():
+    dem = stim.DetectorErrorModel("""
+        error(0.1) D0
+        error(0.1) D1
+        error(0.1) D2
+        error(0.1) D3
+        error(0.01) D0 D1 D2 D3
+    """)
+    syndrome = np.array([1, 1, 1, 1], dtype=bool)
+
+    dense = tesseract_decoder.tesseract.TesseractConfig(
+        dem,
+        merge_errors=False,
+    ).compile_decoder()
+    dense.decode_to_errors(syndrome)
+    assert list(dense.predicted_errors_buffer) == [4]
+
+    sparse0 = tesseract_decoder.tesseract.TesseractConfig(
+        dem,
+        merge_errors=False,
+        sparsify_errors=True,
+        sparsify_base_degree=2,
+        sparsify_max_degree=4,
+        sparsify_reactivate_limit=0,
+    ).compile_decoder()
+    sparse0.decode_to_errors(syndrome)
+    assert sorted(sparse0.predicted_errors_buffer) == [0, 1, 2, 3]
+
+    sparse1 = tesseract_decoder.tesseract.TesseractConfig(
+        dem,
+        merge_errors=False,
+        sparsify_errors=True,
+        sparsify_base_degree=2,
+        sparsify_max_degree=4,
+        sparsify_reactivate_limit=1,
+    ).compile_decoder()
+    sparse1.decode_to_errors(syndrome)
+    assert list(sparse1.predicted_errors_buffer) == [4]
+
+
+def test_decoder_compilation_validation():
+    # sparsify_base_degree <= 0 throws
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        _DETECTOR_ERROR_MODEL, sparsify_errors=True, sparsify_base_degree=-1
+    )
+    with pytest.raises(ValueError, match="sparsify_base_degree must be > 0"):
+        config.compile_decoder()
+
+    config.sparsify_base_degree = 0
+    with pytest.raises(ValueError, match="sparsify_base_degree must be > 0"):
+        config.compile_decoder()
+
+    # sparsify_max_degree < sparsify_base_degree throws
+    config.sparsify_base_degree = 3
+    config.sparsify_max_degree = 2
+    with pytest.raises(ValueError, match="sparsify_max_degree must be >= sparsify_base_degree"):
+        config.compile_decoder()
 
 
 if __name__ == "__main__":

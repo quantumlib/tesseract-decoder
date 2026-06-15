@@ -19,8 +19,8 @@ FetchContent_MakeAvailable(stim)
 # HiGHS
 FetchContent_Declare(
   highs
-  URL https://github.com/ERGO-Code/HiGHS/archive/refs/tags/v1.9.0.tar.gz
-  URL_HASH SHA256=dff575df08d88583c109702c7c5c75ff6e51611e6eacca8b5b3fdfba8ecc2cb4
+  URL https://github.com/ERGO-Code/HiGHS/archive/refs/tags/v1.14.0.tar.gz
+  URL_HASH SHA256=05931e8dd8c8cac514da8297003c31a206a0004d542b7da500810b85c87c20b9
 )
 FetchContent_MakeAvailable(highs)
 

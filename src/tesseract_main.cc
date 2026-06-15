@@ -17,6 +17,7 @@
 #include <atomic>
 #include <cmath>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <numeric>
@@ -164,12 +165,11 @@ struct Args {
         throw std::invalid_argument(
             "Must specify --sparsify-base-degree when --sparsify-errors is enabled.");
       }
-      if (sparsify_base_degree < 0) {
-        throw std::invalid_argument("--sparsify-base-degree must be >= 0.");
+      if (sparsify_base_degree <= 0) {
+        throw std::invalid_argument("--sparsify-base-degree must be > 0.");
       }
-      // Only throw if the user explicitly provided a negative limit
-      if (has_limit && sparsify_reactivate_limit < 0) {
-        throw std::invalid_argument("--sparsify-reactivate-limit must be >= 0.");
+      if (has_limit && sparsify_reactivate_limit < -1) {
+        throw std::invalid_argument("--sparsify-reactivate-limit must be >= -1.");
       }
       if (has_max && sparsify_max_degree < sparsify_base_degree) {
         throw std::invalid_argument("--sparsify-max-degree must be >= --sparsify-base-degree.");
@@ -225,8 +225,10 @@ struct Args {
           std::cout << ")" << std::endl;
         }
       }
-      DetOrder order = DetOrder::DetBFS;
-      if (det_order_index) {
+      DetOrder order = DetOrder::DetIndex;
+      if (det_order_bfs) {
+        order = DetOrder::DetBFS;
+      } else if (det_order_index) {
         order = DetOrder::DetIndex;
       } else if (det_order_coordinate) {
         order = DetOrder::DetCoordinate;
@@ -334,15 +336,6 @@ struct Args {
     config.sparsify_errors = sparsify_errors;
     config.sparsify_base_degree = sparsify_base_degree;
     config.sparsify_max_degree = sparsify_max_degree;
-
-    // Apply heuristic estimate for number of errors if sparsify_errors is enabled but no limit was
-    // provided
-    if (sparsify_errors && sparsify_reactivate_limit < 0) {
-      double k = sparsify_base_degree;
-      double num_detectors = config.dem.count_detectors();
-      sparsify_reactivate_limit =
-          static_cast<int>(std::round((std::pow(4.5, k - 2.0) / 3.0) * num_detectors));
-    }
     config.sparsify_reactivate_limit = sparsify_reactivate_limit;
   }
 };
@@ -362,11 +355,13 @@ int main(int argc, char* argv[]) {
       .default_value(size_t(1))
       .store_into(args.num_det_orders);
   program.add_argument("--det-order-bfs")
-      .help("Use BFS-based detector ordering (default if no method specified)")
+      .help("Use BFS-based detector ordering")
       .flag()
       .store_into(args.det_order_bfs);
   program.add_argument("--det-order-index")
-      .help("Randomly choose increasing or decreasing detector index order")
+      .help(
+          "Randomly choose increasing or decreasing detector index order "
+          "(default if no method specified)")
       .flag()
       .store_into(args.det_order_index);
   program.add_argument("--det-order-coordinate")
@@ -534,7 +529,7 @@ int main(int argc, char* argv[]) {
       .scan<'i', int>()
       .store_into(args.sparsify_max_degree);
   program.add_argument("--sparsify-reactivate-limit")
-      .help("Maximum number of optional errors to reactivate per shot.")
+      .help("Maximum number of optional errors to reactivate per shot. Use -1 for auto.")
       .metavar("N")
       .scan<'i', int>()
       .store_into(args.sparsify_reactivate_limit);
@@ -633,30 +628,47 @@ int main(int argc, char* argv[]) {
     out << est_dem << '\n';
   }
 
+  int effective_sparsify_reactivate_limit = config.sparsify_reactivate_limit;
+  for (const auto& decoder : decoders) {
+    if (decoder) {
+      effective_sparsify_reactivate_limit = decoder->config.sparsify_reactivate_limit;
+      break;
+    }
+  }
+  if (config.sparsify_errors && effective_sparsify_reactivate_limit == -1) {
+    effective_sparsify_reactivate_limit = suggest_sparsify_reactivate_limit(
+        config.dem.count_detectors(), config.sparsify_base_degree);
+    effective_sparsify_reactivate_limit = std::min(
+        effective_sparsify_reactivate_limit,
+        static_cast<int>(std::min<uint64_t>(
+            config.dem.count_errors(), static_cast<uint64_t>(std::numeric_limits<int>::max()))));
+  }
+
   bool print_final_stats = true;
   if (!args.stats_out_fname.empty()) {
-    nlohmann::json stats_json = {{"circuit_path", args.circuit_path},
-                                 {"dem_path", args.dem_path},
-                                 {"max_errors", args.max_errors},
-                                 {"sample_seed", args.sample_seed},
+    nlohmann::json stats_json = {
+        {"circuit_path", args.circuit_path},
+        {"dem_path", args.dem_path},
+        {"max_errors", args.max_errors},
+        {"sample_seed", args.sample_seed},
 
-                                 {"det_beam", args.det_beam},
-                                 {"det_penalty", args.det_penalty},
-                                 {"beam_climbing", args.beam_climbing},
-                                 {"no_revisit_dets", args.no_revisit_dets},
-                                 {"pqlimit", args.pqlimit},
-                                 {"num_det_orders", args.num_det_orders},
-                                 {"det_order_seed", args.det_order_seed},
-                                 {"total_time_seconds", total_time_seconds},
-                                 {"num_errors", num_errors},
-                                 {"num_low_confidence", num_low_confidence},
-                                 {"num_shots", shot},
-                                 {"num_threads", args.num_threads},
-                                 {"sample_num_shots", args.sample_num_shots},
-                                 {"sparsify_errors", args.sparsify_errors},
-                                 {"sparsify_base_degree", args.sparsify_base_degree},
-                                 {"sparsify_max_degree", args.sparsify_max_degree},
-                                 {"sparsify_reactivate_limit", args.sparsify_reactivate_limit}};
+        {"det_beam", args.det_beam},
+        {"det_penalty", args.det_penalty},
+        {"beam_climbing", args.beam_climbing},
+        {"no_revisit_dets", args.no_revisit_dets},
+        {"pqlimit", args.pqlimit},
+        {"num_det_orders", args.num_det_orders},
+        {"det_order_seed", args.det_order_seed},
+        {"total_time_seconds", total_time_seconds},
+        {"num_errors", num_errors},
+        {"num_low_confidence", num_low_confidence},
+        {"num_shots", shot},
+        {"num_threads", args.num_threads},
+        {"sample_num_shots", args.sample_num_shots},
+        {"sparsify_errors", args.sparsify_errors},
+        {"sparsify_base_degree", args.sparsify_base_degree},
+        {"sparsify_max_degree", args.sparsify_max_degree},
+        {"sparsify_reactivate_limit", effective_sparsify_reactivate_limit}};
 
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;

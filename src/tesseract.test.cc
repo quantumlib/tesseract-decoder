@@ -419,6 +419,59 @@ TEST(TesseractDetcostTest, ComparesRatiosNotRawCosts) {
   EXPECT_NEAR(got, expected, 1e-12);
 }
 
+TEST(TesseractSparsifyTest, SuggestReactivateLimit) {
+  EXPECT_EQ(suggest_sparsify_reactivate_limit(2, 2), 1);
+  EXPECT_EQ(suggest_sparsify_reactivate_limit(2, 3), 3);
+  EXPECT_EQ(suggest_sparsify_reactivate_limit(0, 2), 0);
+  EXPECT_EQ(suggest_sparsify_reactivate_limit(1, std::numeric_limits<int>::max()),
+            std::numeric_limits<int>::max());
+  EXPECT_THROW(suggest_sparsify_reactivate_limit(2, -1), std::invalid_argument);
+}
+
+TEST(TesseractSparsifyTest, AutoReactivateLimitClampedToErrorCountBeforeOverflow) {
+  stim::DetectorErrorModel dem = stim::DetectorErrorModel(R"DEM(
+    error(0.1) D0
+    detector(0, 0, 0) D0
+    detector(1, 0, 0) D1
+    detector(2, 0, 0) D2
+    detector(3, 0, 0) D3
+    detector(4, 0, 0) D4
+    detector(5, 0, 0) D5
+    detector(6, 0, 0) D6
+    detector(7, 0, 0) D7
+    detector(8, 0, 0) D8
+    detector(9, 0, 0) D9
+  )DEM");
+
+  TesseractConfig cfg;
+  cfg.dem = dem;
+  cfg.merge_errors = false;
+  cfg.sparsify_errors = true;
+  cfg.sparsify_base_degree = std::numeric_limits<int>::max();
+  cfg.sparsify_reactivate_limit = -1;
+  TesseractDecoder dec(cfg);
+
+  EXPECT_EQ(dec.config.sparsify_reactivate_limit, 1);
+}
+
+TEST(tesseract, InfinitePqlimitDoesNotReserveMaxVector) {
+  stim::DetectorErrorModel dem = stim::DetectorErrorModel(R"DEM(
+    error(0.1) D0
+    error(0.1) D1
+    error(0.2) D0 D1 L0
+  )DEM");
+
+  TesseractConfig cfg;
+  cfg.dem = dem;
+  cfg.merge_errors = false;
+  cfg.pqlimit = std::numeric_limits<size_t>::max();
+  TesseractDecoder dec(cfg);
+
+  EXPECT_NO_THROW(dec.decode_to_errors({0, 1}));
+  std::vector<size_t> expected = {2};
+  EXPECT_EQ(dec.predicted_errors_buffer, expected);
+}
+
 TEST(TesseractSparsifyTest, HighDegreeErrorRemoved) {
   stim::DetectorErrorModel dem = stim::DetectorErrorModel(R"DEM(
     error(0.1) D0
