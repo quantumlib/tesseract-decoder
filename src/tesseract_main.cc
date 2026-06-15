@@ -165,12 +165,11 @@ struct Args {
         throw std::invalid_argument(
             "Must specify --sparsify-base-degree when --sparsify-errors is enabled.");
       }
-      if (sparsify_base_degree < 0) {
-        throw std::invalid_argument("--sparsify-base-degree must be >= 0.");
+      if (sparsify_base_degree <= 0) {
+        throw std::invalid_argument("--sparsify-base-degree must be > 0.");
       }
-      // Only throw if the user explicitly provided a negative limit
-      if (has_limit && sparsify_reactivate_limit < 0) {
-        throw std::invalid_argument("--sparsify-reactivate-limit must be >= 0.");
+      if (has_limit && sparsify_reactivate_limit < -1) {
+        throw std::invalid_argument("--sparsify-reactivate-limit must be >= -1.");
       }
       if (has_max && sparsify_max_degree < sparsify_base_degree) {
         throw std::invalid_argument("--sparsify-max-degree must be >= --sparsify-base-degree.");
@@ -530,7 +529,7 @@ int main(int argc, char* argv[]) {
       .scan<'i', int>()
       .store_into(args.sparsify_max_degree);
   program.add_argument("--sparsify-reactivate-limit")
-      .help("Maximum number of optional errors to reactivate per shot.")
+      .help("Maximum number of optional errors to reactivate per shot. Use -1 for auto.")
       .metavar("N")
       .scan<'i', int>()
       .store_into(args.sparsify_reactivate_limit);

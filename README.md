@@ -281,7 +281,8 @@ if __name__ == "__main__":
         'tesseract',
         'tesseract-long-beam',
         'tesseract-short-beam',
-        'tesseract-long-beam-sparsify3',
+        'tesseract-long-beam-sparsify-color-code-like',
+        'tesseract-short-beam-sparsify-surface-code-like',
     ]
     decoder_dict = make_tesseract_sinter_decoders_dict()
     # You can also make your own custom Tesseract Decoder to-be-used with Sinter.
@@ -335,16 +336,16 @@ should get something like:
     10000,        42,         0,   0.071,tesseract,1b3fce6286e438f38c00c8f6a5005947373515ab08e6446a7dd9ecdbef12d4cc,"{""d"":3,""decoder"":""tesseract""}",  
     10000,        49,         0,   0.546,custom-tesseract-decoder,7b082bec7541be858e239d7828a432e329cd448356bbdf051b8b8aa76c86625a,"{""d"":3,""decoder"":""custom-tesseract-decoder""}", 
     10000,        13,         0,    7.64,tesseract-long-beam,217a3542f56319924576658a6da7081ea2833f5167cf6d77fbc7071548e386a9,"{""d"":5,""decoder"":""tesseract-long-beam""}",  
-    10000,        14,         0,    4.12,tesseract-long-beam-sparsify3,14fa5f9f08381d760f6c1f59805b75f2c70cfb83e50d9f1f40d92820a20eeb13,"{""d"":5,""decoder"":""tesseract-long-beam-sparsify3""}",
+    10000,        14,         0,    4.12,tesseract-long-beam-sparsify-color-code-like,14fa5f9f08381d760f6c1f59805b75f2c70cfb83e50d9f1f40d92820a20eeb13,"{""d"":5,""decoder"":""tesseract-long-beam-sparsify-color-code-like""}",
     10000,        42,         0,   0.743,tesseract-short-beam,cf4a4b0ce0e4c7beec1171f58eddffe403ed7359db5016fca2e16174ea577057,"{""d"":3,""decoder"":""tesseract-short-beam""}",  
     10000,        34,         0,   0.924,tesseract-long-beam,8cfa0f2e4061629e13bc98fe213285dc00eb90f21bba36e08c76bcdf213a1c09,"{""d"":3,""decoder"":""tesseract-long-beam""}",  
-    10000,        35,         0,   0.681,tesseract-long-beam-sparsify3,f41bdb1bde3f5cf4893a9a9e33fc7d4c47d742f22b13dfec9195347e780119bc,"{""d"":3,""decoder"":""tesseract-long-beam-sparsify3""}",
+    10000,        35,         0,   0.681,tesseract-long-beam-sparsify-color-code-like,f41bdb1bde3f5cf4893a9a9e33fc7d4c47d742f22b13dfec9195347e780119bc,"{""d"":3,""decoder"":""tesseract-long-beam-sparsify-color-code-like""}",
     10000,        10,         0,   0.439,tesseract,8274ea5ffec15d6e71faed5ee1057cdd7e497cbaee4c6109784f8a74669d7f96,"{""d"":5,""decoder"":""tesseract""}",  
     10000,         8,         0,    3.93,custom-tesseract-decoder,8e4f5ab5dde00fec74127eea39ea52d5a98ae6ccfc277b5d9be450f78acc1c45,"{""d"":5,""decoder"":""custom-tesseract-decoder""}",  
     10000,        10,         0,    5.74,tesseract-short-beam,bf696535d62a25720c3a0c624ec5624002efe3f6cb0468963eee702efb48abc1,"{""d"":5,""decoder"":""tesseract-short-beam""}",  
     10000,         5,         0,    1.27,tesseract,3f94c61f1503844df6cf0d200b74ac01bfbc5e29e70cedbfc2faad67047e7887,"{""d"":7,""decoder"":""tesseract""}",  
     10000,         4,         0,    25.0,tesseract-long-beam,4d510f0acf511e24a833a93c956b683346696d8086866fadc73063fb09014c23,"{""d"":7,""decoder"":""tesseract-long-beam""}",  
-    10000,         4,         0,    14.8,tesseract-long-beam-sparsify3,80868acc6e43c62cb73b242b66ae27d3ea08fe970ea879db5a8425c2454fc8a1,"{""d"":7,""decoder"":""tesseract-long-beam-sparsify3""}",
+    10000,         4,         0,    14.8,tesseract-long-beam-sparsify-color-code-like,80868acc6e43c62cb73b242b66ae27d3ea08fe970ea879db5a8425c2454fc8a1,"{""d"":7,""decoder"":""tesseract-long-beam-sparsify-color-code-like""}",
     10000,         1,         0,    18.6,tesseract-short-beam,75782ce4593022fcedad4c73104711f05c9c635db92869531f78da336945b121,"{""d"":7,""decoder"":""tesseract-short-beam""}",  
     10000,         4,         0,    11.6,custom-tesseract-decoder,48f256a28fff47c58af7bffdf98fdee1d41a721751ee965c5d3c5712ac795dc8,"{""d"":7,""decoder"":""custom-tesseract-decoder""}",  
 ```
@@ -406,12 +407,14 @@ explicitly.
 These values balance decoding speed and accuracy across the benchmarks reported in the paper and can be adjusted for specific use cases.
 
 The Sinter decoder dictionary also provides sparsified variants:
-`tesseract-long-beam-sparsify3`, `tesseract-long-beam-sparsify2`,
-`tesseract-short-beam-sparsify3`, and `tesseract-short-beam-sparsify2`. The suffix indicates the
-sparsification base degree.
+`tesseract-long-beam-sparsify-color-code-like`,
+`tesseract-long-beam-sparsify-surface-code-like`,
+`tesseract-short-beam-sparsify-color-code-like`, and
+`tesseract-short-beam-sparsify-surface-code-like`.
 
-As a quick rule of thumb, use the non-sparsified decoders as the safest baseline. Use `sparsify2`
-for surface-code-like or mostly graphlike DEMs, and use `sparsify3` for color-code,
+As a quick rule of thumb, use the non-sparsified decoders as the safest baseline. Use the
+`surface-code-like` variants for surface-code-like or mostly graphlike DEMs, and use the
+`color-code-like` variants for color-code,
 bivariate-bicycle-code, or other DEMs where a typical bulk data error activates about three
 detectors. Within either family, prefer the long-beam variants when accuracy matters more and the
 short-beam variants when runtime matters more. See the

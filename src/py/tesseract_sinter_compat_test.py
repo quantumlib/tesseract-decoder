@@ -775,33 +775,33 @@ def test_sinter_compile_sparsify_config_reaches_decoder():
 
 def test_make_tesseract_sinter_decoders_dict_contains_sparsify():
     decoders = make_tesseract_sinter_decoders_dict()
-    assert "tesseract-long-beam-sparsify3" in decoders
-    assert "tesseract-long-beam-sparsify2" in decoders
-    assert "tesseract-short-beam-sparsify3" in decoders
-    assert "tesseract-short-beam-sparsify2" in decoders
+    assert "tesseract-long-beam-sparsify-color-code-like" in decoders
+    assert "tesseract-long-beam-sparsify-surface-code-like" in decoders
+    assert "tesseract-short-beam-sparsify-color-code-like" in decoders
+    assert "tesseract-short-beam-sparsify-surface-code-like" in decoders
 
-    d_long3 = decoders["tesseract-long-beam-sparsify3"]
-    assert d_long3.sparsify_errors is True
-    assert d_long3.sparsify_base_degree == 3
-    assert d_long3.sparsify_max_degree == -1
-    assert d_long3.sparsify_reactivate_limit == -1
-    assert d_long3.det_beam == 20
+    d_long_color = decoders["tesseract-long-beam-sparsify-color-code-like"]
+    assert d_long_color.sparsify_errors is True
+    assert d_long_color.sparsify_base_degree == 3
+    assert d_long_color.sparsify_max_degree == -1
+    assert d_long_color.sparsify_reactivate_limit == -1
+    assert d_long_color.det_beam == 20
 
-    d_short2 = decoders["tesseract-short-beam-sparsify2"]
-    assert d_short2.sparsify_errors is True
-    assert d_short2.sparsify_base_degree == 2
-    assert d_short2.sparsify_max_degree == -1
-    assert d_short2.sparsify_reactivate_limit == -1
-    assert d_short2.det_beam == 15
+    d_short_surface = decoders["tesseract-short-beam-sparsify-surface-code-like"]
+    assert d_short_surface.sparsify_errors is True
+    assert d_short_surface.sparsify_base_degree == 2
+    assert d_short_surface.sparsify_max_degree == -1
+    assert d_short_surface.sparsify_reactivate_limit == -1
+    assert d_short_surface.det_beam == 15
 
 
 @pytest.mark.parametrize(
     "decoder_name",
     [
-        "tesseract-long-beam-sparsify3",
-        "tesseract-long-beam-sparsify2",
-        "tesseract-short-beam-sparsify3",
-        "tesseract-short-beam-sparsify2",
+        "tesseract-long-beam-sparsify-color-code-like",
+        "tesseract-long-beam-sparsify-surface-code-like",
+        "tesseract-short-beam-sparsify-color-code-like",
+        "tesseract-short-beam-sparsify-surface-code-like",
     ],
 )
 def test_sinter_decode_with_sparsify_decoders(decoder_name):

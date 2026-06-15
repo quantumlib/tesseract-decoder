@@ -449,14 +449,14 @@ void pybind_sinter_compat(py::module& root) {
             /*sparsify_errors=*/false, /*sparsify_base_degree=*/-1,
             /*sparsify_max_degree=*/-1, /*sparsify_reactivate_limit=*/-1);
         result["tesseract"] = result["tesseract-long-beam"];
-        result["tesseract-long-beam-sparsify3"] = TesseractSinterDecoder(
+        result["tesseract-long-beam-sparsify-color-code-like"] = TesseractSinterDecoder(
             /*det_beam=*/20, /*beam_climbing=*/true, /*no_revisit_dets=*/true,
             /*verbose=*/false, /*merge_errors=*/true, /*pqlimit=*/1000000,
             /*det_penalty=*/0.0, /*create_visualization=*/false,
             /*num_det_orders=*/21, /*det_order_method=*/DetOrder::DetIndex, /*seed=*/2384753,
             /*sparsify_errors=*/true, /*sparsify_base_degree=*/3,
             /*sparsify_max_degree=*/-1, /*sparsify_reactivate_limit=*/-1);
-        result["tesseract-long-beam-sparsify2"] = TesseractSinterDecoder(
+        result["tesseract-long-beam-sparsify-surface-code-like"] = TesseractSinterDecoder(
             /*det_beam=*/20, /*beam_climbing=*/true, /*no_revisit_dets=*/true,
             /*verbose=*/false, /*merge_errors=*/true, /*pqlimit=*/1000000,
             /*det_penalty=*/0.0, /*create_visualization=*/false,
@@ -470,14 +470,14 @@ void pybind_sinter_compat(py::module& root) {
             /*num_det_orders=*/16, /*det_order_method=*/DetOrder::DetIndex, /*seed=*/2384753,
             /*sparsify_errors=*/false, /*sparsify_base_degree=*/-1,
             /*sparsify_max_degree=*/-1, /*sparsify_reactivate_limit=*/-1);
-        result["tesseract-short-beam-sparsify3"] = TesseractSinterDecoder(
+        result["tesseract-short-beam-sparsify-color-code-like"] = TesseractSinterDecoder(
             /*det_beam=*/15, /*beam_climbing=*/true, /*no_revisit_dets=*/true,
             /*verbose=*/false, /*merge_errors=*/true, /*pqlimit=*/200000,
             /*det_penalty=*/0.0, /*create_visualization=*/false,
             /*num_det_orders=*/16, /*det_order_method=*/DetOrder::DetIndex, /*seed=*/2384753,
             /*sparsify_errors=*/true, /*sparsify_base_degree=*/3,
             /*sparsify_max_degree=*/-1, /*sparsify_reactivate_limit=*/-1);
-        result["tesseract-short-beam-sparsify2"] = TesseractSinterDecoder(
+        result["tesseract-short-beam-sparsify-surface-code-like"] = TesseractSinterDecoder(
             /*det_beam=*/15, /*beam_climbing=*/true, /*no_revisit_dets=*/true,
             /*verbose=*/false, /*merge_errors=*/true, /*pqlimit=*/200000,
             /*det_penalty=*/0.0, /*create_visualization=*/false,

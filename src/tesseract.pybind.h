@@ -125,7 +125,7 @@ void add_tesseract_module(py::module& root) {
              sparsify_errors: bool, default=False
                  If True, enables per-shot sparse error activation.
              sparsify_base_degree: int, default=-1
-                 Maximum detector degree for mandatory errors.
+                 Positive maximum detector degree for mandatory errors.
              sparsify_max_degree: int, default=-1
                  Maximum detector degree for optional errors.
              sparsify_reactivate_limit: int, default=-1
@@ -168,7 +168,7 @@ void add_tesseract_module(py::module& root) {
             sparsify_errors: bool, default=False
                 If True, enables per-shot sparse error activation.
             sparsify_base_degree: int, default=-1
-                Maximum detector degree for mandatory errors.
+                Positive maximum detector degree for mandatory errors.
             sparsify_max_degree: int, default=-1
                 Maximum detector degree for optional errors.
             sparsify_reactivate_limit: int, default=-1

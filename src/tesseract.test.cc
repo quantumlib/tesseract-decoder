@@ -428,7 +428,7 @@ TEST(TesseractSparsifyTest, SuggestReactivateLimit) {
   EXPECT_THROW(suggest_sparsify_reactivate_limit(2, -1), std::invalid_argument);
 }
 
-TEST(TesseractSparsifyTest, AutoReactivateLimitClampedToErrorCount) {
+TEST(TesseractSparsifyTest, AutoReactivateLimitClampedToErrorCountBeforeOverflow) {
   stim::DetectorErrorModel dem = stim::DetectorErrorModel(R"DEM(
     error(0.1) D0
     detector(0, 0, 0) D0
@@ -447,7 +447,7 @@ TEST(TesseractSparsifyTest, AutoReactivateLimitClampedToErrorCount) {
   cfg.dem = dem;
   cfg.merge_errors = false;
   cfg.sparsify_errors = true;
-  cfg.sparsify_base_degree = 3;
+  cfg.sparsify_base_degree = std::numeric_limits<int>::max();
   cfg.sparsify_reactivate_limit = -1;
   TesseractDecoder dec(cfg);
 

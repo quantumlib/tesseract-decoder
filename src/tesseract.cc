@@ -41,6 +41,32 @@ std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec) {
   return os;
 }
 
+int suggest_sparsify_reactivate_limit_capped(size_t num_detectors, int sparsify_base_degree,
+                                             int max_limit) {
+  if (sparsify_base_degree < 0) {
+    throw std::invalid_argument("sparsify_base_degree must be >= 0.");
+  }
+  if (num_detectors == 0 || max_limit <= 0) {
+    return 0;
+  }
+  double exponent = static_cast<double>(sparsify_base_degree) - 2.0;
+  double max_result = static_cast<double>(max_limit);
+  double log_result =
+      exponent * std::log(4.5) - std::log(3.0) + std::log(static_cast<double>(num_detectors));
+  if (!std::isfinite(log_result) || log_result >= std::log(max_result)) {
+    return max_limit;
+  }
+  double result = std::exp(log_result);
+  if (!std::isfinite(result)) {
+    return max_limit;
+  }
+  double rounded = std::round(result);
+  if (rounded >= max_result) {
+    return max_limit;
+  }
+  return static_cast<int>(rounded);
+}
+
 };  // namespace
 
 namespace std {
@@ -73,28 +99,8 @@ std::string TesseractConfig::str() {
 }
 
 int suggest_sparsify_reactivate_limit(size_t num_detectors, int sparsify_base_degree) {
-  if (sparsify_base_degree < 0) {
-    throw std::invalid_argument("sparsify_base_degree must be >= 0.");
-  }
-  if (num_detectors == 0) {
-    return 0;
-  }
-  double exponent = static_cast<double>(sparsify_base_degree) - 2.0;
-  double max_result = static_cast<double>(std::numeric_limits<int>::max());
-  double log_result =
-      exponent * std::log(4.5) - std::log(3.0) + std::log(static_cast<double>(num_detectors));
-  if (log_result >= std::log(max_result)) {
-    return std::numeric_limits<int>::max();
-  }
-  double result = (std::pow(4.5, exponent) / 3.0) * static_cast<double>(num_detectors);
-  if (!std::isfinite(result)) {
-    return std::numeric_limits<int>::max();
-  }
-  double rounded = std::round(result);
-  if (rounded >= max_result) {
-    return std::numeric_limits<int>::max();
-  }
-  return static_cast<int>(rounded);
+  return suggest_sparsify_reactivate_limit_capped(num_detectors, sparsify_base_degree,
+                                                  std::numeric_limits<int>::max());
 }
 
 std::string Node::str() {
@@ -243,9 +249,9 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
   }
 
   if (config.sparsify_errors) {
-    if (config.sparsify_base_degree < 0) {
+    if (config.sparsify_base_degree <= 0) {
       throw std::invalid_argument(
-          "sparsify_base_degree must be >= 0 when sparsify_errors is enabled.");
+          "sparsify_base_degree must be > 0 when sparsify_errors is enabled.");
     }
     if (config.sparsify_max_degree < -1) {
       throw std::invalid_argument("sparsify_max_degree must be >= -1.");
@@ -259,11 +265,10 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
     }
 
     if (config.sparsify_reactivate_limit == -1) {
-      int suggested_reactivate_limit = suggest_sparsify_reactivate_limit(
-          config.dem.count_detectors(), config.sparsify_base_degree);
       int error_count_limit = static_cast<int>(
           std::min(num_errors, static_cast<size_t>(std::numeric_limits<int>::max())));
-      config.sparsify_reactivate_limit = std::min(suggested_reactivate_limit, error_count_limit);
+      config.sparsify_reactivate_limit = suggest_sparsify_reactivate_limit_capped(
+          config.dem.count_detectors(), config.sparsify_base_degree, error_count_limit);
     }
 
     sparsify_mandatory_errors.clear();
