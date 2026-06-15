@@ -325,8 +325,11 @@ void TesseractDecoder::decode_to_errors_with_graph(
   low_confidence_flag = false;
   error_chain_arena.clear();
   // Can technically be larger than pqlimit, but we need an initial guess on how many nodes we
-  // will process from the queue.
-  error_chain_arena.reserve(config.pqlimit);
+  // will process from the queue. Only reserve if pqlimit is a reasonable (finite) value;
+  // reserving SIZE_MAX bytes would throw std::length_error.
+  if (config.pqlimit != std::numeric_limits<size_t>::max()) {
+    error_chain_arena.reserve(config.pqlimit);
+  }
 
   std::priority_queue<Node, std::vector<Node>, std::greater<Node>> pq;
   std::unordered_map<size_t, std::unordered_set<boost::dynamic_bitset<>>> visited_detectors;
