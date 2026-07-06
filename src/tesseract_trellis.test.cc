@@ -1,0 +1,59 @@
+// Copyright 2025 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "tesseract_trellis.h"
+
+#include <gtest/gtest.h>
+
+#include <cmath>
+
+#include "stim.h"
+
+TEST(TesseractTrellisDecoderTest, ComputesObservableProbabilityForAmbiguousSyndrome) {
+  stim::DetectorErrorModel dem(R"DEM(
+    error(0.1) D0
+    error(0.2) D0 L0
+    detector(0, 0, 0) D0
+  )DEM");
+
+  TesseractTrellisConfig config;
+  config.dem = dem;
+  config.beam_width = 16;
+  TesseractTrellisDecoder decoder(config);
+
+  decoder.decode_shot({0});
+  EXPECT_FALSE(decoder.low_confidence_flag);
+  EXPECT_EQ(decoder.predicted_obs_mask, 1);
+  EXPECT_NEAR(decoder.observable_probability(), 0.18 / 0.26, 1e-12);
+
+  decoder.decode_shot({});
+  EXPECT_FALSE(decoder.low_confidence_flag);
+  EXPECT_EQ(decoder.predicted_obs_mask, 0);
+  EXPECT_NEAR(decoder.observable_probability(), 0.02 / 0.74, 1e-12);
+}
+
+TEST(TesseractTrellisDecoderTest, ReportsNanProbabilityForInvalidDetector) {
+  stim::DetectorErrorModel dem(R"DEM(
+    error(0.1) D0 L0
+    detector(0, 0, 0) D0
+  )DEM");
+
+  TesseractTrellisConfig config;
+  config.dem = dem;
+  TesseractTrellisDecoder decoder(config);
+
+  decoder.decode_shot({1});
+  EXPECT_TRUE(decoder.low_confidence_flag);
+  EXPECT_TRUE(std::isnan(decoder.observable_probability()));
+}
