@@ -58,6 +58,47 @@ TEST(TesseractTrellisDecoderTest, ReportsNanProbabilityForInvalidDetector) {
   EXPECT_TRUE(std::isnan(decoder.observable_probability()));
 }
 
+TEST(TesseractTrellisDecoderTest, RankingModesDecodeAmbiguousSyndrome) {
+  stim::DetectorErrorModel dem(R"DEM(
+    error(0.1) D0
+    error(0.2) D0 L0
+    detector(0, 0, 0) D0
+  )DEM");
+
+  for (auto ranking_mode :
+       {TesseractTrellisRankingMode::MassOnly, TesseractTrellisRankingMode::FutureDetcostRanked,
+        TesseractTrellisRankingMode::FutureActiveDetcostRanked}) {
+    TesseractTrellisConfig config;
+    config.dem = dem;
+    config.beam_width = 16;
+    config.ranking_mode = ranking_mode;
+    TesseractTrellisDecoder decoder(config);
+
+    decoder.decode_shot({0});
+    EXPECT_FALSE(decoder.low_confidence_flag);
+    EXPECT_EQ(decoder.predicted_obs_mask, 1);
+    EXPECT_NEAR(decoder.observable_probability(), 0.18 / 0.26, 1e-12);
+  }
+}
+
+TEST(TesseractTrellisDecoderTest, BeamEpsSmokeTest) {
+  stim::DetectorErrorModel dem(R"DEM(
+    error(0.1) D0
+    error(0.2) D0 L0
+    detector(0, 0, 0) D0
+  )DEM");
+
+  TesseractTrellisConfig config;
+  config.dem = dem;
+  config.beam_width = 16;
+  config.beam_eps = 0.1;
+  TesseractTrellisDecoder decoder(config);
+
+  decoder.decode_shot({0});
+  EXPECT_FALSE(decoder.low_confidence_flag);
+  EXPECT_TRUE(std::isfinite(decoder.observable_probability()));
+}
+
 TEST(TesseractTrellisDecoderTest, RejectsMoreThanOneObservable) {
   stim::DetectorErrorModel dem(R"DEM(
     error(0.1) D0 L0

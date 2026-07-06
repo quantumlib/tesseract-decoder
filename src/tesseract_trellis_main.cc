@@ -89,6 +89,9 @@ struct Args {
     if (!out_fname.empty() && out_format.empty()) {
       throw std::invalid_argument("If --out is provided, must also specify --out-format.");
     }
+    if (!dem_out_fname.empty()) {
+      throw std::invalid_argument("--dem-out is not supported by tesseract_trellis.");
+    }
     if (obs_probs_out_fname == "-") {
       throw std::invalid_argument("--obs-probs-out must be a file path, not stdout.");
     }
@@ -240,6 +243,9 @@ struct Args {
       FILE* predictions_file = stdout;
       if (out_fname != "-") {
         predictions_file = fopen(out_fname.c_str(), "w");
+        if (!predictions_file) {
+          throw std::invalid_argument("Could not open the file: " + out_fname);
+        }
       }
       writer = stim::MeasureRecordWriter::make(predictions_file, predictions_out_format.id);
       writer->begin_result_type('L');
@@ -407,7 +413,7 @@ int main(int argc, char* argv[]) {
         }
         if (low_confidence[shot_index]) {
           ++num_low_confidence;
-        } else if (obs_predicted[shot_index] != shots[shot_index].obs_mask_as_u64()) {
+        } else if (has_obs && obs_predicted[shot_index] != shots[shot_index].obs_mask_as_u64()) {
           ++num_errors;
         }
         total_time_seconds += decoding_time_seconds[shot_index];
@@ -431,7 +437,7 @@ int main(int argc, char* argv[]) {
                     << " truncate=" << time_truncate_per_shot[shot_index]
                     << " reconstruct=" << time_reconstruct_per_shot[shot_index] << '\n';
         }
-        return num_errors < args.max_errors;
+        return !has_obs || num_errors < args.max_errors;
       });
 
   if (!args.obs_probs_out_fname.empty()) {
@@ -445,11 +451,6 @@ int main(int argc, char* argv[]) {
         throw std::runtime_error("Failed to write observable probabilities.");
       }
     }
-  }
-
-  if (!args.dem_out_fname.empty()) {
-    throw std::invalid_argument(
-        "--dem-out is not supported by tesseract_trellis without path reconstruction.");
   }
 
   bool print_final_stats = true;
@@ -474,7 +475,6 @@ int main(int argc, char* argv[]) {
                                  {"sample_seed", args.sample_seed},
                                  {"sample_num_shots", args.sample_num_shots},
                                  {"num_threads", args.num_threads},
-                                 {"num_errors", num_errors},
                                  {"num_low_confidence", num_low_confidence},
                                  {"num_shots", shot},
                                  {"total_time_seconds", total_time_seconds},
@@ -482,6 +482,11 @@ int main(int argc, char* argv[]) {
                                  {"merge_input_candidates", merge_input_candidates_total},
                                  {"merge_output_candidates", merge_output_candidates_total},
                                  {"merge_duplicate_layers", merge_duplicate_layers_total}};
+    if (has_obs) {
+      stats_json["num_errors"] = num_errors;
+    } else {
+      stats_json["num_errors"] = nullptr;
+    }
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;
       print_final_stats = false;
