@@ -57,3 +57,21 @@ TEST(TesseractTrellisDecoderTest, ReportsNanProbabilityForInvalidDetector) {
   EXPECT_TRUE(decoder.low_confidence_flag);
   EXPECT_TRUE(std::isnan(decoder.observable_probability()));
 }
+
+TEST(TesseractTrellisDecoderTest, RejectsMoreThanOneObservable) {
+  stim::DetectorErrorModel dem(R"DEM(
+    error(0.1) D0 L0
+    error(0.1) D0 L1
+    detector(0, 0, 0) D0
+  )DEM");
+
+  TesseractTrellisConfig config;
+  config.dem = dem;
+
+  try {
+    TesseractTrellisDecoder decoder(config);
+    FAIL() << "Expected TesseractTrellisDecoder construction to fail.";
+  } catch (const std::invalid_argument& err) {
+    EXPECT_STREQ("tesseract_trellis currently supports at most 1 observable", err.what());
+  }
+}

@@ -279,7 +279,9 @@ int main(int argc, char* argv[]) {
   program.add_argument("--out").default_value(std::string("")).store_into(args.out_fname);
   program.add_argument("--out-format").default_value(std::string("")).store_into(args.out_format);
   program.add_argument("--obs-probs-out")
-      .help("File to write headerless binary doubles containing P(L0=1) for each decoded shot.")
+      .help(
+          "File to write headerless binary doubles containing P(L0=1) for each decoded shot. "
+          "Requires exactly one observable.")
       .default_value(std::string(""))
       .store_into(args.obs_probs_out_fname);
   program.add_argument("--dem-out").default_value(std::string("")).store_into(args.dem_out_fname);
@@ -353,8 +355,14 @@ int main(int argc, char* argv[]) {
   size_t num_low_confidence = 0;
   double total_time_seconds = 0;
   size_t num_observables = config.dem.count_observables();
+  if (num_observables > 1) {
+    std::cerr << "tesseract_trellis currently supports at most one observable; DEM has "
+              << num_observables << "." << std::endl;
+    return EXIT_FAILURE;
+  }
   if (!args.obs_probs_out_fname.empty() && num_observables != 1) {
-    throw std::invalid_argument("--obs-probs-out requires a DEM with exactly one observable.");
+    std::cerr << "--obs-probs-out requires a DEM with exactly one observable." << std::endl;
+    return EXIT_FAILURE;
   }
 
   size_t shot = parallel_for_shots_in_order(
