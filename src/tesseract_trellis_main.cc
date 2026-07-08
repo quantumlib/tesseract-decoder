@@ -450,11 +450,10 @@ int main(int argc, char* argv[]) {
     if (!out.is_open()) {
       throw std::invalid_argument("Failed to open " + args.obs_probs_out_fname);
     }
-    for (size_t k = 0; k < shot; ++k) {
-      out.write(reinterpret_cast<const char*>(&obs_probability_predicted[k]), sizeof(double));
-      if (!out) {
-        throw std::runtime_error("Failed to write observable probabilities.");
-      }
+    out.write(reinterpret_cast<const char*>(obs_probability_predicted.data()),
+              shot * sizeof(double));
+    if (!out) {
+      throw std::runtime_error("Failed to write observable probabilities.");
     }
   }
 

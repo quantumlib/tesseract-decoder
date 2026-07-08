@@ -18,6 +18,7 @@
 
 #include <cmath>
 #include <limits>
+#include <string>
 
 #include "stim.h"
 
@@ -163,6 +164,6 @@ TEST(TesseractTrellisDecoderTest, RejectsMoreThanOneObservable) {
     TesseractTrellisDecoder decoder(config);
     FAIL() << "Expected TesseractTrellisDecoder construction to fail.";
   } catch (const std::invalid_argument& err) {
-    EXPECT_STREQ("tesseract_trellis currently supports at most 1 observable", err.what());
+    EXPECT_NE(std::string(err.what()).find("supports at most one observable"), std::string::npos);
   }
 }

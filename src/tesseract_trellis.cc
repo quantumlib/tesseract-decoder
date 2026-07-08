@@ -45,8 +45,10 @@ constexpr size_t kMaxCompiledWideStateWords = 4;
 
 #if defined(__GNUC__) || defined(__clang__)
 #define TESSERACT_ALWAYS_INLINE inline __attribute__((always_inline))
+#define TESSERACT_HOT __attribute__((hot))
 #else
 #define TESSERACT_ALWAYS_INLINE inline
+#define TESSERACT_HOT
 #endif
 
 struct Fault {
@@ -928,7 +930,7 @@ std::vector<CompiledWideLayerTemplate<Words>> compile_wide_layers(
     compiled.q = layer.q;
     compiled.p = layer.p;
     if (layer.obs_mask > 1) {
-      throw std::invalid_argument("tesseract_trellis currently supports at most 1 observable");
+      throw std::invalid_argument("tesseract_trellis currently supports at most one observable");
     }
     compiled.toggles_observable = layer.obs_mask != 0;
 
@@ -1212,7 +1214,7 @@ TesseractTrellisDecoder::TesseractTrellisDecoder(TesseractTrellisConfig config_)
   num_detectors = config.dem.count_detectors();
   num_observables = config.dem.count_observables();
   if (num_observables > 1) {
-    throw std::invalid_argument("tesseract_trellis currently supports at most 1 observable");
+    throw std::invalid_argument("tesseract_trellis currently supports at most one observable");
   }
 
   all_possible_detector_words.assign(num_state_words(num_detectors), 0);
@@ -1241,9 +1243,10 @@ TesseractTrellisDecoder::TesseractTrellisDecoder(TesseractTrellisConfig config_)
   prepare_projected_fault_masks(&wide_layer_templates);
   wide_kernel =
       build_compiled_wide_kernel(wide_layer_templates, wide_frontier_width, initial_future_detcost);
+  wide_layer_templates.clear();
 }
 
-__attribute__((hot)) void TesseractTrellisDecoder::decode_shot(
+TESSERACT_HOT void TesseractTrellisDecoder::decode_shot(
     const std::vector<uint64_t>& detections) {
   low_confidence_flag = false;
   num_states_expanded = 0;
