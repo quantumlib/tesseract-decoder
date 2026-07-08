@@ -1240,8 +1240,7 @@ TesseractTrellisDecoder::TesseractTrellisDecoder(TesseractTrellisConfig config_)
   wide_layer_templates.clear();
 }
 
-TESSERACT_HOT void TesseractTrellisDecoder::decode_shot(
-    const std::vector<uint64_t>& detections) {
+TESSERACT_HOT void TesseractTrellisDecoder::decode_shot(const std::vector<uint64_t>& detections) {
   low_confidence_flag = false;
   num_states_expanded = 0;
   num_states_merged = 0;
