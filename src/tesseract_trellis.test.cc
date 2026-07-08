@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <limits>
 
 #include "stim.h"
 
@@ -97,6 +98,55 @@ TEST(TesseractTrellisDecoderTest, BeamEpsSmokeTest) {
   decoder.decode_shot({0});
   EXPECT_FALSE(decoder.low_confidence_flag);
   EXPECT_TRUE(std::isfinite(decoder.observable_probability()));
+}
+
+TEST(TesseractTrellisDecoderTest, MergeErrorsMatchesOtherDecoders) {
+  stim::DetectorErrorModel dem(R"DEM(
+    error(0.1) D0 L0
+    error(0.2) D0 L0
+    error(0) D0
+    detector(0, 0, 0) D0
+  )DEM");
+
+  TesseractTrellisConfig merged_config;
+  merged_config.dem = dem;
+  merged_config.beam_width = 16;
+  TesseractTrellisDecoder merged_decoder(merged_config);
+
+  EXPECT_TRUE(merged_decoder.config.merge_errors);
+  EXPECT_EQ(merged_decoder.errors.size(), 1);
+  EXPECT_EQ(merged_decoder.config.dem.count_errors(), 1);
+  EXPECT_EQ(merged_decoder.dem_error_to_error.size(), 3);
+  EXPECT_EQ(merged_decoder.dem_error_to_error[0], 0);
+  EXPECT_EQ(merged_decoder.dem_error_to_error[1], 0);
+  EXPECT_EQ(merged_decoder.dem_error_to_error[2], std::numeric_limits<size_t>::max());
+  EXPECT_EQ(merged_decoder.error_to_dem_error.size(), 1);
+  EXPECT_EQ(merged_decoder.error_to_dem_error[0], 0);
+
+  merged_decoder.decode_shot({0});
+  EXPECT_FALSE(merged_decoder.low_confidence_flag);
+  EXPECT_EQ(merged_decoder.predicted_obs_mask, 1);
+  EXPECT_NEAR(merged_decoder.observable_probability(), 1.0, 1e-12);
+
+  TesseractTrellisConfig unmerged_config;
+  unmerged_config.dem = dem;
+  unmerged_config.beam_width = 16;
+  unmerged_config.merge_errors = false;
+  TesseractTrellisDecoder unmerged_decoder(unmerged_config);
+
+  EXPECT_FALSE(unmerged_decoder.config.merge_errors);
+  EXPECT_EQ(unmerged_decoder.errors.size(), 2);
+  EXPECT_EQ(unmerged_decoder.config.dem.count_errors(), 2);
+  EXPECT_EQ(unmerged_decoder.dem_error_to_error.size(), 3);
+  EXPECT_EQ(unmerged_decoder.dem_error_to_error[0], 0);
+  EXPECT_EQ(unmerged_decoder.dem_error_to_error[1], 1);
+  EXPECT_EQ(unmerged_decoder.dem_error_to_error[2], std::numeric_limits<size_t>::max());
+
+  unmerged_decoder.decode_shot({0});
+  EXPECT_FALSE(unmerged_decoder.low_confidence_flag);
+  EXPECT_EQ(unmerged_decoder.predicted_obs_mask, 1);
+  EXPECT_NEAR(unmerged_decoder.observable_probability(), merged_decoder.observable_probability(),
+              1e-12);
 }
 
 TEST(TesseractTrellisDecoderTest, RejectsMoreThanOneObservable) {

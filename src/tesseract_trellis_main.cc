@@ -42,6 +42,7 @@ TesseractTrellisRankingMode parse_ranking_mode(const std::string& value) {
 struct Args {
   std::string circuit_path;
   std::string dem_path;
+  bool no_merge_errors = false;
 
   size_t sample_num_shots = 0;
   size_t max_errors = SIZE_MAX;
@@ -161,6 +162,7 @@ struct Args {
           /*block_decomposition_from_introducing_remnant_edges=*/false);
     }
 
+    config.merge_errors = !no_merge_errors;
     config.beam_width = beam_width;
     config.beam_eps = beam_eps;
     config.future_detcost_scale = future_detcost_scale;
@@ -259,6 +261,9 @@ int main(int argc, char* argv[]) {
   Args args;
   program.add_argument("--circuit").help("Stim circuit file path").store_into(args.circuit_path);
   program.add_argument("--dem").help("Stim dem file path").store_into(args.dem_path);
+  program.add_argument("--no-merge-errors")
+      .help("If provided, will not merge identical error mechanisms.")
+      .store_into(args.no_merge_errors);
   program.add_argument("--sample-num-shots").store_into(args.sample_num_shots);
   program.add_argument("--max-errors").store_into(args.max_errors);
   program.add_argument("--sample-seed")
@@ -471,6 +476,7 @@ int main(int argc, char* argv[]) {
                                  {"beam_eps", args.beam_eps},
                                  {"future_detcost_scale", args.future_detcost_scale},
                                  {"ranking_mode", args.ranking_mode},
+                                 {"merge_errors", config.merge_errors},
                                  {"obs_probs_out", args.obs_probs_out_fname},
                                  {"sample_seed", args.sample_seed},
                                  {"sample_num_shots", args.sample_num_shots},

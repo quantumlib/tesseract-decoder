@@ -1191,10 +1191,23 @@ TesseractTrellisDecoder::~TesseractTrellisDecoder() = default;
 
 TesseractTrellisDecoder::TesseractTrellisDecoder(TesseractTrellisConfig config_)
     : config(std::move(config_)) {
+  // Maps original flattened DEM error indices to currently preprocessed indices.
   std::vector<size_t> dem_error_map(config.dem.flattened().count_errors());
   std::iota(dem_error_map.begin(), dem_error_map.end(), 0);
+
+  if (config.merge_errors) {
+    std::vector<size_t> merge_map;
+    config.dem = common::merge_indistinguishable_errors(config.dem, merge_map);
+    common::chain_error_maps(dem_error_map, merge_map);
+  }
+
+  std::vector<size_t> nonzero_map;
+  config.dem = common::remove_zero_probability_errors(config.dem, nonzero_map);
+  common::chain_error_maps(dem_error_map, nonzero_map);
+
   dem_error_to_error = std::move(dem_error_map);
   error_to_dem_error = common::invert_error_map(dem_error_to_error, config.dem.count_errors());
+
   errors = get_errors_from_dem(config.dem.flattened());
   num_detectors = config.dem.count_detectors();
   num_observables = config.dem.count_observables();

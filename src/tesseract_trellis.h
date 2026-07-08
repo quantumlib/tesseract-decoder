@@ -55,6 +55,7 @@ struct TesseractTrellisConfig {
   double beam_eps = 0.0;
   double future_detcost_scale = 2.0;
   bool verbose = false;
+  bool merge_errors = true;
   bool track_kept_state_stats = false;
   TesseractTrellisRankingMode ranking_mode = TesseractTrellisRankingMode::MassOnly;
 };

@@ -43,6 +43,7 @@ stdout_txt="${work_dir}/stdout.txt"
 grep -q 'num_shots = 3' "${stdout_txt}"
 ! grep -q 'num_errors' "${stdout_txt}"
 grep -q '"num_errors":null' "${stats_json}"
+grep -q '"merge_errors":true' "${stats_json}"
 
 for ranking_mode in mass future-detcost future-active-detcost; do
   probs_bin="${work_dir}/${ranking_mode}.bin"
@@ -56,6 +57,17 @@ for ranking_mode in mass future-detcost future-active-detcost; do
     >"${work_dir}/${ranking_mode}.stdout"
   [[ "$(wc -c <"${probs_bin}" | tr -d ' ')" == "24" ]]
 done
+
+no_merge_stats_json="${work_dir}/no_merge_stats.json"
+"${binary}" \
+  --dem "${one_obs_dem}" \
+  --in "${shots_01}" \
+  --in-format 01 \
+  --threads 1 \
+  --no-merge-errors \
+  --stats-out "${no_merge_stats_json}" \
+  >"${work_dir}/no_merge.stdout"
+grep -q '"merge_errors":false' "${no_merge_stats_json}"
 
 set +e
 "${binary}" \
