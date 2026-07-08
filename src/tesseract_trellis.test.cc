@@ -45,6 +45,46 @@ TEST(TesseractTrellisDecoderTest, ComputesObservableProbabilityForAmbiguousSyndr
   EXPECT_NEAR(decoder.observable_probability(), 0.02 / 0.74, 1e-12);
 }
 
+TEST(TesseractTrellisDecoderTest, SumsProbabilityMassAcrossMultipleExplanations) {
+  // A min-cost decoder would prefer the single right branch (p=0.25) over any
+  // one left branch (p=0.12). The trellis should sum the three left branches'
+  // probability mass and predict L0.
+  //
+  //   L0 left branches           no-L0 right branch
+  //       e0  e1  e2                    e3
+  //        \  |  /                     /
+  //          D0 observed syndrome
+  stim::DetectorErrorModel dem(R"DEM(
+    error(0.12) D0 L0
+    error(0.12) D0 L0
+    error(0.12) D0 L0
+    error(0.25) D0
+    detector(0, 0, 0) D0
+  )DEM");
+
+  TesseractTrellisConfig config;
+  config.dem = dem;
+  config.beam_width = 16;
+  config.merge_errors = false;
+  TesseractTrellisDecoder decoder(config);
+
+  decoder.decode_shot({0});
+
+  const double p_left = 0.12;
+  const double p_right = 0.25;
+  const double p_left_odd = 3 * p_left * (1 - p_left) * (1 - p_left) + p_left * p_left * p_left;
+  const double p_left_even = 1 - p_left_odd;
+  const double mass_l0 = p_left_odd * (1 - p_right);
+  const double mass_no_l0 = p_left_even * p_right;
+  const double expected_probability = mass_l0 / (mass_l0 + mass_no_l0);
+
+  EXPECT_FALSE(decoder.low_confidence_flag);
+  EXPECT_EQ(decoder.predicted_obs_mask, 1);
+  EXPECT_GT(p_right, p_left);
+  EXPECT_GT(expected_probability, 0.5);
+  EXPECT_NEAR(decoder.observable_probability(), expected_probability, 1e-12);
+}
+
 TEST(TesseractTrellisDecoderTest, ReportsNanProbabilityForInvalidDetector) {
   stim::DetectorErrorModel dem(R"DEM(
     error(0.1) D0 L0
