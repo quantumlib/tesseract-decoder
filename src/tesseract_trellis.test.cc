@@ -46,41 +46,55 @@ TEST(TesseractTrellisDecoderTest, ComputesObservableProbabilityForAmbiguousSyndr
 }
 
 TEST(TesseractTrellisDecoderTest, SumsProbabilityMassAcrossMultipleExplanations) {
-  // A min-cost decoder would prefer the single right branch (p=0.25) over any
-  // one left branch (p=0.12). The trellis should sum the three left branches'
-  // probability mass and predict L0.
+  // A min-cost decoder would prefer the single right branch over any one left
+  // chain. The trellis should sum the three distinct left chains' probability
+  // mass and predict L0. These chains are not mergeable because they touch
+  // different hidden detectors.
   //
-  //   L0 left branches           no-L0 right branch
-  //       e0  e1  e2                    e3
-  //        \  |  /                     /
-  //          D0 observed syndrome
+  //   L0 chains                         no-L0 chain
+  //   D0 --a1(L0)-- D1 --b1-- *         D0 --r-- *
+  //   D0 --a2(L0)-- D2 --b2-- *
+  //   D0 --a3(L0)-- D3 --b3-- *
   stim::DetectorErrorModel dem(R"DEM(
-    error(0.12) D0 L0
-    error(0.12) D0 L0
-    error(0.12) D0 L0
-    error(0.25) D0
+    error(0.2) D0 D1 L0
+    error(0.2) D1
+    error(0.2) D0 D2 L0
+    error(0.2) D2
+    error(0.2) D0 D3 L0
+    error(0.2) D3
+    error(0.1) D0
     detector(0, 0, 0) D0
+    detector(1, 0, 0) D1
+    detector(2, 0, 0) D2
+    detector(3, 0, 0) D3
   )DEM");
 
   TesseractTrellisConfig config;
   config.dem = dem;
-  config.beam_width = 16;
-  config.merge_errors = false;
+  config.beam_width = 64;
   TesseractTrellisDecoder decoder(config);
 
   decoder.decode_shot({0});
 
-  const double p_left = 0.12;
-  const double p_right = 0.25;
-  const double p_left_odd = 3 * p_left * (1 - p_left) * (1 - p_left) + p_left * p_left * p_left;
-  const double p_left_even = 1 - p_left_odd;
-  const double mass_l0 = p_left_odd * (1 - p_right);
-  const double mass_no_l0 = p_left_even * p_right;
+  const double p_chain_edge = 0.2;
+  const double p_right = 0.1;
+  const double q_chain_edge = 1 - p_chain_edge;
+  const double chain_present = p_chain_edge * p_chain_edge;
+  const double chain_absent = q_chain_edge * q_chain_edge;
+  const double odd_chain_mass = 3 * chain_present * chain_absent * chain_absent +
+                                chain_present * chain_present * chain_present;
+  const double even_chain_mass =
+      chain_absent * chain_absent * chain_absent + 3 * chain_present * chain_present * chain_absent;
+  const double mass_l0 = odd_chain_mass * (1 - p_right);
+  const double mass_no_l0 = even_chain_mass * p_right;
   const double expected_probability = mass_l0 / (mass_l0 + mass_no_l0);
+  const double right_cost = -std::log(p_right / (1 - p_right));
+  const double left_chain_cost = 2 * -std::log(p_chain_edge / (1 - p_chain_edge));
 
   EXPECT_FALSE(decoder.low_confidence_flag);
   EXPECT_EQ(decoder.predicted_obs_mask, 1);
-  EXPECT_GT(p_right, p_left);
+  EXPECT_TRUE(decoder.config.merge_errors);
+  EXPECT_LT(right_cost, left_chain_cost);
   EXPECT_GT(expected_probability, 0.5);
   EXPECT_NEAR(decoder.observable_probability(), expected_probability, 1e-12);
 }
