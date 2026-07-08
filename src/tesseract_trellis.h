@@ -88,10 +88,6 @@ struct TesseractTrellisDecoder {
   uint64_t predicted_obs_mask = 0;
   double total_mass_obs0 = 0;
   double total_mass_obs1 = 0;
-  size_t merge_calls = 0;
-  size_t merge_input_candidates = 0;
-  size_t merge_output_candidates = 0;
-  size_t merge_duplicate_layers = 0;
 
   std::vector<size_t> dem_error_to_error;
   std::vector<size_t> error_to_dem_error;

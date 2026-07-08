@@ -353,10 +353,6 @@ int main(int argc, char* argv[]) {
   std::vector<double> time_collapse_per_shot(shots.size());
   std::vector<double> time_truncate_per_shot(shots.size());
   std::vector<double> time_reconstruct_per_shot(shots.size());
-  std::vector<size_t> merge_calls_per_shot(shots.size());
-  std::vector<size_t> merge_input_candidates_per_shot(shots.size());
-  std::vector<size_t> merge_output_candidates_per_shot(shots.size());
-  std::vector<size_t> merge_duplicate_layers_per_shot(shots.size());
   std::vector<std::atomic<bool>> low_confidence(shots.size());
   const stim::DetectorErrorModel original_dem = config.dem.flattened();
   std::vector<std::unique_ptr<TesseractTrellisDecoder>> decoders(args.num_threads);
@@ -406,10 +402,6 @@ int main(int argc, char* argv[]) {
         time_collapse_per_shot[shot_index] = decoder.time_collapse_seconds;
         time_truncate_per_shot[shot_index] = decoder.time_truncate_seconds;
         time_reconstruct_per_shot[shot_index] = decoder.time_reconstruct_seconds;
-        merge_calls_per_shot[shot_index] = decoder.merge_calls;
-        merge_input_candidates_per_shot[shot_index] = decoder.merge_input_candidates;
-        merge_output_candidates_per_shot[shot_index] = decoder.merge_output_candidates;
-        merge_duplicate_layers_per_shot[shot_index] = decoder.merge_duplicate_layers;
       },
       [&](size_t shot_index) {
         if (writer) {
@@ -459,16 +451,6 @@ int main(int argc, char* argv[]) {
 
   bool print_final_stats = true;
   if (!args.stats_out_fname.empty()) {
-    size_t merge_calls_total = 0;
-    size_t merge_input_candidates_total = 0;
-    size_t merge_output_candidates_total = 0;
-    size_t merge_duplicate_layers_total = 0;
-    for (size_t k = 0; k < shot; ++k) {
-      merge_calls_total += merge_calls_per_shot[k];
-      merge_input_candidates_total += merge_input_candidates_per_shot[k];
-      merge_output_candidates_total += merge_output_candidates_per_shot[k];
-      merge_duplicate_layers_total += merge_duplicate_layers_per_shot[k];
-    }
     nlohmann::json stats_json = {{"circuit_path", args.circuit_path},
                                  {"dem_path", args.dem_path},
                                  {"beam_width", args.beam_width},
@@ -482,11 +464,7 @@ int main(int argc, char* argv[]) {
                                  {"num_threads", args.num_threads},
                                  {"num_low_confidence", num_low_confidence},
                                  {"num_shots", shot},
-                                 {"total_time_seconds", total_time_seconds},
-                                 {"merge_calls", merge_calls_total},
-                                 {"merge_input_candidates", merge_input_candidates_total},
-                                 {"merge_output_candidates", merge_output_candidates_total},
-                                 {"merge_duplicate_layers", merge_duplicate_layers_total}};
+                                 {"total_time_seconds", total_time_seconds}};
     if (has_obs) {
       stats_json["num_errors"] = num_errors;
     } else {

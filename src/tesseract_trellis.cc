@@ -1077,8 +1077,6 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
       auto t2a = std::chrono::high_resolution_clock::now();
       next_entries.clear();
       next_entries.reserve(used_bucket_indices.size() * 2);
-      decoder->merge_calls += 1;
-      decoder->merge_input_candidates += beam_entries.size() * 2;
       for (size_t index : used_bucket_indices) {
         auto& bucket = pair_buckets[index];
         if ((bucket.used_mask & 1u) != 0) {
@@ -1090,10 +1088,6 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
           next_entries.push_back(
               {std::move(other_state), bucket.mass0[1], bucket.mass1[1], bucket.penalty[1]});
         }
-      }
-      decoder->merge_output_candidates += next_entries.size();
-      if (next_entries.size() < beam_entries.size() * 2) {
-        decoder->merge_duplicate_layers += 1;
       }
       beam_entries.swap(next_entries);
       auto t2 = std::chrono::high_resolution_clock::now();
@@ -1261,10 +1255,6 @@ TESSERACT_HOT void TesseractTrellisDecoder::decode_shot(
   predicted_obs_mask = 0;
   total_mass_obs0 = 0;
   total_mass_obs1 = 0;
-  merge_calls = 0;
-  merge_input_candidates = 0;
-  merge_output_candidates = 0;
-  merge_duplicate_layers = 0;
   FinalizeKeptStateStatsOnExit kept_state_stats_guard{this};
   wide_kernel->decode_shot(this, detections);
 
