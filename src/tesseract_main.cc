@@ -317,6 +317,7 @@ struct Args {
       // Create a writer instance to write the predicted obs to a file
       stim::FileFormatData predictions_out_format = stim::format_name_to_enum_map().at(out_format);
       FILE* predictions_file = stdout;
+      // An output path of "-" means stdout.
       if (out_fname != "-") {
         predictions_file = fopen(out_fname.c_str(), "w");
       }
