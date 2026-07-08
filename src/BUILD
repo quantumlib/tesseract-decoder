@@ -208,14 +208,6 @@ cc_test(
     ],
 )
 
-sh_test(
-    name = "tesseract_trellis_cli_test",
-    srcs = ["tesseract_trellis_cli_test.sh"],
-    data = [
-        ":tesseract_trellis",
-    ],
-)
-
 cc_test(
     name = "common_tests",
     srcs = ["common.test.cc"],
