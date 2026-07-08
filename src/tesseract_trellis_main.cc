@@ -451,7 +451,7 @@ int main(int argc, char* argv[]) {
       throw std::invalid_argument("Failed to open " + args.obs_probs_out_fname);
     }
     out.write(reinterpret_cast<const char*>(obs_probability_predicted.data()),
-              shot * sizeof(double));
+              static_cast<std::streamsize>(shot * sizeof(double)));
     if (!out) {
       throw std::runtime_error("Failed to write observable probabilities.");
     }
