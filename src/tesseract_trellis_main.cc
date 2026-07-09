@@ -14,32 +14,43 @@
 
 #include <argparse/argparse.hpp>
 #include <atomic>
+#include <cmath>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <thread>
 
 #include "common.h"
-#include "simplex.h"
 #include "stim.h"
+#include "tesseract_trellis.h"
 #include "utils.h"
+
+namespace {
+
+TesseractTrellisRankingMode parse_ranking_mode(const std::string& value) {
+  if (value == "mass") return TesseractTrellisRankingMode::MassOnly;
+  if (value == "future-detcost") return TesseractTrellisRankingMode::FutureDetcostRanked;
+  if (value == "future-active-detcost") {
+    return TesseractTrellisRankingMode::FutureActiveDetcostRanked;
+  }
+  throw std::invalid_argument("Unknown trellis ranking mode: " + value);
+}
+
+}  // namespace
 
 struct Args {
   std::string circuit_path;
   std::string dem_path;
   bool no_merge_errors = false;
 
-  // Sampling options
   size_t sample_num_shots = 0;
   size_t max_errors = SIZE_MAX;
   uint64_t sample_seed;
 
-  // If either of these are nonzero, only the shots in the range
-  // [shot_range_begin, shot_range_end) will be decoded.
   size_t shot_range_begin = 0;
   size_t shot_range_end = 0;
 
-  // Shot data file options
   std::string in_fname = "";
   std::string in_format = "";
   std::string obs_in_fname = "";
@@ -47,30 +58,16 @@ struct Args {
   bool append_observables = false;
   std::string out_fname = "";
   std::string out_format = "";
+  std::string obs_probs_out_fname = "";
 
-  // If dem_out is present, a usage-frequency dem will be computed and output to
-  // this file.
   std::string dem_out_fname = "";
-
-  // If stats_out_fname is present, basic statistics and metadata will be
-  // written to this file.
   std::string stats_out_fname = "";
 
-  // The most effective way of parallelizing simplex decoder is over shots,
-  // confining each ILP solver to a single thread.
   size_t num_threads = 1;
-  // The ILP solver we use (HiGHS) can exploit some parallelism while decoding a
-  // single shot, but this is much less effective than just bulk parallelism
-  // over shots. It is bad to combine ILP parallelism with bulk parallelization
-  // over shots because it causes many threads to be spawned which overloads the
-  // machine.
-  bool enable_ilp_solver_parallelism = false;
-
-  // A window length of 0 means to not use any windowing. A nonzero window
-  // length activates sliding ILP window decoding. If a nonzero window length is
-  // provided, then a nonzero window slide length must be provided as well.
-  size_t window_length = 0;
-  size_t window_slide_length = 0;
+  size_t beam_width = 1024;
+  double beam_eps = 0.0;
+  double future_detcost_scale = 2.0;
+  std::string ranking_mode = "mass";
 
   bool verbose = false;
   bool print_stats = false;
@@ -80,19 +77,24 @@ struct Args {
   }
 
   void validate() {
-    if (circuit_path.empty() and dem_path.empty()) {
+    if (circuit_path.empty() && dem_path.empty()) {
       throw std::invalid_argument("Must provide at least one of --circuit or --dem");
     }
-
     int num_data_sources = int(sample_num_shots > 0) + int(!in_fname.empty());
     if (num_data_sources != 1) {
       throw std::invalid_argument("Requires exactly 1 source of shots.");
     }
-    if (!in_fname.empty() and in_format.empty()) {
+    if (!in_fname.empty() && in_format.empty()) {
       throw std::invalid_argument("If --in is provided, must also specify --in-format.");
     }
-    if (!out_fname.empty() and out_format.empty()) {
+    if (!out_fname.empty() && out_format.empty()) {
       throw std::invalid_argument("If --out is provided, must also specify --out-format.");
+    }
+    if (!dem_out_fname.empty()) {
+      throw std::invalid_argument("--dem-out is not supported by tesseract_trellis.");
+    }
+    if (obs_probs_out_fname == "-") {
+      throw std::invalid_argument("--obs-probs-out must be a file path, not stdout.");
     }
     if (!in_format.empty() && !stim::format_name_to_enum_map().contains(in_format)) {
       throw std::invalid_argument("Invalid format: " + in_format);
@@ -103,42 +105,36 @@ struct Args {
     if (!out_format.empty() && !stim::format_name_to_enum_map().contains(out_format)) {
       throw std::invalid_argument("Invalid format: " + out_format);
     }
-    if (!obs_in_fname.empty() and in_fname.empty()) {
+    if (!obs_in_fname.empty() && in_fname.empty()) {
       throw std::invalid_argument(
-          "Cannot load observable flips without a corresponding detection "
-          "event data file.");
+          "Cannot load observable flips without a corresponding detection event data file.");
     }
     if (num_threads == 0) {
       throw std::invalid_argument("--threads must be at least 1.");
     }
     if (num_threads > 1000) {
-      throw std::invalid_argument(
-          "There is a maximum limit of 1000 threads imposed to avoid "
-          "accidentally overloading a "
-          "host. You specified " +
-          std::to_string(num_threads) + "threads.");
+      throw std::invalid_argument("There is a maximum limit of 1000 threads.");
     }
-    if (shot_range_begin or shot_range_end) {
-      if (shot_range_end < shot_range_begin) {
-        throw std::invalid_argument("Provided shot range must have end >= begin.");
-      }
+    if ((shot_range_begin || shot_range_end) && shot_range_end < shot_range_begin) {
+      throw std::invalid_argument("Provided shot range must have end >= begin.");
     }
-    if ((window_length != 0) != (window_slide_length != 0)) {
-      throw std::invalid_argument(
-          "a window length > 0 is provided if and only if a window slide "
-          "length > 0 is provided.");
-    }
-    if (window_slide_length > window_length) {
-      throw std::invalid_argument("Must have window_slide_length <= window_length");
-    }
-    if (sample_num_shots > 0 and circuit_path.empty()) {
+    if (sample_num_shots > 0 && circuit_path.empty()) {
       throw std::invalid_argument("Cannot sample shots without a circuit.");
     }
+    if (beam_width == 0) {
+      throw std::invalid_argument("--beam must be at least 1.");
+    }
+    if (!std::isfinite(beam_eps) || beam_eps < 0.0 || beam_eps >= 1.0) {
+      throw std::invalid_argument("--beam-eps must satisfy 0 <= beam-eps < 1.");
+    }
+    if (!std::isfinite(future_detcost_scale) || future_detcost_scale < 0.0) {
+      throw std::invalid_argument("--future-detcost-scale must be finite and nonnegative.");
+    }
+    parse_ranking_mode(ranking_mode);
   }
 
-  void extract(SimplexConfig& config, std::vector<stim::SparseShot>& shots,
+  void extract(TesseractTrellisConfig& config, std::vector<stim::SparseShot>& shots,
                std::unique_ptr<stim::MeasureRecordWriter>& writer) {
-    // Get a circuit, if available
     stim::Circuit circuit;
     if (!circuit_path.empty()) {
       FILE* file = fopen(circuit_path.c_str(), "r");
@@ -149,8 +145,6 @@ struct Args {
       fclose(file);
     }
 
-    // Get a DEM, preferring to use the specified one and falling back to
-    // generating one from the circuit
     if (!dem_path.empty()) {
       FILE* file = fopen(dem_path.c_str(), "r");
       if (!file) {
@@ -169,6 +163,12 @@ struct Args {
     }
 
     config.merge_errors = !no_merge_errors;
+    config.beam_width = beam_width;
+    config.beam_eps = beam_eps;
+    config.future_detcost_scale = future_detcost_scale;
+    config.verbose = verbose;
+    config.track_kept_state_stats = print_stats;
+    config.ranking_mode = parse_ranking_mode(ranking_mode);
 
     if (sample_num_shots > 0) {
       assert(!circuit_path.empty());
@@ -189,7 +189,6 @@ struct Args {
     }
 
     if (!in_fname.empty()) {
-      // Load the shots from a file
       FILE* shots_file = fopen(in_fname.c_str(), "r");
       if (!shots_file) {
         throw std::invalid_argument("Could not open the file: " + in_fname);
@@ -198,8 +197,6 @@ struct Args {
       auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
           shots_file, shots_in_format.id, 0, config.dem.count_detectors(),
           append_observables * config.dem.count_observables());
-
-      // Load the shots from a file
       stim::SparseShot sparse_shot;
       sparse_shot.clear();
       while (reader->start_and_read_entire_record(sparse_shot)) {
@@ -209,15 +206,14 @@ struct Args {
       fclose(shots_file);
     }
 
-    // Load observable flips, if applicable
     if (!obs_in_fname.empty()) {
       FILE* obs_file = fopen(obs_in_fname.c_str(), "r");
       if (!obs_file) {
         throw std::invalid_argument("Could not open the file: " + obs_in_fname);
       }
-      stim::FileFormatData shots_obs_in_format = stim::format_name_to_enum_map().at(obs_in_format);
+      stim::FileFormatData obs_format = stim::format_name_to_enum_map().at(obs_in_format);
       auto obs_reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
-          obs_file, shots_obs_in_format.id, 0, 0, config.dem.count_observables());
+          obs_file, obs_format.id, 0, 0, config.dem.count_observables());
       stim::SparseShot sparse_shot;
       sparse_shot.clear();
       size_t num_obs_shots = 0;
@@ -235,12 +231,9 @@ struct Args {
       fclose(obs_file);
     }
 
-    // Subselect shots, if applicable
-    if (shot_range_begin or shot_range_end) {
-      assert(shot_range_end >= shot_range_begin);
+    if (shot_range_begin || shot_range_end) {
       if (shot_range_end > shots.size()) {
-        throw std::invalid_argument("Shot range end is past end of shots array (size " +
-                                    std::to_string(shots.size()) + ").");
+        throw std::invalid_argument("Shot range end is past end of shots array.");
       }
       std::vector<stim::SparseShot> shots_in_range(shots.begin() + shot_range_begin,
                                                    shots.begin() + shot_range_end);
@@ -248,167 +241,87 @@ struct Args {
     }
 
     if (!out_fname.empty()) {
-      // Create a writer instance to write the predicted obs to a file
       stim::FileFormatData predictions_out_format = stim::format_name_to_enum_map().at(out_format);
       FILE* predictions_file = stdout;
       // An output path of "-" means stdout.
       if (out_fname != "-") {
         predictions_file = fopen(out_fname.c_str(), "w");
+        if (!predictions_file) {
+          throw std::invalid_argument("Could not open the file: " + out_fname);
+        }
       }
       writer = stim::MeasureRecordWriter::make(predictions_file, predictions_out_format.id);
       writer->begin_result_type('L');
-      // TODO: ensure the fclose happens after all predictions are written to
-      // the writer.
     }
-
-    config.parallelize = enable_ilp_solver_parallelism;
-    config.window_length = window_length;
-    config.window_slide_length = window_slide_length;
-    config.verbose = verbose;
   }
 };
 
 int main(int argc, char* argv[]) {
   std::cout.precision(16);
-  argparse::ArgumentParser program("simplex");
+  argparse::ArgumentParser program("tesseract_trellis");
   Args args;
   program.add_argument("--circuit").help("Stim circuit file path").store_into(args.circuit_path);
   program.add_argument("--dem").help("Stim dem file path").store_into(args.dem_path);
   program.add_argument("--no-merge-errors")
       .help("If provided, will not merge identical error mechanisms.")
       .store_into(args.no_merge_errors);
-  program.add_argument("--sample-num-shots")
-      .help(
-          "If provided, will sample the requested number of shots from the "
-          "Stim circuit and decode "
-          "them. May end early if --max-errors errors are reached before "
-          "decoding all shots.")
-      .store_into(args.sample_num_shots);
-  program.add_argument("--max-errors")
-      .help(
-          "If provided, will sample at least this many errors from the Stim "
-          "circuit and decode "
-          "them.")
-      .store_into(args.max_errors);
+  program.add_argument("--sample-num-shots").store_into(args.sample_num_shots);
+  program.add_argument("--max-errors").store_into(args.max_errors);
   program.add_argument("--sample-seed")
-      .help(
-          "Seed used when initializing the random number generator for "
-          "sampling shots")
-      .metavar("N")
       .default_value(static_cast<uint64_t>(std::random_device()()))
       .store_into(args.sample_seed);
   program.add_argument("--shot-range-begin")
-      .help(
-          "Useful for processing a fragment of a file. If shot_range_begin == "
-          "0 and shot_range_end "
-          "== 0 (the default), then all available shots will be decoded. "
-          "Otherwise, only those in "
-          "the range [shot_range_begin, shot_range_end) will be decoded.")
       .default_value(size_t(0))
       .store_into(args.shot_range_begin);
-  program.add_argument("--shot-range-end")
-      .help(
-          "Useful for processing a fragment of a file. If shot_range_begin == "
-          "0 and shot_range_end "
-          "== 0 (the default), then all available shots will be decoded. "
-          "Otherwise, only those in "
-          "the range [shot_range_begin, shot_range_end) will be decoded.")
-      .default_value(size_t(0))
-      .store_into(args.shot_range_end);
-  program.add_argument("--in")
-      .help("File to read detection events (and possibly observable flips) from")
-      .metavar("filename")
-      .default_value(std::string(""))
-      .store_into(args.in_fname);
-  std::string in_formats = "";
-  bool first = true;
-  for (const auto& [key, value] : stim::format_name_to_enum_map()) {
-    if (!first) in_formats += "/";
-    first = false;
-    in_formats += key;
-  }
+  program.add_argument("--shot-range-end").default_value(size_t(0)).store_into(args.shot_range_end);
+  program.add_argument("--in").default_value(std::string("")).store_into(args.in_fname);
   program.add_argument("--in-format", "--in_format")
-      .help("Format of the file to read detection events from (" + in_formats + ")")
-      .metavar(in_formats)
       .default_value(std::string(""))
       .store_into(args.in_format);
   program.add_argument("--in-includes-appended-observables", "--in_includes_appended_observables")
-      .help(
-          "If present, assumes that the observable flips are appended to the "
-          "end of each shot.")
       .default_value(false)
       .store_into(args.append_observables)
       .flag();
   program.add_argument("--obs_in", "--obs-in")
-      .help("File to read observable flips from")
-      .metavar("filename")
       .default_value(std::string(""))
       .store_into(args.obs_in_fname);
   program.add_argument("--obs-in-format", "--obs_in_format")
-      .help("Format of the file to observable flips from (" + in_formats + ")")
-      .metavar(in_formats)
       .default_value(std::string(""))
       .store_into(args.obs_in_format);
-  program.add_argument("--out")
-      .help("File to write observable flip predictions to (or - for stdout)")
-      .metavar("filename")
+  program.add_argument("--out").default_value(std::string("")).store_into(args.out_fname);
+  program.add_argument("--out-format").default_value(std::string("")).store_into(args.out_format);
+  program.add_argument("--obs-probs-out")
+      .help(
+          "File to write headerless binary doubles containing P(L0=1) for each decoded shot. "
+          "Requires exactly one observable.")
       .default_value(std::string(""))
-      .store_into(args.out_fname);
-  program.add_argument("--out-format")
-      .help("Format of the file to write observable flip predictions to (" + in_formats + ")")
-      .metavar(in_formats)
-      .default_value(std::string(""))
-      .store_into(args.out_format);
-  program.add_argument("--dem-out")
-      .help("File to write matching frequency dem to")
-      .metavar("filename")
-      .default_value(std::string(""))
-      .store_into(args.dem_out_fname);
+      .store_into(args.obs_probs_out_fname);
+  program.add_argument("--dem-out").default_value(std::string("")).store_into(args.dem_out_fname);
   program.add_argument("--stats-out")
-      .help("File to write high-level statistics and metadata to")
-      .metavar("filename")
       .default_value(std::string(""))
       .store_into(args.stats_out_fname);
   program.add_argument("--threads")
-      .help("Number of decoder threads to use")
-      .metavar("N")
       .default_value(size_t(
           std::thread::hardware_concurrency() == 0 ? 1 : std::thread::hardware_concurrency()))
       .store_into(args.num_threads);
-  program.add_argument("--parallelize-ilp")
+  program.add_argument("--beam").default_value(size_t(1024)).store_into(args.beam_width);
+  program.add_argument("--beam-eps")
       .help(
-          "Enable sub-shot parallelism with the ILP solver. Not recommended "
-          "unless --threads=1")
-      .default_value(bool(false))
-      .store_into(args.enable_ilp_solver_parallelism)
-      .flag();
-  program.add_argument("--window-length")
-      .help(
-          "Length of sliding time window to use for sliding ILP window "
-          "decoding (default = 0 = do "
-          "not use windowing).")
-      .metavar("N")
-      .default_value(size_t(0))
-      .store_into(args.window_length);
-  program.add_argument("--window-slide-length")
-      .help(
-          "Length of the slide for each slide of the sliding time window for "
-          "sliding ILP window "
-          "decoding (default = 0 = do "
-          "not use windowing).")
-      .metavar("N")
-      .default_value(size_t(0))
-      .store_into(args.window_slide_length);
-  program.add_argument("--verbose")
-      .help("Increases output verbosity")
-      .flag()
-      .store_into(args.verbose);
-  program.add_argument("--print-stats")
-      .help(
-          "Prints out the number of shots (and number of errors, if known) "
-          "during decoding.")
-      .flag()
-      .store_into(args.print_stats);
+          "Keep at most --beam merged states and also drop the suffix once the kept prefix has "
+          "accumulated at least (1 - beam-eps) of the total merged-state mass. Use 0 to disable "
+          "the mass-threshold cutoff.")
+      .default_value(0.0)
+      .store_into(args.beam_eps);
+  program.add_argument("--ranking-mode")
+      .help("Trellis ranking mode: mass, future-detcost, or future-active-detcost")
+      .default_value(std::string("mass"))
+      .store_into(args.ranking_mode);
+  program.add_argument("--future-detcost-scale")
+      .help("Multiplier applied to future detector-cost ranking penalties.")
+      .default_value(2.0)
+      .store_into(args.future_detcost_scale);
+  program.add_argument("--verbose").flag().store_into(args.verbose);
+  program.add_argument("--print-stats").flag().store_into(args.print_stats);
 
   try {
     program.parse_args(argc, argv);
@@ -417,97 +330,147 @@ int main(int argc, char* argv[]) {
     std::cerr << program;
     return EXIT_FAILURE;
   }
+
   args.validate();
-  SimplexConfig config;
+  TesseractTrellisConfig config;
   std::vector<stim::SparseShot> shots;
   std::unique_ptr<stim::MeasureRecordWriter> writer;
   args.extract(config, shots, writer);
+
   std::vector<uint64_t> obs_predicted(shots.size());
-  std::vector<double> cost_predicted(shots.size());
+  std::vector<double> mass0_predicted(shots.size());
+  std::vector<double> mass1_predicted(shots.size());
+  std::vector<double> obs_probability_predicted(shots.size());
   std::vector<double> decoding_time_seconds(shots.size());
+  std::vector<size_t> num_states_expanded_per_shot(shots.size());
+  std::vector<size_t> num_states_merged_per_shot(shots.size());
+  std::vector<size_t> max_beam_size_per_shot(shots.size());
+  std::vector<size_t> max_frontier_width_per_shot(shots.size());
+  std::vector<size_t> kept_state_min_per_shot(shots.size());
+  std::vector<double> kept_state_median_per_shot(shots.size());
+  std::vector<double> kept_state_mean_per_shot(shots.size());
+  std::vector<size_t> kept_state_max_per_shot(shots.size());
+  std::vector<double> time_expand_per_shot(shots.size());
+  std::vector<double> time_collapse_per_shot(shots.size());
+  std::vector<double> time_truncate_per_shot(shots.size());
+  std::vector<double> time_reconstruct_per_shot(shots.size());
+  std::vector<std::atomic<bool>> low_confidence(shots.size());
   const stim::DetectorErrorModel original_dem = config.dem.flattened();
-  std::vector<std::unique_ptr<SimplexDecoder>> decoders(args.num_threads);
-  std::vector<std::vector<size_t>> error_use_per_thread(
-      args.num_threads, std::vector<size_t>(original_dem.count_errors()));
+  std::vector<std::unique_ptr<TesseractTrellisDecoder>> decoders(args.num_threads);
+
   bool has_obs = args.has_observables();
   size_t num_errors = 0;
+  size_t num_low_confidence = 0;
   double total_time_seconds = 0;
   size_t num_observables = config.dem.count_observables();
+  if (num_observables > 1) {
+    std::cerr << "tesseract_trellis currently supports at most one observable; DEM has "
+              << num_observables << "." << std::endl;
+    return EXIT_FAILURE;
+  }
+  if (!args.obs_probs_out_fname.empty() && num_observables != 1) {
+    std::cerr << "--obs-probs-out requires a DEM with exactly one observable." << std::endl;
+    return EXIT_FAILURE;
+  }
+
   size_t shot = parallel_for_shots_in_order(
       shots.size(), args.num_threads,
       [&](size_t thread_index, size_t shot_index) {
         if (!decoders[thread_index]) {
-          decoders[thread_index] = std::make_unique<SimplexDecoder>(config);
+          decoders[thread_index] = std::make_unique<TesseractTrellisDecoder>(config);
         }
         auto& decoder = *decoders[thread_index];
-        auto& error_use = error_use_per_thread[thread_index];
         auto start_time = std::chrono::high_resolution_clock::now();
-        decoder.decode_to_errors(shots[shot_index].hits);
+        decoder.decode_shot(shots[shot_index].hits);
         auto stop_time = std::chrono::high_resolution_clock::now();
         decoding_time_seconds[shot_index] =
             std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
             1e6;
-        obs_predicted[shot_index] =
-            vector_to_u64_mask(decoder.get_flipped_observables(decoder.predicted_errors_buffer));
-        cost_predicted[shot_index] = decoder.cost_from_errors(decoder.predicted_errors_buffer);
-        if (!has_obs or shots[shot_index].obs_mask_as_u64() == obs_predicted[shot_index]) {
-          for (size_t ei : decoder.predicted_errors_buffer) {
-            ++error_use[ei];
-          }
-        }
+        obs_predicted[shot_index] = decoder.predicted_obs_mask;
+        low_confidence[shot_index] = decoder.low_confidence_flag;
+        mass0_predicted[shot_index] = decoder.total_mass_obs0;
+        mass1_predicted[shot_index] = decoder.total_mass_obs1;
+        obs_probability_predicted[shot_index] = decoder.observable_probability();
+        num_states_expanded_per_shot[shot_index] = decoder.num_states_expanded;
+        num_states_merged_per_shot[shot_index] = decoder.num_states_merged;
+        max_beam_size_per_shot[shot_index] = decoder.max_beam_size_seen;
+        max_frontier_width_per_shot[shot_index] = decoder.max_frontier_width_seen;
+        kept_state_min_per_shot[shot_index] = decoder.kept_state_min;
+        kept_state_median_per_shot[shot_index] = decoder.kept_state_median;
+        kept_state_mean_per_shot[shot_index] = decoder.kept_state_mean;
+        kept_state_max_per_shot[shot_index] = decoder.kept_state_max;
+        time_expand_per_shot[shot_index] = decoder.time_expand_seconds;
+        time_collapse_per_shot[shot_index] = decoder.time_collapse_seconds;
+        time_truncate_per_shot[shot_index] = decoder.time_truncate_seconds;
+        time_reconstruct_per_shot[shot_index] = decoder.time_reconstruct_seconds;
       },
       [&](size_t shot_index) {
         if (writer) {
           writer->write_bits((uint8_t*)&obs_predicted[shot_index], num_observables);
           writer->write_end();
         }
-        if (obs_predicted[shot_index] != shots[shot_index].obs_mask_as_u64()) {
+        if (low_confidence[shot_index]) {
+          ++num_low_confidence;
+        } else if (has_obs && obs_predicted[shot_index] != shots[shot_index].obs_mask_as_u64()) {
           ++num_errors;
         }
         total_time_seconds += decoding_time_seconds[shot_index];
         if (args.print_stats) {
-          std::cout << "num_shots = " << (shot_index + 1) << " num_errors = " << num_errors
-                    << " total_time_seconds = " << total_time_seconds << std::endl;
-          std::cout << "cost = " << cost_predicted[shot_index] << std::endl;
-          std::cout.flush();
+          std::cout << "num_shots = " << (shot_index + 1)
+                    << " num_low_confidence = " << num_low_confidence
+                    << " num_errors = " << num_errors
+                    << " states_expanded = " << num_states_expanded_per_shot[shot_index]
+                    << " states_merged = " << num_states_merged_per_shot[shot_index]
+                    << " max_beam = " << max_beam_size_per_shot[shot_index]
+                    << " frontier_width = " << max_frontier_width_per_shot[shot_index]
+                    << " total_time_seconds = " << total_time_seconds << '\n';
+          std::cout << "kept_states" << " min=" << kept_state_min_per_shot[shot_index]
+                    << " median=" << kept_state_median_per_shot[shot_index]
+                    << " mean=" << kept_state_mean_per_shot[shot_index]
+                    << " max=" << kept_state_max_per_shot[shot_index] << '\n';
+          std::cout << "branch_masses" << " obs0=" << mass0_predicted[shot_index]
+                    << " obs1=" << mass1_predicted[shot_index] << '\n';
+          std::cout << "phase_times_seconds" << " expand=" << time_expand_per_shot[shot_index]
+                    << " collapse=" << time_collapse_per_shot[shot_index]
+                    << " truncate=" << time_truncate_per_shot[shot_index]
+                    << " reconstruct=" << time_reconstruct_per_shot[shot_index] << '\n';
         }
-        return num_errors < args.max_errors;
+        return !has_obs || num_errors < args.max_errors;
       });
 
-  std::vector<size_t> error_use_totals(original_dem.count_errors());
-  for (const auto& error_use : error_use_per_thread) {
-    for (size_t ei = 0; ei < error_use_totals.size(); ++ei) {
-      error_use_totals[ei] += error_use[ei];
-    }
-  }
-
-  if (!args.dem_out_fname.empty()) {
-    std::vector<size_t> counts(error_use_totals.begin(), error_use_totals.end());
-    size_t num_usage_dem_shots = shot;
-    if (has_obs) {
-      // When we know the obs, we only count non-error shots.
-      num_usage_dem_shots -= num_errors;
-    }
-    stim::DetectorErrorModel est_dem =
-        common::dem_from_counts(original_dem, counts, num_usage_dem_shots);
-    std::ofstream out(args.dem_out_fname, std::ofstream::out);
+  if (!args.obs_probs_out_fname.empty()) {
+    std::ofstream out(args.obs_probs_out_fname, std::ios::binary);
     if (!out.is_open()) {
-      throw std::invalid_argument("Failed to open " + args.dem_out_fname);
+      throw std::invalid_argument("Failed to open " + args.obs_probs_out_fname);
     }
-    out << est_dem << '\n';
+    out.write(reinterpret_cast<const char*>(obs_probability_predicted.data()),
+              static_cast<std::streamsize>(shot * sizeof(double)));
+    if (!out) {
+      throw std::runtime_error("Failed to write observable probabilities.");
+    }
   }
 
   bool print_final_stats = true;
   if (!args.stats_out_fname.empty()) {
     nlohmann::json stats_json = {{"circuit_path", args.circuit_path},
                                  {"dem_path", args.dem_path},
-                                 {"max_errors", args.max_errors},
+                                 {"beam_width", args.beam_width},
+                                 {"beam_eps", args.beam_eps},
+                                 {"future_detcost_scale", args.future_detcost_scale},
+                                 {"ranking_mode", args.ranking_mode},
+                                 {"merge_errors", config.merge_errors},
+                                 {"obs_probs_out", args.obs_probs_out_fname},
                                  {"sample_seed", args.sample_seed},
-                                 {"total_time_seconds", total_time_seconds},
-                                 {"num_errors", num_errors},
+                                 {"sample_num_shots", args.sample_num_shots},
+                                 {"num_threads", args.num_threads},
+                                 {"num_low_confidence", num_low_confidence},
                                  {"num_shots", shot},
-                                 {"sample_num_shots", args.sample_num_shots}};
-
+                                 {"total_time_seconds", total_time_seconds}};
+    if (has_obs) {
+      stats_json["num_errors"] = num_errors;
+    } else {
+      stats_json["num_errors"] = nullptr;
+    }
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;
       print_final_stats = false;
@@ -516,12 +479,12 @@ int main(int argc, char* argv[]) {
       out << stats_json << std::endl;
     }
   }
+
   if (print_final_stats) {
-    std::cout << "num_shots = " << shot;
+    std::cout << "num_shots = " << shot << " num_low_confidence = " << num_low_confidence;
     if (has_obs) {
       std::cout << " num_errors = " << num_errors;
     }
-    std::cout << " total_time_seconds = " << total_time_seconds;
-    std::cout << std::endl;
+    std::cout << " total_time_seconds = " << total_time_seconds << std::endl;
   }
 }
