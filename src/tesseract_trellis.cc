@@ -29,6 +29,7 @@
 #include <numeric>
 #include <queue>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 #include "utils.h"
@@ -37,6 +38,8 @@ struct TesseractTrellisWideKernelBase {
   virtual ~TesseractTrellisWideKernelBase() = default;
   virtual void decode_shot(TesseractTrellisDecoder* decoder,
                            const std::vector<uint64_t>& detections) const = 0;
+  virtual std::vector<double> decode_shot_with_observable_logit_gradient(
+      TesseractTrellisDecoder* decoder, const std::vector<uint64_t>& detections) const = 0;
 };
 
 namespace {
@@ -642,6 +645,31 @@ hash_fixed_wide_state(const FixedWideStateWords<Words>& state_words) {
 }
 
 template <size_t Words>
+struct FixedWideStateHash {
+  size_t operator()(const FixedWideStateWords<Words>& state_words) const {
+    return static_cast<size_t>(hash_fixed_wide_state(state_words));
+  }
+};
+
+template <size_t Words>
+struct GradientCandidateTransition {
+  size_t parent_index;
+  FixedWideStateWords<Words> child_state;
+  bool present;
+};
+
+struct GradientTransition {
+  size_t parent_index;
+  size_t child_index;
+  bool present;
+};
+
+struct GradientLayerTape {
+  double normalizer;
+  std::vector<GradientTransition> transitions;
+};
+
+template <size_t Words>
 void ensure_pair_bucket_capacity(std::vector<FixedWidePairBucket<Words>>* buckets,
                                  size_t num_parents) {
   const size_t required = std::bit_ceil(std::max<size_t>(16, num_parents * 2));
@@ -1128,6 +1156,232 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
         std::chrono::duration_cast<std::chrono::microseconds>(tr1 - tr0).count() / 1e6;
   }
 
+  std::vector<double> decode_shot_with_observable_logit_gradient(
+      TesseractTrellisDecoder* decoder, const std::vector<uint64_t>& detections) const override {
+    auto invalid_gradient = [&]() {
+      return std::vector<double>(layers.size(), std::numeric_limits<double>::quiet_NaN());
+    };
+    auto& actual_detector_words = decoder->actual_detector_words_scratch;
+    std::fill(actual_detector_words.begin(), actual_detector_words.end(), 0);
+    for (uint64_t d : detections) {
+      if (d >= decoder->num_detectors) {
+        decoder->low_confidence_flag = true;
+        return invalid_gradient();
+      }
+      const size_t word = detector_word_index((size_t)d);
+      const uint64_t mask = detector_word_mask((size_t)d);
+      if ((decoder->all_possible_detector_words[word] & mask) == 0) {
+        decoder->low_confidence_flag = true;
+        return invalid_gradient();
+      }
+      actual_detector_words[word] ^= mask;
+    }
+
+    decoder->max_frontier_width_seen = max_frontier_width;
+    double initial_penalty = 0.0;
+    if (decoder->config.ranking_mode != TesseractTrellisRankingMode::MassOnly && !layers.empty()) {
+      initial_penalty = compute_initial_penalty_for_active_detectors(
+          initial_detector_word_indices, initial_detector_bit_masks, initial_detector_costs,
+          actual_detector_words);
+    }
+
+    using Entry = FixedWideStateEntry<Words>;
+    using State = FixedWideStateWords<Words>;
+    std::vector<std::vector<Entry>> states_by_layer;
+    states_by_layer.reserve(layers.size() + 1);
+    states_by_layer.push_back({Entry{{}, 1.0, 0.0, initial_penalty}});
+    std::vector<GradientLayerTape> tape;
+    tape.reserve(layers.size());
+    std::vector<FixedWidePairBucket<Words>> pair_buckets;
+    std::vector<size_t> used_bucket_indices;
+    std::vector<Entry> next_entries;
+    std::vector<GradientCandidateTransition<Words>> candidate_transitions;
+    decoder->max_beam_size_seen = 1;
+
+    const bool compute_penalties =
+        decoder->config.ranking_mode != TesseractTrellisRankingMode::MassOnly;
+    for (const auto& layer : layers) {
+      const auto& parent_entries = states_by_layer.back();
+      ensure_pair_bucket_capacity(&pair_buckets, parent_entries.size());
+      clear_pair_buckets(&pair_buckets, &used_bucket_indices);
+      candidate_transitions.clear();
+      candidate_transitions.reserve(parent_entries.size() * 2);
+
+      for (size_t parent_index = 0; parent_index < parent_entries.size(); ++parent_index) {
+        const auto& item = parent_entries[parent_index];
+        ++decoder->num_states_expanded;
+        BranchPenaltyUpdate update;
+        if (compute_penalties) {
+          if (layer.has_retiring_terms) {
+            update = compute_compiled_wide_branch_update<true, true>(item.state_words, item.penalty,
+                                                                     actual_detector_words, layer);
+          } else {
+            update = compute_compiled_wide_branch_update<true, false>(
+                item.state_words, item.penalty, actual_detector_words, layer);
+          }
+        } else if (layer.has_retiring_terms) {
+          update = compute_compiled_wide_branch_update<false, true>(item.state_words, item.penalty,
+                                                                    actual_detector_words, layer);
+        } else {
+          update = compute_compiled_wide_branch_update<false, false>(item.state_words, item.penalty,
+                                                                     actual_detector_words, layer);
+        }
+        if (!update.absent_valid && !update.present_valid) {
+          continue;
+        }
+
+        State projected_state = project_compiled_wide_state(item.state_words, layer);
+        State projected_toggled = projected_state;
+        xor_compiled_wide_state(&projected_toggled, layer.projected_fault_mask_words);
+        const bool projected_is_key = !fixed_wide_state_less(projected_toggled, projected_state);
+        const auto& bucket_key = projected_is_key ? projected_state : projected_toggled;
+        const uint8_t absent_slot = projected_is_key ? 0 : 1;
+        const uint8_t present_slot = projected_toggled == bucket_key ? 0 : 1;
+        const size_t bucket_index =
+            find_or_insert_pair_bucket(&pair_buckets, &used_bucket_indices, bucket_key);
+        auto& bucket = pair_buckets[bucket_index];
+        const bool keep_absent = update.absent_valid && layer.q != 0.0;
+        const bool keep_present = update.present_valid && layer.p != 0.0;
+
+        if (keep_absent) {
+          accumulate_pair_bucket_slot(&bucket, absent_slot, item.mass0 * layer.q,
+                                      item.mass1 * layer.q, update.absent_penalty);
+          candidate_transitions.push_back({parent_index, projected_state, false});
+        }
+        if (keep_present) {
+          if (layer.toggles_observable) {
+            accumulate_pair_bucket_slot(&bucket, present_slot, item.mass1 * layer.p,
+                                        item.mass0 * layer.p, update.present_penalty);
+          } else {
+            accumulate_pair_bucket_slot(&bucket, present_slot, item.mass0 * layer.p,
+                                        item.mass1 * layer.p, update.present_penalty);
+          }
+          candidate_transitions.push_back({parent_index, projected_toggled, true});
+        }
+      }
+
+      next_entries.clear();
+      next_entries.reserve(used_bucket_indices.size() * 2);
+      for (size_t index : used_bucket_indices) {
+        auto& bucket = pair_buckets[index];
+        if ((bucket.used_mask & 1u) != 0) {
+          next_entries.push_back({bucket.key, bucket.mass0[0], bucket.mass1[0], bucket.penalty[0]});
+        }
+        if ((bucket.used_mask & 2u) != 0) {
+          auto other_state = bucket.key;
+          xor_compiled_wide_state(&other_state, layer.projected_fault_mask_words);
+          next_entries.push_back(
+              {std::move(other_state), bucket.mass0[1], bucket.mass1[1], bucket.penalty[1]});
+        }
+      }
+
+      const size_t kept_states =
+          keep_top_compiled_states(&next_entries, decoder->config.beam_width,
+                                   decoder->config.beam_eps, decoder->config.ranking_mode);
+      double normalizer = 0.0;
+      for (const auto& item : next_entries) {
+        normalizer += total_entry_mass(item);
+      }
+      record_kept_state_count(decoder, next_entries.empty() ? 0 : kept_states);
+      if (next_entries.empty() || !std::isfinite(normalizer) || normalizer <= 0.0) {
+        decoder->low_confidence_flag = true;
+        return invalid_gradient();
+      }
+      for (auto& item : next_entries) {
+        item.mass0 /= normalizer;
+        item.mass1 /= normalizer;
+      }
+      decoder->num_states_merged += kept_states;
+      decoder->max_beam_size_seen = std::max(decoder->max_beam_size_seen, kept_states);
+
+      std::unordered_map<State, size_t, FixedWideStateHash<Words>> child_indices;
+      child_indices.reserve(next_entries.size() * 2);
+      for (size_t child_index = 0; child_index < next_entries.size(); ++child_index) {
+        child_indices.emplace(next_entries[child_index].state_words, child_index);
+      }
+      std::vector<GradientTransition> retained_transitions;
+      retained_transitions.reserve(candidate_transitions.size());
+      for (const auto& transition : candidate_transitions) {
+        auto child = child_indices.find(transition.child_state);
+        if (child != child_indices.end()) {
+          retained_transitions.push_back(
+              {transition.parent_index, child->second, transition.present});
+        }
+      }
+      tape.push_back({normalizer, std::move(retained_transitions)});
+      states_by_layer.push_back(next_entries);
+    }
+
+    const auto& final_entries = states_by_layer.back();
+    for (const auto& item : final_entries) {
+      if (!fixed_wide_state_zero(item.state_words)) {
+        continue;
+      }
+      decoder->total_mass_obs0 += item.mass0;
+      decoder->total_mass_obs1 += item.mass1;
+    }
+    if (!std::isfinite(decoder->total_mass_obs0) || !std::isfinite(decoder->total_mass_obs1) ||
+        decoder->total_mass_obs0 <= 0.0 || decoder->total_mass_obs1 <= 0.0) {
+      decoder->low_confidence_flag = true;
+      return invalid_gradient();
+    }
+    decoder->predicted_obs_mask = decoder->total_mass_obs1 > decoder->total_mass_obs0 ? 1 : 0;
+
+    using Adjoint = std::array<double, 2>;
+    std::vector<Adjoint> adjoints(final_entries.size(), Adjoint{});
+    for (size_t i = 0; i < final_entries.size(); ++i) {
+      if (fixed_wide_state_zero(final_entries[i].state_words)) {
+        adjoints[i][0] = -1.0 / decoder->total_mass_obs0;
+        adjoints[i][1] = 1.0 / decoder->total_mass_obs1;
+      }
+    }
+
+    std::vector<double> gradients(layers.size(), 0.0);
+    for (size_t layer_index = layers.size(); layer_index-- > 0;) {
+      const auto& layer = layers[layer_index];
+      const auto& children = states_by_layer[layer_index + 1];
+      const auto& parents = states_by_layer[layer_index];
+      const auto& layer_tape = tape[layer_index];
+      double normalization_adjoint = 0.0;
+      for (size_t i = 0; i < children.size(); ++i) {
+        normalization_adjoint +=
+            adjoints[i][0] * children[i].mass0 + adjoints[i][1] * children[i].mass1;
+      }
+
+      std::vector<Adjoint> pre_normalization_adjoints(children.size(), Adjoint{});
+      for (size_t i = 0; i < children.size(); ++i) {
+        pre_normalization_adjoints[i][0] =
+            (adjoints[i][0] - normalization_adjoint) / layer_tape.normalizer;
+        pre_normalization_adjoints[i][1] =
+            (adjoints[i][1] - normalization_adjoint) / layer_tape.normalizer;
+      }
+
+      std::vector<Adjoint> parent_adjoints(parents.size(), Adjoint{});
+      double probability_gradient = 0.0;
+      for (const auto& transition : layer_tape.transitions) {
+        const auto& parent = parents[transition.parent_index];
+        const auto& child_adjoint = pre_normalization_adjoints[transition.child_index];
+        auto& parent_adjoint = parent_adjoints[transition.parent_index];
+        if (!transition.present) {
+          probability_gradient -= child_adjoint[0] * parent.mass0 + child_adjoint[1] * parent.mass1;
+          parent_adjoint[0] += child_adjoint[0] * layer.q;
+          parent_adjoint[1] += child_adjoint[1] * layer.q;
+        } else if (layer.toggles_observable) {
+          probability_gradient += child_adjoint[0] * parent.mass1 + child_adjoint[1] * parent.mass0;
+          parent_adjoint[0] += child_adjoint[1] * layer.p;
+          parent_adjoint[1] += child_adjoint[0] * layer.p;
+        } else {
+          probability_gradient += child_adjoint[0] * parent.mass0 + child_adjoint[1] * parent.mass1;
+          parent_adjoint[0] += child_adjoint[0] * layer.p;
+          parent_adjoint[1] += child_adjoint[1] * layer.p;
+        }
+      }
+      gradients[layer_index] = probability_gradient * layer.p * layer.q;
+      adjoints = std::move(parent_adjoints);
+    }
+    return gradients;
+  }
+
   std::vector<CompiledWideLayerTemplate<Words>> layers;
   std::vector<uint32_t> initial_detector_word_indices;
   std::vector<uint64_t> initial_detector_bit_masks;
@@ -1264,6 +1518,25 @@ TESSERACT_HOT void TesseractTrellisDecoder::decode_shot(const std::vector<uint64
               << " states_merged=" << num_states_merged << " max_beam=" << max_beam_size_seen
               << std::endl;
   }
+}
+
+std::vector<double> TesseractTrellisDecoder::decode_shot_with_observable_logit_gradient(
+    const std::vector<uint64_t>& detections) {
+  low_confidence_flag = false;
+  num_states_expanded = 0;
+  num_states_merged = 0;
+  max_beam_size_seen = 0;
+  max_frontier_width_seen = 0;
+  reset_kept_state_stats(this);
+  time_expand_seconds = 0;
+  time_collapse_seconds = 0;
+  time_truncate_seconds = 0;
+  time_reconstruct_seconds = 0;
+  predicted_obs_mask = 0;
+  total_mass_obs0 = 0;
+  total_mass_obs1 = 0;
+  FinalizeKeptStateStatsOnExit kept_state_stats_guard{this};
+  return wide_kernel->decode_shot_with_observable_logit_gradient(this, detections);
 }
 
 double TesseractTrellisDecoder::observable_probability() const {

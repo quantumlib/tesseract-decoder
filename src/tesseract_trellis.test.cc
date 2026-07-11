@@ -16,11 +16,42 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
+#include <iomanip>
 #include <limits>
+#include <sstream>
 #include <string>
 
 #include "stim.h"
+
+namespace {
+
+stim::DetectorErrorModel make_ambiguous_dem(const std::array<double, 2>& probabilities) {
+  std::stringstream text;
+  text << std::setprecision(17) << "error(" << probabilities[0] << ") D0\n"
+       << "error(" << probabilities[1] << ") D0 L0\n"
+       << "detector(0, 0, 0) D0\n";
+  return stim::DetectorErrorModel(text.str());
+}
+
+double shifted_probability(double probability, double logit_shift) {
+  const double logit = std::log(probability / (1.0 - probability));
+  return 1.0 / (1.0 + std::exp(-(logit + logit_shift)));
+}
+
+double ambiguous_observable_logit(const std::array<double, 2>& probabilities,
+                                  const std::vector<uint64_t>& detections) {
+  TesseractTrellisConfig config;
+  config.dem = make_ambiguous_dem(probabilities);
+  config.beam_width = 16;
+  TesseractTrellisDecoder decoder(config);
+  decoder.decode_shot(detections);
+  const double probability = decoder.observable_probability();
+  return std::log(probability / (1.0 - probability));
+}
+
+}  // namespace
 
 TEST(TesseractTrellisDecoderTest, ComputesObservableProbabilityForAmbiguousSyndrome) {
   stim::DetectorErrorModel dem(R"DEM(
@@ -43,6 +74,33 @@ TEST(TesseractTrellisDecoderTest, ComputesObservableProbabilityForAmbiguousSyndr
   EXPECT_FALSE(decoder.low_confidence_flag);
   EXPECT_EQ(decoder.predicted_obs_mask, 0);
   EXPECT_NEAR(decoder.observable_probability(), 0.02 / 0.74, 1e-12);
+}
+
+TEST(TesseractTrellisDecoderTest, ObservableLogitGradientMatchesFiniteDifferences) {
+  const std::array<double, 2> probabilities{0.1, 0.2};
+  const double epsilon = 1e-6;
+
+  for (const std::vector<uint64_t>& detections :
+       {std::vector<uint64_t>{0}, std::vector<uint64_t>{}}) {
+    TesseractTrellisConfig config;
+    config.dem = make_ambiguous_dem(probabilities);
+    config.beam_width = 16;
+    TesseractTrellisDecoder decoder(config);
+    const auto gradient = decoder.decode_shot_with_observable_logit_gradient(detections);
+
+    ASSERT_FALSE(decoder.low_confidence_flag);
+    ASSERT_EQ(gradient.size(), probabilities.size());
+    for (size_t error_index = 0; error_index < probabilities.size(); ++error_index) {
+      auto plus = probabilities;
+      auto minus = probabilities;
+      plus[error_index] = shifted_probability(probabilities[error_index], epsilon);
+      minus[error_index] = shifted_probability(probabilities[error_index], -epsilon);
+      const double finite_difference = (ambiguous_observable_logit(plus, detections) -
+                                        ambiguous_observable_logit(minus, detections)) /
+                                       (2.0 * epsilon);
+      EXPECT_NEAR(gradient[error_index], finite_difference, 1e-8);
+    }
+  }
 }
 
 TEST(TesseractTrellisDecoderTest, SumsProbabilityMassAcrossMultipleExplanations) {

@@ -65,6 +65,10 @@ struct TesseractTrellisDecoder {
   ~TesseractTrellisDecoder();
 
   void decode_shot(const std::vector<uint64_t>& detections);
+  // Derivatives of observable log(p1 / p0) with respect to each preprocessed
+  // error log(p / (1 - p)), in the same order as errors. Beam selection is held fixed.
+  std::vector<double> decode_shot_with_observable_logit_gradient(
+      const std::vector<uint64_t>& detections);
   double observable_probability() const;
   std::vector<int> decode(const std::vector<uint64_t>& detections);
   void decode_shots(std::vector<stim::SparseShot>& shots,
