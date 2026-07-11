@@ -187,6 +187,14 @@ cc_binary(
     deps = [":libtesseract_trellis"],
 )
 
+cc_binary(
+    name = "trellis_fit_pilot",
+    srcs = ["trellis_fit_pilot.cc"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    deps = [":libtesseract_trellis"],
+)
+
 cc_test(
     name = "tesseract_tests",
     timeout = "eternal",
