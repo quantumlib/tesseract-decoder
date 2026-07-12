@@ -40,6 +40,8 @@ struct TesseractTrellisWideKernelBase {
                            const std::vector<uint64_t>& detections) const = 0;
   virtual std::vector<double> decode_shot_with_observable_logit_gradient(
       TesseractTrellisDecoder* decoder, const std::vector<uint64_t>& detections) const = 0;
+  virtual std::vector<double> decode_shot_with_syndrome_log_probability_gradient(
+      TesseractTrellisDecoder* decoder, const std::vector<uint64_t>& detections) const = 0;
 };
 
 namespace {
@@ -847,18 +849,19 @@ void expand_compiled_layer_into_pair_buckets(
 }
 
 template <size_t Words>
-void normalize_compiled_items(std::vector<FixedWideStateEntry<Words>>* items) {
+double normalize_compiled_items(std::vector<FixedWideStateEntry<Words>>* items) {
   double total = 0.0;
   for (const auto& item : *items) {
     total += total_entry_mass(item);
   }
   if (total == 0.0) {
-    return;
+    return 0.0;
   }
   for (auto& item : *items) {
     item.mass0 /= total;
     item.mass1 /= total;
   }
+  return total;
 }
 
 template <size_t Words>
@@ -1125,12 +1128,13 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
       const size_t kept_states =
           keep_top_compiled_states(&beam_entries, decoder->config.beam_width,
                                    decoder->config.beam_eps, decoder->config.ranking_mode);
-      normalize_compiled_items(&beam_entries);
+      const double normalizer = normalize_compiled_items(&beam_entries);
       record_kept_state_count(decoder, beam_entries.empty() ? 0 : kept_states);
-      if (beam_entries.empty()) {
+      if (beam_entries.empty() || !std::isfinite(normalizer) || normalizer <= 0.0) {
         decoder->low_confidence_flag = true;
         return;
       }
+      decoder->syndrome_log_probability += std::log(normalizer);
       decoder->num_states_merged += kept_states;
       decoder->max_beam_size_seen = std::max(decoder->max_beam_size_seen, kept_states);
       auto t3 = std::chrono::high_resolution_clock::now();
@@ -1150,6 +1154,8 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
       decoder->low_confidence_flag = true;
       return;
     }
+    decoder->syndrome_log_probability +=
+        std::log(decoder->total_mass_obs0 + decoder->total_mass_obs1);
     decoder->predicted_obs_mask = decoder->total_mass_obs1 > decoder->total_mass_obs0 ? 1 : 0;
     auto tr1 = std::chrono::high_resolution_clock::now();
     decoder->time_reconstruct_seconds +=
@@ -1158,6 +1164,17 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
 
   std::vector<double> decode_shot_with_observable_logit_gradient(
       TesseractTrellisDecoder* decoder, const std::vector<uint64_t>& detections) const override {
+    return decode_shot_with_gradient(decoder, detections, false);
+  }
+
+  std::vector<double> decode_shot_with_syndrome_log_probability_gradient(
+      TesseractTrellisDecoder* decoder, const std::vector<uint64_t>& detections) const override {
+    return decode_shot_with_gradient(decoder, detections, true);
+  }
+
+  std::vector<double> decode_shot_with_gradient(TesseractTrellisDecoder* decoder,
+                                                const std::vector<uint64_t>& detections,
+                                                bool syndrome_objective) const {
     auto invalid_gradient = [&]() {
       return std::vector<double>(layers.size(), std::numeric_limits<double>::quiet_NaN());
     };
@@ -1291,6 +1308,9 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
         item.mass0 /= normalizer;
         item.mass1 /= normalizer;
       }
+      if (syndrome_objective) {
+        decoder->syndrome_log_probability += std::log(normalizer);
+      }
       decoder->num_states_merged += kept_states;
       decoder->max_beam_size_seen = std::max(decoder->max_beam_size_seen, kept_states);
 
@@ -1320,10 +1340,17 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
       decoder->total_mass_obs0 += item.mass0;
       decoder->total_mass_obs1 += item.mass1;
     }
+    const double final_syndrome_mass = decoder->total_mass_obs0 + decoder->total_mass_obs1;
+    const bool invalid_observable_mass =
+        !syndrome_objective && (decoder->total_mass_obs0 <= 0.0 || decoder->total_mass_obs1 <= 0.0);
     if (!std::isfinite(decoder->total_mass_obs0) || !std::isfinite(decoder->total_mass_obs1) ||
-        decoder->total_mass_obs0 <= 0.0 || decoder->total_mass_obs1 <= 0.0) {
+        !std::isfinite(final_syndrome_mass) || final_syndrome_mass <= 0.0 ||
+        invalid_observable_mass) {
       decoder->low_confidence_flag = true;
       return invalid_gradient();
+    }
+    if (syndrome_objective) {
+      decoder->syndrome_log_probability += std::log(final_syndrome_mass);
     }
     decoder->predicted_obs_mask = decoder->total_mass_obs1 > decoder->total_mass_obs0 ? 1 : 0;
 
@@ -1331,8 +1358,13 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
     std::vector<Adjoint> adjoints(final_entries.size(), Adjoint{});
     for (size_t i = 0; i < final_entries.size(); ++i) {
       if (fixed_wide_state_zero(final_entries[i].state_words)) {
-        adjoints[i][0] = -1.0 / decoder->total_mass_obs0;
-        adjoints[i][1] = 1.0 / decoder->total_mass_obs1;
+        if (syndrome_objective) {
+          adjoints[i][0] = 1.0 / final_syndrome_mass;
+          adjoints[i][1] = 1.0 / final_syndrome_mass;
+        } else {
+          adjoints[i][0] = -1.0 / decoder->total_mass_obs0;
+          adjoints[i][1] = 1.0 / decoder->total_mass_obs1;
+        }
       }
     }
 
@@ -1351,9 +1383,11 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
       std::vector<Adjoint> pre_normalization_adjoints(children.size(), Adjoint{});
       for (size_t i = 0; i < children.size(); ++i) {
         pre_normalization_adjoints[i][0] =
-            (adjoints[i][0] - normalization_adjoint) / layer_tape.normalizer;
+            (adjoints[i][0] - normalization_adjoint + (syndrome_objective ? 1.0 : 0.0)) /
+            layer_tape.normalizer;
         pre_normalization_adjoints[i][1] =
-            (adjoints[i][1] - normalization_adjoint) / layer_tape.normalizer;
+            (adjoints[i][1] - normalization_adjoint + (syndrome_objective ? 1.0 : 0.0)) /
+            layer_tape.normalizer;
       }
 
       std::vector<Adjoint> parent_adjoints(parents.size(), Adjoint{});
@@ -1508,6 +1542,7 @@ TESSERACT_HOT void TesseractTrellisDecoder::decode_shot(const std::vector<uint64
   predicted_obs_mask = 0;
   total_mass_obs0 = 0;
   total_mass_obs1 = 0;
+  syndrome_log_probability = 0;
   FinalizeKeptStateStatsOnExit kept_state_stats_guard{this};
   wide_kernel->decode_shot(this, detections);
 
@@ -1535,8 +1570,29 @@ std::vector<double> TesseractTrellisDecoder::decode_shot_with_observable_logit_g
   predicted_obs_mask = 0;
   total_mass_obs0 = 0;
   total_mass_obs1 = 0;
+  syndrome_log_probability = 0;
   FinalizeKeptStateStatsOnExit kept_state_stats_guard{this};
   return wide_kernel->decode_shot_with_observable_logit_gradient(this, detections);
+}
+
+std::vector<double> TesseractTrellisDecoder::decode_shot_with_syndrome_log_probability_gradient(
+    const std::vector<uint64_t>& detections) {
+  low_confidence_flag = false;
+  num_states_expanded = 0;
+  num_states_merged = 0;
+  max_beam_size_seen = 0;
+  max_frontier_width_seen = 0;
+  reset_kept_state_stats(this);
+  time_expand_seconds = 0;
+  time_collapse_seconds = 0;
+  time_truncate_seconds = 0;
+  time_reconstruct_seconds = 0;
+  predicted_obs_mask = 0;
+  total_mass_obs0 = 0;
+  total_mass_obs1 = 0;
+  syndrome_log_probability = 0;
+  FinalizeKeptStateStatsOnExit kept_state_stats_guard{this};
+  return wide_kernel->decode_shot_with_syndrome_log_probability_gradient(this, detections);
 }
 
 double TesseractTrellisDecoder::observable_probability() const {

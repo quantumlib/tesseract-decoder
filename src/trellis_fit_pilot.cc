@@ -20,11 +20,17 @@
 namespace {
 
 struct SyndromeCounts {
-  uint64_t syndrome;
+  std::string syndrome;
+  std::vector<uint64_t> detections;
   uint64_t train_zero_count;
   uint64_t train_one_count;
   uint64_t test_zero_count;
   uint64_t test_one_count;
+};
+
+enum class FitObjective {
+  Observable,
+  Syndrome,
 };
 
 struct ObjectiveResult {
@@ -60,10 +66,37 @@ std::vector<SyndromeCounts> read_counts(const std::string& path) {
     throw std::invalid_argument("could not open syndrome counts: " + path);
   }
   std::vector<SyndromeCounts> rows;
-  SyndromeCounts row{};
-  while (input >> row.syndrome >> row.train_zero_count >> row.train_one_count >>
-         row.test_zero_count >> row.test_one_count) {
-    rows.push_back(row);
+  std::string syndrome;
+  uint64_t train_zero_count;
+  uint64_t train_one_count;
+  uint64_t test_zero_count;
+  uint64_t test_one_count;
+  while (input >> syndrome >> train_zero_count >> train_one_count >> test_zero_count >>
+         test_one_count) {
+    std::vector<uint64_t> detections;
+    if (syndrome.rfind("dets:", 0) == 0) {
+      const std::string encoded = syndrome.substr(5);
+      if (encoded != "-") {
+        size_t begin = 0;
+        while (begin < encoded.size()) {
+          const size_t end = encoded.find(',', begin);
+          detections.push_back(std::stoull(encoded.substr(begin, end - begin)));
+          if (end == std::string::npos) {
+            break;
+          }
+          begin = end + 1;
+        }
+      }
+    } else {
+      uint64_t mask = std::stoull(syndrome);
+      while (mask != 0) {
+        const uint64_t bit = static_cast<uint64_t>(__builtin_ctzll(mask));
+        detections.push_back(bit);
+        mask &= mask - 1;
+      }
+    }
+    rows.push_back({syndrome, std::move(detections), train_zero_count, train_one_count,
+                    test_zero_count, test_one_count});
   }
   if (!input.eof()) {
     throw std::invalid_argument("malformed syndrome-count row in: " + path);
@@ -72,16 +105,6 @@ std::vector<SyndromeCounts> read_counts(const std::string& path) {
     throw std::invalid_argument("no syndrome-count rows in: " + path);
   }
   return rows;
-}
-
-std::vector<uint64_t> syndrome_hits(uint64_t syndrome) {
-  std::vector<uint64_t> hits;
-  while (syndrome != 0) {
-    const uint64_t bit = static_cast<uint64_t>(__builtin_ctzll(syndrome));
-    hits.push_back(bit);
-    syndrome &= syndrome - 1;
-  }
-  return hits;
 }
 
 double probability_from_logit(double logit) {
@@ -131,7 +154,7 @@ stim::DetectorErrorModel dem_with_logits(const stim::DetectorErrorModel& dem,
 
 ObjectiveResult objective_and_gradient(const stim::DetectorErrorModel& dem,
                                        const std::vector<SyndromeCounts>& rows, size_t beam_width,
-                                       size_t num_threads) {
+                                       size_t num_threads, FitObjective fit_objective) {
   const auto started = std::chrono::steady_clock::now();
   const size_t num_errors = dem.count_errors();
   std::vector<std::vector<double>> partial_gradients(num_threads,
@@ -157,19 +180,32 @@ ObjectiveResult objective_and_gradient(const stim::DetectorErrorModel& dem,
           if (row_shots == 0) {
             continue;
           }
-          const auto logit_gradient =
-              decoder.decode_shot_with_observable_logit_gradient(syndrome_hits(row.syndrome));
-          const double probability = decoder.observable_probability();
-          if (decoder.low_confidence_flag || !std::isfinite(probability) || probability <= 0.0 ||
-              probability >= 1.0 || logit_gradient.size() != gradient.size()) {
-            throw std::runtime_error("invalid trellis gradient while fitting");
-          }
-          partial_losses[thread_index] -= row.train_one_count * std::log(probability);
-          partial_losses[thread_index] -= row.train_zero_count * std::log1p(-probability);
-          const double logit_loss_gradient =
-              row_shots * probability - static_cast<double>(row.train_one_count);
-          for (size_t error_index = 0; error_index < gradient.size(); ++error_index) {
-            gradient[error_index] += logit_loss_gradient * logit_gradient[error_index];
+          if (fit_objective == FitObjective::Observable) {
+            const auto logit_gradient =
+                decoder.decode_shot_with_observable_logit_gradient(row.detections);
+            const double probability = decoder.observable_probability();
+            if (decoder.low_confidence_flag || !std::isfinite(probability) || probability <= 0.0 ||
+                probability >= 1.0 || logit_gradient.size() != gradient.size()) {
+              throw std::runtime_error("invalid observable gradient while fitting");
+            }
+            partial_losses[thread_index] -= row.train_one_count * std::log(probability);
+            partial_losses[thread_index] -= row.train_zero_count * std::log1p(-probability);
+            const double logit_loss_gradient =
+                row_shots * probability - static_cast<double>(row.train_one_count);
+            for (size_t error_index = 0; error_index < gradient.size(); ++error_index) {
+              gradient[error_index] += logit_loss_gradient * logit_gradient[error_index];
+            }
+          } else {
+            const auto log_probability_gradient =
+                decoder.decode_shot_with_syndrome_log_probability_gradient(row.detections);
+            if (decoder.low_confidence_flag || !std::isfinite(decoder.syndrome_log_probability) ||
+                log_probability_gradient.size() != gradient.size()) {
+              throw std::runtime_error("invalid syndrome gradient while fitting");
+            }
+            partial_losses[thread_index] -= row_shots * decoder.syndrome_log_probability;
+            for (size_t error_index = 0; error_index < gradient.size(); ++error_index) {
+              gradient[error_index] -= row_shots * log_probability_gradient[error_index];
+            }
           }
           partial_shots[thread_index] += row_shots;
         }
@@ -208,10 +244,10 @@ ObjectiveResult objective_and_gradient(const stim::DetectorErrorModel& dem,
   return result;
 }
 
-std::vector<double> decode_probabilities(const stim::DetectorErrorModel& dem,
-                                         const std::vector<SyndromeCounts>& rows, size_t beam_width,
-                                         size_t num_threads) {
-  std::vector<double> probabilities(rows.size(), std::numeric_limits<double>::quiet_NaN());
+std::vector<double> decode_values(const stim::DetectorErrorModel& dem,
+                                  const std::vector<SyndromeCounts>& rows, size_t beam_width,
+                                  size_t num_threads, FitObjective fit_objective) {
+  std::vector<double> values(rows.size(), std::numeric_limits<double>::quiet_NaN());
   std::vector<std::exception_ptr> errors(num_threads);
   std::vector<std::thread> workers;
   workers.reserve(num_threads);
@@ -224,10 +260,12 @@ std::vector<double> decode_probabilities(const stim::DetectorErrorModel& dem,
         config.merge_errors = false;
         TesseractTrellisDecoder decoder(config);
         for (size_t row_index = thread_index; row_index < rows.size(); row_index += num_threads) {
-          decoder.decode_shot(syndrome_hits(rows[row_index].syndrome));
-          probabilities[row_index] = decoder.observable_probability();
-          if (decoder.low_confidence_flag || !std::isfinite(probabilities[row_index])) {
-            throw std::runtime_error("invalid trellis probability while scoring");
+          decoder.decode_shot(rows[row_index].detections);
+          values[row_index] = fit_objective == FitObjective::Observable
+                                  ? decoder.observable_probability()
+                                  : decoder.syndrome_log_probability;
+          if (decoder.low_confidence_flag || !std::isfinite(values[row_index])) {
+            throw std::runtime_error("invalid trellis value while scoring");
           }
         }
       } catch (...) {
@@ -243,22 +281,26 @@ std::vector<double> decode_probabilities(const stim::DetectorErrorModel& dem,
       std::rethrow_exception(error);
     }
   }
-  return probabilities;
+  return values;
 }
 
-double conditional_nll_from_probabilities(const std::vector<double>& probabilities,
-                                          const std::vector<SyndromeCounts>& rows, bool test) {
+double nll_from_values(const std::vector<double>& values, const std::vector<SyndromeCounts>& rows,
+                       bool test, FitObjective fit_objective) {
   long double loss = 0.0;
   uint64_t shots = 0;
   for (size_t i = 0; i < rows.size(); ++i) {
     const uint64_t zeros = test ? rows[i].test_zero_count : rows[i].train_zero_count;
     const uint64_t ones = test ? rows[i].test_one_count : rows[i].train_one_count;
-    const double probability = probabilities[i];
-    if (probability <= 0.0 || probability >= 1.0) {
-      throw std::runtime_error("conditional NLL requires probabilities strictly between 0 and 1");
+    if (fit_objective == FitObjective::Observable) {
+      const double probability = values[i];
+      if (probability <= 0.0 || probability >= 1.0) {
+        throw std::runtime_error("conditional NLL requires probabilities strictly between 0 and 1");
+      }
+      loss -= ones * std::log(probability);
+      loss -= zeros * std::log1p(-probability);
+    } else {
+      loss -= (zeros + ones) * values[i];
     }
-    loss -= ones * std::log(probability);
-    loss -= zeros * std::log1p(-probability);
     shots += zeros + ones;
   }
   return static_cast<double>(loss / shots);
@@ -285,14 +327,17 @@ void write_summary(const std::string& path, size_t beam_width, size_t num_thread
                    uint64_t test_shots, size_t steps, double learning_rate, double l2,
                    double max_shift, double baseline_test_nll, double fitted_test_nll,
                    double final_shift_l2, double final_shift_max, size_t shifts_at_bound,
-                   double total_seconds, const std::vector<HistoryEntry>& history) {
+                   double total_seconds, FitObjective fit_objective,
+                   const std::vector<HistoryEntry>& history) {
   std::ofstream output(path);
   if (!output) {
     throw std::invalid_argument("could not write summary: " + path);
   }
   output << std::setprecision(17);
   output << "{\n"
-         << "  \"schema_version\": 1,\n"
+         << "  \"schema_version\": 2,\n"
+         << "  \"fit_objective\": \""
+         << (fit_objective == FitObjective::Observable ? "observable" : "syndrome") << "\",\n"
          << "  \"beam_width\": " << beam_width << ",\n"
          << "  \"threads\": " << num_threads << ",\n"
          << "  \"preprocessed_errors\": " << num_errors << ",\n"
@@ -326,9 +371,9 @@ void write_summary(const std::string& path, size_t beam_width, size_t num_thread
 }  // namespace
 
 int main(int argc, char** argv) {
-  if (argc != 12) {
+  if (argc != 12 && argc != 13) {
     std::cerr << "usage: trellis_fit_pilot DEM COUNTS OUT_DEM OUT_SCORES OUT_SUMMARY BEAM "
-                 "THREADS STEPS LEARNING_RATE L2 MAX_SHIFT\n";
+                 "THREADS STEPS LEARNING_RATE L2 MAX_SHIFT [observable|syndrome]\n";
     return EXIT_FAILURE;
   }
   try {
@@ -343,6 +388,12 @@ int main(int argc, char** argv) {
     const double learning_rate = std::stod(argv[9]);
     const double l2 = std::stod(argv[10]);
     const double max_shift = std::stod(argv[11]);
+    const std::string fit_objective_name = argc == 13 ? argv[12] : "observable";
+    const FitObjective fit_objective =
+        fit_objective_name == "observable" ? FitObjective::Observable
+        : fit_objective_name == "syndrome"
+            ? FitObjective::Syndrome
+            : throw std::invalid_argument("fit objective must be observable or syndrome");
     if (beam_width == 0 || num_threads == 0 || num_threads > 2 || steps == 0 ||
         !std::isfinite(learning_rate) || learning_rate <= 0.0 || !std::isfinite(l2) || l2 < 0.0 ||
         !std::isfinite(max_shift) || max_shift <= 0.0) {
@@ -363,7 +414,8 @@ int main(int argc, char** argv) {
 
     for (size_t step = 0; step < steps; ++step) {
       const auto current_dem = dem_with_logits(baseline_dem, logits);
-      auto objective = objective_and_gradient(current_dem, rows, beam_width, num_threads);
+      auto objective =
+          objective_and_gradient(current_dem, rows, beam_width, num_threads, fit_objective);
       double regularization = 0.0;
       for (size_t i = 0; i < logits.size(); ++i) {
         const double shift = logits[i] - baseline_logits[i];
@@ -387,10 +439,10 @@ int main(int argc, char** argv) {
               std::clamp(updated, baseline_logits[i] - max_shift, baseline_logits[i] + max_shift);
         }
         const auto candidate_dem = dem_with_logits(baseline_dem, candidate_logits);
-        const auto candidate_probabilities =
-            decode_probabilities(candidate_dem, rows, beam_width, num_threads);
+        const auto candidate_values =
+            decode_values(candidate_dem, rows, beam_width, num_threads, fit_objective);
         const double candidate_data_nll =
-            conditional_nll_from_probabilities(candidate_probabilities, rows, false);
+            nll_from_values(candidate_values, rows, false, fit_objective);
         double candidate_regularization = 0.0;
         for (size_t i = 0; i < logits.size(); ++i) {
           const double shift = candidate_logits[i] - baseline_logits[i];
@@ -416,7 +468,8 @@ int main(int argc, char** argv) {
     }
 
     const auto fitted_dem = dem_with_logits(baseline_dem, logits);
-    auto final_objective = objective_and_gradient(fitted_dem, rows, beam_width, num_threads);
+    auto final_objective =
+        objective_and_gradient(fitted_dem, rows, beam_width, num_threads, fit_objective);
     double final_regularization = 0.0;
     double final_gradient_norm_squared = 0.0;
     double final_shift_l2_squared = 0.0;
@@ -441,13 +494,20 @@ int main(int argc, char** argv) {
                        final_objective.elapsed_seconds});
 
     const auto baseline_probabilities =
-        decode_probabilities(baseline_dem, rows, beam_width, num_threads);
+        decode_values(baseline_dem, rows, beam_width, num_threads, FitObjective::Observable);
     const auto fitted_probabilities =
-        decode_probabilities(fitted_dem, rows, beam_width, num_threads);
+        decode_values(fitted_dem, rows, beam_width, num_threads, FitObjective::Observable);
+    const auto baseline_test_values =
+        fit_objective == FitObjective::Observable
+            ? baseline_probabilities
+            : decode_values(baseline_dem, rows, beam_width, num_threads, fit_objective);
+    const auto fitted_test_values =
+        fit_objective == FitObjective::Observable
+            ? fitted_probabilities
+            : decode_values(fitted_dem, rows, beam_width, num_threads, fit_objective);
     const double baseline_test_nll =
-        conditional_nll_from_probabilities(baseline_probabilities, rows, true);
-    const double fitted_test_nll =
-        conditional_nll_from_probabilities(fitted_probabilities, rows, true);
+        nll_from_values(baseline_test_values, rows, true, fit_objective);
+    const double fitted_test_nll = nll_from_values(fitted_test_values, rows, true, fit_objective);
     const uint64_t train_shots = std::accumulate(
         rows.begin(), rows.end(), uint64_t{0}, [](uint64_t total, const SyndromeCounts& row) {
           return total + row.train_zero_count + row.train_one_count;
@@ -468,7 +528,7 @@ int main(int argc, char** argv) {
     write_summary(out_summary_path, beam_width, num_threads, logits.size(), rows.size(),
                   train_shots, test_shots, steps, learning_rate, l2, max_shift, baseline_test_nll,
                   fitted_test_nll, std::sqrt(final_shift_l2_squared), final_shift_max,
-                  shifts_at_bound, total_seconds, history);
+                  shifts_at_bound, total_seconds, fit_objective, history);
     std::cerr << "finished fit in " << total_seconds << " seconds; held-out NLL "
               << baseline_test_nll << " -> " << fitted_test_nll << std::endl;
   } catch (const std::exception& ex) {

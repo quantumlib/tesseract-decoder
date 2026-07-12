@@ -51,6 +51,15 @@ double ambiguous_observable_logit(const std::array<double, 2>& probabilities,
   return std::log(probability / (1.0 - probability));
 }
 
+double ambiguous_syndrome_log_probability(const std::array<double, 2>& probabilities,
+                                          const std::vector<uint64_t>& detections) {
+  const double p0 = probabilities[0];
+  const double p1 = probabilities[1];
+  const double probability =
+      detections.empty() ? (1.0 - p0) * (1.0 - p1) + p0 * p1 : p0 * (1.0 - p1) + (1.0 - p0) * p1;
+  return std::log(probability);
+}
+
 }  // namespace
 
 TEST(TesseractTrellisDecoderTest, ComputesObservableProbabilityForAmbiguousSyndrome) {
@@ -97,6 +106,35 @@ TEST(TesseractTrellisDecoderTest, ObservableLogitGradientMatchesFiniteDifference
       minus[error_index] = shifted_probability(probabilities[error_index], -epsilon);
       const double finite_difference = (ambiguous_observable_logit(plus, detections) -
                                         ambiguous_observable_logit(minus, detections)) /
+                                       (2.0 * epsilon);
+      EXPECT_NEAR(gradient[error_index], finite_difference, 1e-8);
+    }
+  }
+}
+
+TEST(TesseractTrellisDecoderTest, SyndromeLogProbabilityGradientMatchesFiniteDifferences) {
+  const std::array<double, 2> probabilities{0.1, 0.2};
+  const double epsilon = 1e-6;
+
+  for (const std::vector<uint64_t>& detections :
+       {std::vector<uint64_t>{0}, std::vector<uint64_t>{}}) {
+    TesseractTrellisConfig config;
+    config.dem = make_ambiguous_dem(probabilities);
+    config.beam_width = 16;
+    TesseractTrellisDecoder decoder(config);
+    const auto gradient = decoder.decode_shot_with_syndrome_log_probability_gradient(detections);
+
+    ASSERT_FALSE(decoder.low_confidence_flag);
+    EXPECT_NEAR(decoder.syndrome_log_probability,
+                ambiguous_syndrome_log_probability(probabilities, detections), 1e-12);
+    ASSERT_EQ(gradient.size(), probabilities.size());
+    for (size_t error_index = 0; error_index < probabilities.size(); ++error_index) {
+      auto plus = probabilities;
+      auto minus = probabilities;
+      plus[error_index] = shifted_probability(probabilities[error_index], epsilon);
+      minus[error_index] = shifted_probability(probabilities[error_index], -epsilon);
+      const double finite_difference = (ambiguous_syndrome_log_probability(plus, detections) -
+                                        ambiguous_syndrome_log_probability(minus, detections)) /
                                        (2.0 * epsilon);
       EXPECT_NEAR(gradient[error_index], finite_difference, 1e-8);
     }
