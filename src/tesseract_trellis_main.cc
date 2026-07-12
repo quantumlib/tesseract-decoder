@@ -59,6 +59,7 @@ struct Args {
   std::string out_fname = "";
   std::string out_format = "";
   std::string obs_probs_out_fname = "";
+  std::string syndrome_log_probs_out_fname = "";
 
   std::string dem_out_fname = "";
   std::string stats_out_fname = "";
@@ -95,6 +96,9 @@ struct Args {
     }
     if (obs_probs_out_fname == "-") {
       throw std::invalid_argument("--obs-probs-out must be a file path, not stdout.");
+    }
+    if (syndrome_log_probs_out_fname == "-") {
+      throw std::invalid_argument("--syndrome-log-probs-out must be a file path, not stdout.");
     }
     if (!in_format.empty() && !stim::format_name_to_enum_map().contains(in_format)) {
       throw std::invalid_argument("Invalid format: " + in_format);
@@ -296,6 +300,12 @@ int main(int argc, char* argv[]) {
           "Requires exactly one observable.")
       .default_value(std::string(""))
       .store_into(args.obs_probs_out_fname);
+  program.add_argument("--syndrome-log-probs-out")
+      .help(
+          "File to write headerless binary doubles containing log P(detections) for each "
+          "decoded shot under the retained trellis beam.")
+      .default_value(std::string(""))
+      .store_into(args.syndrome_log_probs_out_fname);
   program.add_argument("--dem-out").default_value(std::string("")).store_into(args.dem_out_fname);
   program.add_argument("--stats-out")
       .default_value(std::string(""))
@@ -341,6 +351,7 @@ int main(int argc, char* argv[]) {
   std::vector<double> mass0_predicted(shots.size());
   std::vector<double> mass1_predicted(shots.size());
   std::vector<double> obs_probability_predicted(shots.size());
+  std::vector<double> syndrome_log_probability_predicted(shots.size());
   std::vector<double> decoding_time_seconds(shots.size());
   std::vector<size_t> num_states_expanded_per_shot(shots.size());
   std::vector<size_t> num_states_merged_per_shot(shots.size());
@@ -391,6 +402,7 @@ int main(int argc, char* argv[]) {
         mass0_predicted[shot_index] = decoder.total_mass_obs0;
         mass1_predicted[shot_index] = decoder.total_mass_obs1;
         obs_probability_predicted[shot_index] = decoder.observable_probability();
+        syndrome_log_probability_predicted[shot_index] = decoder.syndrome_log_probability;
         num_states_expanded_per_shot[shot_index] = decoder.num_states_expanded;
         num_states_merged_per_shot[shot_index] = decoder.num_states_merged;
         max_beam_size_per_shot[shot_index] = decoder.max_beam_size_seen;
@@ -450,6 +462,18 @@ int main(int argc, char* argv[]) {
     }
   }
 
+  if (!args.syndrome_log_probs_out_fname.empty()) {
+    std::ofstream out(args.syndrome_log_probs_out_fname, std::ios::binary);
+    if (!out.is_open()) {
+      throw std::invalid_argument("Failed to open " + args.syndrome_log_probs_out_fname);
+    }
+    out.write(reinterpret_cast<const char*>(syndrome_log_probability_predicted.data()),
+              static_cast<std::streamsize>(shot * sizeof(double)));
+    if (!out) {
+      throw std::runtime_error("Failed to write syndrome log probabilities.");
+    }
+  }
+
   bool print_final_stats = true;
   if (!args.stats_out_fname.empty()) {
     nlohmann::json stats_json = {{"circuit_path", args.circuit_path},
@@ -460,6 +484,7 @@ int main(int argc, char* argv[]) {
                                  {"ranking_mode", args.ranking_mode},
                                  {"merge_errors", config.merge_errors},
                                  {"obs_probs_out", args.obs_probs_out_fname},
+                                 {"syndrome_log_probs_out", args.syndrome_log_probs_out_fname},
                                  {"sample_seed", args.sample_seed},
                                  {"sample_num_shots", args.sample_num_shots},
                                  {"num_threads", args.num_threads},
