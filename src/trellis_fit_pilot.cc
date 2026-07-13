@@ -31,6 +31,7 @@ struct SyndromeCounts {
 enum class FitObjective {
   Observable,
   Syndrome,
+  SyndromeCensored,
 };
 
 struct ObjectiveResult {
@@ -154,13 +155,17 @@ stim::DetectorErrorModel dem_with_logits(const stim::DetectorErrorModel& dem,
 
 ObjectiveResult objective_and_gradient(const stim::DetectorErrorModel& dem,
                                        const std::vector<SyndromeCounts>& rows, size_t beam_width,
-                                       size_t num_threads, FitObjective fit_objective) {
+                                       size_t num_threads, FitObjective fit_objective,
+                                       uint64_t censored_total_shots) {
   const auto started = std::chrono::steady_clock::now();
   const size_t num_errors = dem.count_errors();
   std::vector<std::vector<double>> partial_gradients(num_threads,
                                                      std::vector<double>(num_errors, 0.0));
   std::vector<long double> partial_losses(num_threads, 0.0);
+  std::vector<long double> partial_selected_masses(num_threads, 0.0);
   std::vector<uint64_t> partial_shots(num_threads, 0);
+  std::vector<std::vector<double>> partial_mass_gradients(num_threads,
+                                                          std::vector<double>(num_errors, 0.0));
   std::vector<std::exception_ptr> errors(num_threads);
   std::vector<std::thread> workers;
   workers.reserve(num_threads);
@@ -206,6 +211,14 @@ ObjectiveResult objective_and_gradient(const stim::DetectorErrorModel& dem,
             for (size_t error_index = 0; error_index < gradient.size(); ++error_index) {
               gradient[error_index] -= row_shots * log_probability_gradient[error_index];
             }
+            if (fit_objective == FitObjective::SyndromeCensored) {
+              const double probability = std::exp(decoder.syndrome_log_probability);
+              partial_selected_masses[thread_index] += probability;
+              for (size_t error_index = 0; error_index < gradient.size(); ++error_index) {
+                partial_mass_gradients[thread_index][error_index] +=
+                    probability * log_probability_gradient[error_index];
+              }
+            }
           }
           partial_shots[thread_index] += row_shots;
         }
@@ -225,15 +238,31 @@ ObjectiveResult objective_and_gradient(const stim::DetectorErrorModel& dem,
 
   ObjectiveResult result{0.0, std::vector<double>(num_errors, 0.0), 0, 0.0};
   long double total_loss = 0.0;
+  long double selected_mass = 0.0;
+  std::vector<double> mass_gradient(num_errors, 0.0);
   for (size_t thread_index = 0; thread_index < num_threads; ++thread_index) {
     total_loss += partial_losses[thread_index];
+    selected_mass += partial_selected_masses[thread_index];
     result.shots += partial_shots[thread_index];
     for (size_t error_index = 0; error_index < num_errors; ++error_index) {
       result.gradient[error_index] += partial_gradients[thread_index][error_index];
+      mass_gradient[error_index] += partial_mass_gradients[thread_index][error_index];
     }
   }
   if (result.shots == 0) {
     throw std::runtime_error("selected syndromes contain no training shots");
+  }
+  if (fit_objective == FitObjective::SyndromeCensored) {
+    if (censored_total_shots < result.shots || selected_mass <= 0.0 || selected_mass >= 1.0) {
+      throw std::runtime_error("invalid censored syndrome mass or total shot count");
+    }
+    const uint64_t other_shots = censored_total_shots - result.shots;
+    total_loss -= other_shots * std::log1pl(-selected_mass);
+    const double other_gradient_scale = other_shots / (1.0 - selected_mass);
+    for (size_t error_index = 0; error_index < num_errors; ++error_index) {
+      result.gradient[error_index] += other_gradient_scale * mass_gradient[error_index];
+    }
+    result.shots = censored_total_shots;
   }
   result.data_nll = static_cast<double>(total_loss / result.shots);
   for (double& value : result.gradient) {
@@ -285,8 +314,9 @@ std::vector<double> decode_values(const stim::DetectorErrorModel& dem,
 }
 
 double nll_from_values(const std::vector<double>& values, const std::vector<SyndromeCounts>& rows,
-                       bool test, FitObjective fit_objective) {
+                       bool test, FitObjective fit_objective, uint64_t censored_total_shots) {
   long double loss = 0.0;
+  long double selected_mass = 0.0;
   uint64_t shots = 0;
   for (size_t i = 0; i < rows.size(); ++i) {
     const uint64_t zeros = test ? rows[i].test_zero_count : rows[i].train_zero_count;
@@ -300,8 +330,18 @@ double nll_from_values(const std::vector<double>& values, const std::vector<Synd
       loss -= zeros * std::log1p(-probability);
     } else {
       loss -= (zeros + ones) * values[i];
+      if (fit_objective == FitObjective::SyndromeCensored) {
+        selected_mass += std::exp(values[i]);
+      }
     }
     shots += zeros + ones;
+  }
+  if (fit_objective == FitObjective::SyndromeCensored) {
+    if (censored_total_shots < shots || selected_mass <= 0.0 || selected_mass >= 1.0) {
+      throw std::runtime_error("invalid censored syndrome mass or total shot count while scoring");
+    }
+    loss -= (censored_total_shots - shots) * std::log1pl(-selected_mass);
+    shots = censored_total_shots;
   }
   return static_cast<double>(loss / shots);
 }
@@ -337,7 +377,10 @@ void write_summary(const std::string& path, size_t beam_width, size_t num_thread
   output << "{\n"
          << "  \"schema_version\": 2,\n"
          << "  \"fit_objective\": \""
-         << (fit_objective == FitObjective::Observable ? "observable" : "syndrome") << "\",\n"
+         << (fit_objective == FitObjective::Observable         ? "observable"
+             : fit_objective == FitObjective::SyndromeCensored ? "syndrome_censored"
+                                                               : "syndrome")
+         << "\",\n"
          << "  \"beam_width\": " << beam_width << ",\n"
          << "  \"threads\": " << num_threads << ",\n"
          << "  \"preprocessed_errors\": " << num_errors << ",\n"
@@ -371,9 +414,10 @@ void write_summary(const std::string& path, size_t beam_width, size_t num_thread
 }  // namespace
 
 int main(int argc, char** argv) {
-  if (argc != 12 && argc != 13) {
+  if (argc != 12 && argc != 13 && argc != 15) {
     std::cerr << "usage: trellis_fit_pilot DEM COUNTS OUT_DEM OUT_SCORES OUT_SUMMARY BEAM "
-                 "THREADS STEPS LEARNING_RATE L2 MAX_SHIFT [observable|syndrome]\n";
+                 "THREADS STEPS LEARNING_RATE L2 MAX_SHIFT "
+                 "[observable|syndrome|syndrome_censored [TRAIN_TOTAL TEST_TOTAL]]\n";
     return EXIT_FAILURE;
   }
   try {
@@ -388,15 +432,19 @@ int main(int argc, char** argv) {
     const double learning_rate = std::stod(argv[9]);
     const double l2 = std::stod(argv[10]);
     const double max_shift = std::stod(argv[11]);
-    const std::string fit_objective_name = argc == 13 ? argv[12] : "observable";
+    const std::string fit_objective_name = argc >= 13 ? argv[12] : "observable";
     const FitObjective fit_objective =
         fit_objective_name == "observable" ? FitObjective::Observable
-        : fit_objective_name == "syndrome"
-            ? FitObjective::Syndrome
+        : fit_objective_name == "syndrome" ? FitObjective::Syndrome
+        : fit_objective_name == "syndrome_censored"
+            ? FitObjective::SyndromeCensored
             : throw std::invalid_argument("fit objective must be observable or syndrome");
+    const uint64_t train_total_shots = argc == 15 ? std::stoull(argv[13]) : 0;
+    const uint64_t test_total_shots = argc == 15 ? std::stoull(argv[14]) : 0;
     if (beam_width == 0 || num_threads == 0 || num_threads > 2 || steps == 0 ||
         !std::isfinite(learning_rate) || learning_rate <= 0.0 || !std::isfinite(l2) || l2 < 0.0 ||
-        !std::isfinite(max_shift) || max_shift <= 0.0) {
+        !std::isfinite(max_shift) || max_shift <= 0.0 ||
+        ((fit_objective == FitObjective::SyndromeCensored) != (argc == 15))) {
       throw std::invalid_argument("invalid fit parameter");
     }
 
@@ -414,8 +462,8 @@ int main(int argc, char** argv) {
 
     for (size_t step = 0; step < steps; ++step) {
       const auto current_dem = dem_with_logits(baseline_dem, logits);
-      auto objective =
-          objective_and_gradient(current_dem, rows, beam_width, num_threads, fit_objective);
+      auto objective = objective_and_gradient(current_dem, rows, beam_width, num_threads,
+                                              fit_objective, train_total_shots);
       double regularization = 0.0;
       for (size_t i = 0; i < logits.size(); ++i) {
         const double shift = logits[i] - baseline_logits[i];
@@ -442,7 +490,7 @@ int main(int argc, char** argv) {
         const auto candidate_values =
             decode_values(candidate_dem, rows, beam_width, num_threads, fit_objective);
         const double candidate_data_nll =
-            nll_from_values(candidate_values, rows, false, fit_objective);
+            nll_from_values(candidate_values, rows, false, fit_objective, train_total_shots);
         double candidate_regularization = 0.0;
         for (size_t i = 0; i < logits.size(); ++i) {
           const double shift = candidate_logits[i] - baseline_logits[i];
@@ -468,8 +516,8 @@ int main(int argc, char** argv) {
     }
 
     const auto fitted_dem = dem_with_logits(baseline_dem, logits);
-    auto final_objective =
-        objective_and_gradient(fitted_dem, rows, beam_width, num_threads, fit_objective);
+    auto final_objective = objective_and_gradient(fitted_dem, rows, beam_width, num_threads,
+                                                  fit_objective, train_total_shots);
     double final_regularization = 0.0;
     double final_gradient_norm_squared = 0.0;
     double final_shift_l2_squared = 0.0;
@@ -506,16 +554,21 @@ int main(int argc, char** argv) {
             ? fitted_probabilities
             : decode_values(fitted_dem, rows, beam_width, num_threads, fit_objective);
     const double baseline_test_nll =
-        nll_from_values(baseline_test_values, rows, true, fit_objective);
-    const double fitted_test_nll = nll_from_values(fitted_test_values, rows, true, fit_objective);
-    const uint64_t train_shots = std::accumulate(
+        nll_from_values(baseline_test_values, rows, true, fit_objective, test_total_shots);
+    const double fitted_test_nll =
+        nll_from_values(fitted_test_values, rows, true, fit_objective, test_total_shots);
+    uint64_t train_shots = std::accumulate(
         rows.begin(), rows.end(), uint64_t{0}, [](uint64_t total, const SyndromeCounts& row) {
           return total + row.train_zero_count + row.train_one_count;
         });
-    const uint64_t test_shots = std::accumulate(
-        rows.begin(), rows.end(), uint64_t{0}, [](uint64_t total, const SyndromeCounts& row) {
-          return total + row.test_zero_count + row.test_one_count;
-        });
+    uint64_t test_shots = std::accumulate(rows.begin(), rows.end(), uint64_t{0},
+                                          [](uint64_t total, const SyndromeCounts& row) {
+                                            return total + row.test_zero_count + row.test_one_count;
+                                          });
+    if (fit_objective == FitObjective::SyndromeCensored) {
+      train_shots = train_total_shots;
+      test_shots = test_total_shots;
+    }
 
     std::ofstream dem_output(out_dem_path);
     if (!dem_output) {
