@@ -1,4 +1,4 @@
-# GARI benchmarks
+# GARI Benchmarks
 
 
 ## Contents
@@ -6,7 +6,7 @@
 - `submit.sh`: Slurm submission script for the benchmark sweep.
 - `submit_locally.sh`: Local bash script execution equivalent for the benchmark sweep.
 - `aggregated_results.jsonl`: Aggregated benchmark results (not checked into source control).
-- `interactive_plot.py`: Interactive Bokeh-based dashboard for plotting and visualizing performance tradeoffs dynamically in the browser.
+- `interactive_plot.py`: Interactive html dashboard for plotting and visualizing performance tradeoffs dynamically in the browser.
 
 ## steps before running jobs
 
@@ -17,11 +17,14 @@ bazel build src:tesseract
 Generate all the gari dems with all prior modes and detector ordering for the targeted circuits.
 From the repository root:
 # Run DEM Generation under Bazel:
+```
 bazel run //src/py/_tesseract_py_util:gari_dem_utils -- "testdata/bivariatebicyclecodes/"
 bazel run //src/py/_tesseract_py_util:gari_dem_utils -- "testdata/colorcodes/"
 bazel run //src/py/_tesseract_py_util:gari_dem_utils -- "testdata/surfacecodes/"
+```
 
 # Run test simulation under Bazel:
+```
 bazel run //src/py:gari_simulation_test
 ```
 
