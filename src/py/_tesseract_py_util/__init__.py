@@ -20,3 +20,11 @@ and related utilities, in `decompose_errors.py` and `generalize_dem.py`.
 from _tesseract_py_util.demutil import decompose_errors
 from _tesseract_py_util.generalize_dem import \
     generalize as regeneralize_spatial_dem
+
+from .gari_dem_utils import (
+    get_detector_types,
+    dem_to_check_matrices,
+    matrices_to_dem,
+    gari_transform,
+    get_detector_orderings, assign_prior_weights
+)

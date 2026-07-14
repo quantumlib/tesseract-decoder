@@ -33,6 +33,8 @@ struct Args {
   std::string circuit_path;
   std::string dem_path;
   bool no_merge_errors = false;
+  std::string det_mapping_file;
+  std::string custom_order;
 
   // Manifold orientation options
   uint64_t det_order_seed;
@@ -179,6 +181,35 @@ struct Args {
 
   void extract(TesseractConfig& config, std::vector<stim::SparseShot>& shots,
                std::unique_ptr<stim::MeasureRecordWriter>& writer) {
+    std::vector<uint64_t> det_mapping;
+    uint64_t num_original_detectors = 0;
+    std::vector<std::vector<size_t>> custom_det_orders;
+    if (!det_mapping_file.empty()) {
+      std::ifstream f(det_mapping_file);
+      if (!f) {
+        throw std::invalid_argument("Could not open the mapping file: " + det_mapping_file);
+      }
+      nlohmann::json j = nlohmann::json::parse(f);
+      num_original_detectors = j.at("num_original_detectors").get<uint64_t>();
+      det_mapping = j.at("mapping").get<std::vector<uint64_t>>();
+      
+      if (!custom_order.empty() && j.contains("det_orders")) {
+        if (custom_order == "all") {
+          for (auto& [key, value] : j.at("det_orders").items()) {
+            custom_det_orders.push_back(value.get<std::vector<size_t>>());
+          }
+        } else {
+          if (j.at("det_orders").contains(custom_order)) {
+            custom_det_orders.push_back(j.at("det_orders").at(custom_order).get<std::vector<size_t>>());
+          } else {
+            throw std::invalid_argument("Mapping file does not contain custom order: " + custom_order);
+          }
+        }
+      }
+    } else if (!custom_order.empty()) {
+      throw std::invalid_argument("--custom-order requires a --det-mapping-file containing the orders.");
+    }
+
     // Get a circuit, if available
     stim::Circuit circuit;
     if (!circuit_path.empty()) {
@@ -225,15 +256,25 @@ struct Args {
           std::cout << ")" << std::endl;
         }
       }
-      DetOrder order = DetOrder::DetIndex;
-      if (det_order_bfs) {
-        order = DetOrder::DetBFS;
-      } else if (det_order_index) {
-        order = DetOrder::DetIndex;
-      } else if (det_order_coordinate) {
-        order = DetOrder::DetCoordinate;
+      if (!custom_det_orders.empty()) {
+        for (const auto& order : custom_det_orders) {
+          if (order.size() != config.dem.count_detectors()) {
+            throw std::invalid_argument("Custom detector order size does not match DEM detector count.");
+          }
+        }
+        config.det_orders = custom_det_orders;
+        num_det_orders = custom_det_orders.size();
+      } else {
+        DetOrder order = DetOrder::DetIndex;
+        if (det_order_bfs) {
+          order = DetOrder::DetBFS;
+        } else if (det_order_index) {
+          order = DetOrder::DetIndex;
+        } else if (det_order_coordinate) {
+          order = DetOrder::DetCoordinate;
+        }
+        config.det_orders = build_det_orders(config.dem, num_det_orders, order, det_order_seed);
       }
-      config.det_orders = build_det_orders(config.dem, num_det_orders, order, det_order_seed);
     }
 
     if (sample_num_shots > 0) {
@@ -248,7 +289,7 @@ struct Args {
         shots[k].obs_mask = obs_T[k];
         for (size_t d = 0; d < num_detectors; d++) {
           if (dets[d][k]) {
-            shots[k].hits.push_back(d);
+            shots[k].hits.push_back(!det_mapping.empty() ? det_mapping[d] : d);
           }
         }
       }
@@ -261,14 +302,20 @@ struct Args {
         throw std::invalid_argument("Could not open the file: " + in_fname);
       }
       stim::FileFormatData shots_in_format = stim::format_name_to_enum_map().at(in_format);
+      size_t num_dets = det_mapping.empty() ? config.dem.count_detectors() : num_original_detectors;
       auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
-          shots_file, shots_in_format.id, 0, config.dem.count_detectors(),
+          shots_file, shots_in_format.id, 0, num_dets,
           append_observables * config.dem.count_observables());
 
       // Load the shots from a file
       stim::SparseShot sparse_shot;
       sparse_shot.clear();
       while (reader->start_and_read_entire_record(sparse_shot)) {
+        if (!det_mapping.empty()) {
+          for (auto& hit : sparse_shot.hits) {
+            hit = det_mapping[hit];
+          }
+        }
         shots.push_back(sparse_shot);
         sparse_shot.clear();
       }
@@ -347,6 +394,8 @@ int main(int argc, char* argv[]) {
   Args args;
   program.add_argument("--circuit").help("Stim circuit file path").store_into(args.circuit_path);
   program.add_argument("--dem").help("Stim dem file path").store_into(args.dem_path);
+  program.add_argument("--det-mapping-file").help("JSON file containing detector mapping").default_value(std::string("")).store_into(args.det_mapping_file);
+  program.add_argument("--custom-order").help("Specific detector order to use from mapping JSON (e.g. 'order5' or 'all')").default_value(std::string("")).store_into(args.custom_order);
   program.add_argument("--no-merge-errors")
       .help("If provided, will not merge identical error mechanisms.")
       .store_into(args.no_merge_errors);
@@ -650,6 +699,8 @@ int main(int argc, char* argv[]) {
     nlohmann::json stats_json = {
         {"circuit_path", args.circuit_path},
         {"dem_path", args.dem_path},
+        {"custom_order", args.custom_order},
+        {"det_mapping_file", args.det_mapping_file},
         {"max_errors", args.max_errors},
         {"sample_seed", args.sample_seed},
 
