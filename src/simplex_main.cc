@@ -479,6 +479,8 @@ int main(int argc, char* argv[]) {
           std::cout << "cost = " << cost_predicted[shot_index] << std::endl;
           std::cout.flush();
         }
+        // Disable early termination due to \`--max-errors\` when we don't have the ground-truth
+        // observables
         return !has_obs || num_errors < args.max_errors;
       });
 
