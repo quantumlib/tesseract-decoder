@@ -547,7 +547,9 @@ int main(int argc, char* argv[]) {
   std::vector<stim::SparseShot> shots;
   std::unique_ptr<stim::MeasureRecordWriter> writer;
   args.extract(config, shots, writer);
-  std::vector<uint64_t> obs_predicted(shots.size());
+  size_t num_observables = config.dem.count_observables();
+  std::vector<stim::simd_bits<64>> obs_predicted(shots.size(),
+                                                 stim::simd_bits<64>(num_observables));
   std::vector<double> cost_predicted(shots.size());
   std::vector<double> decoding_time_seconds(shots.size());
   std::vector<std::atomic<bool>> low_confidence(shots.size());
@@ -559,7 +561,6 @@ int main(int argc, char* argv[]) {
   size_t num_errors = 0;
   size_t num_low_confidence = 0;
   double total_time_seconds = 0;
-  size_t num_observables = config.dem.count_observables();
   size_t shot = parallel_for_shots_in_order(
       shots.size(), args.num_threads,
       [&](size_t thread_index, size_t shot_index) {
@@ -574,11 +575,13 @@ int main(int argc, char* argv[]) {
         decoding_time_seconds[shot_index] =
             std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
             1e6;
-        obs_predicted[shot_index] =
-            vector_to_u64_mask(decoder.get_flipped_observables(decoder.predicted_errors_buffer));
+        obs_predicted[shot_index].clear();
+        for (int obs_idx : decoder.get_flipped_observables(decoder.predicted_errors_buffer)) {
+          obs_predicted[shot_index][obs_idx] ^= 1;
+        }
         low_confidence[shot_index] = decoder.low_confidence_flag;
         cost_predicted[shot_index] = decoder.cost_from_errors(decoder.predicted_errors_buffer);
-        if (!has_obs or shots[shot_index].obs_mask_as_u64() == obs_predicted[shot_index]) {
+        if (!has_obs or shots[shot_index].obs_mask == obs_predicted[shot_index]) {
           for (size_t ei : decoder.predicted_errors_buffer) {
             ++error_use[ei];
           }
@@ -586,12 +589,12 @@ int main(int argc, char* argv[]) {
       },
       [&](size_t shot_index) {
         if (writer) {
-          writer->write_bits((uint8_t*)&obs_predicted[shot_index], num_observables);
+          writer->write_bits(obs_predicted[shot_index].u8, num_observables);
           writer->write_end();
         }
         if (low_confidence[shot_index]) {
           ++num_low_confidence;
-        } else if (obs_predicted[shot_index] != shots[shot_index].obs_mask_as_u64()) {
+        } else if (obs_predicted[shot_index] != shots[shot_index].obs_mask) {
           ++num_errors;
         }
         total_time_seconds += decoding_time_seconds[shot_index];
