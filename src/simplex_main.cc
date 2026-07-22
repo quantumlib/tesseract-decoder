@@ -422,7 +422,9 @@ int main(int argc, char* argv[]) {
   std::vector<stim::SparseShot> shots;
   std::unique_ptr<stim::MeasureRecordWriter> writer;
   args.extract(config, shots, writer);
-  std::vector<uint64_t> obs_predicted(shots.size());
+  size_t num_observables = config.dem.count_observables();
+  std::vector<stim::simd_bits<64>> obs_predicted(shots.size(),
+                                                 stim::simd_bits<64>(num_observables));
   std::vector<double> cost_predicted(shots.size());
   std::vector<double> decoding_time_seconds(shots.size());
   const stim::DetectorErrorModel original_dem = config.dem.flattened();
@@ -432,7 +434,6 @@ int main(int argc, char* argv[]) {
   bool has_obs = args.has_observables();
   size_t num_errors = 0;
   double total_time_seconds = 0;
-  size_t num_observables = config.dem.count_observables();
   size_t shot = parallel_for_shots_in_order(
       shots.size(), args.num_threads,
       [&](size_t thread_index, size_t shot_index) {
@@ -447,10 +448,12 @@ int main(int argc, char* argv[]) {
         decoding_time_seconds[shot_index] =
             std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
             1e6;
-        obs_predicted[shot_index] =
-            vector_to_u64_mask(decoder.get_flipped_observables(decoder.predicted_errors_buffer));
+        obs_predicted[shot_index].clear();
+        for (int obs_idx : decoder.get_flipped_observables(decoder.predicted_errors_buffer)) {
+          obs_predicted[shot_index][obs_idx] ^= 1;
+        }
         cost_predicted[shot_index] = decoder.cost_from_errors(decoder.predicted_errors_buffer);
-        if (!has_obs or shots[shot_index].obs_mask_as_u64() == obs_predicted[shot_index]) {
+        if (!has_obs or shots[shot_index].obs_mask == obs_predicted[shot_index]) {
           for (size_t ei : decoder.predicted_errors_buffer) {
             ++error_use[ei];
           }
@@ -458,20 +461,27 @@ int main(int argc, char* argv[]) {
       },
       [&](size_t shot_index) {
         if (writer) {
-          writer->write_bits((uint8_t*)&obs_predicted[shot_index], num_observables);
+          writer->write_bits(obs_predicted[shot_index].u8, num_observables);
           writer->write_end();
         }
-        if (obs_predicted[shot_index] != shots[shot_index].obs_mask_as_u64()) {
+        if (has_obs && obs_predicted[shot_index] != shots[shot_index].obs_mask) {
           ++num_errors;
         }
         total_time_seconds += decoding_time_seconds[shot_index];
         if (args.print_stats) {
-          std::cout << "num_shots = " << (shot_index + 1) << " num_errors = " << num_errors
-                    << " total_time_seconds = " << total_time_seconds << std::endl;
+          std::cout << "num_shots = " << (shot_index + 1);
+          if (has_obs) {
+            std::cout << " num_errors = " << num_errors;
+          } else {
+            std::cout << " num_errors = N/A";
+          }
+          std::cout << " total_time_seconds = " << total_time_seconds << std::endl;
           std::cout << "cost = " << cost_predicted[shot_index] << std::endl;
           std::cout.flush();
         }
-        return num_errors < args.max_errors;
+        // Disable early termination due to \`--max-errors\` when we don't have the ground-truth
+        // observables
+        return !has_obs || num_errors < args.max_errors;
       });
 
   std::vector<size_t> error_use_totals(original_dem.count_errors());
@@ -504,7 +514,7 @@ int main(int argc, char* argv[]) {
                                  {"max_errors", args.max_errors},
                                  {"sample_seed", args.sample_seed},
                                  {"total_time_seconds", total_time_seconds},
-                                 {"num_errors", num_errors},
+                                 {"num_errors", has_obs ? nlohmann::json(num_errors) : nullptr},
                                  {"num_shots", shot},
                                  {"sample_num_shots", args.sample_num_shots}};
 
