@@ -464,17 +464,22 @@ int main(int argc, char* argv[]) {
           writer->write_bits(obs_predicted[shot_index].u8, num_observables);
           writer->write_end();
         }
-        if (obs_predicted[shot_index] != shots[shot_index].obs_mask) {
+        if (has_obs && obs_predicted[shot_index] != shots[shot_index].obs_mask) {
           ++num_errors;
         }
         total_time_seconds += decoding_time_seconds[shot_index];
         if (args.print_stats) {
-          std::cout << "num_shots = " << (shot_index + 1) << " num_errors = " << num_errors
-                    << " total_time_seconds = " << total_time_seconds << std::endl;
+          std::cout << "num_shots = " << (shot_index + 1);
+          if (has_obs) {
+            std::cout << " num_errors = " << num_errors;
+          } else {
+            std::cout << " num_errors = N/A";
+          }
+          std::cout << " total_time_seconds = " << total_time_seconds << std::endl;
           std::cout << "cost = " << cost_predicted[shot_index] << std::endl;
           std::cout.flush();
         }
-        return num_errors < args.max_errors;
+        return !has_obs || num_errors < args.max_errors;
       });
 
   std::vector<size_t> error_use_totals(original_dem.count_errors());
@@ -507,7 +512,7 @@ int main(int argc, char* argv[]) {
                                  {"max_errors", args.max_errors},
                                  {"sample_seed", args.sample_seed},
                                  {"total_time_seconds", total_time_seconds},
-                                 {"num_errors", num_errors},
+                                 {"num_errors", has_obs ? nlohmann::json(num_errors) : nullptr},
                                  {"num_shots", shot},
                                  {"sample_num_shots", args.sample_num_shots}};
 
