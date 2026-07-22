@@ -140,3 +140,18 @@ compile_pip_requirements(
     src = "requirements.in",
     requirements_txt = "requirements_lock.txt",
 )
+
+py_binary(
+    name = "gari_simulation_test",
+    srcs = ["gari_simulation_test.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/py/_tesseract_py_util:_tesseract_py_util",
+        "@pypi//numpy",
+        "@pypi//stim",
+        "@pypi//scipy",
+        "@pypi//matplotlib",
+        "//src:lib_tesseract_decoder",
+    ],
+    imports = ["..", "."],
+)
