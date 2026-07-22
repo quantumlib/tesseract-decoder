@@ -1,5 +1,6 @@
 load("@rules_python//python:py_test.bzl", "py_test")
 load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_binary.bzl", "py_binary")
 
 py_library(
     name = "_tesseract_py_util",
@@ -8,6 +9,19 @@ py_library(
     deps = [
         "@pypi//stim",
         "@pypi//numpy",
+        "@pypi//scipy",
+    ],
+)
+
+py_binary(
+    name = "gari_dem_utils",
+    srcs = ["gari_dem_utils.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":_tesseract_py_util",
+        "@pypi//scipy",
+        "@pypi//numpy",
+        "@pypi//stim",
     ],
 )
 
