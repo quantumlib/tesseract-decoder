@@ -535,3 +535,27 @@ TEST(TesseractSparsifyTest, HighDegreeErrorRemoved) {
     EXPECT_EQ(dec.predicted_errors_buffer, expected);
   }
 }
+
+TEST(tesseract, MoreThan64Observables) {
+  std::string dem_str = "error(0.1)";
+  for (int i = 0; i < 70; i++) {
+    dem_str += " D" + std::to_string(i) + " L" + std::to_string(i);
+  }
+  dem_str += "\n";
+  stim::DetectorErrorModel dem(dem_str.c_str());
+
+  TesseractConfig tesseract_config{dem};
+  TesseractDecoder tesseract_decoder(tesseract_config);
+
+  std::vector<uint64_t> hits;
+  for (int i = 0; i < 70; i++) hits.push_back(i);
+  tesseract_decoder.decode_to_errors(hits);
+
+  std::vector<int> flipped =
+      tesseract_decoder.get_flipped_observables(tesseract_decoder.predicted_errors_buffer);
+
+  ASSERT_EQ(flipped.size(), 70);
+  for (int i = 0; i < 70; i++) {
+    ASSERT_EQ(flipped[i], i);
+  }
+}
