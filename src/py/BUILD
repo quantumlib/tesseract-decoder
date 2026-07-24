@@ -93,7 +93,18 @@ py_test(
     imports = ["..", "."],
 )
 
-
+py_test(
+    name = "tesseract_bp_sinter_test",
+    srcs = ["tesseract_bp_sinter_test.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//stim",
+        "@pypi//numpy",
+        "//src:lib_tesseract_decoder",
+    ],
+    imports = ["..", "."],
+)
 
 py_test(
     name = "stub_test",
@@ -125,6 +136,8 @@ STUB_FILES = [
     "tesseract_sinter_compat.pyi",
     "utils.pyi",
     "viz.pyi",
+    "bp.pyi",
+    "bp_sinter_compat.pyi",
 ]
 
 genrule(

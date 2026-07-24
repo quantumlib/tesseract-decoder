@@ -39,3 +39,7 @@ user.bazelrc
 src/tesseract_decoder*.so
 
 MODULE.bazel.lock
+
+# Python build artifacts
+*.so
+*.egg-info/

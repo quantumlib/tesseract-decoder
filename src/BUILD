@@ -71,6 +71,8 @@ pybind_library(
         "visualization.pybind.h",
         "tesseract.pybind.h",
         "tesseract_sinter_compat.pybind.h",
+        "bp/bp.pybind.h",
+        "bp/bp_sinter_compat.pybind.h",
     ],
     copts = OPT_COPTS,
     deps = [
@@ -78,6 +80,7 @@ pybind_library(
         ":libutils",
         ":libsimplex",
         ":libtesseract",
+        ":libbp",
     ],
 )
 
@@ -265,5 +268,85 @@ cc_binary(
         ":libsimplex",
         "@argparse",
         "@nlohmann_json//:json",
+    ],
+)
+
+cc_library(
+    name = "libbp",
+    srcs = [
+        "bp/bp_sparse_serial_gallager.cc",
+        "bp/check_update.cc",
+        "bp/hard_decision_post_processor.cc",
+        "bp/tesseract_bp_decoder.cc",
+        "bp/osd_post_processor.cc",
+    ],
+    hdrs = [
+        "bp/batched_bp_parallel_min_sum.h",
+        "bp/batched_bp_parallel_min_sum.inl",
+        "bp/batched_bp_serial_min_sum.h",
+        "bp/batched_bp_serial_min_sum.inl",
+        "bp/batched_tanner_graph.h",
+        "bp/bp_parallel_min_sum.h",
+        "bp/bp_parallel_min_sum.inl",
+        "bp/bp_params.h",
+        "bp/bp_serial_min_sum.h",
+        "bp/bp_serial_min_sum.inl",
+        "bp/bp_sparse_serial_gallager.h",
+        "bp/bp_types.h",
+        "bp/check_update.h",
+        "bp/tanner_graph.h",
+        "bp/tanner_graph.inl",
+        "bp/tanner_graph_util.h",
+        "bp/post_processor.h",
+        "bp/hard_decision_post_processor.h",
+        "bp/tesseract_bp_decoder.h",
+        "bp/osd_post_processor.h",
+    ],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    includes = ["."],
+    deps = [
+        "@stim//:stim_lib",
+        ":libcommon",
+    ],
+)
+
+cc_test(
+    name = "bp_tests",
+    srcs = [
+        "bp/batched_bp_parallel_min_sum.test.cc",
+        "bp/batched_bp_serial_min_sum.test.cc",
+        "bp/bp_parallel_min_sum.test.cc",
+        "bp/bp_serial_min_sum.test.cc",
+        "bp/bp_sparse_serial_gallager.test.cc",
+        "bp/check_update.test.cc",
+        "bp/tanner_graph.test.cc",
+        "bp/hard_decision_post_processor.test.cc",
+        "bp/osd_post_processor.test.cc",
+        "bp/bp_test_util.h",
+        "bp/bp_test_util.cc",
+    ],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    deps = [
+        ":libbp",
+        "@gtest",
+        "@gtest//:gtest_main",
+        "@stim//:stim_lib",
+    ],
+)
+
+cc_binary(
+    name = "bp",
+    srcs = ["bp_main.cc"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    deps = [
+        ":libbp",
+        ":libcommon",
+        ":libutils",
+        "@argparse",
+        "@nlohmann_json//:json",
+        "@stim//:stim_lib",
     ],
 )
