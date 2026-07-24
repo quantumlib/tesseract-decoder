@@ -133,5 +133,30 @@ def test_bp_osd_sinter_compat():
     assert predictions[0, 0] == 0x00
     assert predictions[1, 0] == 0x01
 
+def test_bp_more_than_64_observables():
+    dem_str = "error(0.1)"
+    for i in range(70):
+        dem_str += f" D{i} L{i}"
+    dem_str += "\n"
+    dem = stim.DetectorErrorModel(dem_str)
+
+    params = bp.BPParams()
+    params.max_iter = 10
+    params.update_rule = "min-sum"
+    params.schedule = "parallel"
+
+    factory = bp_sinter_compat.TesseractBpSinterDecoder(params)
+    compiled = factory.compile_decoder_for_dem(dem=dem)
+
+    # 1 shot, 9 bytes for 70 detectors (all fired)
+    num_det_bytes = (70 + 7) // 8
+    shots = np.full((1, num_det_bytes), 0xFF, dtype=np.uint8)
+
+    predictions = compiled.decode_shots_bit_packed(bit_packed_detection_event_data=shots)
+
+    # 1 shot, 9 bytes for 70 observables
+    num_obs_bytes = (70 + 7) // 8
+    assert predictions.shape == (1, num_obs_bytes)
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))

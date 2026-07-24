@@ -258,6 +258,7 @@ int main(int argc, char* argv[]) {
 
   size_t total_shots = shots.size();
   size_t num_observables = dem.count_observables();
+  bool has_obs = args.has_observables();
   std::atomic<size_t> num_errors(0);
   std::atomic<size_t> num_discards(0);
   std::atomic<double> total_time_seconds(0);
@@ -306,25 +307,30 @@ int main(int argc, char* argv[]) {
           for (size_t b = 0; b < actual_size; ++b) {
             size_t s = shot_start + b;
             std::vector<uint8_t> predicted_flips = all_predictions[batch_idx][b];
-            uint64_t predicted_mask = 0;
+            stim::simd_bits<64> predicted_obs(num_observables);
             for (size_t o = 0; o < num_observables; ++o) {
-              if (predicted_flips[o]) predicted_mask ^= (1ULL << o);
+              if (predicted_flips[o]) predicted_obs[o] ^= 1;
             }
             if (writer) {
-              writer->write_bits((uint8_t*)&predicted_flips[0], num_observables);
+              writer->write_bits(predicted_obs.u8, num_observables);
               writer->write_end();
             }
-            if (predicted_mask != shots[s].obs_mask_as_u64()) {
+            if (has_obs && predicted_obs != shots[s].obs_mask) {
               num_errors++;
             }
             processed_shots++;
           }
           total_time_seconds = total_time_seconds + batch_time_seconds[batch_idx];
           if (args.print_stats && processed_shots % 1024 == 0) {
-            std::cout << "Processed " << processed_shots << " shots, errors: " << num_errors
-                      << std::endl;
+            std::cout << "Processed " << processed_shots;
+            if (has_obs) {
+              std::cout << " shots, errors: " << num_errors;
+            } else {
+              std::cout << " shots, errors: N/A";
+            }
+            std::cout << std::endl;
           }
-          return num_errors < args.max_errors;
+          return !has_obs || num_errors < args.max_errors;
         });
   } else {
     std::vector<std::vector<uint8_t>> all_predictions(total_shots);
@@ -351,24 +357,29 @@ int main(int argc, char* argv[]) {
         },
         [&](size_t shot_idx) {
           std::vector<uint8_t> predicted_flips = all_predictions[shot_idx];
-          uint64_t predicted_mask = 0;
+          stim::simd_bits<64> predicted_obs(num_observables);
           for (size_t o = 0; o < num_observables; ++o) {
-            if (predicted_flips[o]) predicted_mask ^= (1ULL << o);
+            if (predicted_flips[o]) predicted_obs[o] ^= 1;
           }
           if (writer) {
-            writer->write_bits((uint8_t*)&predicted_flips[0], num_observables);
+            writer->write_bits(predicted_obs.u8, num_observables);
             writer->write_end();
           }
-          if (predicted_mask != shots[shot_idx].obs_mask_as_u64()) {
+          if (has_obs && predicted_obs != shots[shot_idx].obs_mask) {
             num_errors++;
           }
           processed_shots++;
           total_time_seconds = total_time_seconds + shot_time_seconds[shot_idx];
           if (args.print_stats && processed_shots % 100 == 0) {
-            std::cout << "Processed " << processed_shots << " shots, errors: " << num_errors
-                      << std::endl;
+            std::cout << "Processed " << processed_shots;
+            if (has_obs) {
+              std::cout << " shots, errors: " << num_errors;
+            } else {
+              std::cout << " shots, errors: N/A";
+            }
+            std::cout << std::endl;
           }
-          return num_errors < args.max_errors;
+          return !has_obs || num_errors < args.max_errors;
         });
   }
 
@@ -388,7 +399,7 @@ int main(int argc, char* argv[]) {
                                  {"max_errors", args.max_errors},
                                  {"sample_seed", args.sample_seed},
                                  {"total_time_seconds", global_elapsed},
-                                 {"num_errors", num_errors.load()},
+                                 {"num_errors", has_obs ? nlohmann::json(num_errors.load()) : nullptr},
                                  {"num_shots", processed_shots.load()},
                                  {"num_discards", num_discards.load()},
                                  {"decoder", decoder_name}};
@@ -402,9 +413,13 @@ int main(int argc, char* argv[]) {
 
   if (!args.sinter_csv_out.empty()) {
     std::stringstream csv_line;
-    csv_line << processed_shots.load() << "," << num_errors.load() << "," << num_discards.load()
-             << "," << std::fixed << std::setprecision(4) << global_elapsed << "," << decoder_name
-             << ",none,\"{\"\"path\"\":\"\"" << args.circuit_path << "\"\"}\",";
+    csv_line << processed_shots.load() << ",";
+    if (has_obs) {
+      csv_line << num_errors.load();
+    }
+    csv_line << "," << num_discards.load() << "," << std::fixed << std::setprecision(4)
+             << global_elapsed << "," << decoder_name << ",none,\"{\"\"path\"\":\"\""
+             << args.circuit_path << "\"\"}\",";
     if (args.sinter_csv_out == "-") {
       std::cout << csv_line.str() << std::endl;
     } else {
@@ -414,8 +429,13 @@ int main(int argc, char* argv[]) {
   }
 
   if (args.stats_out_fname.empty() && args.sinter_csv_out.empty()) {
-    std::cout << "num_shots = " << processed_shots.load() << " num_errors = " << num_errors.load()
-              << " total_time_seconds = " << global_elapsed << std::endl;
+    std::cout << "num_shots = " << processed_shots.load();
+    if (has_obs) {
+      std::cout << " num_errors = " << num_errors.load();
+    } else {
+      std::cout << " num_errors = N/A";
+    }
+    std::cout << " total_time_seconds = " << global_elapsed << std::endl;
   }
 
   return 0;
