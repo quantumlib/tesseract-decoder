@@ -66,7 +66,9 @@ size_t read_layout_size(const nlohmann::json& value, const std::string& path,
   if (value.is_number_unsigned()) {
     uint64_t unsigned_value = value.get<uint64_t>();
     if (unsigned_value > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
-      throw gari_layout_error(path, "field '" + field + "' is too large.");
+      throw gari_layout_error(path, "field '" + field + "' is too large: actual " +
+                                        std::to_string(unsigned_value) + ", maximum " +
+                                        std::to_string(std::numeric_limits<int64_t>::max()) + ".");
     }
     signed_value = static_cast<int64_t>(unsigned_value);
   } else {
@@ -77,7 +79,9 @@ size_t read_layout_size(const nlohmann::json& value, const std::string& path,
                                       std::to_string(signed_value) + ".");
   }
   if (static_cast<uint64_t>(signed_value) > std::numeric_limits<size_t>::max()) {
-    throw gari_layout_error(path, "field '" + field + "' is too large.");
+    throw gari_layout_error(path, "field '" + field + "' is too large: actual " +
+                                      std::to_string(signed_value) + ", maximum " +
+                                      std::to_string(std::numeric_limits<size_t>::max()) + ".");
   }
   return static_cast<size_t>(signed_value);
 }
@@ -95,12 +99,14 @@ GariLayout load_gari_layout(const std::string& path) {
     throw gari_layout_error(path, "could not parse JSON: " + std::string(err.what()));
   }
   if (!document.is_object()) {
-    throw gari_layout_error(path, "top-level JSON value must be an object.");
+    throw gari_layout_error(path, "top-level JSON value must be an object, but is " +
+                                      std::string(document.type_name()) + ".");
   }
 
   const nlohmann::json& schema_json = required_layout_field(document, path, "schema");
   if (!schema_json.is_string()) {
-    throw gari_layout_error(path, "field 'schema' must be a string.");
+    throw gari_layout_error(path, "field 'schema' must be a string, but is " +
+                                      std::string(schema_json.type_name()) + ".");
   }
   std::string schema = schema_json.get<std::string>();
   if (schema != kGariLayoutSchema) {
@@ -121,7 +127,8 @@ GariLayout load_gari_layout(const std::string& path) {
 
   const nlohmann::json& mapping_json = required_layout_field(document, path, "source_to_gari");
   if (!mapping_json.is_array()) {
-    throw gari_layout_error(path, "field 'source_to_gari' must be an array.");
+    throw gari_layout_error(path, "field 'source_to_gari' must be an array, but is " +
+                                      std::string(mapping_json.type_name()) + ".");
   }
   if (mapping_json.size() != source_detector_count) {
     throw gari_layout_error(path, "field 'source_to_gari' must contain " +
@@ -616,7 +623,10 @@ int main(int argc, char* argv[]) {
       .default_value(size_t(0))
       .store_into(args.shot_range_end);
   program.add_argument("--in")
-      .help("File to read detection events (and possibly observable flips) from")
+      .help(
+          "File to read detection events (and possibly observable flips) from. Without --circuit "
+          "or --gari-layout, detector data is assumed to use the supplied DEM's target detector "
+          "layout.")
       .metavar("filename")
       .default_value(std::string(""))
       .store_into(args.in_fname);
