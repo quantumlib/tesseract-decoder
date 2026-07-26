@@ -20,7 +20,7 @@ import sys
 import pytest
 
 
-_TESSERACT = Path(sys.argv[1])
+_DECODERS = tuple(Path(argument) for argument in sys.argv[1:])
 _SCHEMA = "tesseract.gari_layout.v1"
 
 
@@ -71,9 +71,17 @@ error(0.1) D5
     }
 
 
-def _run_tesseract(*args):
+@pytest.fixture(params=_DECODERS, ids=lambda decoder: decoder.name)
+def decoder(request):
+    return request.param
+
+
+def _run_decoder(decoder, *args):
+    decoder_args = [decoder, "--threads", "1"]
+    if decoder.name == "tesseract":
+        decoder_args.extend(["--num-det-orders", "1", "--det-order-index"])
     return subprocess.run(
-        [_TESSERACT, "--threads", "1", *map(str, args)],
+        [*decoder_args, *map(str, args)],
         capture_output=True,
         text=True,
         timeout=30,
@@ -81,9 +89,10 @@ def _run_tesseract(*args):
     )
 
 
-def _decode(gari_files, *source_args):
+def _decode(decoder, gari_files, *source_args):
     output = gari_files["tmp_path"] / "predictions.01"
-    result = _run_tesseract(
+    result = _run_decoder(
+        decoder,
         "--dem",
         gari_files["dem"],
         "--gari-layout",
@@ -93,9 +102,6 @@ def _decode(gari_files, *source_args):
         output,
         "--out-format",
         "01",
-        "--num-det-orders",
-        "1",
-        "--det-order-index",
     )
     assert result.returncode == 0, result.stderr
     return output.read_text(encoding="utf-8")
@@ -115,8 +121,9 @@ def _assert_failure(result, expected, path=None):
         assert str(path) in output
 
 
-def test_tesseract_maps_sampled_and_01_shots(gari_files):
+def test_decoders_map_sampled_and_01_shots(decoder, gari_files):
     assert _decode(
+        decoder,
         gari_files,
         "--circuit",
         gari_files["circuit"],
@@ -126,6 +133,7 @@ def test_tesseract_maps_sampled_and_01_shots(gari_files):
         "0",
     ) == "1\n"
     assert _decode(
+        decoder,
         gari_files,
         "--in",
         gari_files["shots"],
@@ -144,10 +152,11 @@ def test_tesseract_maps_sampled_and_01_shots(gari_files):
         ({"gari_detector_count": 7}, "but DEM"),
     ],
 )
-def test_tesseract_rejects_invalid_layouts(gari_files, changes, expected):
+def test_decoders_reject_invalid_layouts(decoder, gari_files, changes, expected):
     data = {**gari_files["layout_data"], **changes}
     layout = _write_layout(gari_files, data)
-    result = _run_tesseract(
+    result = _run_decoder(
+        decoder,
         "--dem",
         gari_files["dem"],
         "--gari-layout",
@@ -160,14 +169,17 @@ def test_tesseract_rejects_invalid_layouts(gari_files, changes, expected):
     _assert_failure(result, expected, layout)
 
 
-def test_tesseract_rejects_source_and_no_layout_count_mismatches(gari_files):
+def test_decoders_reject_source_and_no_layout_count_mismatches(
+    decoder, gari_files
+):
     data = {
         **gari_files["layout_data"],
         "source_detector_count": 3,
         "source_to_gari": [2, 0, 3],
     }
     layout = _write_layout(gari_files, data)
-    result = _run_tesseract(
+    result = _run_decoder(
+        decoder,
         "--circuit",
         gari_files["circuit"],
         "--dem",
@@ -179,7 +191,8 @@ def test_tesseract_rejects_source_and_no_layout_count_mismatches(gari_files):
     )
     _assert_failure(result, "but circuit", layout)
 
-    result = _run_tesseract(
+    result = _run_decoder(
+        decoder,
         "--circuit",
         gari_files["circuit"],
         "--dem",
@@ -190,8 +203,9 @@ def test_tesseract_rejects_source_and_no_layout_count_mismatches(gari_files):
     _assert_failure(result, "Supply --gari-layout")
 
 
-def test_tesseract_requires_dem_with_layout(gari_files):
-    result = _run_tesseract(
+def test_decoders_require_dem_with_layout(decoder, gari_files):
+    result = _run_decoder(
+        decoder,
         "--circuit",
         gari_files["circuit"],
         "--gari-layout",

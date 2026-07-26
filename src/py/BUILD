@@ -96,8 +96,14 @@ py_test(
 py_test(
     name = "gari_cli_test",
     srcs = ["gari_cli_test.py"],
-    args = ["$(location //src:tesseract)"],
-    data = ["//src:tesseract"],
+    args = [
+        "$(location //src:tesseract)",
+        "$(location //src:simplex)",
+    ],
+    data = [
+        "//src:simplex",
+        "//src:tesseract",
+    ],
     size = "medium",
     visibility = ["//:__subpackages__"],
     deps = ["@pypi//pytest"],
