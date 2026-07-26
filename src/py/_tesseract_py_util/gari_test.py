@@ -16,15 +16,21 @@ import itertools
 
 import numpy as np
 import pytest
+import scipy.optimize
 import scipy.sparse
 import stim
 
+import _tesseract_py_util.gari as gari_module
 from _tesseract_py_util.gari import (
     GariTransform,
     _matrices_to_decoder_dem,
+    build_gari_decoder_dem,
     dem_to_matrices,
     detector_partition_from_last_coordinate,
     gari_transform,
+    paper_prior_probabilities,
+    tesseract_lp_maximin_prior_probabilities,
+    tesseract_xor_prior_probabilities,
 )
 
 
@@ -108,6 +114,73 @@ def test_exact_tiny_transform():
     assert transform.physical_z_rows == slice(2, 4)
     assert transform.virtual_z_rows == slice(4, 5)
     assert transform.virtual_x_rows == slice(5, 6)
+
+    source_probabilities = np.asarray([0.1, 0.2, 0.3])
+    np.testing.assert_array_equal(
+        paper_prior_probabilities(transform, source_probabilities),
+        [0.1, 0.2, 0.3, 0.5, 0.5],
+    )
+    np.testing.assert_allclose(
+        tesseract_xor_prior_probabilities(
+            transform, source_probabilities
+        ),
+        [0.1, 0.2, 0.3, 0.34, 0.38],
+    )
+
+    source_checks, source_logicals = _tiny_source()
+    source_permutation = [2, 0, 1]
+    permuted_transform = gari_transform(
+        source_checks[:, source_permutation],
+        source_logicals[:, source_permutation],
+        x_detectors=_X_DETECTORS,
+        z_detectors=_Z_DETECTORS,
+    )
+    permuted_probabilities = source_probabilities[source_permutation]
+    np.testing.assert_array_equal(
+        paper_prior_probabilities(
+            permuted_transform, permuted_probabilities
+        ),
+        [0.1, 0.2, 0.3, 0.5, 0.5],
+    )
+    np.testing.assert_allclose(
+        tesseract_xor_prior_probabilities(
+            permuted_transform, permuted_probabilities
+        ),
+        [0.1, 0.2, 0.3, 0.34, 0.38],
+    )
+
+    lp_probabilities = tesseract_lp_maximin_prior_probabilities(
+        transform, source_probabilities
+    )
+    lp_costs = np.log1p(-lp_probabilities) - np.log(lp_probabilities)
+    source_costs = np.log1p(-source_probabilities) - np.log(
+        source_probabilities
+    )
+    cost_matrix = np.asarray([[1, 0], [0, 1], [1, 1]])
+    np.testing.assert_allclose(
+        lp_costs[:3] + cost_matrix @ lp_costs[3:], source_costs
+    )
+    assert np.min(lp_costs) == pytest.approx(source_costs[2] / 3)
+    assert np.all(lp_costs >= 0)
+
+    custom_probabilities = np.linspace(
+        0.05, 0.25, num=transform.checks.shape[1]
+    )
+
+    def custom_prior(callback_transform, callback_probabilities):
+        assert callback_transform is transform
+        assert not callback_probabilities.flags.writeable
+        return custom_probabilities
+
+    custom_dem = build_gari_decoder_dem(
+        transform,
+        source_probabilities,
+        prior_function=custom_prior,
+    )
+    _, _, serialized_custom_probabilities = dem_to_matrices(custom_dem)
+    np.testing.assert_allclose(
+        serialized_custom_probabilities, custom_probabilities
+    )
 
     source_dem = stim.DetectorErrorModel("""
         error(0.125) D0 D0 D1 ^ D2 D2 L0 L0 L2
@@ -209,6 +282,39 @@ def test_unmatched_pure_columns_still_receive_barred_variables():
     assert _column_support(transform.checks, 3) == [7]
     assert _column_support(transform.checks, 8) == [3, 7]
 
+    np.testing.assert_allclose(
+        tesseract_xor_prior_probabilities(
+            transform, np.asarray([0.1, 0.15, 0.2, 0.25, 0.3])
+        ),
+        [0.1, 0.15, 0.2, 0.25, 0.3, 0.34, 0.15, 0.38, 0.25],
+    )
+
+    repeated_y_transform = gari_transform(
+        scipy.sparse.csc_matrix(
+            [
+                [1, 0, 1, 1],
+                [0, 1, 1, 1],
+                [1, 0, 1, 1],
+                [0, 1, 1, 1],
+            ]
+        ),
+        scipy.sparse.csc_matrix((1, 4)),
+        x_detectors=_X_DETECTORS,
+        z_detectors=_Z_DETECTORS,
+    )
+    np.testing.assert_allclose(
+        tesseract_xor_prior_probabilities(
+            repeated_y_transform, np.asarray([0.1, 0.2, 0.3, 0.4])
+        ),
+        [0.1, 0.2, 0.3, 0.4, 0.468, 0.476],
+    )
+    np.testing.assert_array_equal(
+        tesseract_xor_prior_probabilities(
+            _tiny_transform(), np.asarray([0.1, 0.2, 0.5])
+        )[-2:],
+        [0.5, 0.5],
+    )
+
 
 def _column_support(matrix: scipy.sparse.csc_matrix, column: int) -> list[int]:
     return matrix[:, column].tocoo().row.tolist()
@@ -265,7 +371,7 @@ def test_rejects_unsupported_projection_structure():
         )
 
 
-def test_rejects_invalid_inputs():
+def test_rejects_invalid_inputs(monkeypatch):
     checks, logicals = _tiny_source()
     for x_detectors, z_detectors, message in [
         ([0], [1, 3], "complete partition"),
@@ -323,6 +429,85 @@ def test_rejects_invalid_inputs():
             scipy.sparse.csc_matrix((1, 1)),
             scipy.sparse.csc_matrix([[1]]),
             np.asarray([0.1]),
+        )
+
+    transform = _tiny_transform()
+    for probabilities, message in [
+        (np.asarray([0.1, 0.2]), "one value per source column"),
+        (np.asarray([[0.1, 0.2, 0.3]]), "one-dimensional"),
+        (np.asarray([0.0, 0.2, 0.3]), r"\(0, 0.5\]"),
+        (np.asarray([0.1, 0.2, 0.6]), r"\(0, 0.5\]"),
+        (np.asarray([0.1, np.nan, 0.3]), "finite"),
+    ]:
+        with pytest.raises(ValueError, match=message):
+            paper_prior_probabilities(transform, probabilities)
+
+    source_probabilities = np.asarray([0.1, 0.2, 0.3])
+    invalid_custom_priors = [
+        (lambda _transform, _probabilities: np.asarray([0.1]), "one value"),
+        (
+            lambda _transform, _probabilities: np.full((1, 5), 0.1),
+            "one-dimensional",
+        ),
+        (
+            lambda _transform, _probabilities: np.asarray(
+                [0.1, 0.1, 0.1, 0.1, np.nan]
+            ),
+            "non-finite",
+        ),
+        (
+            lambda _transform, _probabilities: np.asarray(
+                [0.1, 0.1, 0.1, 0.1, 0.0]
+            ),
+            r"\(0, 0.5\]",
+        ),
+        (
+            lambda _transform, _probabilities: np.asarray(
+                [0.1, 0.1, 0.1, 0.1, 0.6]
+            ),
+            r"\(0, 0.5\]",
+        ),
+    ]
+    for prior_function, message in invalid_custom_priors:
+        with pytest.raises(ValueError, match=message):
+            build_gari_decoder_dem(
+                transform,
+                source_probabilities,
+                prior_function=prior_function,
+            )
+    with pytest.raises(ValueError, match="must be callable"):
+        build_gari_decoder_dem(
+            transform,
+            source_probabilities,
+            prior_function=None,
+        )
+
+    failed_result = scipy.optimize.OptimizeResult(
+        success=False, message="planned solver failure"
+    )
+    monkeypatch.setattr(
+        gari_module.scipy.optimize,
+        "linprog",
+        lambda *_args, **_kwargs: failed_result,
+    )
+    with pytest.raises(RuntimeError, match="planned solver failure"):
+        tesseract_lp_maximin_prior_probabilities(
+            transform, source_probabilities
+        )
+
+    infeasible_result = scipy.optimize.OptimizeResult(
+        success=True,
+        message="claimed success",
+        x=np.asarray([0.0, 0.0, 1.0]),
+    )
+    monkeypatch.setattr(
+        gari_module.scipy.optimize,
+        "linprog",
+        lambda *_args, **_kwargs: infeasible_result,
+    )
+    with pytest.raises(RuntimeError, match="maximin constraints"):
+        tesseract_lp_maximin_prior_probabilities(
+            transform, source_probabilities
         )
 
 

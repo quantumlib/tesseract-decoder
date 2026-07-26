@@ -69,9 +69,10 @@ from __future__ import annotations
 
 import dataclasses
 import numbers
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import numpy as np
+import scipy.optimize
 import scipy.sparse
 import stim
 
@@ -663,4 +664,303 @@ def gari_transform(
         physical_z_rows=physical_z_rows,
         virtual_z_rows=virtual_z_rows,
         virtual_x_rows=virtual_x_rows,
+    )
+
+
+def _validated_source_probabilities(
+    transform: GariTransform, source_probabilities: np.ndarray
+) -> np.ndarray:
+    if not isinstance(transform, GariTransform):
+        raise ValueError("transform must be a GariTransform.")
+    try:
+        probabilities = np.asarray(source_probabilities, dtype=np.float64)
+    except (TypeError, ValueError) as ex:
+        raise ValueError(
+            "source_probabilities must be a one-dimensional numeric array."
+        ) from ex
+    if probabilities.ndim != 1:
+        raise ValueError("source_probabilities must be one-dimensional.")
+    source_column_count = (
+        len(transform.e_z_columns)
+        + len(transform.e_x_columns)
+        + len(transform.e_y_columns)
+    )
+    if len(probabilities) != source_column_count:
+        raise ValueError(
+            "source_probabilities must contain one value per source column; "
+            f"found {len(probabilities)} for {source_column_count} columns."
+        )
+    if not np.all(np.isfinite(probabilities)):
+        raise ValueError(
+            "source_probabilities must contain only finite values."
+        )
+    if np.any(probabilities <= 0) or np.any(probabilities > 0.5):
+        raise ValueError("source_probabilities must lie in (0, 0.5].")
+    result = probabilities.copy()
+    result.setflags(write=False)
+    return result
+
+
+def _physical_probability_blocks(
+    transform: GariTransform, source_probabilities: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    probabilities = _validated_source_probabilities(
+        transform, source_probabilities
+    )
+    return (
+        probabilities[transform.e_z_columns],
+        probabilities[transform.e_x_columns],
+        probabilities[transform.e_y_columns],
+    )
+
+
+def paper_prior_probabilities(
+    transform: GariTransform, source_probabilities: np.ndarray
+) -> np.ndarray:
+    """Returns the published GARI initialization in decoder-column order.
+
+    Physical ``e_Z``, ``e_X``, and ``e_Y`` variables retain their source
+    probabilities. Every auxiliary variable is assigned probability exactly
+    ``0.5``, giving it zero log-likelihood-ratio cost. This is the literature
+    reference policy, but those zero-cost branches can produce a very large
+    Tesseract search space.
+    """
+    p_e_z, p_e_x, p_e_y = _physical_probability_blocks(
+        transform, source_probabilities
+    )
+    return np.concatenate(
+        [
+            p_e_z,
+            p_e_x,
+            p_e_y,
+            np.full(len(p_e_z), 0.5),
+            np.full(len(p_e_x), 0.5),
+        ]
+    )
+
+
+def _xor_parity_probability(probabilities: np.ndarray) -> float:
+    if len(probabilities) == 1:
+        return float(probabilities[0])
+    if np.any(probabilities == 0.5):
+        return 0.5
+    log_even_bias = np.sum(np.log1p(-2 * probabilities), dtype=np.float64)
+    return float(-0.5 * np.expm1(log_even_bias))
+
+
+def _auxiliary_xor_probabilities(
+    base_probabilities: np.ndarray,
+    y_probabilities: np.ndarray,
+    matching: scipy.sparse.csc_matrix,
+) -> np.ndarray:
+    matching_rows = matching.tocsr()
+    result = np.empty(len(base_probabilities), dtype=np.float64)
+    for row, base_probability in enumerate(base_probabilities):
+        start = matching_rows.indptr[row]
+        stop = matching_rows.indptr[row + 1]
+        y_columns = matching_rows.indices[start:stop]
+        parity_probabilities = np.concatenate(
+            [np.asarray([base_probability]), y_probabilities[y_columns]]
+        )
+        result[row] = _xor_parity_probability(parity_probabilities)
+    return result
+
+
+def tesseract_xor_prior_probabilities(
+    transform: GariTransform, source_probabilities: np.ndarray
+) -> np.ndarray:
+    """Returns experimental independent-XOR marginals for Tesseract.
+
+    Each auxiliary probability is the independent Bernoulli parity marginal
+    implied by ``bar(e)_Z = e_Z XOR U e_Y`` or
+    ``bar(e)_X = e_X XOR V e_Y``. The computation uses log-domain products
+    for numerical stability and does not clip invalid inputs.
+
+    This is a Tesseract-specific experimental heuristic, not the published
+    GARI prior. It can represent evidence already present in the physical
+    variables and virtual constraints, and is not claimed to preserve the
+    exact source-model maximum-likelihood objective.
+    """
+    p_e_z, p_e_x, p_e_y = _physical_probability_blocks(
+        transform, source_probabilities
+    )
+    p_bar_e_z = _auxiliary_xor_probabilities(
+        p_e_z, p_e_y, transform.u
+    )
+    p_bar_e_x = _auxiliary_xor_probabilities(
+        p_e_x, p_e_y, transform.v
+    )
+    return np.concatenate([p_e_z, p_e_x, p_e_y, p_bar_e_z, p_bar_e_x])
+
+
+def _source_to_auxiliary_cost_matrix(
+    transform: GariTransform,
+) -> scipy.sparse.csc_matrix:
+    e_z_count = len(transform.e_z_columns)
+    e_x_count = len(transform.e_x_columns)
+    return scipy.sparse.bmat(
+        [
+            [
+                scipy.sparse.identity(e_z_count, format="csc"),
+                scipy.sparse.csc_matrix((e_z_count, e_x_count)),
+            ],
+            [
+                scipy.sparse.csc_matrix((e_x_count, e_z_count)),
+                scipy.sparse.identity(e_x_count, format="csc"),
+            ],
+            [transform.u.T, transform.v.T],
+        ],
+        format="csc",
+    )
+
+
+def _probabilities_from_nonnegative_costs(costs: np.ndarray) -> np.ndarray:
+    return np.exp(-np.logaddexp(0, costs))
+
+
+def tesseract_lp_maximin_prior_probabilities(
+    transform: GariTransform, source_probabilities: np.ndarray
+) -> np.ndarray:
+    """Balances nonnegative physical and auxiliary costs for Tesseract.
+
+    For source costs ``c = log((1-p)/p)`` and auxiliary costs ``g``, this
+    experimental policy maximizes a common lower bound ``t`` subject to
+    ``A g + t <= c`` and ``-g + t <= 0``. The returned physical costs are the
+    residuals ``c - A g`` and the remaining costs are ``g``.
+
+    This maximin objective is a practical Tesseract adaptation of exploratory
+    mode Q. It is not part of the GARI paper, changes the augmented search
+    objective, and is not claimed to preserve exact maximum-likelihood
+    decoding for every augmented assignment. Solver failure is a hard error;
+    there is no fallback or clipping.
+    """
+    p_e_z, p_e_x, p_e_y = _physical_probability_blocks(
+        transform, source_probabilities
+    )
+    physical_probabilities = np.concatenate([p_e_z, p_e_x, p_e_y])
+    source_costs = np.log1p(-physical_probabilities) - np.log(
+        physical_probabilities
+    )
+    cost_matrix = _source_to_auxiliary_cost_matrix(transform)
+    auxiliary_count = cost_matrix.shape[1]
+
+    upper_constraints = scipy.sparse.hstack(
+        [cost_matrix, np.ones((len(source_costs), 1))], format="csc"
+    )
+    lower_constraints = scipy.sparse.hstack(
+        [
+            -scipy.sparse.identity(auxiliary_count, format="csc"),
+            np.ones((auxiliary_count, 1)),
+        ],
+        format="csc",
+    )
+    constraints = scipy.sparse.vstack(
+        [upper_constraints, lower_constraints], format="csc"
+    )
+    bounds = np.concatenate(
+        [source_costs, np.zeros(auxiliary_count, dtype=np.float64)]
+    )
+    objective = np.zeros(auxiliary_count + 1, dtype=np.float64)
+    objective[-1] = -1
+    result = scipy.optimize.linprog(
+        objective,
+        A_ub=constraints,
+        b_ub=bounds,
+        bounds=[(0, None)] * (auxiliary_count + 1),
+        method="highs",
+    )
+    if not result.success:
+        raise RuntimeError(
+            "LP maximin prior solver failed: " + str(result.message)
+        )
+    if result.x is None:
+        raise RuntimeError(
+            "LP maximin prior solver returned an invalid solution."
+        )
+
+    solution = np.asarray(result.x, dtype=np.float64)
+    if solution.shape != (auxiliary_count + 1,):
+        raise RuntimeError(
+            "LP maximin prior solver returned an invalid solution."
+        )
+    if not np.all(np.isfinite(solution)):
+        raise RuntimeError(
+            "LP maximin prior solver returned non-finite costs."
+        )
+    auxiliary_costs = solution[:-1]
+    residual_costs = source_costs - np.asarray(
+        cost_matrix @ auxiliary_costs
+    ).reshape(-1)
+    if (
+        solution[-1] < 0
+        or np.any(auxiliary_costs < 0)
+        or np.any(residual_costs < 0)
+    ):
+        raise RuntimeError(
+            "LP maximin prior solver returned negative costs."
+        )
+    feasibility_tolerance = 1e-8
+    minimum_cost = solution[-1]
+    if np.any(auxiliary_costs < minimum_cost - feasibility_tolerance) or np.any(
+        residual_costs < minimum_cost - feasibility_tolerance
+    ):
+        raise RuntimeError(
+            "LP maximin prior solver returned a solution that violates the "
+            "maximin constraints."
+        )
+    return np.concatenate(
+        [
+            _probabilities_from_nonnegative_costs(residual_costs),
+            _probabilities_from_nonnegative_costs(auxiliary_costs),
+        ]
+    )
+
+
+def _validated_decoder_probabilities(
+    transform: GariTransform, probabilities: np.ndarray
+) -> np.ndarray:
+    try:
+        result = np.asarray(probabilities, dtype=np.float64)
+    except (TypeError, ValueError) as ex:
+        raise ValueError(
+            "prior_function must return a one-dimensional numeric array."
+        ) from ex
+    if result.ndim != 1:
+        raise ValueError("prior_function must return a one-dimensional array.")
+    decoder_column_count = transform.checks.shape[1]
+    if len(result) != decoder_column_count:
+        raise ValueError(
+            "prior_function must return one value per GARI decoder column; "
+            f"found {len(result)} for {decoder_column_count} columns."
+        )
+    if not np.all(np.isfinite(result)):
+        raise ValueError("prior_function returned a non-finite probability.")
+    if np.any(result <= 0) or np.any(result > 0.5):
+        raise ValueError("prior_function probabilities must lie in (0, 0.5].")
+    return result
+
+
+def build_gari_decoder_dem(
+    transform: GariTransform,
+    source_probabilities: np.ndarray,
+    *,
+    prior_function: Callable[[GariTransform, np.ndarray], np.ndarray],
+) -> stim.DetectorErrorModel:
+    """Builds an augmented GARI decoder DEM using an explicit prior policy.
+
+    ``prior_function`` may be one of this module's three built-in policies or
+    a user-defined callable. Its output is validated before serialization.
+    The resulting DEM is for decoding only and must not be sampled as a
+    physical noise model.
+    """
+    probabilities = _validated_source_probabilities(
+        transform, source_probabilities
+    )
+    if not callable(prior_function):
+        raise ValueError("prior_function must be callable.")
+    decoder_probabilities = _validated_decoder_probabilities(
+        transform, prior_function(transform, probabilities)
+    )
+    return _matrices_to_decoder_dem(
+        transform.checks, transform.logicals, decoder_probabilities
     )
