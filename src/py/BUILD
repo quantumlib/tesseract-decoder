@@ -93,7 +93,15 @@ py_test(
     imports = ["..", "."],
 )
 
-
+py_test(
+    name = "gari_cli_test",
+    srcs = ["gari_cli_test.py"],
+    args = ["$(location //src:tesseract)"],
+    data = ["//src:tesseract"],
+    size = "medium",
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pytest"],
+)
 
 py_test(
     name = "stub_test",
