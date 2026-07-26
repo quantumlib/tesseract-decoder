@@ -3,11 +3,40 @@ load("@rules_python//python:py_library.bzl", "py_library")
 
 py_library(
     name = "_tesseract_py_util",
-    srcs = glob(["*.py"], exclude=["*_test.py"]),
+    srcs = glob(
+        ["*.py"],
+        exclude = [
+            "*_test.py",
+            "gari.py",
+        ],
+    ),
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//stim",
         "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "gari",
+    srcs = ["gari.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//numpy",
+        "@pypi//scipy",
+    ],
+)
+
+py_test(
+    name = "gari_test",
+    srcs = ["gari_test.py"],
+    imports = ["..", "."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":gari",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//scipy",
     ],
 )
 
