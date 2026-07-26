@@ -100,6 +100,7 @@ struct CompiledWideLayerTemplate {
   std::vector<uint8_t> fault_was_active_before;
   std::vector<double> current_costs;
   std::vector<double> next_costs;
+  std::vector<int> next_active_detectors;
 };
 
 struct BranchPenaltyUpdate {
@@ -937,6 +938,7 @@ std::vector<CompiledWideLayerTemplate<Words>> compile_wide_layers(
     std::array<uint64_t, Words> surviving_masks{};
     for (uint32_t current_local : layer.surviving_local_indices) {
       surviving_masks[current_local >> 6] |= uint64_t{1} << (current_local & 63);
+      compiled.next_active_detectors.push_back(layer.current_active_detectors[current_local]);
     }
     size_t next_offset = 0;
     for (size_t src_word = 0; src_word < Words; ++src_word) {
@@ -1000,6 +1002,31 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
         initial_detector_bit_masks(std::move(initial_detector_bit_masks_)),
         initial_detector_costs(std::move(initial_detector_costs_)),
         max_frontier_width(max_frontier_width_) {}
+
+  void maybe_capture_snapshot(
+      TesseractTrellisDecoder* decoder, size_t layer_index,
+      const CompiledWideLayerTemplate<Words>& layer,
+      const std::vector<FixedWideStateEntry<Words>>& beam_entries) const {
+    const auto& requested = decoder->config.snapshot_layer_indices;
+    if (requested.empty() ||
+        std::find(requested.begin(), requested.end(), layer_index) == requested.end()) {
+      return;
+    }
+
+    TesseractTrellisBeamSnapshot snapshot;
+    snapshot.layer_index = layer_index;
+    snapshot.active_detectors = layer.next_active_detectors;
+    snapshot.entries.reserve(beam_entries.size());
+    const size_t words = num_state_words(snapshot.active_detectors.size());
+    for (const auto& item : beam_entries) {
+      snapshot.entries.push_back({
+          std::vector<uint64_t>(item.state_words.begin(), item.state_words.begin() + words),
+          item.mass0,
+          item.mass1,
+      });
+    }
+    decoder->beam_snapshots.push_back(std::move(snapshot));
+  }
 
   void decode_shot(TesseractTrellisDecoder* decoder,
                    const std::vector<uint64_t>& detections) const override {
@@ -1105,6 +1132,7 @@ struct CompiledWideKernel final : TesseractTrellisWideKernelBase {
       }
       decoder->num_states_merged += kept_states;
       decoder->max_beam_size_seen = std::max(decoder->max_beam_size_seen, kept_states);
+      maybe_capture_snapshot(decoder, layer_index, layer, beam_entries);
       auto t3 = std::chrono::high_resolution_clock::now();
       decoder->time_truncate_seconds +=
           std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count() / 1e6;
@@ -1220,6 +1248,11 @@ TesseractTrellisDecoder::TesseractTrellisDecoder(TesseractTrellisConfig config_)
   }
 
   auto faults = parse_faults(errors, num_observables);
+  for (size_t layer_index : config.snapshot_layer_indices) {
+    if (layer_index >= faults.size()) {
+      throw std::invalid_argument("Snapshot layer index is outside the compiled trellis.");
+    }
+  }
 
   size_t wide_frontier_width = 0;
   build_wide_layer_templates(faults, num_detectors, &wide_layer_templates, &wide_frontier_width);
@@ -1254,6 +1287,7 @@ TESSERACT_HOT void TesseractTrellisDecoder::decode_shot(const std::vector<uint64
   predicted_obs_mask = 0;
   total_mass_obs0 = 0;
   total_mass_obs1 = 0;
+  beam_snapshots.clear();
   FinalizeKeptStateStatsOnExit kept_state_stats_guard{this};
   wide_kernel->decode_shot(this, detections);
 

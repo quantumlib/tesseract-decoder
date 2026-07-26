@@ -49,6 +49,18 @@ struct TesseractTrellisWideLayerTemplate {
   TesseractTrellisDetcostTransition detcost_transition;
 };
 
+struct TesseractTrellisBeamSnapshotEntry {
+  std::vector<uint64_t> state_words;
+  double mass0 = 0;
+  double mass1 = 0;
+};
+
+struct TesseractTrellisBeamSnapshot {
+  size_t layer_index = 0;
+  std::vector<int> active_detectors;
+  std::vector<TesseractTrellisBeamSnapshotEntry> entries;
+};
+
 struct TesseractTrellisConfig {
   stim::DetectorErrorModel dem;
   size_t beam_width = 1024;
@@ -57,6 +69,7 @@ struct TesseractTrellisConfig {
   bool verbose = false;
   bool merge_errors = true;
   bool track_kept_state_stats = false;
+  std::vector<size_t> snapshot_layer_indices;
   TesseractTrellisRankingMode ranking_mode = TesseractTrellisRankingMode::MassOnly;
 };
 
@@ -88,6 +101,7 @@ struct TesseractTrellisDecoder {
   uint64_t predicted_obs_mask = 0;
   double total_mass_obs0 = 0;
   double total_mass_obs1 = 0;
+  std::vector<TesseractTrellisBeamSnapshot> beam_snapshots;
 
   std::vector<size_t> dem_error_to_error;
   std::vector<size_t> error_to_dem_error;

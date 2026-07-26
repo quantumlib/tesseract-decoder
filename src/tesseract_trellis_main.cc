@@ -14,11 +14,14 @@
 
 #include <argparse/argparse.hpp>
 #include <atomic>
+#include <array>
 #include <cmath>
+#include <cstdint>
 #include <fstream>
 #include <limits>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <sstream>
 #include <thread>
 
 #include "common.h"
@@ -35,6 +38,61 @@ TesseractTrellisRankingMode parse_ranking_mode(const std::string& value) {
     return TesseractTrellisRankingMode::FutureActiveDetcostRanked;
   }
   throw std::invalid_argument("Unknown trellis ranking mode: " + value);
+}
+
+std::vector<size_t> parse_size_list(const std::string& value) {
+  std::vector<size_t> result;
+  if (value.empty()) {
+    return result;
+  }
+  std::stringstream stream(value);
+  std::string item;
+  while (std::getline(stream, item, ',')) {
+    if (item.empty()) {
+      throw std::invalid_argument("Snapshot layer list contains an empty item.");
+    }
+    size_t parsed_characters = 0;
+    size_t layer = std::stoull(item, &parsed_characters);
+    if (parsed_characters != item.size()) {
+      throw std::invalid_argument("Invalid snapshot layer index: " + item);
+    }
+    result.push_back(layer);
+  }
+  return result;
+}
+
+template <typename T>
+void write_binary(std::ofstream* out, const T& value) {
+  out->write(reinterpret_cast<const char*>(&value), sizeof(value));
+}
+
+void write_beam_snapshot_record(
+    std::ofstream* out, size_t shot_index, uint64_t observed_obs_mask,
+    double final_observable_probability, bool low_confidence,
+    const std::vector<TesseractTrellisBeamSnapshot>& snapshots) {
+  write_binary(out, static_cast<uint64_t>(shot_index));
+  write_binary(out, observed_obs_mask);
+  write_binary(out, final_observable_probability);
+  write_binary(out, static_cast<uint64_t>(low_confidence));
+  write_binary(out, static_cast<uint64_t>(snapshots.size()));
+  for (const auto& snapshot : snapshots) {
+    write_binary(out, static_cast<uint64_t>(snapshot.layer_index));
+    write_binary(out, static_cast<uint64_t>(snapshot.active_detectors.size()));
+    write_binary(out, static_cast<uint64_t>(snapshot.entries.size()));
+    for (int detector : snapshot.active_detectors) {
+      write_binary(out, static_cast<int32_t>(detector));
+    }
+    for (const auto& entry : snapshot.entries) {
+      for (uint64_t word : entry.state_words) {
+        write_binary(out, word);
+      }
+      write_binary(out, entry.mass0);
+      write_binary(out, entry.mass1);
+    }
+  }
+  if (!*out) {
+    throw std::runtime_error("Failed while writing beam snapshots.");
+  }
 }
 
 }  // namespace
@@ -59,6 +117,8 @@ struct Args {
   std::string out_fname = "";
   std::string out_format = "";
   std::string obs_probs_out_fname = "";
+  std::string beam_snapshots_out_fname = "";
+  std::string beam_snapshot_layers = "";
 
   std::string dem_out_fname = "";
   std::string stats_out_fname = "";
@@ -95,6 +155,13 @@ struct Args {
     }
     if (obs_probs_out_fname == "-") {
       throw std::invalid_argument("--obs-probs-out must be a file path, not stdout.");
+    }
+    if (beam_snapshots_out_fname == "-") {
+      throw std::invalid_argument("--beam-snapshots-out must be a file path, not stdout.");
+    }
+    if (beam_snapshots_out_fname.empty() != beam_snapshot_layers.empty()) {
+      throw std::invalid_argument(
+          "--beam-snapshots-out and --beam-snapshot-layers must be provided together.");
     }
     if (!in_format.empty() && !stim::format_name_to_enum_map().contains(in_format)) {
       throw std::invalid_argument("Invalid format: " + in_format);
@@ -168,6 +235,7 @@ struct Args {
     config.future_detcost_scale = future_detcost_scale;
     config.verbose = verbose;
     config.track_kept_state_stats = print_stats;
+    config.snapshot_layer_indices = parse_size_list(beam_snapshot_layers);
     config.ranking_mode = parse_ranking_mode(ranking_mode);
 
     if (sample_num_shots > 0) {
@@ -296,6 +364,14 @@ int main(int argc, char* argv[]) {
           "Requires exactly one observable.")
       .default_value(std::string(""))
       .store_into(args.obs_probs_out_fname);
+  program.add_argument("--beam-snapshots-out")
+      .help("Write compact binary intermediate Tesseract-Trellis beam snapshots.")
+      .default_value(std::string(""))
+      .store_into(args.beam_snapshots_out_fname);
+  program.add_argument("--beam-snapshot-layers")
+      .help("Comma-separated zero-based trellis layer indices to snapshot.")
+      .default_value(std::string(""))
+      .store_into(args.beam_snapshot_layers);
   program.add_argument("--dem-out").default_value(std::string("")).store_into(args.dem_out_fname);
   program.add_argument("--stats-out")
       .default_value(std::string(""))
@@ -355,8 +431,18 @@ int main(int argc, char* argv[]) {
   std::vector<double> time_truncate_per_shot(shots.size());
   std::vector<double> time_reconstruct_per_shot(shots.size());
   std::vector<std::atomic<bool>> low_confidence(shots.size());
+  std::vector<std::vector<TesseractTrellisBeamSnapshot>> beam_snapshots(shots.size());
   const stim::DetectorErrorModel original_dem = config.dem.flattened();
   std::vector<std::unique_ptr<TesseractTrellisDecoder>> decoders(args.num_threads);
+  std::ofstream beam_snapshot_out;
+  if (!args.beam_snapshots_out_fname.empty()) {
+    beam_snapshot_out.open(args.beam_snapshots_out_fname, std::ios::binary);
+    if (!beam_snapshot_out.is_open()) {
+      throw std::invalid_argument("Failed to open " + args.beam_snapshots_out_fname);
+    }
+    constexpr std::array<char, 8> magic = {'T', 'T', 'S', 'N', 'A', 'P', '1', '\0'};
+    beam_snapshot_out.write(magic.data(), magic.size());
+  }
 
   bool has_obs = args.has_observables();
   size_t num_errors = 0;
@@ -403,6 +489,9 @@ int main(int argc, char* argv[]) {
         time_collapse_per_shot[shot_index] = decoder.time_collapse_seconds;
         time_truncate_per_shot[shot_index] = decoder.time_truncate_seconds;
         time_reconstruct_per_shot[shot_index] = decoder.time_reconstruct_seconds;
+        if (beam_snapshot_out.is_open()) {
+          beam_snapshots[shot_index] = std::move(decoder.beam_snapshots);
+        }
       },
       [&](size_t shot_index) {
         if (writer) {
@@ -415,6 +504,13 @@ int main(int argc, char* argv[]) {
           ++num_errors;
         }
         total_time_seconds += decoding_time_seconds[shot_index];
+        if (beam_snapshot_out.is_open()) {
+          write_beam_snapshot_record(
+              &beam_snapshot_out, shot_index, shots[shot_index].obs_mask_as_u64(),
+              obs_probability_predicted[shot_index], low_confidence[shot_index],
+              beam_snapshots[shot_index]);
+          beam_snapshots[shot_index].clear();
+        }
         if (args.print_stats) {
           std::cout << "num_shots = " << (shot_index + 1)
                     << " num_low_confidence = " << num_low_confidence
@@ -437,6 +533,13 @@ int main(int argc, char* argv[]) {
         }
         return !has_obs || num_errors < args.max_errors;
       });
+
+  if (beam_snapshot_out.is_open()) {
+    beam_snapshot_out.flush();
+    if (!beam_snapshot_out) {
+      throw std::runtime_error("Failed to finish writing beam snapshots.");
+    }
+  }
 
   if (!args.obs_probs_out_fname.empty()) {
     std::ofstream out(args.obs_probs_out_fname, std::ios::binary);

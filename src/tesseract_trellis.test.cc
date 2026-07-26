@@ -155,6 +155,43 @@ TEST(TesseractTrellisDecoderTest, BeamEpsSmokeTest) {
   EXPECT_TRUE(std::isfinite(decoder.observable_probability()));
 }
 
+TEST(TesseractTrellisDecoderTest, CapturesNormalizedIntermediateBeam) {
+  stim::DetectorErrorModel dem(R"DEM(
+    error(0.1) D0 D1 L0
+    error(0.2) D0 D2
+    error(0.3) D1 D2
+    detector(0, 0, 0) D0
+    detector(1, 0, 0) D1
+    detector(2, 0, 0) D2
+  )DEM");
+
+  TesseractTrellisConfig config;
+  config.dem = dem;
+  config.beam_width = 16;
+  config.snapshot_layer_indices = {0};
+  TesseractTrellisDecoder decoder(config);
+
+  decoder.decode_shot({});
+  ASSERT_FALSE(decoder.low_confidence_flag);
+  ASSERT_EQ(decoder.beam_snapshots.size(), 1);
+  const auto& snapshot = decoder.beam_snapshots[0];
+  EXPECT_EQ(snapshot.layer_index, 0);
+  EXPECT_EQ(snapshot.active_detectors, (std::vector<int>{0, 1}));
+  ASSERT_EQ(snapshot.entries.size(), 2);
+  double total = 0;
+  double logical_one = 0;
+  for (const auto& entry : snapshot.entries) {
+    ASSERT_EQ(entry.state_words.size(), 1);
+    total += entry.mass0 + entry.mass1;
+    logical_one += entry.mass1;
+  }
+  EXPECT_NEAR(total, 1.0, 1e-12);
+  EXPECT_NEAR(logical_one, 0.1, 1e-12);
+
+  decoder.decode_shot({0});
+  ASSERT_EQ(decoder.beam_snapshots.size(), 1);
+}
+
 TEST(TesseractTrellisDecoderTest, MergeErrorsMatchesOtherDecoders) {
   stim::DetectorErrorModel dem(R"DEM(
     error(0.1) D0 L0
