@@ -1,17 +1,3 @@
-# Copyright 2026 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Graph augmentation and rewiring for inference (GARI).
 
 This module implements the matrix construction from A. S. Maan et al.,
@@ -50,15 +36,13 @@ Columns are emitted as ``[e_Z, e_X, e_Y, bar(e)_Z, bar(e)_X]`` and rows as
 The corresponding decoder syndrome is ``[s_X, s_Z, 0, 0]``. The logical map
 stays on the original physical variables:
 ``[L_eZ, L_eX, L_eY, 0, 0]``. These are the GARI transformed matrices. They can
-be stored using Stim's DEM syntax, but the resulting GARI error model is only
-a matrix storage and decoding representation. It is not a physical detector
-error model and must not be sampled.
+be stored using Stim's DEM syntax, but the resulting GARI DEM is only a matrix
+storage and decoding representation. It is not a physical detector error model
+and must not be sampled.
 
 For certain single-basis CSS memory experiments, the paper instead evaluates
-the relevant logical observable on ``bar(e)_X`` or ``bar(e)_Z`` to support its
-message-passing convergence and early-stopping strategy. That specialized
-logical placement is decoder- and experiment-specific; it is documented here
-but is not implemented by this generic transform.
+the logical observable on ``bar(e)_X`` or ``bar(e)_Z``. That placement is
+experiment-specific and is not implemented by this generic transform.
 
 Every pure ``e_Z`` and ``e_X`` column receives a barred counterpart, including
 columns that are not the projection of any ``e_Y`` column. Such an unused pure
@@ -111,10 +95,10 @@ def _canonical_binary_csc(
 
     coordinate_matrix = matrix.tocoo(copy=True)
     stored_values = np.asarray(coordinate_matrix.data)
-    if stored_values.size and not np.all(np.isfinite(stored_values)):
+    if not np.all(np.isfinite(stored_values)):
         raise ValueError(f"{name} must contain only finite binary values.")
     is_binary = (stored_values == 0) | (stored_values == 1)
-    if stored_values.size and not np.all(is_binary):
+    if not np.all(is_binary):
         bad_value = stored_values[np.flatnonzero(~is_binary)[0]]
         raise ValueError(
             f"{name} must contain only binary values 0 or 1; found "
@@ -131,7 +115,7 @@ def _canonical_binary_csc(
     ).tocsc()
     result.sum_duplicates()
     duplicate_sum_is_binary = (result.data == 0) | (result.data == 1)
-    if result.data.size and not np.all(duplicate_sum_is_binary):
+    if not np.all(duplicate_sum_is_binary):
         bad_value = result.data[np.flatnonzero(~duplicate_sum_is_binary)[0]]
         raise ValueError(
             f"{name} must be canonical after combining duplicate entries; "
@@ -233,21 +217,10 @@ def dem_to_matrices(
 ]:
     """Extracts canonical binary matrices and probabilities from a Stim DEM.
 
-    The DEM is flattened before extraction. Stim separator targets are treated
-    as decomposition annotations: all detector and observable targets in an
-    error instruction are combined by symmetric difference. Repeated targets
-    therefore cancel over GF(2). Declared detector and observable dimensions
-    are retained even when their final rows are unused by every error.
-
-    Args:
-        dem: Source detector error model.
-
-    Returns:
-        ``(checks, logicals, probabilities)``, with one column and one
-        probability per flattened error instruction.
-
-    Raises:
-        ValueError: An error instruction has invalid arguments or targets.
+    The DEM is flattened before extraction. Detector and observable targets in
+    each error are combined by symmetric difference, so repeated targets
+    cancel over GF(2). Declared dimensions are retained even when trailing rows
+    are unused. The result has one column and probability per flattened error.
     """
     if not isinstance(dem, stim.DetectorErrorModel):
         raise ValueError("dem must be a stim.DetectorErrorModel.")
@@ -280,19 +253,9 @@ def dem_to_matrices(
         )
         source_column = len(probabilities)
         for detector in detectors:
-            if detector < 0 or detector >= dem.num_detectors:
-                raise ValueError(
-                    f"Error column {source_column} references detector "
-                    f"{detector}, outside [0, {dem.num_detectors})."
-                )
             detector_rows.append(detector)
             detector_columns.append(source_column)
         for observable in observables:
-            if observable < 0 or observable >= dem.num_observables:
-                raise ValueError(
-                    f"Error column {source_column} references observable "
-                    f"{observable}, outside [0, {dem.num_observables})."
-                )
             logical_rows.append(observable)
             logical_columns.append(source_column)
         probabilities.append(probability)
@@ -317,15 +280,16 @@ def dem_to_matrices(
     return checks, logicals, np.asarray(probabilities, dtype=np.float64)
 
 
-def _matrices_to_gari_error_model(
+def _matrices_to_gari_dem(
     checks: scipy.sparse.csc_matrix,
     logicals: scipy.sparse.csc_matrix,
     probabilities: np.ndarray,
 ) -> stim.DetectorErrorModel:
     """Stores GARI transformed matrices using Stim's DEM syntax.
 
-    The result is a GARI error model for decoding and interchange. It is not a
-    physical detector error model and must not be sampled to generate shots.
+    The result is a GARI matrix representation for decoding and interchange.
+    It is not a physical detector error model and must not be sampled to
+    generate shots.
     """
     gari_checks = _canonical_binary_csc(checks, name="checks")
     gari_logicals = _canonical_binary_csc(logicals, name="logicals")
@@ -348,10 +312,12 @@ def _matrices_to_gari_error_model(
     if np.any(probability_array < 0) or np.any(probability_array > 1):
         raise ValueError("probabilities must lie in [0, 1].")
 
-    gari_error_model = stim.DetectorErrorModel()
+    detector_target = stim.target_relative_detector_id
+    logical_target = stim.target_logical_observable_id
+    gari_dem = stim.DetectorErrorModel()
     for column, probability in enumerate(probability_array):
         detector_targets = [
-            stim.target_relative_detector_id(detector)
+            detector_target(detector)
             for detector in _column_support(gari_checks, column)
         ]
         if not detector_targets:
@@ -362,36 +328,23 @@ def _matrices_to_gari_error_model(
             )
         targets = detector_targets
         targets.extend(
-            stim.target_logical_observable_id(observable)
+            logical_target(observable)
             for observable in _column_support(gari_logicals, column)
         )
-        gari_error_model.append(
-            stim.DemInstruction(
-                type="error",
-                args=[float(probability)],
-                targets=targets,
-            )
-        )
+        gari_dem.append("error", float(probability), targets)
 
-    # Explicit declarations preserve trailing unused detector and observable
-    # dimensions when the matrices are serialized and parsed again.
-    for detector in range(gari_checks.shape[0]):
-        gari_error_model.append(
-            stim.DemInstruction(
-                type="detector",
-                args=[],
-                targets=[stim.target_relative_detector_id(detector)],
-            )
+    # One trailing declaration preserves each dimension after serialization.
+    if gari_checks.shape[0]:
+        gari_dem.append(
+            "detector", [], [detector_target(gari_checks.shape[0] - 1)]
         )
-    for observable in range(gari_logicals.shape[0]):
-        gari_error_model.append(
-            stim.DemInstruction(
-                type="logical_observable",
-                args=[],
-                targets=[stim.target_logical_observable_id(observable)],
-            )
+    if gari_logicals.shape[0]:
+        gari_dem.append(
+            "logical_observable",
+            [],
+            [logical_target(gari_logicals.shape[0] - 1)],
         )
-    return gari_error_model
+    return gari_dem
 
 
 def detector_partition_from_fourth_coordinate(
@@ -426,9 +379,7 @@ def detector_partition_from_fourth_coordinate(
             x_detectors.append(detector)
         else:
             z_detectors.append(detector)
-    return _readonly_int_array(np.asarray(x_detectors)), _readonly_int_array(
-        np.asarray(z_detectors)
-    )
+    return _readonly_int_array(x_detectors), _readonly_int_array(z_detectors)
 
 
 def gari_transform(
@@ -559,14 +510,17 @@ def gari_transform(
         shape=(len(e_x_columns), y_column_count),
         dtype=np.uint8,
     )
-    if not np.all(np.diff(u.indptr) == 1):
-        raise ValueError("Every U column must contain exactly one nonzero.")
-    if not np.all(np.diff(v.indptr) == 1):
-        raise ValueError("Every V column must contain exactly one nonzero.")
-    if not _sparse_equal(_gf2_product(d_x, u), d_x_prime):
-        raise ValueError("D_X @ U does not equal the e_Y X-side projection.")
-    if not _sparse_equal(_gf2_product(d_z, v), d_z_prime):
-        raise ValueError("D_Z @ V does not equal the e_Y Z-side projection.")
+    for factor, name in ((u, "U"), (v, "V")):
+        if not np.all(np.diff(factor.indptr) == 1):
+            raise ValueError(
+                f"Every {name} column must contain exactly one nonzero."
+            )
+    for base, factor, projection, message in (
+        (d_x, u, d_x_prime, "D_X @ U does not equal the e_Y X-side projection."),
+        (d_z, v, d_z_prime, "D_Z @ V does not equal the e_Y Z-side projection."),
+    ):
+        if not _sparse_equal(_gf2_product(base, factor), projection):
+            raise ValueError(message)
 
     x_row_count = len(x_rows)
     z_row_count = len(z_rows)
@@ -581,37 +535,14 @@ def gari_transform(
     identity_x = scipy.sparse.identity(e_x_count, dtype=np.uint8, format="csc")
     augmented_checks = scipy.sparse.bmat(
         [
-            [
-                zero((x_row_count, e_z_count), dtype=np.uint8),
-                zero((x_row_count, e_x_count), dtype=np.uint8),
-                zero((x_row_count, y_column_count), dtype=np.uint8),
-                d_x,
-                zero((x_row_count, e_x_count), dtype=np.uint8),
-            ],
-            [
-                zero((z_row_count, e_z_count), dtype=np.uint8),
-                zero((z_row_count, e_x_count), dtype=np.uint8),
-                zero((z_row_count, y_column_count), dtype=np.uint8),
-                zero((z_row_count, e_z_count), dtype=np.uint8),
-                d_z,
-            ],
-            [
-                identity_z,
-                zero((e_z_count, e_x_count), dtype=np.uint8),
-                u,
-                identity_z,
-                zero((e_z_count, e_x_count), dtype=np.uint8),
-            ],
-            [
-                zero((e_x_count, e_z_count), dtype=np.uint8),
-                identity_x,
-                v,
-                zero((e_x_count, e_z_count), dtype=np.uint8),
-                identity_x,
-            ],
+            [None, None, None, d_x, None],
+            [None, None, None, None, d_z],
+            [identity_z, None, u, identity_z, None],
+            [None, identity_x, v, None, identity_x],
         ],
         format="csc",
-    ).astype(np.uint8)
+        dtype=np.uint8,
+    )
 
     augmented_logicals = scipy.sparse.hstack(
         [
@@ -661,38 +592,49 @@ def gari_transform(
     )
 
 
+def _validated_probabilities(
+    values: np.ndarray,
+    *,
+    expected_count: int,
+    name: str,
+    column_kind: str,
+) -> np.ndarray:
+    try:
+        result = np.asarray(values, dtype=np.float64)
+    except (TypeError, ValueError) as ex:
+        raise ValueError(f"{name} must be a numeric array.") from ex
+    if result.ndim != 1:
+        raise ValueError(f"{name} must be one-dimensional.")
+    if len(result) != expected_count:
+        raise ValueError(
+            f"{name} must contain one value per {column_kind} column; "
+            f"found {len(result)} for {expected_count} columns."
+        )
+    if not np.all(np.isfinite(result)):
+        raise ValueError(f"{name} contains a non-finite probability.")
+    if np.any(result <= 0) or np.any(result > 0.5):
+        raise ValueError(f"{name} must lie in (0, 0.5].")
+    result = result.copy()
+    result.setflags(write=False)
+    return result
+
+
 def _validated_source_probabilities(
     transform: GariTransform, source_probabilities: np.ndarray
 ) -> np.ndarray:
     if not isinstance(transform, GariTransform):
         raise ValueError("transform must be a GariTransform.")
-    try:
-        probabilities = np.asarray(source_probabilities, dtype=np.float64)
-    except (TypeError, ValueError) as ex:
-        raise ValueError(
-            "source_probabilities must be a one-dimensional numeric array."
-        ) from ex
-    if probabilities.ndim != 1:
-        raise ValueError("source_probabilities must be one-dimensional.")
     source_column_count = (
         len(transform.e_z_columns)
         + len(transform.e_x_columns)
         + len(transform.e_y_columns)
     )
-    if len(probabilities) != source_column_count:
-        raise ValueError(
-            "source_probabilities must contain one value per source column; "
-            f"found {len(probabilities)} for {source_column_count} columns."
-        )
-    if not np.all(np.isfinite(probabilities)):
-        raise ValueError(
-            "source_probabilities must contain only finite values."
-        )
-    if np.any(probabilities <= 0) or np.any(probabilities > 0.5):
-        raise ValueError("source_probabilities must lie in (0, 0.5].")
-    result = probabilities.copy()
-    result.setflags(write=False)
-    return result
+    return _validated_probabilities(
+        source_probabilities,
+        expected_count=source_column_count,
+        name="source_probabilities",
+        column_kind="source",
+    )
 
 
 def _physical_probability_blocks(
@@ -792,24 +734,15 @@ def _source_to_auxiliary_cost_matrix(
 ) -> scipy.sparse.csc_matrix:
     e_z_count = len(transform.e_z_columns)
     e_x_count = len(transform.e_x_columns)
+    identity = scipy.sparse.identity
     return scipy.sparse.bmat(
         [
-            [
-                scipy.sparse.identity(e_z_count, format="csc"),
-                scipy.sparse.csc_matrix((e_z_count, e_x_count)),
-            ],
-            [
-                scipy.sparse.csc_matrix((e_x_count, e_z_count)),
-                scipy.sparse.identity(e_x_count, format="csc"),
-            ],
+            [identity(e_z_count, format="csc"), None],
+            [None, identity(e_x_count, format="csc")],
             [transform.u.T, transform.v.T],
         ],
         format="csc",
     )
-
-
-def _probabilities_from_nonnegative_costs(costs: np.ndarray) -> np.ndarray:
-    return np.exp(-np.logaddexp(0, costs))
 
 
 def tesseract_lp_maximin_prior_probabilities(
@@ -822,11 +755,10 @@ def tesseract_lp_maximin_prior_probabilities(
     ``A g + t <= c`` and ``-g + t <= 0``. The returned physical costs are the
     residuals ``c - A g`` and the remaining costs are ``g``.
 
-    This maximin objective is a practical Tesseract adaptation of exploratory
-    mode Q. It is not part of the GARI paper, changes the GARI error-model
-    search objective, and is not claimed to preserve exact maximum-likelihood
-    decoding for every GARI assignment. Solver failure is a hard error; there
-    is no fallback or clipping.
+    This is a practical Tesseract adaptation of exploratory mode Q, not part of
+    the GARI paper. It changes the search objective and is not claimed to
+    preserve exact maximum-likelihood decoding. Solver failure is a hard error;
+    there is no fallback or clipping.
     """
     p_e_z, p_e_x, p_e_y = _physical_probability_blocks(
         transform, source_probabilities
@@ -838,18 +770,15 @@ def tesseract_lp_maximin_prior_probabilities(
     cost_matrix = _source_to_auxiliary_cost_matrix(transform)
     auxiliary_count = cost_matrix.shape[1]
 
-    upper_constraints = scipy.sparse.hstack(
-        [cost_matrix, np.ones((len(source_costs), 1))], format="csc"
-    )
-    lower_constraints = scipy.sparse.hstack(
+    constraints = scipy.sparse.bmat(
         [
-            -scipy.sparse.identity(auxiliary_count, format="csc"),
-            np.ones((auxiliary_count, 1)),
+            [cost_matrix, np.ones((len(source_costs), 1))],
+            [
+                -scipy.sparse.identity(auxiliary_count, format="csc"),
+                np.ones((auxiliary_count, 1)),
+            ],
         ],
         format="csc",
-    )
-    constraints = scipy.sparse.vstack(
-        [upper_constraints, lower_constraints], format="csc"
     )
     bounds = np.concatenate(
         [source_costs, np.zeros(auxiliary_count, dtype=np.float64)]
@@ -867,12 +796,9 @@ def tesseract_lp_maximin_prior_probabilities(
         raise RuntimeError(
             "LP maximin prior solver failed: " + str(result.message)
         )
-    if result.x is None:
-        raise RuntimeError(
-            "LP maximin prior solver returned an invalid solution."
-        )
-
-    solution = np.asarray(result.x, dtype=np.float64)
+    solution = np.asarray(
+        [] if result.x is None else result.x, dtype=np.float64
+    )
     if solution.shape != (auxiliary_count + 1,):
         raise RuntimeError(
             "LP maximin prior solver returned an invalid solution."
@@ -893,54 +819,25 @@ def tesseract_lp_maximin_prior_probabilities(
         raise RuntimeError(
             "LP maximin prior solver returned negative costs."
         )
-    feasibility_tolerance = 1e-8
     minimum_cost = solution[-1]
-    if np.any(auxiliary_costs < minimum_cost - feasibility_tolerance) or np.any(
-        residual_costs < minimum_cost - feasibility_tolerance
+    if np.any(auxiliary_costs < minimum_cost - 1e-8) or np.any(
+        residual_costs < minimum_cost - 1e-8
     ):
         raise RuntimeError(
             "LP maximin prior solver returned a solution that violates the "
             "maximin constraints."
         )
-    return np.concatenate(
-        [
-            _probabilities_from_nonnegative_costs(residual_costs),
-            _probabilities_from_nonnegative_costs(auxiliary_costs),
-        ]
-    )
+    gari_costs = np.concatenate([residual_costs, auxiliary_costs])
+    return np.exp(-np.logaddexp(0, gari_costs))
 
 
-def _validated_gari_probabilities(
-    transform: GariTransform, probabilities: np.ndarray
-) -> np.ndarray:
-    try:
-        result = np.asarray(probabilities, dtype=np.float64)
-    except (TypeError, ValueError) as ex:
-        raise ValueError(
-            "prior_function must return a one-dimensional numeric array."
-        ) from ex
-    if result.ndim != 1:
-        raise ValueError("prior_function must return a one-dimensional array.")
-    gari_column_count = transform.checks.shape[1]
-    if len(result) != gari_column_count:
-        raise ValueError(
-            "prior_function must return one value per GARI column; "
-            f"found {len(result)} for {gari_column_count} columns."
-        )
-    if not np.all(np.isfinite(result)):
-        raise ValueError("prior_function returned a non-finite probability.")
-    if np.any(result <= 0) or np.any(result > 0.5):
-        raise ValueError("prior_function probabilities must lie in (0, 0.5].")
-    return result
-
-
-def build_gari_error_model(
+def build_gari_dem(
     transform: GariTransform,
     source_probabilities: np.ndarray,
     *,
     prior_function: Callable[[GariTransform, np.ndarray], np.ndarray],
 ) -> stim.DetectorErrorModel:
-    """Builds a GARI error model using an explicit prior policy.
+    """Builds a GARI DEM using an explicit prior policy.
 
     ``prior_function`` may be one of this module's three built-in policies or
     a user-defined callable. Its output is validated before serialization.
@@ -952,9 +849,12 @@ def build_gari_error_model(
     )
     if not callable(prior_function):
         raise ValueError("prior_function must be callable.")
-    gari_probabilities = _validated_gari_probabilities(
-        transform, prior_function(transform, probabilities)
+    gari_probabilities = _validated_probabilities(
+        prior_function(transform, probabilities),
+        expected_count=transform.checks.shape[1],
+        name="prior_function probabilities",
+        column_kind="GARI",
     )
-    return _matrices_to_gari_error_model(
+    return _matrices_to_gari_dem(
         transform.checks, transform.logicals, gari_probabilities
     )

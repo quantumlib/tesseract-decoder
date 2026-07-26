@@ -678,3 +678,39 @@ nice_calibrated_dem = demutil.regeneralize_spatial_dem(
 )
 # Result will have error probability (0.1 + 0.2) / 2 = 0.15
 ```
+
+### GARI transformed-matrix workflow
+
+Convert one correlated CSS Stim circuit with:
+
+```bash
+bazel run --jobs=1 //src/py:gari_convert -- \
+  --circuit path/to/circuit.stim \
+  --prior-policy xor
+```
+
+Outputs default to the circuit's sibling `gari/` directory as
+`<stem>-gari-<policy>.dem` and `<stem>-gari-<policy>-layout.json`. Replace
+`--circuit PATH` with `--circuit-directory PATH` to scan a circuit tree
+sequentially and deterministically. The scan continues after failures and exits
+nonzero if any circuit fails. Repository test data uses a color-code-style
+fourth coordinate: values at most `2` identify X detectors and values at least
+`3` identify Z detectors.
+
+The `.dem` stores GARI transformed matrices using Stim syntax; it is not a
+physical detector error model and must not be sampled. Decode samples from the
+original circuit with the companion layout using:
+
+```bash
+bazel run --jobs=1 //src/py:gari_example -- \
+  --circuit path/to/circuit.stim \
+  --dem path/to/model-gari-xor.dem \
+  --gari-layout path/to/model-gari-xor-layout.json \
+  --shots 10 \
+  --seed 0
+```
+
+The example samples only the original circuit, scatters its physical detector
+data according to the layout, leaves virtual detector entries zero, and uses
+the single `physical_then_virtual` detector order. A 10-shot run is a
+functional smoke check, not a benchmark or mathematical proof.

@@ -105,6 +105,18 @@ py_binary(
     ],
 )
 
+py_binary(
+    name = "gari_example",
+    srcs = ["gari_example.py"],
+    imports = ["..", "."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src:lib_tesseract_decoder",
+        "@pypi//numpy",
+        "@pypi//stim",
+    ],
+)
+
 py_test(
     name = "stub_test",
     srcs = ["stub_test.py"],
