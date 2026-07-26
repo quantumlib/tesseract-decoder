@@ -17,8 +17,15 @@ import itertools
 import numpy as np
 import pytest
 import scipy.sparse
+import stim
 
-from _tesseract_py_util.gari import GariTransform, gari_transform
+from _tesseract_py_util.gari import (
+    GariTransform,
+    _matrices_to_decoder_dem,
+    dem_to_matrices,
+    detector_partition_from_last_coordinate,
+    gari_transform,
+)
 
 
 _X_DETECTORS = [0, 2]
@@ -101,6 +108,45 @@ def test_exact_tiny_transform():
     assert transform.physical_z_rows == slice(2, 4)
     assert transform.virtual_z_rows == slice(4, 5)
     assert transform.virtual_x_rows == slice(5, 6)
+
+    source_dem = stim.DetectorErrorModel("""
+        error(0.125) D0 D0 D1 ^ D2 D2 L0 L0 L2
+        detector(0, 1) D0
+        detector(0, 3) D1
+        detector(0, 1) D2
+        detector(0, 3) D3
+        logical_observable L4
+    """)
+    checks, logicals, probabilities = dem_to_matrices(source_dem)
+    assert checks.shape == (4, 1)
+    assert logicals.shape == (5, 1)
+    assert _column_support(checks, 0) == [1]
+    assert _column_support(logicals, 0) == [2]
+    np.testing.assert_array_equal(probabilities, [0.125])
+    x_detectors, z_detectors = detector_partition_from_last_coordinate(
+        source_dem
+    )
+    np.testing.assert_array_equal(x_detectors, _X_DETECTORS)
+    np.testing.assert_array_equal(z_detectors, _Z_DETECTORS)
+
+    decoder_probabilities = np.linspace(
+        0.1, 0.5, num=transform.checks.shape[1]
+    )
+    decoder_dem = _matrices_to_decoder_dem(
+        transform.checks, transform.logicals, decoder_probabilities
+    )
+    reparsed_dem = stim.DetectorErrorModel(str(decoder_dem))
+    round_trip_checks, round_trip_logicals, round_trip_probabilities = (
+        dem_to_matrices(reparsed_dem)
+    )
+    assert reparsed_dem.num_detectors == transform.checks.shape[0]
+    assert reparsed_dem.num_observables == transform.logicals.shape[0]
+    assert reparsed_dem.num_errors == transform.checks.shape[1]
+    assert (round_trip_checks != transform.checks).nnz == 0
+    assert (round_trip_logicals != transform.logicals).nnz == 0
+    np.testing.assert_allclose(
+        round_trip_probabilities, decoder_probabilities
+    )
 
 
 def test_exhaustive_equivalence_and_virtual_constraints():
@@ -255,6 +301,29 @@ def test_rejects_invalid_inputs():
     nonbinary_checks = checks.astype(float)
     nonbinary_checks.data[0] = 2
     _assert_rejected(nonbinary_checks, logicals, "binary values")
+
+    for dem_text, message in [
+        ("error(0.1) D0\ndetector D0", "has no coordinates"),
+        ("error(0.1) D0\ndetector(0, 2) D0", "unknown final coordinate"),
+    ]:
+        with pytest.raises(ValueError, match=message):
+            detector_partition_from_last_coordinate(
+                stim.DetectorErrorModel(dem_text)
+            )
+
+    transform = _tiny_transform()
+    with pytest.raises(ValueError, match="one value per decoder column"):
+        _matrices_to_decoder_dem(
+            transform.checks,
+            transform.logicals,
+            np.full(transform.checks.shape[1] - 1, 0.1),
+        )
+    with pytest.raises(ValueError, match="no detector support"):
+        _matrices_to_decoder_dem(
+            scipy.sparse.csc_matrix((1, 1)),
+            scipy.sparse.csc_matrix([[1]]),
+            np.asarray([0.1]),
+        )
 
 
 if __name__ == "__main__":

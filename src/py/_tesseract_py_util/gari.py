@@ -52,6 +52,12 @@ stays on the original physical variables:
 ``[L_eZ, L_eX, L_eY, 0, 0]``. The augmented system is a decoder model with
 structural variables; it is not a physical noise model to sample directly.
 
+For certain single-basis CSS memory experiments, the paper instead evaluates
+the relevant logical observable on ``bar(e)_X`` or ``bar(e)_Z`` to support its
+message-passing convergence and early-stopping strategy. That specialized
+logical placement is decoder- and experiment-specific; it is documented here
+but is not implemented by this generic transform.
+
 Every pure ``e_Z`` and ``e_X`` column receives a barred counterpart, including
 columns that are not the projection of any ``e_Y`` column. Such an unmatched
 column has an all-zero row in ``U`` or ``V``; its virtual identity constraint
@@ -67,6 +73,11 @@ from collections.abc import Sequence
 
 import numpy as np
 import scipy.sparse
+import stim
+
+from _tesseract_py_util.decompose_errors import (
+    undecomposed_error_detectors_and_observables,
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -210,6 +221,219 @@ def _readonly_int_array(values: np.ndarray) -> np.ndarray:
     result = np.asarray(values, dtype=np.int64).copy()
     result.setflags(write=False)
     return result
+
+
+def dem_to_matrices(
+    dem: stim.DetectorErrorModel,
+) -> tuple[
+    scipy.sparse.csc_matrix, scipy.sparse.csc_matrix, np.ndarray
+]:
+    """Extracts canonical binary matrices and probabilities from a Stim DEM.
+
+    The DEM is flattened before extraction. Stim separator targets are treated
+    as decomposition annotations: all detector and observable targets in an
+    error instruction are combined by symmetric difference. Repeated targets
+    therefore cancel over GF(2). Declared detector and observable dimensions
+    are retained even when their final rows are unused by every error.
+
+    Args:
+        dem: Source detector error model.
+
+    Returns:
+        ``(checks, logicals, probabilities)``, with one column and one
+        probability per flattened error instruction.
+
+    Raises:
+        ValueError: An error instruction has invalid arguments or targets.
+    """
+    if not isinstance(dem, stim.DetectorErrorModel):
+        raise ValueError("dem must be a stim.DetectorErrorModel.")
+
+    flattened = dem.flattened()
+    detector_rows: list[int] = []
+    detector_columns: list[int] = []
+    logical_rows: list[int] = []
+    logical_columns: list[int] = []
+    probabilities: list[float] = []
+
+    for instruction in flattened:
+        if instruction.type != "error":
+            continue
+        arguments = instruction.args_copy()
+        if len(arguments) != 1:
+            raise ValueError(
+                "Each Stim error instruction must contain exactly one "
+                f"probability; found {len(arguments)} in {instruction}."
+            )
+        probability = float(arguments[0])
+        if not np.isfinite(probability) or probability < 0 or probability > 1:
+            raise ValueError(
+                f"Stim error probability must be finite and in [0, 1]; "
+                f"found {probability!r}."
+            )
+
+        detectors, observables = undecomposed_error_detectors_and_observables(
+            instruction
+        )
+        source_column = len(probabilities)
+        for detector in detectors:
+            if detector < 0 or detector >= dem.num_detectors:
+                raise ValueError(
+                    f"Error column {source_column} references detector "
+                    f"{detector}, outside [0, {dem.num_detectors})."
+                )
+            detector_rows.append(detector)
+            detector_columns.append(source_column)
+        for observable in observables:
+            if observable < 0 or observable >= dem.num_observables:
+                raise ValueError(
+                    f"Error column {source_column} references observable "
+                    f"{observable}, outside [0, {dem.num_observables})."
+                )
+            logical_rows.append(observable)
+            logical_columns.append(source_column)
+        probabilities.append(probability)
+
+    source_column_count = len(probabilities)
+    checks = scipy.sparse.csc_matrix(
+        (
+            np.ones(len(detector_rows), dtype=np.uint8),
+            (detector_rows, detector_columns),
+        ),
+        shape=(dem.num_detectors, source_column_count),
+        dtype=np.uint8,
+    )
+    logicals = scipy.sparse.csc_matrix(
+        (
+            np.ones(len(logical_rows), dtype=np.uint8),
+            (logical_rows, logical_columns),
+        ),
+        shape=(dem.num_observables, source_column_count),
+        dtype=np.uint8,
+    )
+    return checks, logicals, np.asarray(probabilities, dtype=np.float64)
+
+
+def _matrices_to_decoder_dem(
+    checks: scipy.sparse.csc_matrix,
+    logicals: scipy.sparse.csc_matrix,
+    probabilities: np.ndarray,
+) -> stim.DetectorErrorModel:
+    """Serializes matrices as an augmented decoder model.
+
+    The result describes structural variables and constraints used for
+    decoding. It is not a physical noise model and must not be sampled to
+    generate physical shots.
+    """
+    decoder_checks = _canonical_binary_csc(checks, name="checks")
+    decoder_logicals = _canonical_binary_csc(logicals, name="logicals")
+    if decoder_checks.shape[1] != decoder_logicals.shape[1]:
+        raise ValueError(
+            "checks and logicals must have the same decoder column count; "
+            f"found {decoder_checks.shape[1]} and "
+            f"{decoder_logicals.shape[1]}."
+        )
+    probability_array = np.asarray(probabilities, dtype=np.float64)
+    if probability_array.ndim != 1:
+        raise ValueError("probabilities must be one-dimensional.")
+    if len(probability_array) != decoder_checks.shape[1]:
+        raise ValueError(
+            "probabilities must contain one value per decoder column; "
+            f"found {len(probability_array)} for "
+            f"{decoder_checks.shape[1]} columns."
+        )
+    if not np.all(np.isfinite(probability_array)):
+        raise ValueError("probabilities must contain only finite values.")
+    if np.any(probability_array < 0) or np.any(probability_array > 1):
+        raise ValueError("probabilities must lie in [0, 1].")
+
+    decoder_dem = stim.DetectorErrorModel()
+    for column, probability in enumerate(probability_array):
+        detector_targets = [
+            stim.target_relative_detector_id(detector)
+            for detector in _column_support(decoder_checks, column)
+        ]
+        if not detector_targets:
+            logical_support = list(_column_support(decoder_logicals, column))
+            raise ValueError(
+                f"Decoder column {column} has no detector support; logical "
+                f"support is {logical_support}."
+            )
+        targets = detector_targets
+        targets.extend(
+            stim.target_logical_observable_id(observable)
+            for observable in _column_support(decoder_logicals, column)
+        )
+        decoder_dem.append(
+            stim.DemInstruction(
+                type="error",
+                args=[float(probability)],
+                targets=targets,
+            )
+        )
+
+    # Explicit declarations preserve trailing unused detector and observable
+    # dimensions when the matrices are serialized and parsed again.
+    for detector in range(decoder_checks.shape[0]):
+        decoder_dem.append(
+            stim.DemInstruction(
+                type="detector",
+                args=[],
+                targets=[stim.target_relative_detector_id(detector)],
+            )
+        )
+    for observable in range(decoder_logicals.shape[0]):
+        decoder_dem.append(
+            stim.DemInstruction(
+                type="logical_observable",
+                args=[],
+                targets=[stim.target_logical_observable_id(observable)],
+            )
+        )
+    return decoder_dem
+
+
+def detector_partition_from_last_coordinate(
+    dem: stim.DetectorErrorModel,
+    *,
+    x_coordinate: int = 1,
+    z_coordinate: int = 3,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Partitions detectors using this repository's coordinate convention.
+
+    This is not a universal Stim convention. For the supported repository
+    circuits, a detector whose final coordinate is exactly ``1`` is X-type and
+    one whose final coordinate is exactly ``3`` is Z-type. Missing coordinates
+    and every other final-coordinate value are rejected.
+    """
+    if not isinstance(dem, stim.DetectorErrorModel):
+        raise ValueError("dem must be a stim.DetectorErrorModel.")
+    if x_coordinate == z_coordinate:
+        raise ValueError("X and Z detector coordinate values must be distinct.")
+
+    coordinates = dem.get_detector_coordinates()
+    x_detectors: list[int] = []
+    z_detectors: list[int] = []
+    for detector in range(dem.num_detectors):
+        detector_coordinates = coordinates.get(detector)
+        if not detector_coordinates:
+            raise ValueError(
+                f"Detector {detector} has no coordinates; expected final "
+                f"coordinate {x_coordinate} or {z_coordinate}."
+            )
+        role = detector_coordinates[-1]
+        if role == x_coordinate:
+            x_detectors.append(detector)
+        elif role == z_coordinate:
+            z_detectors.append(detector)
+        else:
+            raise ValueError(
+                f"Detector {detector} has unknown final coordinate {role!r}; "
+                f"expected {x_coordinate} for X or {z_coordinate} for Z."
+            )
+    return _readonly_int_array(np.asarray(x_detectors)), _readonly_int_array(
+        np.asarray(z_detectors)
+    )
 
 
 def gari_transform(

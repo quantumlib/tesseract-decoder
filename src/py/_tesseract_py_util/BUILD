@@ -22,8 +22,10 @@ py_library(
     srcs = ["gari.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":_tesseract_py_util",
         "@pypi//numpy",
         "@pypi//scipy",
+        "@pypi//stim",
     ],
 )
 
@@ -37,6 +39,7 @@ py_test(
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//scipy",
+        "@pypi//stim",
     ],
 )
 
