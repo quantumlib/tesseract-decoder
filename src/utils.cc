@@ -28,7 +28,9 @@
 #include "stim.h"
 
 std::vector<std::vector<double>> get_detector_coords(const stim::DetectorErrorModel& dem) {
-  std::vector<std::vector<double>> detector_coords;
+  size_t num_detectors = dem.count_detectors();
+  std::vector<std::vector<double>> detector_coords(num_detectors);
+  bool has_any_coords = false;
   for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_SHIFT_DETECTORS:
@@ -38,11 +40,16 @@ std::vector<std::vector<double>> get_detector_coords(const stim::DetectorErrorMo
         break;
       }
       case stim::DemInstructionType::DEM_DETECTOR: {
-        std::vector<double> coord;
-        for (const double& t : instruction.arg_data) {
-          coord.push_back(t);
+        has_any_coords = true;
+        std::vector<double> coord(instruction.arg_data.begin(), instruction.arg_data.end());
+        for (const stim::DemTarget& target : instruction.target_data) {
+          if (target.is_relative_detector_id()) {
+            size_t det_id = target.val();
+            if (det_id < num_detectors) {
+              detector_coords[det_id] = coord;
+            }
+          }
         }
-        detector_coords.push_back(coord);
         break;
       }
       case stim::DemInstructionType::DEM_LOGICAL_OBSERVABLE:
@@ -51,6 +58,9 @@ std::vector<std::vector<double>> get_detector_coords(const stim::DetectorErrorMo
         throw std::invalid_argument(
             "Unexpected DemInstructionType found in the detector error model.");
     }
+  }
+  if (!has_any_coords) {
+    return {};
   }
   return detector_coords;
 }
@@ -148,10 +158,13 @@ static std::vector<std::vector<size_t>> build_det_orders_coordinate(
     for (size_t i = 0; i < detector_coords.at(0).size(); ++i) {
       orientation_vector.push_back(dist(rng));
     }
-    for (size_t i = 0; i < detector_coords.size(); ++i) {
+    size_t num_dets = std::min(detector_coords.size(), inner_products.size());
+    for (size_t i = 0; i < num_dets; ++i) {
       inner_products[i] = 0;
       for (size_t j = 0; j < orientation_vector.size(); ++j) {
-        inner_products[i] += detector_coords[i][j] * orientation_vector[j];
+        if (j < detector_coords[i].size()) {
+          inner_products[i] += detector_coords[i][j] * orientation_vector[j];
+        }
       }
     }
     std::vector<size_t> perm(dem.count_detectors());
