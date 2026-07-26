@@ -23,10 +23,10 @@ import stim
 import _tesseract_py_util.gari as gari_module
 from _tesseract_py_util.gari import (
     GariTransform,
-    _matrices_to_decoder_dem,
-    build_gari_decoder_dem,
+    _matrices_to_gari_error_model,
+    build_gari_error_model,
     dem_to_matrices,
-    detector_partition_from_last_coordinate,
+    detector_partition_from_fourth_coordinate,
     gari_transform,
     paper_prior_probabilities,
     tesseract_lp_maximin_prior_probabilities,
@@ -71,7 +71,7 @@ def _tiny_transform() -> GariTransform:
     )
 
 
-def _augmented_error(
+def _gari_error_assignment(
     transform: GariTransform, source_error: np.ndarray
 ) -> np.ndarray:
     e_z = source_error[transform.e_z_columns]
@@ -172,43 +172,47 @@ def test_exact_tiny_transform():
         assert not callback_probabilities.flags.writeable
         return custom_probabilities
 
-    custom_dem = build_gari_decoder_dem(
+    custom_gari_error_model = build_gari_error_model(
         transform,
         source_probabilities,
         prior_function=custom_prior,
     )
-    _, _, serialized_custom_probabilities = dem_to_matrices(custom_dem)
+    _, _, serialized_custom_probabilities = dem_to_matrices(
+        custom_gari_error_model
+    )
     np.testing.assert_allclose(
         serialized_custom_probabilities, custom_probabilities
     )
 
     source_dem = stim.DetectorErrorModel("""
-        error(0.125) D0 D0 D1 ^ D2 D2 L0 L0 L2
-        detector(0, 1) D0
-        detector(0, 3) D1
-        detector(0, 1) D2
-        detector(0, 3) D3
+        error(0.125) D0 D0 D3 ^ D2 D2 L0 L0 L2
+        detector(0, 0, 0, 0, 99) D0
+        detector(0, 0, 0, 1) D1
+        detector(0, 0, 0, 2) D2
+        detector(0, 0, 0, 3) D3
+        detector(0, 0, 0, 4) D4
+        detector(0, 0, 0, 5, -99) D5
         logical_observable L4
     """)
     checks, logicals, probabilities = dem_to_matrices(source_dem)
-    assert checks.shape == (4, 1)
+    assert checks.shape == (6, 1)
     assert logicals.shape == (5, 1)
-    assert _column_support(checks, 0) == [1]
+    assert _column_support(checks, 0) == [3]
     assert _column_support(logicals, 0) == [2]
     np.testing.assert_array_equal(probabilities, [0.125])
-    x_detectors, z_detectors = detector_partition_from_last_coordinate(
+    x_detectors, z_detectors = detector_partition_from_fourth_coordinate(
         source_dem
     )
-    np.testing.assert_array_equal(x_detectors, _X_DETECTORS)
-    np.testing.assert_array_equal(z_detectors, _Z_DETECTORS)
+    np.testing.assert_array_equal(x_detectors, [0, 1, 2])
+    np.testing.assert_array_equal(z_detectors, [3, 4, 5])
 
-    decoder_probabilities = np.linspace(
+    gari_probabilities = np.linspace(
         0.1, 0.5, num=transform.checks.shape[1]
     )
-    decoder_dem = _matrices_to_decoder_dem(
-        transform.checks, transform.logicals, decoder_probabilities
+    gari_error_model = _matrices_to_gari_error_model(
+        transform.checks, transform.logicals, gari_probabilities
     )
-    reparsed_dem = stim.DetectorErrorModel(str(decoder_dem))
+    reparsed_dem = stim.DetectorErrorModel(str(gari_error_model))
     round_trip_checks, round_trip_logicals, round_trip_probabilities = (
         dem_to_matrices(reparsed_dem)
     )
@@ -218,7 +222,7 @@ def test_exact_tiny_transform():
     assert (round_trip_checks != transform.checks).nnz == 0
     assert (round_trip_logicals != transform.logicals).nnz == 0
     np.testing.assert_allclose(
-        round_trip_probabilities, decoder_probabilities
+        round_trip_probabilities, gari_probabilities
     )
 
 
@@ -228,7 +232,7 @@ def test_exhaustive_equivalence_and_virtual_constraints():
 
     for bits in itertools.product([0, 1], repeat=checks.shape[1]):
         source_error = np.asarray(bits, dtype=np.uint8)
-        gari_error = _augmented_error(transform, source_error)
+        gari_error = _gari_error_assignment(transform, source_error)
         source_syndrome = np.asarray(checks @ source_error).reshape(-1) % 2
         expected_syndrome = np.concatenate(
             [source_syndrome[[0, 2]], source_syndrome[[1, 3]], [0, 0]]
@@ -255,7 +259,7 @@ def test_exhaustive_equivalence_and_virtual_constraints():
     assert consistent_count == 8
 
 
-def test_unmatched_pure_columns_still_receive_barred_variables():
+def test_pure_columns_without_y_projections_receive_barred_variables():
     # The second e_Z and e_X columns are not used by the e_Y projection.
     checks = scipy.sparse.csc_matrix(
         [
@@ -276,7 +280,7 @@ def test_unmatched_pure_columns_still_receive_barred_variables():
     np.testing.assert_array_equal(transform.v.toarray(), [[1], [0]])
     # All three original variable blocks remain zero in the physical rows.
     assert transform.checks[:4, :5].nnz == 0
-    # The unmatched pure variables are copied by their identity constraints.
+    # Pure variables not used by an e_Y projection are copied by identity.
     assert _column_support(transform.checks, 1) == [5]
     assert _column_support(transform.checks, 6) == [1, 5]
     assert _column_support(transform.checks, 3) == [7]
@@ -409,23 +413,30 @@ def test_rejects_invalid_inputs(monkeypatch):
     _assert_rejected(nonbinary_checks, logicals, "binary values")
 
     for dem_text, message in [
-        ("error(0.1) D0\ndetector D0", "has no coordinates"),
-        ("error(0.1) D0\ndetector(0, 2) D0", "unknown final coordinate"),
+        ("error(0.1) D0\ndetector D0", "at least four coordinates"),
+        (
+            "error(0.1) D0\ndetector(0, 0, 2) D0",
+            "at least four coordinates",
+        ),
+        (
+            "error(0.1) D0\ndetector(0, 0, 0, 2.5) D0",
+            "finite integer",
+        ),
     ]:
         with pytest.raises(ValueError, match=message):
-            detector_partition_from_last_coordinate(
+            detector_partition_from_fourth_coordinate(
                 stim.DetectorErrorModel(dem_text)
             )
 
     transform = _tiny_transform()
-    with pytest.raises(ValueError, match="one value per decoder column"):
-        _matrices_to_decoder_dem(
+    with pytest.raises(ValueError, match="one value per GARI column"):
+        _matrices_to_gari_error_model(
             transform.checks,
             transform.logicals,
             np.full(transform.checks.shape[1] - 1, 0.1),
         )
     with pytest.raises(ValueError, match="no detector support"):
-        _matrices_to_decoder_dem(
+        _matrices_to_gari_error_model(
             scipy.sparse.csc_matrix((1, 1)),
             scipy.sparse.csc_matrix([[1]]),
             np.asarray([0.1]),
@@ -470,13 +481,13 @@ def test_rejects_invalid_inputs(monkeypatch):
     ]
     for prior_function, message in invalid_custom_priors:
         with pytest.raises(ValueError, match=message):
-            build_gari_decoder_dem(
+            build_gari_error_model(
                 transform,
                 source_probabilities,
                 prior_function=prior_function,
             )
     with pytest.raises(ValueError, match="must be callable"):
-        build_gari_decoder_dem(
+        build_gari_error_model(
             transform,
             source_probabilities,
             prior_function=None,

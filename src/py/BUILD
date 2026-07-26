@@ -80,6 +80,7 @@ py_test(
     ],
     imports = ["..", "."],
 )
+
 py_test(
     name = "tesseract_sinter_compat_test",
     srcs = ["tesseract_sinter_compat_test.py"],
@@ -93,7 +94,16 @@ py_test(
     imports = ["..", "."],
 )
 
-
+py_binary(
+    name = "gari_convert",
+    srcs = ["gari_convert.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/py/_tesseract_py_util:gari",
+        "@pypi//stim",
+    ],
+)
 
 py_test(
     name = "stub_test",

@@ -49,8 +49,10 @@ Columns are emitted as ``[e_Z, e_X, e_Y, bar(e)_Z, bar(e)_X]`` and rows as
 
 The corresponding decoder syndrome is ``[s_X, s_Z, 0, 0]``. The logical map
 stays on the original physical variables:
-``[L_eZ, L_eX, L_eY, 0, 0]``. The augmented system is a decoder model with
-structural variables; it is not a physical noise model to sample directly.
+``[L_eZ, L_eX, L_eY, 0, 0]``. These are the GARI transformed matrices. They can
+be stored using Stim's DEM syntax, but the resulting GARI error model is only
+a matrix storage and decoding representation. It is not a physical detector
+error model and must not be sampled.
 
 For certain single-basis CSS memory experiments, the paper instead evaluates
 the relevant logical observable on ``bar(e)_X`` or ``bar(e)_Z`` to support its
@@ -59,7 +61,7 @@ logical placement is decoder- and experiment-specific; it is documented here
 but is not implemented by this generic transform.
 
 Every pure ``e_Z`` and ``e_X`` column receives a barred counterpart, including
-columns that are not the projection of any ``e_Y`` column. Such an unmatched
+columns that are not the projection of any ``e_Y`` column. Such an unused pure
 column has an all-zero row in ``U`` or ``V``; its virtual identity constraint
 therefore only copies ``e`` to ``bar(e)``. This deliberate redundancy keeps the
 five-block structure uniform and the physical top-left blocks zero.
@@ -83,7 +85,7 @@ from _tesseract_py_util.decompose_errors import (
 
 @dataclasses.dataclass(frozen=True)
 class GariTransform:
-    """A validated GARI augmented check system."""
+    """Validated GARI transformed matrices and their block metadata."""
 
     checks: scipy.sparse.csc_matrix
     logicals: scipy.sparse.csc_matrix
@@ -315,57 +317,55 @@ def dem_to_matrices(
     return checks, logicals, np.asarray(probabilities, dtype=np.float64)
 
 
-def _matrices_to_decoder_dem(
+def _matrices_to_gari_error_model(
     checks: scipy.sparse.csc_matrix,
     logicals: scipy.sparse.csc_matrix,
     probabilities: np.ndarray,
 ) -> stim.DetectorErrorModel:
-    """Serializes matrices as an augmented decoder model.
+    """Stores GARI transformed matrices using Stim's DEM syntax.
 
-    The result describes structural variables and constraints used for
-    decoding. It is not a physical noise model and must not be sampled to
-    generate physical shots.
+    The result is a GARI error model for decoding and interchange. It is not a
+    physical detector error model and must not be sampled to generate shots.
     """
-    decoder_checks = _canonical_binary_csc(checks, name="checks")
-    decoder_logicals = _canonical_binary_csc(logicals, name="logicals")
-    if decoder_checks.shape[1] != decoder_logicals.shape[1]:
+    gari_checks = _canonical_binary_csc(checks, name="checks")
+    gari_logicals = _canonical_binary_csc(logicals, name="logicals")
+    if gari_checks.shape[1] != gari_logicals.shape[1]:
         raise ValueError(
-            "checks and logicals must have the same decoder column count; "
-            f"found {decoder_checks.shape[1]} and "
-            f"{decoder_logicals.shape[1]}."
+            "checks and logicals must have the same GARI column count; "
+            f"found {gari_checks.shape[1]} and {gari_logicals.shape[1]}."
         )
     probability_array = np.asarray(probabilities, dtype=np.float64)
     if probability_array.ndim != 1:
         raise ValueError("probabilities must be one-dimensional.")
-    if len(probability_array) != decoder_checks.shape[1]:
+    if len(probability_array) != gari_checks.shape[1]:
         raise ValueError(
-            "probabilities must contain one value per decoder column; "
-            f"found {len(probability_array)} for "
-            f"{decoder_checks.shape[1]} columns."
+            "probabilities must contain one value per GARI column; "
+            f"found {len(probability_array)} for {gari_checks.shape[1]} "
+            "columns."
         )
     if not np.all(np.isfinite(probability_array)):
         raise ValueError("probabilities must contain only finite values.")
     if np.any(probability_array < 0) or np.any(probability_array > 1):
         raise ValueError("probabilities must lie in [0, 1].")
 
-    decoder_dem = stim.DetectorErrorModel()
+    gari_error_model = stim.DetectorErrorModel()
     for column, probability in enumerate(probability_array):
         detector_targets = [
             stim.target_relative_detector_id(detector)
-            for detector in _column_support(decoder_checks, column)
+            for detector in _column_support(gari_checks, column)
         ]
         if not detector_targets:
-            logical_support = list(_column_support(decoder_logicals, column))
+            logical_support = list(_column_support(gari_logicals, column))
             raise ValueError(
-                f"Decoder column {column} has no detector support; logical "
+                f"GARI column {column} has no detector support; logical "
                 f"support is {logical_support}."
             )
         targets = detector_targets
         targets.extend(
             stim.target_logical_observable_id(observable)
-            for observable in _column_support(decoder_logicals, column)
+            for observable in _column_support(gari_logicals, column)
         )
-        decoder_dem.append(
+        gari_error_model.append(
             stim.DemInstruction(
                 type="error",
                 args=[float(probability)],
@@ -375,63 +375,57 @@ def _matrices_to_decoder_dem(
 
     # Explicit declarations preserve trailing unused detector and observable
     # dimensions when the matrices are serialized and parsed again.
-    for detector in range(decoder_checks.shape[0]):
-        decoder_dem.append(
+    for detector in range(gari_checks.shape[0]):
+        gari_error_model.append(
             stim.DemInstruction(
                 type="detector",
                 args=[],
                 targets=[stim.target_relative_detector_id(detector)],
             )
         )
-    for observable in range(decoder_logicals.shape[0]):
-        decoder_dem.append(
+    for observable in range(gari_logicals.shape[0]):
+        gari_error_model.append(
             stim.DemInstruction(
                 type="logical_observable",
                 args=[],
                 targets=[stim.target_logical_observable_id(observable)],
             )
         )
-    return decoder_dem
+    return gari_error_model
 
 
-def detector_partition_from_last_coordinate(
+def detector_partition_from_fourth_coordinate(
     dem: stim.DetectorErrorModel,
-    *,
-    x_coordinate: int = 1,
-    z_coordinate: int = 3,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Partitions detectors using this repository's coordinate convention.
+    """Partitions detectors using the repository's fourth-coordinate rule.
 
-    This is not a universal Stim convention. For the supported repository
-    circuits, a detector whose final coordinate is exactly ``1`` is X-type and
-    one whose final coordinate is exactly ``3`` is Z-type. Missing coordinates
-    and every other final-coordinate value are rejected.
+    This is the color-code-style convention followed by the test-data circuits
+    associated with this repository, not a universal Stim convention. The
+    fourth coordinate is a finite integer: values at most ``2`` identify X
+    detectors, while values at least ``3`` identify Z detectors.
     """
     if not isinstance(dem, stim.DetectorErrorModel):
         raise ValueError("dem must be a stim.DetectorErrorModel.")
-    if x_coordinate == z_coordinate:
-        raise ValueError("X and Z detector coordinate values must be distinct.")
 
     coordinates = dem.get_detector_coordinates()
     x_detectors: list[int] = []
     z_detectors: list[int] = []
     for detector in range(dem.num_detectors):
         detector_coordinates = coordinates.get(detector)
-        if not detector_coordinates:
+        if detector_coordinates is None or len(detector_coordinates) < 4:
             raise ValueError(
-                f"Detector {detector} has no coordinates; expected final "
-                f"coordinate {x_coordinate} or {z_coordinate}."
+                f"Detector {detector} must have at least four coordinates."
             )
-        role = detector_coordinates[-1]
-        if role == x_coordinate:
+        role = detector_coordinates[3]
+        if not np.isfinite(role) or not float(role).is_integer():
+            raise ValueError(
+                f"Detector {detector} has invalid fourth coordinate "
+                f"{role!r}; expected a finite integer."
+            )
+        if role <= 2:
             x_detectors.append(detector)
-        elif role == z_coordinate:
-            z_detectors.append(detector)
         else:
-            raise ValueError(
-                f"Detector {detector} has unknown final coordinate {role!r}; "
-                f"expected {x_coordinate} for X or {z_coordinate} for Z."
-            )
+            z_detectors.append(detector)
     return _readonly_int_array(np.asarray(x_detectors)), _readonly_int_array(
         np.asarray(z_detectors)
     )
@@ -444,7 +438,7 @@ def gari_transform(
     x_detectors: Sequence[int],
     z_detectors: Sequence[int],
 ) -> GariTransform:
-    """Constructs the validated GARI augmented system over GF(2).
+    """Constructs validated GARI transformed matrices over GF(2).
 
     ``x_detectors`` and ``z_detectors`` partition the source detector rows.
     Their sequence order determines the order within the physical X and
@@ -457,8 +451,8 @@ def gari_transform(
         z_detectors: Source rows containing Z-type checks.
 
     Returns:
-        The augmented checks, physical logical map, matching matrices, source
-        column classes, detector mapping, and row block slices.
+        The transformed checks, physical logical map, projection matrices,
+        source column classes, detector mapping, and row block slices.
 
     Raises:
         ValueError: The inputs do not satisfy the supported correlated CSS
@@ -536,13 +530,13 @@ def gari_transform(
         if x_projection not in d_x_lookup:
             raise ValueError(
                 f"Source column {source_column} has X-side projection "
-                f"{list(x_projection)}, which does not match a D_X column."
+                f"{list(x_projection)}, which does not equal a D_X column."
             )
         z_projection = _column_support(d_z_prime, local_y_column)
         if z_projection not in d_z_lookup:
             raise ValueError(
                 f"Source column {source_column} has Z-side projection "
-                f"{list(z_projection)}, which does not match a D_Z column."
+                f"{list(z_projection)}, which does not equal a D_Z column."
             )
         u_rows.append(d_x_lookup[x_projection][0])
         v_rows.append(d_z_lookup[z_projection][0])
@@ -717,7 +711,7 @@ def _physical_probability_blocks(
 def paper_prior_probabilities(
     transform: GariTransform, source_probabilities: np.ndarray
 ) -> np.ndarray:
-    """Returns the published GARI initialization in decoder-column order.
+    """Returns the published GARI initialization in GARI column order.
 
     Physical ``e_Z``, ``e_X``, and ``e_Y`` variables retain their source
     probabilities. Every auxiliary variable is assigned probability exactly
@@ -751,14 +745,14 @@ def _xor_parity_probability(probabilities: np.ndarray) -> float:
 def _auxiliary_xor_probabilities(
     base_probabilities: np.ndarray,
     y_probabilities: np.ndarray,
-    matching: scipy.sparse.csc_matrix,
+    projection_matrix: scipy.sparse.csc_matrix,
 ) -> np.ndarray:
-    matching_rows = matching.tocsr()
+    projection_rows = projection_matrix.tocsr()
     result = np.empty(len(base_probabilities), dtype=np.float64)
     for row, base_probability in enumerate(base_probabilities):
-        start = matching_rows.indptr[row]
-        stop = matching_rows.indptr[row + 1]
-        y_columns = matching_rows.indices[start:stop]
+        start = projection_rows.indptr[row]
+        stop = projection_rows.indptr[row + 1]
+        y_columns = projection_rows.indices[start:stop]
         parity_probabilities = np.concatenate(
             [np.asarray([base_probability]), y_probabilities[y_columns]]
         )
@@ -829,10 +823,10 @@ def tesseract_lp_maximin_prior_probabilities(
     residuals ``c - A g`` and the remaining costs are ``g``.
 
     This maximin objective is a practical Tesseract adaptation of exploratory
-    mode Q. It is not part of the GARI paper, changes the augmented search
-    objective, and is not claimed to preserve exact maximum-likelihood
-    decoding for every augmented assignment. Solver failure is a hard error;
-    there is no fallback or clipping.
+    mode Q. It is not part of the GARI paper, changes the GARI error-model
+    search objective, and is not claimed to preserve exact maximum-likelihood
+    decoding for every GARI assignment. Solver failure is a hard error; there
+    is no fallback or clipping.
     """
     p_e_z, p_e_x, p_e_y = _physical_probability_blocks(
         transform, source_probabilities
@@ -916,7 +910,7 @@ def tesseract_lp_maximin_prior_probabilities(
     )
 
 
-def _validated_decoder_probabilities(
+def _validated_gari_probabilities(
     transform: GariTransform, probabilities: np.ndarray
 ) -> np.ndarray:
     try:
@@ -927,11 +921,11 @@ def _validated_decoder_probabilities(
         ) from ex
     if result.ndim != 1:
         raise ValueError("prior_function must return a one-dimensional array.")
-    decoder_column_count = transform.checks.shape[1]
-    if len(result) != decoder_column_count:
+    gari_column_count = transform.checks.shape[1]
+    if len(result) != gari_column_count:
         raise ValueError(
-            "prior_function must return one value per GARI decoder column; "
-            f"found {len(result)} for {decoder_column_count} columns."
+            "prior_function must return one value per GARI column; "
+            f"found {len(result)} for {gari_column_count} columns."
         )
     if not np.all(np.isfinite(result)):
         raise ValueError("prior_function returned a non-finite probability.")
@@ -940,27 +934,27 @@ def _validated_decoder_probabilities(
     return result
 
 
-def build_gari_decoder_dem(
+def build_gari_error_model(
     transform: GariTransform,
     source_probabilities: np.ndarray,
     *,
     prior_function: Callable[[GariTransform, np.ndarray], np.ndarray],
 ) -> stim.DetectorErrorModel:
-    """Builds an augmented GARI decoder DEM using an explicit prior policy.
+    """Builds a GARI error model using an explicit prior policy.
 
     ``prior_function`` may be one of this module's three built-in policies or
     a user-defined callable. Its output is validated before serialization.
-    The resulting DEM is for decoding only and must not be sampled as a
-    physical noise model.
+    Stim's DEM syntax is used only to store the GARI transformed matrices. The
+    result is not a physical detector error model and must not be sampled.
     """
     probabilities = _validated_source_probabilities(
         transform, source_probabilities
     )
     if not callable(prior_function):
         raise ValueError("prior_function must be callable.")
-    decoder_probabilities = _validated_decoder_probabilities(
+    gari_probabilities = _validated_gari_probabilities(
         transform, prior_function(transform, probabilities)
     )
-    return _matrices_to_decoder_dem(
-        transform.checks, transform.logicals, decoder_probabilities
+    return _matrices_to_gari_error_model(
+        transform.checks, transform.logicals, gari_probabilities
     )
