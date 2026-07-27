@@ -94,29 +94,6 @@ py_test(
     imports = ["..", "."],
 )
 
-py_binary(
-    name = "gari_convert",
-    srcs = ["gari_convert.py"],
-    imports = ["."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//src/py/_tesseract_py_util:gari",
-        "@pypi//stim",
-    ],
-)
-
-py_binary(
-    name = "gari_example",
-    srcs = ["gari_example.py"],
-    imports = ["..", "."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//src:lib_tesseract_decoder",
-        "@pypi//numpy",
-        "@pypi//stim",
-    ],
-)
-
 py_test(
     name = "stub_test",
     srcs = ["stub_test.py"],
