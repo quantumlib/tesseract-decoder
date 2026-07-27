@@ -34,9 +34,11 @@
 namespace {
 
 constexpr char kGariLayoutSchema[] = "tesseract.gari_layout.v1";
+constexpr char kGariDetectorOrder[] = "physical_then_virtual";
 
 struct GariLayout {
   std::string schema;
+  std::string detector_order;
   size_t source_detector_count;
   size_t gari_detector_count;
   std::vector<size_t> source_to_gari;
@@ -114,6 +116,19 @@ GariLayout load_gari_layout(const std::string& path) {
                                       "', but is '" + schema + "'.");
   }
 
+  const nlohmann::json& detector_order_json =
+      required_layout_field(document, path, "detector_order");
+  if (!detector_order_json.is_string()) {
+    throw gari_layout_error(path, "field 'detector_order' must be a string, but is " +
+                                      std::string(detector_order_json.type_name()) + ".");
+  }
+  std::string detector_order = detector_order_json.get<std::string>();
+  if (detector_order != kGariDetectorOrder) {
+    throw gari_layout_error(path, "field 'detector_order' must be '" +
+                                      std::string(kGariDetectorOrder) + "', but is '" +
+                                      detector_order + "'.");
+  }
+
   size_t source_detector_count =
       read_layout_size(required_layout_field(document, path, "source_detector_count"), path,
                        "source_detector_count");
@@ -147,6 +162,12 @@ GariLayout load_gari_layout(const std::string& path) {
                                         ", outside the target range [0, " +
                                         std::to_string(gari_detector_count) + ").");
     }
+    if (target >= source_detector_count) {
+      throw gari_layout_error(path, "field '" + field + "' is " + std::to_string(target) +
+                                        ", outside the physical detector range [0, " +
+                                        std::to_string(source_detector_count) + ") required by '" +
+                                        std::string(kGariDetectorOrder) + "'.");
+    }
     auto [previous, inserted] = target_to_source.emplace(target, source);
     if (!inserted) {
       throw gari_layout_error(path, "source detectors " + std::to_string(previous->second) +
@@ -156,7 +177,8 @@ GariLayout load_gari_layout(const std::string& path) {
     }
     source_to_gari.push_back(target);
   }
-  return {schema, source_detector_count, gari_detector_count, std::move(source_to_gari)};
+  return {schema, detector_order, source_detector_count, gari_detector_count,
+          std::move(source_to_gari)};
 }
 
 std::vector<uint64_t> map_gari_hits(std::vector<uint64_t> source_hits, const GariLayout& layout,
@@ -180,6 +202,7 @@ struct Args {
   std::string dem_path;
   std::string gari_layout_path;
   std::string gari_layout_schema;
+  std::string gari_detector_order;
   size_t gari_source_detector_count = 0;
   size_t gari_detector_count = 0;
   bool no_merge_errors = false;
@@ -190,6 +213,7 @@ struct Args {
   bool det_order_bfs = false;
   bool det_order_index = false;
   bool det_order_coordinate = false;
+  bool explicit_det_order = false;
 
   // Sampling options
   size_t sample_num_shots = 0;
@@ -255,6 +279,11 @@ struct Args {
     if (det_order_flags > 1) {
       throw std::invalid_argument(
           "Only one of --det-order-bfs, --det-order-index, or --det-order-coordinate may be set.");
+    }
+    explicit_det_order = det_order_flags > 0 || program.is_used("--num-det-orders") ||
+                         program.is_used("--det-order-seed");
+    if (!gari_layout_path.empty() && program.is_used("--num-det-orders") && num_det_orders == 0) {
+      throw std::invalid_argument("--num-det-orders must be at least 1 with --gari-layout.");
     }
 
     int num_data_sources = int(sample_num_shots > 0) + int(!in_fname.empty());
@@ -387,14 +416,15 @@ struct Args {
         size_t circuit_observable_count = circuit.count_observables();
         size_t dem_observable_count = config.dem.count_observables();
         if (circuit_observable_count != dem_observable_count) {
-          throw gari_layout_error(
-              gari_layout_path, "circuit '" + circuit_path + "' contains " +
-                                    std::to_string(circuit_observable_count) +
-                                    " observables, but DEM '" + dem_path + "' contains " +
-                                    std::to_string(dem_observable_count) + ".");
+          throw gari_layout_error(gari_layout_path, "circuit '" + circuit_path + "' contains " +
+                                                        std::to_string(circuit_observable_count) +
+                                                        " observables, but DEM '" + dem_path +
+                                                        "' contains " +
+                                                        std::to_string(dem_observable_count) + ".");
         }
       }
       gari_layout_schema = gari_layout->schema;
+      gari_detector_order = gari_layout->detector_order;
       gari_source_detector_count = gari_layout->source_detector_count;
       gari_detector_count = gari_layout->gari_detector_count;
     } else if (!circuit_path.empty() and !dem_path.empty() and
@@ -420,15 +450,20 @@ struct Args {
           std::cout << ")" << std::endl;
         }
       }
-      DetOrder order = DetOrder::DetIndex;
-      if (det_order_bfs) {
-        order = DetOrder::DetBFS;
-      } else if (det_order_index) {
-        order = DetOrder::DetIndex;
-      } else if (det_order_coordinate) {
-        order = DetOrder::DetCoordinate;
+      if (gari_layout && !explicit_det_order) {
+        config.det_orders.assign(1, std::vector<size_t>(config.dem.count_detectors()));
+        std::iota(config.det_orders[0].begin(), config.det_orders[0].end(), 0);
+      } else {
+        DetOrder order = DetOrder::DetIndex;
+        if (det_order_bfs) {
+          order = DetOrder::DetBFS;
+        } else if (det_order_index) {
+          order = DetOrder::DetIndex;
+        } else if (det_order_coordinate) {
+          order = DetOrder::DetCoordinate;
+        }
+        config.det_orders = build_det_orders(config.dem, num_det_orders, order, det_order_seed);
       }
-      config.det_orders = build_det_orders(config.dem, num_det_orders, order, det_order_seed);
     }
 
     if (sample_num_shots > 0) {
@@ -560,7 +595,8 @@ int main(int argc, char* argv[]) {
       .help(
           "JSON layout emitted by gari_convert. Maps detector data from the original circuit or "
           "source shot file into the supplied GARI matrix file. Unmapped virtual detector "
-          "rows are treated as zero.")
+          "rows are treated as zero. A physical_then_virtual layout uses its row order as the "
+          "default Tesseract detector traversal; explicit detector-order options override it.")
       .metavar("FILE")
       .default_value(std::string(""))
       .store_into(args.gari_layout_path);
@@ -578,8 +614,8 @@ int main(int argc, char* argv[]) {
       .store_into(args.det_order_bfs);
   program.add_argument("--det-order-index")
       .help(
-          "Randomly choose increasing or decreasing detector index order "
-          "(default if no method specified)")
+          "Randomly choose increasing or decreasing detector index order. Without a GARI layout, "
+          "this is the default method; with one, this flag overrides its identity traversal.")
       .flag()
       .store_into(args.det_order_index);
   program.add_argument("--det-order-coordinate")
@@ -908,6 +944,7 @@ int main(int argc, char* argv[]) {
     if (!args.gari_layout_path.empty()) {
       stats_json["gari_layout_path"] = args.gari_layout_path;
       stats_json["gari_layout_schema"] = args.gari_layout_schema;
+      stats_json["gari_layout_detector_order"] = args.gari_detector_order;
       stats_json["source_detector_count"] = args.gari_source_detector_count;
       stats_json["gari_detector_count"] = args.gari_detector_count;
     }

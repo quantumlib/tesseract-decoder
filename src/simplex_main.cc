@@ -348,11 +348,11 @@ struct Args {
         size_t circuit_observable_count = circuit.count_observables();
         size_t dem_observable_count = config.dem.count_observables();
         if (circuit_observable_count != dem_observable_count) {
-          throw gari_layout_error(
-              gari_layout_path, "circuit '" + circuit_path + "' contains " +
-                                    std::to_string(circuit_observable_count) +
-                                    " observables, but DEM '" + dem_path + "' contains " +
-                                    std::to_string(dem_observable_count) + ".");
+          throw gari_layout_error(gari_layout_path, "circuit '" + circuit_path + "' contains " +
+                                                        std::to_string(circuit_observable_count) +
+                                                        " observables, but DEM '" + dem_path +
+                                                        "' contains " +
+                                                        std::to_string(dem_observable_count) + ".");
         }
       }
       gari_layout_schema = gari_layout->schema;
