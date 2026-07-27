@@ -352,23 +352,15 @@ print_results(results)
 # Graph augmentation and rewiring for inference (GARI) transforms a correlated
 # CSS detector matrix into a block form for Tesseract; see [Decoding correlated
 # errors in quantum LDPC codes](https://doi.org/10.1038/s41467-026-70556-3).
-# This example uses the repository's d3 superdense color-code memory-Z circuit
-# and the XOR prior policy. Run it from the repository root so the test-data
-# path resolves.
+# This example reuses the superdense color-code memory-Z circuit and sampled
+# data from above, and applies the XOR prior policy.
 
 # %% id="gari-transform-example"
-import numpy as np
-import stim
-import tesseract_decoder
 from _tesseract_py_util.gari import (
     circuit_to_gari,
     tesseract_xor_prior_probabilities,
 )
 
-circuit = stim.Circuit.from_file(
-    "testdata/colorcodes/"
-    "r=3,d=3,p=0.001,noise=si1000,c=superdense_color_code_Z,q=13,gates=cz.stim"
-)
 gari_dem, gari_layout = circuit_to_gari(
     circuit,
     prior_function=tesseract_xor_prior_probabilities,
@@ -381,11 +373,8 @@ gari_dem, gari_layout = circuit_to_gari(
 
 # %% id="gari-sample-example"
 gari_shots = 10
-sampler = circuit.compile_detector_sampler(seed=2384753)
-source_syndromes, actual_observables = sampler.sample(
-    shots=gari_shots,
-    separate_observables=True,
-)
+source_syndromes = dets[:gari_shots]
+actual_observables = obs[:gari_shots]
 gari_syndromes = np.zeros(
     (gari_shots, gari_dem.num_detectors), dtype=bool
 )
