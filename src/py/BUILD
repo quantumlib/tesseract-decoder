@@ -138,4 +138,5 @@ compile_pip_requirements(
     name = "requirements",
     src = "requirements.in",
     requirements_txt = "requirements_lock.txt",
+    timeout = "long",
 )
