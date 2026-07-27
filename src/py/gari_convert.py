@@ -81,12 +81,6 @@ def _circuit_paths(circuit_directory: Path) -> list[Path]:
 
 
 def _layout_dict(transform, prior_policy: str) -> dict[str, object]:
-    blocks = {
-        "physical_x": transform.physical_x_rows,
-        "physical_z": transform.physical_z_rows,
-        "virtual_z": transform.virtual_z_rows,
-        "virtual_x": transform.virtual_x_rows,
-    }
     return {
         "schema": _LAYOUT_SCHEMA,
         "source_detector_count": len(transform.source_to_gari_detectors),
@@ -94,10 +88,6 @@ def _layout_dict(transform, prior_policy: str) -> dict[str, object]:
         "source_to_gari": [
             int(value) for value in transform.source_to_gari_detectors
         ],
-        "row_blocks": {
-            name: [int(rows.start), int(rows.stop)]
-            for name, rows in blocks.items()
-        },
         "detector_order": "physical_then_virtual",
         "logical_placement": "physical",
         "prior_policy": prior_policy,
