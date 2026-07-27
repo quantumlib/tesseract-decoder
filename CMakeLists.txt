@@ -98,6 +98,14 @@ target_include_directories(tesseract_lib PUBLIC ${TESSERACT_SRC_DIR})
 target_compile_options(tesseract_lib PRIVATE ${OPT_COPTS})
 target_link_libraries(tesseract_lib PUBLIC utils boost_headers visualization)
 
+add_library(tesseract_trellis_lib
+  ${TESSERACT_SRC_DIR}/tesseract_trellis.cc
+  ${TESSERACT_SRC_DIR}/tesseract_trellis.h
+)
+target_include_directories(tesseract_trellis_lib PUBLIC ${TESSERACT_SRC_DIR})
+target_compile_options(tesseract_trellis_lib PRIVATE ${OPT_COPTS})
+target_link_libraries(tesseract_trellis_lib PUBLIC common utils libstim Threads::Threads)
+
 add_library(simplex ${TESSERACT_SRC_DIR}/simplex.cc ${TESSERACT_SRC_DIR}/simplex.h)
 target_include_directories(simplex PUBLIC ${TESSERACT_SRC_DIR})
 target_compile_options(simplex PRIVATE ${OPT_COPTS})
@@ -107,6 +115,12 @@ target_link_libraries(simplex PUBLIC common utils tesseract_lib highs libstim Th
 add_executable(tesseract ${TESSERACT_SRC_DIR}/tesseract_main.cc)
 target_compile_options(tesseract PRIVATE ${OPT_COPTS})
 target_link_libraries(tesseract PRIVATE tesseract_lib argparse::argparse nlohmann_json::nlohmann_json)
+
+add_executable(tesseract_trellis ${TESSERACT_SRC_DIR}/tesseract_trellis_main.cc)
+target_compile_options(tesseract_trellis PRIVATE ${OPT_COPTS})
+target_link_libraries(tesseract_trellis
+  PRIVATE tesseract_trellis_lib argparse::argparse nlohmann_json::nlohmann_json
+)
 
 add_executable(simplex_bin ${TESSERACT_SRC_DIR}/simplex_main.cc)
 set_target_properties(simplex_bin PROPERTIES OUTPUT_NAME simplex)
@@ -137,3 +151,6 @@ add_executable(tesseract_test ${TESSERACT_SRC_DIR}/tesseract.test.cc)
 target_link_libraries(tesseract_test PRIVATE tesseract_lib simplex GTest::gtest_main)
 add_test(NAME tesseract_test COMMAND tesseract_test)
 
+add_executable(tesseract_trellis_test ${TESSERACT_SRC_DIR}/tesseract_trellis.test.cc)
+target_link_libraries(tesseract_trellis_test PRIVATE tesseract_trellis_lib GTest::gtest_main)
+add_test(NAME tesseract_trellis_test COMMAND tesseract_trellis_test)

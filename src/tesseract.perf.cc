@@ -33,20 +33,16 @@ void benchmark_decoder(Decoder& decoder, stim::Circuit& circuit, size_t num_shot
   size_t num_low_confidence = 0;
   size_t num_errors = 0;
   size_t num_decoded = 0;
-  auto vector_to_u64_mask = [](const std::vector<int>& v) {
-    uint64_t mask = 0;
-    for (int i : v) {
-      mask ^= (1ULL << i);
-    }
-    return mask;
-  };
+  size_t num_observables = circuit.count_observables();
 
   auto benchmark_func = [&]() {
     for (size_t shot = 0; shot < num_shots; ++shot) {
       decoder.decode_to_errors(shots[shot].hits);
-      uint64_t obs =
-          vector_to_u64_mask(decoder.get_flipped_observables(decoder.predicted_errors_buffer));
-      num_errors += (!decoder.low_confidence_flag and (obs != shots[shot].obs_mask_as_u64()));
+      stim::simd_bits<64> obs(num_observables);
+      for (int obs_idx : decoder.get_flipped_observables(decoder.predicted_errors_buffer)) {
+        obs[obs_idx] ^= 1;
+      }
+      num_errors += (!decoder.low_confidence_flag and (obs != shots[shot].obs_mask));
       num_low_confidence += decoder.low_confidence_flag;
       total_num_errors_used += decoder.predicted_errors_buffer.size();
       ++num_decoded;
