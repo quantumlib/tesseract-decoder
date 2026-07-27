@@ -418,22 +418,6 @@ def gari_transform(
     )
 
 
-def _validated_probabilities(
-    values: np.ndarray,
-    *,
-    expected_count: int,
-    name: str,
-) -> np.ndarray:
-    result = np.asarray(values, dtype=np.float64)
-    if result.shape != (expected_count,) or not np.all(
-        (result > 0) & (result <= 0.5)
-    ):
-        raise ValueError(
-            f"{name} must contain {expected_count} finite values in (0, 0.5]."
-        )
-    return result
-
-
 def _physical_probability_blocks(
     transform: GariTransform, source_probabilities: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -452,9 +436,8 @@ def paper_prior_probabilities(
 
     Physical ``e_Z``, ``e_X``, and ``e_Y`` variables retain their source
     probabilities. Every auxiliary variable is assigned probability exactly
-    ``0.5``, giving it zero log-likelihood-ratio cost. This is the literature
-    reference policy, but those zero-cost branches can produce a very large
-    Tesseract search space.
+    ``0.5``. In Tesseract this gives the auxiliary variable zero search cost,
+    which can produce a very large search space.
     """
     p_e_z, p_e_x, p_e_y = _physical_probability_blocks(
         transform, source_probabilities
@@ -468,15 +451,6 @@ def paper_prior_probabilities(
             np.full(len(p_e_x), 0.5),
         ]
     )
-
-
-def _xor_parity_probability(probabilities: np.ndarray) -> float:
-    if len(probabilities) == 1:
-        return float(probabilities[0])
-    if np.any(probabilities == 0.5):
-        return 0.5
-    log_even_bias = np.sum(np.log1p(-2 * probabilities), dtype=np.float64)
-    return float(-0.5 * np.expm1(log_even_bias))
 
 
 def _auxiliary_xor_probabilities(
@@ -493,7 +467,15 @@ def _auxiliary_xor_probabilities(
         parity_probabilities = np.concatenate(
             [np.asarray([base_probability]), y_probabilities[y_columns]]
         )
-        result[row] = _xor_parity_probability(parity_probabilities)
+        if len(parity_probabilities) == 1:
+            result[row] = base_probability
+        elif np.any(parity_probabilities == 0.5):
+            result[row] = 0.5
+        else:
+            log_even_bias = np.sum(
+                np.log1p(-2 * parity_probabilities), dtype=np.float64
+            )
+            result[row] = -0.5 * np.expm1(log_even_bias)
     return result
 
 
@@ -508,9 +490,8 @@ def tesseract_xor_prior_probabilities(
     for numerical stability and does not clip invalid inputs.
 
     This is a Tesseract-specific experimental heuristic, not the published
-    GARI prior. It can represent evidence already present in the physical
-    variables and virtual constraints, and is not claimed to preserve the
-    exact source-model maximum-likelihood objective.
+    GARI prior. It only defines auxiliary search weights and makes no claim
+    about decoding optimality.
     """
     p_e_z, p_e_x, p_e_y = _physical_probability_blocks(
         transform, source_probabilities
@@ -524,36 +505,22 @@ def tesseract_xor_prior_probabilities(
     return np.concatenate([p_e_z, p_e_x, p_e_y, p_bar_e_z, p_bar_e_x])
 
 
-def _source_to_auxiliary_cost_matrix(
-    transform: GariTransform,
-) -> scipy.sparse.csc_matrix:
-    e_z_count = len(transform.e_z_columns)
-    e_x_count = len(transform.e_x_columns)
-    identity = scipy.sparse.identity
-    return scipy.sparse.bmat(
-        [
-            [identity(e_z_count, format="csc"), None],
-            [None, identity(e_x_count, format="csc")],
-            [transform.u.T, transform.v.T],
-        ],
-        format="csc",
-    )
-
-
 def tesseract_lp_maximin_prior_probabilities(
     transform: GariTransform, source_probabilities: np.ndarray
 ) -> np.ndarray:
     """Balances nonnegative physical and auxiliary costs for Tesseract.
 
-    For source costs ``c = log((1-p)/p)`` and auxiliary costs ``g``, this
-    experimental policy maximizes a common lower bound ``t`` subject to
-    ``A g + t <= c`` and ``-g + t <= 0``. The returned physical costs are the
-    residuals ``c - A g`` and the remaining costs are ``g``.
+    The source costs ``c = log((1-p)/p)`` are ordered as ``[e_Z, e_X, e_Y]``.
+    The auxiliary costs ``g`` are ordered as ``[bar(e)_Z, bar(e)_X]``. The
+    incidence matrix is ``A = [[I, 0], [0, I], [U.T, V.T]]``, so the residual
+    physical costs are ``r = c - A g``.
 
-    This is a practical Tesseract adaptation of exploratory mode Q, not part of
-    the GARI paper. It changes the search objective and is not claimed to
-    preserve exact maximum-likelihood decoding. Solver failure is a hard error;
-    there is no fallback or clipping.
+    The LP maximizes a common floor ``t`` subject to ``r >= t``, ``g >= t``,
+    and nonnegative ``g`` and ``t``. It returns ``[r, g]`` converted back to
+    probabilities in GARI column order. This is a practical Tesseract
+    adaptation of exploratory mode Q, not part of the GARI paper. It only
+    defines search costs and makes no claim about decoding optimality. Solver
+    failure is a hard error; there is no fallback or clipping.
     """
     p_e_z, p_e_x, p_e_y = _physical_probability_blocks(
         transform, source_probabilities
@@ -562,7 +529,16 @@ def tesseract_lp_maximin_prior_probabilities(
     source_costs = np.log1p(-physical_probabilities) - np.log(
         physical_probabilities
     )
-    cost_matrix = _source_to_auxiliary_cost_matrix(transform)
+    # A maps [bar(e)_Z, bar(e)_X] costs into [e_Z, e_X, e_Y] costs.
+    identity = scipy.sparse.identity
+    cost_matrix = scipy.sparse.bmat(
+        [
+            [identity(len(p_e_z), format="csc"), None],
+            [None, identity(len(p_e_x), format="csc")],
+            [transform.u.T, transform.v.T],
+        ],
+        format="csc",
+    )
     auxiliary_count = cost_matrix.shape[1]
 
     constraints = scipy.sparse.bmat(
@@ -575,15 +551,16 @@ def tesseract_lp_maximin_prior_probabilities(
         ],
         format="csc",
     )
-    bounds = np.concatenate(
+    constraint_limits = np.concatenate(
         [source_costs, np.zeros(auxiliary_count, dtype=np.float64)]
     )
     objective = np.zeros(auxiliary_count + 1, dtype=np.float64)
+    # scipy.optimize.linprog minimizes, so minimizing -t maximizes t.
     objective[-1] = -1
     result = scipy.optimize.linprog(
         objective,
         A_ub=constraints,
-        b_ub=bounds,
+        b_ub=constraint_limits,
         bounds=[(0, None)] * (auxiliary_count + 1),
         method="highs",
     )
@@ -612,20 +589,33 @@ def build_gari_dem(
     Stim's DEM syntax is used only to store the GARI transformed matrices. The
     result is not a physical detector error model and must not be sampled.
     """
+    def validated_probabilities(
+        values: np.ndarray, expected_count: int, name: str
+    ) -> np.ndarray:
+        result = np.asarray(values, dtype=np.float64)
+        if result.shape != (expected_count,) or not np.all(
+            (result > 0) & (result <= 0.5)
+        ):
+            raise ValueError(
+                f"{name} must contain {expected_count} finite values in "
+                "(0, 0.5]."
+            )
+        return result
+
     source_count = (
         len(transform.e_z_columns)
         + len(transform.e_x_columns)
         + len(transform.e_y_columns)
     )
-    probabilities = _validated_probabilities(
+    probabilities = validated_probabilities(
         source_probabilities,
-        expected_count=source_count,
-        name="source_probabilities",
+        source_count,
+        "source_probabilities",
     )
-    gari_probabilities = _validated_probabilities(
+    gari_probabilities = validated_probabilities(
         prior_function(transform, probabilities),
-        expected_count=transform.checks.shape[1],
-        name="prior_function probabilities",
+        transform.checks.shape[1],
+        "prior_function probabilities",
     )
     return _matrices_to_gari_dem(
         transform.checks, transform.logicals, gari_probabilities
