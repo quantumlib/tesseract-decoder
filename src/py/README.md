@@ -697,6 +697,10 @@ nonzero if any circuit fails. Repository test data uses a color-code-style
 fourth coordinate: values at most `2` identify X detectors and values at least
 `3` identify Z detectors.
 
+GARI conversion always uses a source DEM generated with
+`decompose_errors=False` and `flatten_loops=True`, then fully flattened;
+decomposed error instructions containing `^` are not supported.
+
 The `.dem` stores GARI transformed matrices using Stim syntax; it is not a
 physical detector error model and must not be sampled. Decode samples from the
 original circuit with the companion layout using:

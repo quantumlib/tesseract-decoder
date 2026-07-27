@@ -21,8 +21,6 @@ import tesseract_decoder
 _LAYOUT_SCHEMA = "tesseract.gari_layout.v1"
 _DETECTOR_ORDER = "physical_then_virtual"
 _LOGICAL_PLACEMENT = "physical"
-_PRIOR_POLICIES = {"paper", "xor", "lp-maximin"}
-_ROW_BLOCKS = ("physical_x", "physical_z", "virtual_z", "virtual_x")
 
 
 def _workspace_path(path: Path) -> Path:
@@ -34,120 +32,54 @@ def _workspace_path(path: Path) -> Path:
     )
 
 
-def _required_count(layout: dict[str, object], name: str) -> int:
-    value = layout.get(name)
-    if type(value) is not int or value < 0:
-        raise ValueError(f"Layout field {name!r} must be a nonnegative integer.")
-    return value
-
-
-def _required_text(layout: dict[str, object], name: str) -> str:
-    value = layout.get(name)
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"Layout field {name!r} must be a nonempty string.")
-    return value
-
-
-def _validate_row_blocks(
-    layout: dict[str, object], source_count: int, gari_count: int
-) -> None:
-    blocks = layout.get("row_blocks")
-    if not isinstance(blocks, dict):
-        raise ValueError("Layout field 'row_blocks' must be an object.")
-    expected_start = 0
-    for name in _ROW_BLOCKS:
-        interval = blocks.get(name)
-        if (
-            not isinstance(interval, list)
-            or len(interval) != 2
-            or any(type(endpoint) is not int for endpoint in interval)
-        ):
-            raise ValueError(
-                f"row_blocks[{name!r}] must contain two integer endpoints."
-            )
-        start, stop = interval
-        if start != expected_start:
-            raise ValueError(
-                f"row_blocks[{name!r}] must start at {expected_start}; "
-                f"found {start}."
-            )
-        if stop < start:
-            raise ValueError(f"row_blocks[{name!r}] is not a valid interval.")
-        expected_start = stop
-
-    if expected_start != gari_count:
-        raise ValueError(
-            f"Row blocks must end at GARI detector count {gari_count}; "
-            f"found {expected_start}."
-        )
-    physical_stop = blocks["physical_z"][1]
-    if physical_stop != source_count:
-        raise ValueError(
-            "Physical row blocks must contain exactly one row per source "
-            f"detector; found {physical_stop} for {source_count}."
-        )
-
-
 def _load_layout(path: Path) -> tuple[int, int, tuple[int, ...], str, str, str]:
     with path.open(encoding="utf-8") as file:
         layout = json.load(file)
-    if not isinstance(layout, dict):
-        raise ValueError("GARI layout must be a JSON object.")
-    if layout.get("schema") != _LAYOUT_SCHEMA:
+    if not isinstance(layout, dict) or layout.get("schema") != _LAYOUT_SCHEMA:
         raise ValueError(
-            f"GARI layout schema must be {_LAYOUT_SCHEMA!r}; "
-            f"found {layout.get('schema')!r}."
+            f"GARI layout must use schema {_LAYOUT_SCHEMA!r}."
         )
 
-    source_count = _required_count(layout, "source_detector_count")
-    gari_count = _required_count(layout, "gari_detector_count")
-    if gari_count < source_count:
+    source_count = layout.get("source_detector_count")
+    gari_count = layout.get("gari_detector_count")
+    if (
+        type(source_count) is not int
+        or type(gari_count) is not int
+        or source_count < 0
+        or gari_count < source_count
+    ):
         raise ValueError(
-            "GARI detector count must not be smaller than the source count."
+            "Layout detector counts must be nonnegative integers with "
+            "gari_detector_count >= source_detector_count."
         )
+
     mapping = layout.get("source_to_gari")
-    if not isinstance(mapping, list):
-        raise ValueError("Layout field 'source_to_gari' must be a list.")
-    if len(mapping) != source_count:
+    if not isinstance(mapping, list) or len(mapping) != source_count:
         raise ValueError(
-            "Layout field 'source_to_gari' must contain one target per "
-            f"source detector; found {len(mapping)} for {source_count}."
+            "Layout source_to_gari must contain one entry per source detector."
         )
-    for source, target in enumerate(mapping):
-        if type(target) is not int:
-            raise ValueError(
-                f"source_to_gari[{source}] must be an integer; found "
-                f"{target!r}."
-            )
-        if target < 0 or target >= gari_count:
-            raise ValueError(
-                f"source_to_gari[{source}]={target} is outside [0, "
-                f"{gari_count})."
-            )
-        if target >= source_count:
-            raise ValueError(
-                f"source_to_gari[{source}]={target} refers to a virtual row."
-            )
-    if len(set(mapping)) != len(mapping):
-        raise ValueError("Layout field 'source_to_gari' must be injective.")
+    if any(
+        type(target) is not int or not 0 <= target < gari_count
+        for target in mapping
+    ):
+        raise ValueError("Layout source_to_gari contains an invalid target.")
+    if len(set(mapping)) != source_count:
+        raise ValueError("Layout source_to_gari must be injective.")
 
-    prior_policy = _required_text(layout, "prior_policy")
-    if prior_policy not in _PRIOR_POLICIES:
-        raise ValueError(f"Unknown GARI prior policy {prior_policy!r}.")
-    metadata = {
-        "logical_placement": _LOGICAL_PLACEMENT,
-        "detector_order": _DETECTOR_ORDER,
-    }
-    for name, expected in metadata.items():
-        value = _required_text(layout, name)
-        if value != expected:
-            raise ValueError(
-                f"Layout field {name!r} must be {expected!r}; found {value!r}."
-            )
-    _validate_row_blocks(layout, source_count, gari_count)
+    prior_policy = layout.get("prior_policy")
+    logical_placement = layout.get("logical_placement")
+    detector_order = layout.get("detector_order")
+    if not isinstance(prior_policy, str) or not prior_policy:
+        raise ValueError("Layout prior_policy must be a nonempty string.")
+    if logical_placement != _LOGICAL_PLACEMENT:
+        raise ValueError("Layout logical_placement must be 'physical'.")
+    if detector_order != _DETECTOR_ORDER:
+        raise ValueError(
+            "Layout detector_order must be 'physical_then_virtual'."
+        )
     return (
         source_count, gari_count, tuple(mapping),
-        prior_policy, _LOGICAL_PLACEMENT, _DETECTOR_ORDER,
+        prior_policy, logical_placement, detector_order,
     )
 
 
@@ -166,9 +98,14 @@ def _run(
 
     circuit = stim.Circuit.from_file(str(circuit_path))
     gari_dem = stim.DetectorErrorModel.from_file(str(dem_path))
-    layout_values = _load_layout(layout_path)
-    source_count, gari_count, source_to_gari = layout_values[:3]
-    prior_policy, logical_placement, detector_order = layout_values[3:]
+    (
+        source_count,
+        gari_count,
+        source_to_gari,
+        prior_policy,
+        logical_placement,
+        detector_order,
+    ) = _load_layout(layout_path)
 
     count_checks = (
         ("Circuit detectors", circuit.num_detectors, source_count),

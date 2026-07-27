@@ -40,6 +40,11 @@ be stored using Stim's DEM syntax, but the resulting GARI DEM is only a matrix
 storage and decoding representation. It is not a physical detector error model
 and must not be sampled.
 
+GARI source DEMs must be generated with ``decompose_errors=False`` and
+``flatten_loops=True``, then fully flattened. Each undecomposed Stim ``error``
+instruction is one source matrix column. Instructions containing Stim's ``^``
+decomposition separator are not supported.
+
 For certain single-basis CSS memory experiments, the paper instead evaluates
 the logical observable on ``bar(e)_X`` or ``bar(e)_Z``. That placement is
 experiment-specific and is not implemented by this generic transform.
@@ -54,17 +59,12 @@ five-block structure uniform and the physical top-left blocks zero.
 from __future__ import annotations
 
 import dataclasses
-import numbers
 from collections.abc import Callable, Sequence
 
 import numpy as np
 import scipy.optimize
 import scipy.sparse
 import stim
-
-from _tesseract_py_util.decompose_errors import (
-    undecomposed_error_detectors_and_observables,
-)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -85,79 +85,33 @@ class GariTransform:
     virtual_x_rows: slice
 
 
+def circuit_to_gari_source_dem(
+    circuit: stim.Circuit,
+) -> stim.DetectorErrorModel:
+    """Creates the flattened, undecomposed source DEM required by GARI."""
+    # flatten_loops removes repeats; flattened also resolves detector shifts.
+    return circuit.detector_error_model(
+        decompose_errors=False,
+        flatten_loops=True,
+        allow_gauge_detectors=True,
+        approximate_disjoint_errors=1,
+    ).flattened()
+
+
 def _canonical_binary_csc(
     matrix: scipy.sparse.spmatrix, *, name: str
 ) -> scipy.sparse.csc_matrix:
     if not scipy.sparse.issparse(matrix):
         raise ValueError(f"{name} must be a sparse matrix.")
-    if matrix.ndim != 2:
-        raise ValueError(f"{name} must be two-dimensional.")
-
-    coordinate_matrix = matrix.tocoo(copy=True)
-    stored_values = np.asarray(coordinate_matrix.data)
-    if not np.all(np.isfinite(stored_values)):
-        raise ValueError(f"{name} must contain only finite binary values.")
-    is_binary = (stored_values == 0) | (stored_values == 1)
-    if not np.all(is_binary):
-        bad_value = stored_values[np.flatnonzero(~is_binary)[0]]
-        raise ValueError(
-            f"{name} must contain only binary values 0 or 1; found "
-            f"{bad_value!r}."
-        )
-
-    result = scipy.sparse.coo_matrix(
-        (
-            stored_values.astype(np.int64),
-            (coordinate_matrix.row, coordinate_matrix.col),
-        ),
-        shape=coordinate_matrix.shape,
-        dtype=np.int64,
-    ).tocsc()
+    if np.any((matrix.data != 0) & (matrix.data != 1)):
+        raise ValueError(f"{name} must contain only binary values 0 or 1.")
+    result = matrix.astype(np.int64).tocsc(copy=True)
     result.sum_duplicates()
-    duplicate_sum_is_binary = (result.data == 0) | (result.data == 1)
-    if not np.all(duplicate_sum_is_binary):
-        bad_value = result.data[np.flatnonzero(~duplicate_sum_is_binary)[0]]
-        raise ValueError(
-            f"{name} must be canonical after combining duplicate entries; "
-            f"found stored value {bad_value!r}."
-        )
+    if np.any((result.data != 0) & (result.data != 1)):
+        raise ValueError(f"{name} must contain only binary values 0 or 1.")
     result.eliminate_zeros()
     result.sort_indices()
     return result.astype(np.uint8)
-
-
-def _validated_detector_indices(
-    detectors: Sequence[int], *, name: str, detector_count: int
-) -> np.ndarray:
-    try:
-        values = list(detectors)
-    except TypeError as ex:
-        raise ValueError(f"{name} must be a one-dimensional sequence.") from ex
-
-    result: list[int] = []
-    seen: dict[int, int] = {}
-    for position, value in enumerate(values):
-        if isinstance(value, (bool, np.bool_)) or not isinstance(
-            value, numbers.Integral
-        ):
-            raise ValueError(
-                f"{name}[{position}] must be an integer detector index; "
-                f"found {value!r}."
-            )
-        index = int(value)
-        if index < 0 or index >= detector_count:
-            raise ValueError(
-                f"{name}[{position}] = {index} is outside the detector "
-                f"range [0, {detector_count})."
-            )
-        if index in seen:
-            raise ValueError(
-                f"{name} contains detector {index} more than once "
-                f"(positions {seen[index]} and {position})."
-            )
-        seen[index] = position
-        result.append(index)
-    return np.asarray(result, dtype=np.int64)
 
 
 def _column_support(
@@ -170,44 +124,16 @@ def _column_support(
 
 def _projection_lookup(
     projections: scipy.sparse.csc_matrix,
-    source_columns: np.ndarray,
     *,
     name: str,
-) -> dict[tuple[int, ...], tuple[int, int]]:
-    lookup: dict[tuple[int, ...], tuple[int, int]] = {}
-    for local_column, source_column in enumerate(source_columns):
+) -> dict[tuple[int, ...], int]:
+    lookup: dict[tuple[int, ...], int] = {}
+    for local_column in range(projections.shape[1]):
         support = _column_support(projections, local_column)
         if support in lookup:
-            _, previous_source_column = lookup[support]
-            raise ValueError(
-                f"{name} has duplicate columns from source columns "
-                f"{previous_source_column} and {int(source_column)}."
-            )
-        lookup[support] = (local_column, int(source_column))
+            raise ValueError(f"{name} has duplicate columns.")
+        lookup[support] = local_column
     return lookup
-
-
-def _gf2_product(
-    left: scipy.sparse.csc_matrix, right: scipy.sparse.csc_matrix
-) -> scipy.sparse.csc_matrix:
-    product = (left @ right).tocsc()
-    product.sum_duplicates()
-    product.data %= 2
-    product.eliminate_zeros()
-    product.sort_indices()
-    return product.astype(np.uint8)
-
-
-def _sparse_equal(
-    left: scipy.sparse.csc_matrix, right: scipy.sparse.csc_matrix
-) -> bool:
-    return left.shape == right.shape and (left != right).nnz == 0
-
-
-def _readonly_int_array(values: np.ndarray) -> np.ndarray:
-    result = np.asarray(values, dtype=np.int64).copy()
-    result.setflags(write=False)
-    return result
 
 
 def dem_to_matrices(
@@ -215,50 +141,41 @@ def dem_to_matrices(
 ) -> tuple[
     scipy.sparse.csc_matrix, scipy.sparse.csc_matrix, np.ndarray
 ]:
-    """Extracts canonical binary matrices and probabilities from a Stim DEM.
+    """Extracts matrices from a flattened DEM made with no decomposition.
 
-    The DEM is flattened before extraction. Detector and observable targets in
-    each error are combined by symmetric difference, so repeated targets
-    cancel over GF(2). Declared dimensions are retained even when trailing rows
-    are unused. The result has one column and probability per flattened error.
+    Each Stim ``error`` instruction becomes one source matrix column. A ``^``
+    separator is rejected because GARI requires ``decompose_errors=False``.
     """
-    if not isinstance(dem, stim.DetectorErrorModel):
-        raise ValueError("dem must be a stim.DetectorErrorModel.")
-
-    flattened = dem.flattened()
     detector_rows: list[int] = []
     detector_columns: list[int] = []
     logical_rows: list[int] = []
     logical_columns: list[int] = []
     probabilities: list[float] = []
 
-    for instruction in flattened:
+    for instruction in dem:
+        if isinstance(instruction, stim.DemRepeatBlock) or (
+            instruction.type == "shift_detectors"
+        ):
+            raise ValueError(
+                "GARI requires a fully flattened DEM generated with "
+                "decompose_errors=False."
+            )
         if instruction.type != "error":
             continue
-        arguments = instruction.args_copy()
-        if len(arguments) != 1:
+        targets = instruction.targets_copy()
+        if any(target.is_separator() for target in targets):
             raise ValueError(
-                "Each Stim error instruction must contain exactly one "
-                f"probability; found {len(arguments)} in {instruction}."
+                "GARI requires a DEM generated with decompose_errors=False."
             )
-        probability = float(arguments[0])
-        if not np.isfinite(probability) or probability < 0 or probability > 1:
-            raise ValueError(
-                f"Stim error probability must be finite and in [0, 1]; "
-                f"found {probability!r}."
-            )
-
-        detectors, observables = undecomposed_error_detectors_and_observables(
-            instruction
-        )
-        source_column = len(probabilities)
-        for detector in detectors:
-            detector_rows.append(detector)
-            detector_columns.append(source_column)
-        for observable in observables:
-            logical_rows.append(observable)
-            logical_columns.append(source_column)
-        probabilities.append(probability)
+        column = len(probabilities)
+        probabilities.append(float(instruction.args_copy()[0]))
+        for target in targets:
+            if target.is_relative_detector_id():
+                detector_rows.append(target.val)
+                detector_columns.append(column)
+            elif target.is_logical_observable_id():
+                logical_rows.append(target.val)
+                logical_columns.append(column)
 
     source_column_count = len(probabilities)
     checks = scipy.sparse.csc_matrix(
@@ -291,54 +208,35 @@ def _matrices_to_gari_dem(
     It is not a physical detector error model and must not be sampled to
     generate shots.
     """
-    gari_checks = _canonical_binary_csc(checks, name="checks")
-    gari_logicals = _canonical_binary_csc(logicals, name="logicals")
-    if gari_checks.shape[1] != gari_logicals.shape[1]:
-        raise ValueError(
-            "checks and logicals must have the same GARI column count; "
-            f"found {gari_checks.shape[1]} and {gari_logicals.shape[1]}."
-        )
-    probability_array = np.asarray(probabilities, dtype=np.float64)
-    if probability_array.ndim != 1:
-        raise ValueError("probabilities must be one-dimensional.")
-    if len(probability_array) != gari_checks.shape[1]:
-        raise ValueError(
-            "probabilities must contain one value per GARI column; "
-            f"found {len(probability_array)} for {gari_checks.shape[1]} "
-            "columns."
-        )
-    if not np.all(np.isfinite(probability_array)):
-        raise ValueError("probabilities must contain only finite values.")
-    if np.any(probability_array < 0) or np.any(probability_array > 1):
-        raise ValueError("probabilities must lie in [0, 1].")
+    gari_checks = checks.tocsc()
+    gari_logicals = logicals.tocsc()
 
     detector_target = stim.target_relative_detector_id
     logical_target = stim.target_logical_observable_id
     gari_dem = stim.DetectorErrorModel()
-    for column, probability in enumerate(probability_array):
-        detector_targets = [
+    for column, probability in enumerate(probabilities):
+        targets = [
             detector_target(detector)
             for detector in _column_support(gari_checks, column)
         ]
-        if not detector_targets:
-            logical_support = list(_column_support(gari_logicals, column))
-            raise ValueError(
-                f"GARI column {column} has no detector support; logical "
-                f"support is {logical_support}."
-            )
-        targets = detector_targets
         targets.extend(
             logical_target(observable)
             for observable in _column_support(gari_logicals, column)
         )
         gari_dem.append("error", float(probability), targets)
 
-    # One trailing declaration preserves each dimension after serialization.
-    if gari_checks.shape[0]:
+    # Declare only dimensions not already implied by the error targets.
+    if gari_checks.shape[0] and (
+        not gari_checks.nnz
+        or np.max(gari_checks.indices) < gari_checks.shape[0] - 1
+    ):
         gari_dem.append(
             "detector", [], [detector_target(gari_checks.shape[0] - 1)]
         )
-    if gari_logicals.shape[0]:
+    if gari_logicals.shape[0] and (
+        not gari_logicals.nnz
+        or np.max(gari_logicals.indices) < gari_logicals.shape[0] - 1
+    ):
         gari_dem.append(
             "logical_observable",
             [],
@@ -357,9 +255,6 @@ def detector_partition_from_fourth_coordinate(
     fourth coordinate is a finite integer: values at most ``2`` identify X
     detectors, while values at least ``3`` identify Z detectors.
     """
-    if not isinstance(dem, stim.DetectorErrorModel):
-        raise ValueError("dem must be a stim.DetectorErrorModel.")
-
     coordinates = dem.get_detector_coordinates()
     x_detectors: list[int] = []
     z_detectors: list[int] = []
@@ -379,7 +274,9 @@ def detector_partition_from_fourth_coordinate(
             x_detectors.append(detector)
         else:
             z_detectors.append(detector)
-    return _readonly_int_array(x_detectors), _readonly_int_array(z_detectors)
+    return np.asarray(x_detectors, dtype=np.int64), np.asarray(
+        z_detectors, dtype=np.int64
+    )
 
 
 def gari_transform(
@@ -418,27 +315,19 @@ def gari_transform(
         )
 
     detector_count = source_checks.shape[0]
-    x_rows = _validated_detector_indices(
-        x_detectors, name="x_detectors", detector_count=detector_count
-    )
-    z_rows = _validated_detector_indices(
-        z_detectors, name="z_detectors", detector_count=detector_count
-    )
-    overlap = sorted(set(x_rows.tolist()) & set(z_rows.tolist()))
-    if overlap:
+    x_rows = np.asarray(x_detectors)
+    z_rows = np.asarray(z_detectors)
+    if any(
+        rows.ndim != 1 or (rows.size and rows.dtype.kind not in "iu")
+        for rows in (x_rows, z_rows)
+    ):
+        raise ValueError("x_detectors and z_detectors must contain integers.")
+    x_rows = x_rows.astype(np.int64)
+    z_rows = z_rows.astype(np.int64)
+    partition = np.concatenate([x_rows, z_rows])
+    if not np.array_equal(np.sort(partition), np.arange(detector_count)):
         raise ValueError(
-            "x_detectors and z_detectors must be disjoint; detectors "
-            f"{overlap} appear in both."
-        )
-    missing = sorted(
-        set(range(detector_count))
-        - set(x_rows.tolist())
-        - set(z_rows.tolist())
-    )
-    if missing:
-        raise ValueError(
-            "x_detectors and z_detectors must form a complete partition; "
-            f"missing detectors {missing}."
+            "x_detectors and z_detectors must partition all detector rows."
         )
 
     x_checks = source_checks[x_rows, :].tocsc()
@@ -470,8 +359,8 @@ def gari_transform(
     d_z = z_checks[:, e_x_columns].tocsc()
     d_x_prime = x_checks[:, e_y_columns].tocsc()
     d_z_prime = z_checks[:, e_y_columns].tocsc()
-    d_x_lookup = _projection_lookup(d_x, e_z_columns, name="D_X")
-    d_z_lookup = _projection_lookup(d_z, e_x_columns, name="D_Z")
+    d_x_lookup = _projection_lookup(d_x, name="D_X")
+    d_z_lookup = _projection_lookup(d_z, name="D_Z")
 
     u_rows: list[int] = []
     v_rows: list[int] = []
@@ -489,8 +378,8 @@ def gari_transform(
                 f"Source column {source_column} has Z-side projection "
                 f"{list(z_projection)}, which does not equal a D_Z column."
             )
-        u_rows.append(d_x_lookup[x_projection][0])
-        v_rows.append(d_z_lookup[z_projection][0])
+        u_rows.append(d_x_lookup[x_projection])
+        v_rows.append(d_z_lookup[z_projection])
 
     y_column_count = len(e_y_columns)
     y_indices = np.arange(y_column_count, dtype=np.int64)
@@ -510,18 +399,6 @@ def gari_transform(
         shape=(len(e_x_columns), y_column_count),
         dtype=np.uint8,
     )
-    for factor, name in ((u, "U"), (v, "V")):
-        if not np.all(np.diff(factor.indptr) == 1):
-            raise ValueError(
-                f"Every {name} column must contain exactly one nonzero."
-            )
-    for base, factor, projection, message in (
-        (d_x, u, d_x_prime, "D_X @ U does not equal the e_Y X-side projection."),
-        (d_z, v, d_z_prime, "D_Z @ V does not equal the e_Y Z-side projection."),
-    ):
-        if not _sparse_equal(_gf2_product(base, factor), projection):
-            raise ValueError(message)
-
     x_row_count = len(x_rows)
     z_row_count = len(z_rows)
     e_z_count = len(e_z_columns)
@@ -569,22 +446,23 @@ def gari_transform(
     source_to_gari[z_rows] = x_row_count + np.arange(
         z_row_count, dtype=np.int64
     )
-    if len(np.unique(source_to_gari)) != detector_count:
-        raise ValueError("The source-to-GARI detector mapping is not injective.")
-    if np.any(source_to_gari < 0) or np.any(
-        source_to_gari >= x_row_count + z_row_count
+    for values in (
+        e_z_columns,
+        e_x_columns,
+        e_y_columns,
+        source_to_gari,
     ):
-        raise ValueError("The source-to-GARI detector mapping is out of range.")
+        values.setflags(write=False)
 
     return GariTransform(
         checks=augmented_checks,
         logicals=augmented_logicals,
         u=u,
         v=v,
-        e_z_columns=_readonly_int_array(e_z_columns),
-        e_x_columns=_readonly_int_array(e_x_columns),
-        e_y_columns=_readonly_int_array(e_y_columns),
-        source_to_gari_detectors=_readonly_int_array(source_to_gari),
+        e_z_columns=e_z_columns,
+        e_x_columns=e_x_columns,
+        e_y_columns=e_y_columns,
+        source_to_gari_detectors=source_to_gari,
         physical_x_rows=physical_x_rows,
         physical_z_rows=physical_z_rows,
         virtual_z_rows=virtual_z_rows,
@@ -597,51 +475,37 @@ def _validated_probabilities(
     *,
     expected_count: int,
     name: str,
-    column_kind: str,
 ) -> np.ndarray:
     try:
         result = np.asarray(values, dtype=np.float64)
     except (TypeError, ValueError) as ex:
         raise ValueError(f"{name} must be a numeric array.") from ex
-    if result.ndim != 1:
-        raise ValueError(f"{name} must be one-dimensional.")
-    if len(result) != expected_count:
+    if (
+        result.shape != (expected_count,)
+        or not np.all(np.isfinite(result))
+        or np.any(result <= 0)
+        or np.any(result > 0.5)
+    ):
         raise ValueError(
-            f"{name} must contain one value per {column_kind} column; "
-            f"found {len(result)} for {expected_count} columns."
+            f"{name} must contain {expected_count} finite values in (0, 0.5]."
         )
-    if not np.all(np.isfinite(result)):
-        raise ValueError(f"{name} contains a non-finite probability.")
-    if np.any(result <= 0) or np.any(result > 0.5):
-        raise ValueError(f"{name} must lie in (0, 0.5].")
     result = result.copy()
     result.setflags(write=False)
     return result
 
 
-def _validated_source_probabilities(
+def _physical_probability_blocks(
     transform: GariTransform, source_probabilities: np.ndarray
-) -> np.ndarray:
-    if not isinstance(transform, GariTransform):
-        raise ValueError("transform must be a GariTransform.")
-    source_column_count = (
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    source_count = (
         len(transform.e_z_columns)
         + len(transform.e_x_columns)
         + len(transform.e_y_columns)
     )
-    return _validated_probabilities(
+    probabilities = _validated_probabilities(
         source_probabilities,
-        expected_count=source_column_count,
+        expected_count=source_count,
         name="source_probabilities",
-        column_kind="source",
-    )
-
-
-def _physical_probability_blocks(
-    transform: GariTransform, source_probabilities: np.ndarray
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    probabilities = _validated_source_probabilities(
-        transform, source_probabilities
     )
     return (
         probabilities[transform.e_z_columns],
@@ -844,8 +708,15 @@ def build_gari_dem(
     Stim's DEM syntax is used only to store the GARI transformed matrices. The
     result is not a physical detector error model and must not be sampled.
     """
-    probabilities = _validated_source_probabilities(
-        transform, source_probabilities
+    source_count = (
+        len(transform.e_z_columns)
+        + len(transform.e_x_columns)
+        + len(transform.e_y_columns)
+    )
+    probabilities = _validated_probabilities(
+        source_probabilities,
+        expected_count=source_count,
+        name="source_probabilities",
     )
     if not callable(prior_function):
         raise ValueError("prior_function must be callable.")
@@ -853,7 +724,6 @@ def build_gari_dem(
         prior_function(transform, probabilities),
         expected_count=transform.checks.shape[1],
         name="prior_function probabilities",
-        column_kind="GARI",
     )
     return _matrices_to_gari_dem(
         transform.checks, transform.logicals, gari_probabilities

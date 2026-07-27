@@ -20,6 +20,7 @@ import stim
 
 from _tesseract_py_util.gari import (
     build_gari_dem,
+    circuit_to_gari_source_dem,
     dem_to_matrices,
     detector_partition_from_fourth_coordinate,
     gari_transform,
@@ -191,16 +192,7 @@ def _convert_circuit(
             )
 
     circuit = stim.Circuit.from_file(str(circuit_path))
-    # Use the same analyzer policy as the Tesseract and Simplex CLIs. The GARI
-    # transformation consumes undecomposed errors and performs its own flattening.
-    source_error_model = circuit.detector_error_model(
-        decompose_errors=False,
-        flatten_loops=True,
-        allow_gauge_detectors=True,
-        approximate_disjoint_errors=1,
-        ignore_decomposition_failures=False,
-        block_decomposition_from_introducing_remnant_edges=False,
-    )
+    source_error_model = circuit_to_gari_source_dem(circuit)
     checks, logicals, probabilities = dem_to_matrices(source_error_model)
     x_detectors, z_detectors = detector_partition_from_fourth_coordinate(
         source_error_model

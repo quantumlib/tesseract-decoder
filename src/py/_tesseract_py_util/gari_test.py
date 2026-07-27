@@ -40,6 +40,11 @@ def _tiny_model():
 
 
 def test_tiny_transform():
+    with pytest.raises(ValueError, match="decompose_errors=False"):
+        dem_to_matrices(stim.DetectorErrorModel("error(0.1) D0 ^ D1"))
+    with pytest.raises(ValueError, match="fully flattened"):
+        dem_to_matrices(stim.DetectorErrorModel("shift_detectors 1"))
+
     checks, logicals, _, transform = _tiny_model()
     np.testing.assert_array_equal(transform.e_z_columns, [0])
     np.testing.assert_array_equal(transform.e_x_columns, [1])
