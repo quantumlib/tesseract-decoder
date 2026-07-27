@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <boost/functional/hash.hpp>  // For boost::hash_range
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 #include <functional>  // For std::hash (though not strictly necessary here, but good practice)
 #include <iostream>
@@ -38,6 +39,32 @@ std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec) {
   }
   os << "]";
   return os;
+}
+
+int suggest_sparsify_reactivate_limit_capped(size_t num_detectors, int sparsify_base_degree,
+                                             int max_limit) {
+  if (sparsify_base_degree < 0) {
+    throw std::invalid_argument("sparsify_base_degree must be >= 0.");
+  }
+  if (num_detectors == 0 || max_limit <= 0) {
+    return 0;
+  }
+  double exponent = static_cast<double>(sparsify_base_degree) - 2.0;
+  double max_result = static_cast<double>(max_limit);
+  double log_result =
+      exponent * std::log(4.5) - std::log(3.0) + std::log(static_cast<double>(num_detectors));
+  if (!std::isfinite(log_result) || log_result >= std::log(max_result)) {
+    return max_limit;
+  }
+  double result = std::exp(log_result);
+  if (!std::isfinite(result)) {
+    return max_limit;
+  }
+  double rounded = std::round(result);
+  if (rounded >= max_result) {
+    return max_limit;
+  }
+  return static_cast<int>(rounded);
 }
 
 };  // namespace
@@ -69,6 +96,11 @@ std::string TesseractConfig::str() {
   ss << "create_visualization=" << config.create_visualization;
   ss << ")";
   return ss.str();
+}
+
+int suggest_sparsify_reactivate_limit(size_t num_detectors, int sparsify_base_degree) {
+  return suggest_sparsify_reactivate_limit_capped(num_detectors, sparsify_base_degree,
+                                                  std::numeric_limits<int>::max());
 }
 
 std::string Node::str() {
@@ -217,6 +249,28 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
   }
 
   if (config.sparsify_errors) {
+    if (config.sparsify_base_degree <= 0) {
+      throw std::invalid_argument(
+          "sparsify_base_degree must be > 0 when sparsify_errors is enabled.");
+    }
+    if (config.sparsify_max_degree < -1) {
+      throw std::invalid_argument("sparsify_max_degree must be >= -1.");
+    }
+    if (config.sparsify_reactivate_limit < -1) {
+      throw std::invalid_argument("sparsify_reactivate_limit must be >= -1.");
+    }
+    if (config.sparsify_max_degree >= 0 &&
+        config.sparsify_max_degree < config.sparsify_base_degree) {
+      throw std::invalid_argument("sparsify_max_degree must be >= sparsify_base_degree.");
+    }
+
+    if (config.sparsify_reactivate_limit == -1) {
+      int error_count_limit = static_cast<int>(
+          std::min(num_errors, static_cast<size_t>(std::numeric_limits<int>::max())));
+      config.sparsify_reactivate_limit = suggest_sparsify_reactivate_limit_capped(
+          config.dem.count_detectors(), config.sparsify_base_degree, error_count_limit);
+    }
+
     sparsify_mandatory_errors.clear();
     sparsify_optional_errors.clear();
     for (size_t ei = 0; ei < num_errors; ++ei) {
@@ -325,8 +379,11 @@ void TesseractDecoder::decode_to_errors_with_graph(
   low_confidence_flag = false;
   error_chain_arena.clear();
   // Can technically be larger than pqlimit, but we need an initial guess on how many nodes we
-  // will process from the queue.
-  error_chain_arena.reserve(config.pqlimit);
+  // will process from the queue. Only reserve if pqlimit is a reasonable (finite) value;
+  // reserving SIZE_MAX bytes would throw std::length_error.
+  if (config.pqlimit != std::numeric_limits<size_t>::max()) {
+    error_chain_arena.reserve(config.pqlimit);
+  }
 
   std::priority_queue<Node, std::vector<Node>, std::greater<Node>> pq;
   std::unordered_map<size_t, std::unordered_set<boost::dynamic_bitset<>>> visited_detectors;

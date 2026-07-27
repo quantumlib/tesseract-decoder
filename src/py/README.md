@@ -5,7 +5,7 @@ The `tesseract_decoder.tesseract` module provides the Tesseract decoder, which e
 
 #### Class `tesseract.TesseractConfig`
 This class holds the configuration parameters that control the behavior of the Tesseract decoder.
-* `TesseractConfig(dem: stim.DetectorErrorModel, det_beam: int = 5, beam_climbing: bool = False, no_revisit_dets: bool = True, verbose: bool = False, merge_errors: bool = True, pqlimit: int = 200000, det_orders: list[list[int]] = [], det_penalty: float = 0.0, create_visualization: bool = False)`
+* `TesseractConfig(dem: stim.DetectorErrorModel, det_beam: int = 5, beam_climbing: bool = False, no_revisit_dets: bool = True, verbose: bool = False, merge_errors: bool = True, pqlimit: int = 200000, det_orders: list[list[int]] = [], det_penalty: float = 0.0, create_visualization: bool = False, sparsify_errors: bool = False, sparsify_base_degree: int = -1, sparsify_max_degree: int = -1, sparsify_reactivate_limit: int = -1)`
 * `__str__()`
 
 Explanation of configuration arguments:
@@ -20,6 +20,13 @@ Explanation of configuration arguments:
 * `det_orders` - A list of lists of integers, where each inner list represents an ordering of the detectors. This is used for "ensemble reordering," an optimization that tries different detector orderings to improve the search's convergence. The default is an empty list, meaning a single, fixed ordering is used.
 * `det_penalty` - A floating-point value that adds a cost for each residual detection event. This encourages the decoder to prioritize paths that resolve more detection events, steering the search towards more complete solutions. The default value is `0.0`, meaning no penalty is applied.
 * `create_visualization` - A boolean flag that enables decoder visualization output when set to `True`. The default value is `False`.
+* `sparsify_errors` - Enables per-shot sparse error activation. When enabled, all errors up to `sparsify_base_degree` are always active, and selected higher-degree errors are reactivated per shot.
+* `sparsify_base_degree` - Required and positive when `sparsify_errors=True`. Errors with detector degree less than or equal to this value are always active.
+* `sparsify_max_degree` - Optional maximum degree for reactivated errors. Use `-1` for no maximum degree cap.
+* `sparsify_reactivate_limit` - Maximum number of optional high-degree errors to reactivate per shot. Use `-1` to apply the built-in heuristic, clamped to the number of errors in the compiled error model.
+
+Module-level helper:
+* `suggest_sparsify_reactivate_limit(num_detectors, sparsify_base_degree)` - Returns the suggested reactivation limit for a detector count and base degree. The decoder applies this suggestion, clamped to the compiled error count, when `sparsify_reactivate_limit == -1`.
 
 **Example Usage**:
 
@@ -54,11 +61,26 @@ config2 = tesseract.TesseractConfig(
     det_penalty=0.1
 )
 print(f"Custom configuration detection beam: {config2.det_beam}")
-print(f"Custom configuration beam climbing: {config2.det_beam}")
-print(f"Custom configuration no-revisit detection events: {config2.det_beam}")
-print(f"Custom configuration pqlimit: {config2.det_beam}")
-print(f"Custom configuration verbose: {config2.det_beam}")
-print(f"Custom configuration detection penalty: {config2.det_beam}")
+print(f"Custom configuration beam climbing: {config2.beam_climbing}")
+print(f"Custom configuration no-revisit detection events: {config2.no_revisit_dets}")
+print(f"Custom configuration pqlimit: {config2.pqlimit}")
+print(f"Custom configuration verbose: {config2.verbose}")
+print(f"Custom configuration detection penalty: {config2.det_penalty}")
+
+# Configuration with error sparsification
+config3 = tesseract.TesseractConfig(
+    dem=dem,
+    det_beam=20,
+    beam_climbing=True,
+    sparsify_errors=True,
+    sparsify_base_degree=3,
+    sparsify_reactivate_limit=-1,
+)
+decoder = config3.compile_decoder()
+print(
+    "Resolved sparsify reactivation limit:",
+    decoder.config.sparsify_reactivate_limit,
+)
 ```
 
 #### Class `tesseract.TesseractDecoder`
@@ -488,6 +510,20 @@ The Tesseract Python interface is compatible with the Sinter framework, which is
 
 #### The TesseractSinterDecoder Object
 All Sinter examples rely on this utility function to provide the Sinter-compatible Tesseract decoder.
+The default decoder dictionary also includes sparsified variants:
+`tesseract-long-beam-sparsify-color-code-like`,
+`tesseract-long-beam-sparsify-surface-code-like`,
+`tesseract-short-beam-sparsify-color-code-like`, and
+`tesseract-short-beam-sparsify-surface-code-like`.
+
+As a quick rule of thumb, use the non-sparsified decoders as the safest baseline. Use the
+`surface-code-like` variants for surface-code-like or mostly graphlike DEMs, and use the
+`color-code-like` variants for color-code,
+bivariate-bicycle-code, or other DEMs where a typical bulk data error activates about three
+detectors. Within either family, prefer the long-beam variants when accuracy matters more and the
+short-beam variants when runtime matters more. See the root README's
+[Performance Optimization](../../README.md#performance-optimization) section for the full
+sparsification details.
 
 ```python
 import sinter

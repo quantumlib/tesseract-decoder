@@ -113,7 +113,7 @@ Example with Advanced Options:
         --pqlimit 1000000 \
         --no-revisit-dets \
         --det-order-seed 232852747 \
-        --det-order-index --num-det-orders 24 \
+        --num-det-orders 24 \
         --circuit circuit_file.stim \
         --sample-seed 232856747 \
         --sample-num-shots 10000 \
@@ -159,6 +159,35 @@ Here are some tips for improving performance:
 *   *At most two errors per detector*: enable `--at-most-two-errors-per-detector` to improve
     performance.
 *   *Priority Queue limit*: use `--pqlimit` to limit the size of the priority queue.
+*   *Error sparsification*: enable `--sparsify-errors` to always keep low-degree errors while
+    selectively reactivating high-degree errors per shot. This can improve runtime on DEMs with
+    many high-degree errors, at the cost of a tunable accuracy/speed tradeoff.
+
+Example with error sparsification:
+
+```bash
+./tesseract \
+    --circuit circuit_file.stim \
+    --sample-num-shots 10000 \
+    --beam 20 \
+    --beam-climbing \
+    --sparsify-errors \
+    --sparsify-base-degree 3 \
+    --print-stats
+```
+
+`--sparsify-base-degree K` is required when `--sparsify-errors` is enabled. Errors touching at most
+`K` detectors are always active. Errors above `K` are optional and are ranked per shot by overlap
+with the fired detectors. In the surface code (or other 'mostly graphlike' codes) try K = 2. In the
+color code or bivariate bicycle codes, try K = 3. In general, it is recommended to set K to the number
+of activated detectors created by a single data qubit error in the bulk, restricting to X or Z errors
+only for CSS codes.
+
+`--sparsify-reactivate-limit M` caps the number of optional high-degree errors reactivated per
+shot. If omitted, Tesseract uses `round((4.5^(K - 2) / 3) * num_detectors)`.
+
+`--sparsify-max-degree D` optionally excludes optional errors above degree `D`. If omitted, optional
+errors are not capped by degree.
 
 ### Output Formats
 
@@ -197,8 +226,21 @@ dem = stim.DetectorErrorModel("""
 # 2. Create the decoder configuration
 config = tesseract.TesseractConfig(dem=dem, det_beam=50)
 
+# To enable sparse activation for high-degree DEMs:
+config = tesseract.TesseractConfig(
+    dem=dem,
+    det_beam=50,
+    sparsify_errors=True,
+    sparsify_base_degree=3,
+    sparsify_reactivate_limit=-1,  # Use the built-in heuristic, clamped to error count.
+)
+
 # 3. Create a decoder instance
 decoder = config.compile_decoder()
+print(
+    "Resolved sparsify reactivation limit:",
+    decoder.config.sparsify_reactivate_limit,
+)
 
 # 4. Simulate detector outcomes
 syndrome = np.array([0, 1, 1], dtype=bool)
@@ -235,7 +277,13 @@ if __name__ == "__main__":
     p = 0.005
     # These are the sensible defaults given by make_tesseract_sinter_decoders_dict().
     # Note that `tesseract-short-beam` and `tesseract-long-beam` are the two sets of parameters used in the [Tesseract paper](https://arxiv.org/pdf/2503.10988).
-    decoders = ['tesseract', 'tesseract-long-beam', 'tesseract-short-beam']
+    decoders = [
+        'tesseract',
+        'tesseract-long-beam',
+        'tesseract-short-beam',
+        'tesseract-long-beam-sparsify-color-code-like',
+        'tesseract-short-beam-sparsify-surface-code-like',
+    ]
     decoder_dict = make_tesseract_sinter_decoders_dict()
     # You can also make your own custom Tesseract Decoder to-be-used with Sinter.
     decoders.append('custom-tesseract-decoder')
@@ -248,6 +296,9 @@ if __name__ == "__main__":
         num_det_orders=5,
         det_order_method=tesseract_decoder.utils.DetOrder.DetIndex,
         seed=2384753,
+        sparsify_errors=True,
+        sparsify_base_degree=3,
+        sparsify_reactivate_limit=-1,
     )
 
     for distance in [3, 5, 7]:
@@ -285,13 +336,16 @@ should get something like:
     10000,        42,         0,   0.071,tesseract,1b3fce6286e438f38c00c8f6a5005947373515ab08e6446a7dd9ecdbef12d4cc,"{""d"":3,""decoder"":""tesseract""}",  
     10000,        49,         0,   0.546,custom-tesseract-decoder,7b082bec7541be858e239d7828a432e329cd448356bbdf051b8b8aa76c86625a,"{""d"":3,""decoder"":""custom-tesseract-decoder""}", 
     10000,        13,         0,    7.64,tesseract-long-beam,217a3542f56319924576658a6da7081ea2833f5167cf6d77fbc7071548e386a9,"{""d"":5,""decoder"":""tesseract-long-beam""}",  
+    10000,        14,         0,    4.12,tesseract-long-beam-sparsify-color-code-like,14fa5f9f08381d760f6c1f59805b75f2c70cfb83e50d9f1f40d92820a20eeb13,"{""d"":5,""decoder"":""tesseract-long-beam-sparsify-color-code-like""}",
     10000,        42,         0,   0.743,tesseract-short-beam,cf4a4b0ce0e4c7beec1171f58eddffe403ed7359db5016fca2e16174ea577057,"{""d"":3,""decoder"":""tesseract-short-beam""}",  
     10000,        34,         0,   0.924,tesseract-long-beam,8cfa0f2e4061629e13bc98fe213285dc00eb90f21bba36e08c76bcdf213a1c09,"{""d"":3,""decoder"":""tesseract-long-beam""}",  
+    10000,        35,         0,   0.681,tesseract-long-beam-sparsify-color-code-like,f41bdb1bde3f5cf4893a9a9e33fc7d4c47d742f22b13dfec9195347e780119bc,"{""d"":3,""decoder"":""tesseract-long-beam-sparsify-color-code-like""}",
     10000,        10,         0,   0.439,tesseract,8274ea5ffec15d6e71faed5ee1057cdd7e497cbaee4c6109784f8a74669d7f96,"{""d"":5,""decoder"":""tesseract""}",  
     10000,         8,         0,    3.93,custom-tesseract-decoder,8e4f5ab5dde00fec74127eea39ea52d5a98ae6ccfc277b5d9be450f78acc1c45,"{""d"":5,""decoder"":""custom-tesseract-decoder""}",  
     10000,        10,         0,    5.74,tesseract-short-beam,bf696535d62a25720c3a0c624ec5624002efe3f6cb0468963eee702efb48abc1,"{""d"":5,""decoder"":""tesseract-short-beam""}",  
     10000,         5,         0,    1.27,tesseract,3f94c61f1503844df6cf0d200b74ac01bfbc5e29e70cedbfc2faad67047e7887,"{""d"":7,""decoder"":""tesseract""}",  
     10000,         4,         0,    25.0,tesseract-long-beam,4d510f0acf511e24a833a93c956b683346696d8086866fadc73063fb09014c23,"{""d"":7,""decoder"":""tesseract-long-beam""}",  
+    10000,         4,         0,    14.8,tesseract-long-beam-sparsify-color-code-like,80868acc6e43c62cb73b242b66ae27d3ea08fe970ea879db5a8425c2454fc8a1,"{""d"":7,""decoder"":""tesseract-long-beam-sparsify-color-code-like""}",
     10000,         1,         0,    18.6,tesseract-short-beam,75782ce4593022fcedad4c73104711f05c9c635db92869531f78da336945b121,"{""d"":7,""decoder"":""tesseract-short-beam""}",  
     10000,         4,         0,    11.6,custom-tesseract-decoder,48f256a28fff47c58af7bffdf98fdee1d41a721751ee965c5d3c5712ac795dc8,"{""d"":7,""decoder"":""custom-tesseract-decoder""}",  
 ```
@@ -348,8 +402,27 @@ tesseract_config = tesseract.TesseractConfig(
     no_revisit_dets=True,
 )
 ```
-For `det_order`, you can use two other options of `DetIndex` and `DetCoordinate` as well.
+`DetIndex` is the default detector ordering. You can also pass `DetBFS` or `DetCoordinate`
+explicitly.
 These values balance decoding speed and accuracy across the benchmarks reported in the paper and can be adjusted for specific use cases.
+
+The Sinter decoder dictionary also provides sparsified variants:
+`tesseract-long-beam-sparsify-color-code-like`,
+`tesseract-long-beam-sparsify-surface-code-like`,
+`tesseract-short-beam-sparsify-color-code-like`, and
+`tesseract-short-beam-sparsify-surface-code-like`.
+
+As a quick rule of thumb, use the non-sparsified decoders as the safest baseline. Use the
+`surface-code-like` variants for surface-code-like or mostly graphlike DEMs, and use the
+`color-code-like` variants for color-code,
+bivariate-bicycle-code, or other DEMs where a typical bulk data error activates about three
+detectors. Within either family, prefer the long-beam variants when accuracy matters more and the
+short-beam variants when runtime matters more. See the
+[Performance Optimization](#performance-optimization) section for the full sparsification details.
+
+Equivalent Python configs can enable sparsification with `sparsify_errors=True`,
+`sparsify_base_degree=2` or `3`, and `sparsify_reactivate_limit=-1` to use the built-in heuristic
+clamped to the compiled error count.
 ## Help
 
 *   Do you have a feature request or want to report a bug? [Open an issue on

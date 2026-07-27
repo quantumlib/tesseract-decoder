@@ -17,6 +17,7 @@
 #include <atomic>
 #include <cmath>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <numeric>
@@ -164,12 +165,11 @@ struct Args {
         throw std::invalid_argument(
             "Must specify --sparsify-base-degree when --sparsify-errors is enabled.");
       }
-      if (sparsify_base_degree < 0) {
-        throw std::invalid_argument("--sparsify-base-degree must be >= 0.");
+      if (sparsify_base_degree <= 0) {
+        throw std::invalid_argument("--sparsify-base-degree must be > 0.");
       }
-      // Only throw if the user explicitly provided a negative limit
-      if (has_limit && sparsify_reactivate_limit < 0) {
-        throw std::invalid_argument("--sparsify-reactivate-limit must be >= 0.");
+      if (has_limit && sparsify_reactivate_limit < -1) {
+        throw std::invalid_argument("--sparsify-reactivate-limit must be >= -1.");
       }
       if (has_max && sparsify_max_degree < sparsify_base_degree) {
         throw std::invalid_argument("--sparsify-max-degree must be >= --sparsify-base-degree.");
@@ -225,8 +225,10 @@ struct Args {
           std::cout << ")" << std::endl;
         }
       }
-      DetOrder order = DetOrder::DetBFS;
-      if (det_order_index) {
+      DetOrder order = DetOrder::DetIndex;
+      if (det_order_bfs) {
+        order = DetOrder::DetBFS;
+      } else if (det_order_index) {
         order = DetOrder::DetIndex;
       } else if (det_order_coordinate) {
         order = DetOrder::DetCoordinate;
@@ -315,6 +317,7 @@ struct Args {
       // Create a writer instance to write the predicted obs to a file
       stim::FileFormatData predictions_out_format = stim::format_name_to_enum_map().at(out_format);
       FILE* predictions_file = stdout;
+      // An output path of "-" means stdout.
       if (out_fname != "-") {
         predictions_file = fopen(out_fname.c_str(), "w");
       }
@@ -334,15 +337,6 @@ struct Args {
     config.sparsify_errors = sparsify_errors;
     config.sparsify_base_degree = sparsify_base_degree;
     config.sparsify_max_degree = sparsify_max_degree;
-
-    // Apply heuristic estimate for number of errors if sparsify_errors is enabled but no limit was
-    // provided
-    if (sparsify_errors && sparsify_reactivate_limit < 0) {
-      double k = sparsify_base_degree;
-      double num_detectors = config.dem.count_detectors();
-      sparsify_reactivate_limit =
-          static_cast<int>(std::round((std::pow(4.5, k - 2.0) / 3.0) * num_detectors));
-    }
     config.sparsify_reactivate_limit = sparsify_reactivate_limit;
   }
 };
@@ -362,11 +356,13 @@ int main(int argc, char* argv[]) {
       .default_value(size_t(1))
       .store_into(args.num_det_orders);
   program.add_argument("--det-order-bfs")
-      .help("Use BFS-based detector ordering (default if no method specified)")
+      .help("Use BFS-based detector ordering")
       .flag()
       .store_into(args.det_order_bfs);
   program.add_argument("--det-order-index")
-      .help("Randomly choose increasing or decreasing detector index order")
+      .help(
+          "Randomly choose increasing or decreasing detector index order "
+          "(default if no method specified)")
       .flag()
       .store_into(args.det_order_index);
   program.add_argument("--det-order-coordinate")
@@ -534,7 +530,7 @@ int main(int argc, char* argv[]) {
       .scan<'i', int>()
       .store_into(args.sparsify_max_degree);
   program.add_argument("--sparsify-reactivate-limit")
-      .help("Maximum number of optional errors to reactivate per shot.")
+      .help("Maximum number of optional errors to reactivate per shot. Use -1 for auto.")
       .metavar("N")
       .scan<'i', int>()
       .store_into(args.sparsify_reactivate_limit);
@@ -551,7 +547,9 @@ int main(int argc, char* argv[]) {
   std::vector<stim::SparseShot> shots;
   std::unique_ptr<stim::MeasureRecordWriter> writer;
   args.extract(config, shots, writer);
-  std::vector<uint64_t> obs_predicted(shots.size());
+  size_t num_observables = config.dem.count_observables();
+  std::vector<stim::simd_bits<64>> obs_predicted(shots.size(),
+                                                 stim::simd_bits<64>(num_observables));
   std::vector<double> cost_predicted(shots.size());
   std::vector<double> decoding_time_seconds(shots.size());
   std::vector<std::atomic<bool>> low_confidence(shots.size());
@@ -563,7 +561,6 @@ int main(int argc, char* argv[]) {
   size_t num_errors = 0;
   size_t num_low_confidence = 0;
   double total_time_seconds = 0;
-  size_t num_observables = config.dem.count_observables();
   size_t shot = parallel_for_shots_in_order(
       shots.size(), args.num_threads,
       [&](size_t thread_index, size_t shot_index) {
@@ -578,11 +575,13 @@ int main(int argc, char* argv[]) {
         decoding_time_seconds[shot_index] =
             std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
             1e6;
-        obs_predicted[shot_index] =
-            vector_to_u64_mask(decoder.get_flipped_observables(decoder.predicted_errors_buffer));
+        obs_predicted[shot_index].clear();
+        for (int obs_idx : decoder.get_flipped_observables(decoder.predicted_errors_buffer)) {
+          obs_predicted[shot_index][obs_idx] ^= 1;
+        }
         low_confidence[shot_index] = decoder.low_confidence_flag;
         cost_predicted[shot_index] = decoder.cost_from_errors(decoder.predicted_errors_buffer);
-        if (!has_obs or shots[shot_index].obs_mask_as_u64() == obs_predicted[shot_index]) {
+        if (!has_obs or shots[shot_index].obs_mask == obs_predicted[shot_index]) {
           for (size_t ei : decoder.predicted_errors_buffer) {
             ++error_use[ei];
           }
@@ -590,24 +589,30 @@ int main(int argc, char* argv[]) {
       },
       [&](size_t shot_index) {
         if (writer) {
-          writer->write_bits((uint8_t*)&obs_predicted[shot_index], num_observables);
+          writer->write_bits(obs_predicted[shot_index].u8, num_observables);
           writer->write_end();
         }
         if (low_confidence[shot_index]) {
           ++num_low_confidence;
-        } else if (obs_predicted[shot_index] != shots[shot_index].obs_mask_as_u64()) {
+        } else if (has_obs && obs_predicted[shot_index] != shots[shot_index].obs_mask) {
           ++num_errors;
         }
         total_time_seconds += decoding_time_seconds[shot_index];
         if (args.print_stats) {
           std::cout << "num_shots = " << (shot_index + 1)
-                    << " num_low_confidence = " << num_low_confidence
-                    << " num_errors = " << num_errors
-                    << " total_time_seconds = " << total_time_seconds << std::endl;
+                    << " num_low_confidence = " << num_low_confidence;
+          if (has_obs) {
+            std::cout << " num_errors = " << num_errors;
+          } else {
+            std::cout << " num_errors = N/A";
+          }
+          std::cout << " total_time_seconds = " << total_time_seconds << std::endl;
           std::cout << "cost = " << cost_predicted[shot_index] << std::endl;
           std::cout.flush();
         }
-        return num_errors < args.max_errors;
+        // Disable early termination due to \`--max-errors\` when we don't have the ground-truth
+        // observables
+        return !has_obs || num_errors < args.max_errors;
       });
 
   std::vector<size_t> error_use_totals(original_dem.count_errors());
@@ -633,30 +638,47 @@ int main(int argc, char* argv[]) {
     out << est_dem << '\n';
   }
 
+  int effective_sparsify_reactivate_limit = config.sparsify_reactivate_limit;
+  for (const auto& decoder : decoders) {
+    if (decoder) {
+      effective_sparsify_reactivate_limit = decoder->config.sparsify_reactivate_limit;
+      break;
+    }
+  }
+  if (config.sparsify_errors && effective_sparsify_reactivate_limit == -1) {
+    effective_sparsify_reactivate_limit = suggest_sparsify_reactivate_limit(
+        config.dem.count_detectors(), config.sparsify_base_degree);
+    effective_sparsify_reactivate_limit = std::min(
+        effective_sparsify_reactivate_limit,
+        static_cast<int>(std::min<uint64_t>(
+            config.dem.count_errors(), static_cast<uint64_t>(std::numeric_limits<int>::max()))));
+  }
+
   bool print_final_stats = true;
   if (!args.stats_out_fname.empty()) {
-    nlohmann::json stats_json = {{"circuit_path", args.circuit_path},
-                                 {"dem_path", args.dem_path},
-                                 {"max_errors", args.max_errors},
-                                 {"sample_seed", args.sample_seed},
+    nlohmann::json stats_json = {
+        {"circuit_path", args.circuit_path},
+        {"dem_path", args.dem_path},
+        {"max_errors", args.max_errors},
+        {"sample_seed", args.sample_seed},
 
-                                 {"det_beam", args.det_beam},
-                                 {"det_penalty", args.det_penalty},
-                                 {"beam_climbing", args.beam_climbing},
-                                 {"no_revisit_dets", args.no_revisit_dets},
-                                 {"pqlimit", args.pqlimit},
-                                 {"num_det_orders", args.num_det_orders},
-                                 {"det_order_seed", args.det_order_seed},
-                                 {"total_time_seconds", total_time_seconds},
-                                 {"num_errors", num_errors},
-                                 {"num_low_confidence", num_low_confidence},
-                                 {"num_shots", shot},
-                                 {"num_threads", args.num_threads},
-                                 {"sample_num_shots", args.sample_num_shots},
-                                 {"sparsify_errors", args.sparsify_errors},
-                                 {"sparsify_base_degree", args.sparsify_base_degree},
-                                 {"sparsify_max_degree", args.sparsify_max_degree},
-                                 {"sparsify_reactivate_limit", args.sparsify_reactivate_limit}};
+        {"det_beam", args.det_beam},
+        {"det_penalty", args.det_penalty},
+        {"beam_climbing", args.beam_climbing},
+        {"no_revisit_dets", args.no_revisit_dets},
+        {"pqlimit", args.pqlimit},
+        {"num_det_orders", args.num_det_orders},
+        {"det_order_seed", args.det_order_seed},
+        {"total_time_seconds", total_time_seconds},
+        {"num_errors", has_obs ? nlohmann::json(num_errors) : nullptr},
+        {"num_low_confidence", num_low_confidence},
+        {"num_shots", shot},
+        {"num_threads", args.num_threads},
+        {"sample_num_shots", args.sample_num_shots},
+        {"sparsify_errors", args.sparsify_errors},
+        {"sparsify_base_degree", args.sparsify_base_degree},
+        {"sparsify_max_degree", args.sparsify_max_degree},
+        {"sparsify_reactivate_limit", effective_sparsify_reactivate_limit}};
 
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;

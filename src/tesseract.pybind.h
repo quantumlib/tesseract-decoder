@@ -38,13 +38,17 @@ TesseractConfig tesseract_config_maker_no_dem(
     bool verbose = false, bool merge_errors = true,
     size_t pqlimit = std::numeric_limits<size_t>::max(),
     std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
-    double det_penalty = 0.0, bool create_visualization = false) {
+    double det_penalty = 0.0, bool create_visualization = false, bool sparsify_errors = false,
+    int sparsify_base_degree = -1, int sparsify_max_degree = -1,
+    int sparsify_reactivate_limit = -1) {
   stim::DetectorErrorModel empty_dem;
   if (det_orders.empty()) {
-    det_orders = build_det_orders(empty_dem, 20, DetOrder::DetBFS, 2384753);
+    det_orders = build_det_orders(empty_dem, 20, DetOrder::DetIndex, 2384753);
   }
   return TesseractConfig({empty_dem, det_beam, beam_climbing, no_revisit_dets, verbose,
-                          merge_errors, pqlimit, det_orders, det_penalty, create_visualization});
+                          merge_errors, pqlimit, det_orders, det_penalty, create_visualization,
+                          sparsify_errors, sparsify_base_degree, sparsify_max_degree,
+                          sparsify_reactivate_limit});
 }
 
 TesseractConfig tesseract_config_maker(
@@ -52,13 +56,17 @@ TesseractConfig tesseract_config_maker(
     bool no_revisit_dets = false, bool verbose = false, bool merge_errors = true,
     size_t pqlimit = std::numeric_limits<size_t>::max(),
     std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
-    double det_penalty = 0.0, bool create_visualization = false) {
+    double det_penalty = 0.0, bool create_visualization = false, bool sparsify_errors = false,
+    int sparsify_base_degree = -1, int sparsify_max_degree = -1,
+    int sparsify_reactivate_limit = -1) {
   stim::DetectorErrorModel input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
   if (det_orders.empty()) {
-    det_orders = build_det_orders(input_dem, 20, DetOrder::DetBFS, 2384753);
+    det_orders = build_det_orders(input_dem, 20, DetOrder::DetIndex, 2384753);
   }
   return TesseractConfig({input_dem, det_beam, beam_climbing, no_revisit_dets, verbose,
-                          merge_errors, pqlimit, det_orders, det_penalty, create_visualization});
+                          merge_errors, pqlimit, det_orders, det_penalty, create_visualization,
+                          sparsify_errors, sparsify_base_degree, sparsify_max_degree,
+                          sparsify_reactivate_limit});
 }
 
 };  // namespace
@@ -67,6 +75,9 @@ void add_tesseract_module(py::module& root) {
 
   m.attr("INF_DET_BEAM") = INF_DET_BEAM;
   m.doc() = "A sentinel value indicating an infinite beam size for the decoder.";
+  m.def("suggest_sparsify_reactivate_limit", &suggest_sparsify_reactivate_limit,
+        py::arg("num_detectors"), py::arg("sparsify_base_degree"),
+        "Returns the suggested number of optional high-degree errors to reactivate per shot.");
 
   py::class_<TesseractConfig>(m, "TesseractConfig", R"pbdoc(
         Configuration object for the `TesseractDecoder`.
@@ -82,7 +93,9 @@ void add_tesseract_module(py::module& root) {
            py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = true,
            py::arg("verbose") = false, py::arg("merge_errors") = true, py::arg("pqlimit") = 200000,
            py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0,
-           py::arg("create_visualization") = false,
+           py::arg("create_visualization") = false, py::arg("sparsify_errors") = false,
+           py::arg("sparsify_base_degree") = -1, py::arg("sparsify_max_degree") = -1,
+           py::arg("sparsify_reactivate_limit") = -1,
            R"pbdoc(
              The constructor for the `TesseractConfig` class without a `dem` argument.
              This creates an empty `DetectorErrorModel` by default.
@@ -109,12 +122,22 @@ void add_tesseract_module(py::module& root) {
                  A penalty value added to the cost of each detector visited.
               create_visualization: bool, defualt=False
                  Whether to record the information needed to create a visualization or not.
+             sparsify_errors: bool, default=False
+                 If True, enables per-shot sparse error activation.
+             sparsify_base_degree: int, default=-1
+                 Positive maximum detector degree for mandatory errors.
+             sparsify_max_degree: int, default=-1
+                 Maximum detector degree for optional errors.
+             sparsify_reactivate_limit: int, default=-1
+                 Maximum number of optional errors to reactivate per shot. Use -1 for heuristic default.
              )pbdoc")
       .def(py::init(&tesseract_config_maker), py::arg("dem"), py::arg("det_beam") = 5,
            py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = true,
            py::arg("verbose") = false, py::arg("merge_errors") = true, py::arg("pqlimit") = 200000,
            py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0,
-           py::arg("create_visualization") = false,
+           py::arg("create_visualization") = false, py::arg("sparsify_errors") = false,
+           py::arg("sparsify_base_degree") = -1, py::arg("sparsify_max_degree") = -1,
+           py::arg("sparsify_reactivate_limit") = -1,
            R"pbdoc(
             The constructor for the `TesseractConfig` class.
 
@@ -142,6 +165,14 @@ void add_tesseract_module(py::module& root) {
                 A penalty value added to the cost of each detector visited.
             create_visualization: bool, defualt=False
                 Whether to record the information needed to create a visualization or not.
+            sparsify_errors: bool, default=False
+                If True, enables per-shot sparse error activation.
+            sparsify_base_degree: int, default=-1
+                Positive maximum detector degree for mandatory errors.
+            sparsify_max_degree: int, default=-1
+                Maximum detector degree for optional errors.
+            sparsify_reactivate_limit: int, default=-1
+                Maximum number of optional errors to reactivate per shot. Use -1 for heuristic default.
            )pbdoc")
       .def_property("dem", &dem_getter<TesseractConfig>, &dem_setter<TesseractConfig>,
                     "The `stim.DetectorErrorModel` that defines the error channels and detectors.")
@@ -164,6 +195,15 @@ void add_tesseract_module(py::module& root) {
                      "The penalty cost added for each detector.")
       .def_readwrite("create_visualization", &TesseractConfig::create_visualization,
                      "If True, records necessary information to create visualization.")
+      .def_readwrite("sparsify_errors", &TesseractConfig::sparsify_errors,
+                     "If True, enables per-shot sparse error activation.")
+      .def_readwrite("sparsify_base_degree", &TesseractConfig::sparsify_base_degree,
+                     "Maximum detector degree for mandatory errors.")
+      .def_readwrite("sparsify_max_degree", &TesseractConfig::sparsify_max_degree,
+                     "Maximum detector degree for optional errors.")
+      .def_readwrite("sparsify_reactivate_limit", &TesseractConfig::sparsify_reactivate_limit,
+                     "Maximum number of optional errors to reactivate per shot. Use -1 for "
+                     "heuristic default.")
       .def("__str__", &TesseractConfig::str)
       .def("compile_decoder", &_compile_tesseract_decoder_helper,
            py::return_value_policy::take_ownership,
