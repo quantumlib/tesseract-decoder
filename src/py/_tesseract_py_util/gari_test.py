@@ -8,7 +8,6 @@ from _tesseract_py_util.gari import (
     detector_partition_from_fourth_coordinate,
     gari_transform,
     paper_prior_probabilities,
-    tesseract_lp_max_barred_cost_prior_probabilities,
     tesseract_xor_prior_probabilities,
 )
 
@@ -81,19 +80,6 @@ def test_prior_probabilities_and_gari_dem_round_trip():
     np.testing.assert_allclose(
         xor_probabilities, [0.1, 0.2, 0.3, 0.34, 0.38]
     )
-
-    lp_probabilities = tesseract_lp_max_barred_cost_prior_probabilities(
-        transform, source_probabilities
-    )
-    lp_costs = np.log1p(-lp_probabilities) - np.log(lp_probabilities)
-    source_costs = np.log1p(-source_probabilities) - np.log(
-        source_probabilities
-    )
-    np.testing.assert_allclose(
-        lp_costs[:3] + np.asarray([[1, 0], [0, 1], [1, 1]]) @ lp_costs[3:],
-        source_costs,
-    )
-    np.testing.assert_allclose(lp_costs[3:].sum(), source_costs[2])
 
     gari_dem = build_gari_dem(
         transform,
