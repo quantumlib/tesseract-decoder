@@ -215,7 +215,7 @@ print(f"   Number of Errors / num_shots: {num_errors} / {num_shots_to_decode}")
 #
 #
 
-# %% [markdown]
+# %% [markdown] id="cf7a81ad"
 # ## Sparsify errors
 #
 # Keep common low-degree errors hot; activate likely high-degree errors per shot.
@@ -228,7 +228,7 @@ print(f"   Number of Errors / num_shots: {num_errors} / {num_shots_to_decode}")
 # | Color / bivariate bicycle | `3` |
 # | Other | bulk single-qubit-X-error detector degree |
 
-# %%
+# %% id="dd61010b"
 sparse_config = tesseract.TesseractConfig(
     dem=dem,
     pqlimit=10000,
