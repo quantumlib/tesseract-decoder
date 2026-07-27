@@ -505,22 +505,21 @@ def tesseract_xor_prior_probabilities(
     return np.concatenate([p_e_z, p_e_x, p_e_y, p_bar_e_z, p_bar_e_x])
 
 
-def tesseract_lp_maximin_prior_probabilities(
+def tesseract_lp_max_barred_cost_prior_probabilities(
     transform: GariTransform, source_probabilities: np.ndarray
 ) -> np.ndarray:
-    """Balances nonnegative physical and auxiliary costs for Tesseract.
+    """Maximizes the total barred-variable search cost for Tesseract.
 
     The source costs ``c = log((1-p)/p)`` are ordered as ``[e_Z, e_X, e_Y]``.
     The auxiliary costs ``g`` are ordered as ``[bar(e)_Z, bar(e)_X]``. The
     incidence matrix is ``A = [[I, 0], [0, I], [U.T, V.T]]``, so the residual
     physical costs are ``r = c - A g``.
 
-    The LP maximizes a common floor ``t`` subject to ``r >= t``, ``g >= t``,
-    and nonnegative ``g`` and ``t``. It returns ``[r, g]`` converted back to
-    probabilities in GARI column order. This is a practical Tesseract
-    adaptation of exploratory mode Q, not part of the GARI paper. It only
-    defines search costs and makes no claim about decoding optimality. Solver
-    failure is a hard error; there is no fallback or clipping.
+    The LP maximizes ``sum(g)`` subject to ``A g <= c`` and ``g >= 0``. It
+    returns ``[r, g]`` converted back to probabilities in GARI column order.
+    This experimental policy is not part of the GARI paper. It only defines
+    search costs and makes no claim about decoding optimality. Solver failure
+    is a hard error; there is no fallback.
     """
     p_e_z, p_e_x, p_e_y = _physical_probability_blocks(
         transform, source_probabilities
@@ -541,37 +540,38 @@ def tesseract_lp_maximin_prior_probabilities(
     )
     auxiliary_count = cost_matrix.shape[1]
 
-    constraints = scipy.sparse.bmat(
-        [
-            [cost_matrix, np.ones((len(source_costs), 1))],
-            [
-                -scipy.sparse.identity(auxiliary_count, format="csc"),
-                np.ones((auxiliary_count, 1)),
-            ],
-        ],
-        format="csc",
-    )
-    constraint_limits = np.concatenate(
-        [source_costs, np.zeros(auxiliary_count, dtype=np.float64)]
-    )
-    objective = np.zeros(auxiliary_count + 1, dtype=np.float64)
-    # scipy.optimize.linprog minimizes, so minimizing -t maximizes t.
-    objective[-1] = -1
+    # A guarded alternative is to first maximize a common floor t, then
+    # maximize sum(g) while requiring t >= t_star - numerical_tolerance.
+    objective = -np.ones(auxiliary_count, dtype=np.float64)
     result = scipy.optimize.linprog(
         objective,
-        A_ub=constraints,
-        b_ub=constraint_limits,
-        bounds=[(0, None)] * (auxiliary_count + 1),
+        A_ub=cost_matrix,
+        b_ub=source_costs,
+        bounds=(0, None),
         method="highs",
     )
     if not result.success:
         raise RuntimeError(
-            "LP maximin prior solver failed: " + str(result.message)
+            "LP max-barred-cost prior solver failed: " + str(result.message)
         )
-    auxiliary_costs = np.asarray(result.x[:-1])
+    tolerance = 1e-7 * max(
+        1.0, float(np.max(source_costs, initial=0.0))
+    )
+    auxiliary_costs = np.asarray(result.x)
+    if np.min(auxiliary_costs, initial=0.0) < -tolerance:
+        raise RuntimeError(
+            "LP max-barred-cost solver returned an infeasible solution."
+        )
+    auxiliary_costs = np.maximum(auxiliary_costs, 0.0)
     residual_costs = source_costs - np.asarray(
         cost_matrix @ auxiliary_costs
     ).reshape(-1)
+    if np.min(residual_costs, initial=0.0) < -tolerance:
+        raise RuntimeError(
+            "LP max-barred-cost solver returned an infeasible solution."
+        )
+    # Normalize only active-constraint noise accepted by the LP solver.
+    residual_costs = np.maximum(residual_costs, 0.0)
     gari_costs = np.concatenate([residual_costs, auxiliary_costs])
     return np.exp(-np.logaddexp(0, gari_costs))
 

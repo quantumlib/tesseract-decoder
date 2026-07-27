@@ -25,7 +25,7 @@ from _tesseract_py_util.gari import (
     detector_partition_from_fourth_coordinate,
     gari_transform,
     paper_prior_probabilities,
-    tesseract_lp_maximin_prior_probabilities,
+    tesseract_lp_max_barred_cost_prior_probabilities,
     tesseract_xor_prior_probabilities,
 )
 
@@ -35,7 +35,7 @@ _BASIS_CONVENTION = "color-code-style-fourth-coordinate"
 _PRIOR_FUNCTIONS = {
     "paper": paper_prior_probabilities,
     "xor": tesseract_xor_prior_probabilities,
-    "lp-maximin": tesseract_lp_maximin_prior_probabilities,
+    "lp-max-barred-cost": tesseract_lp_max_barred_cost_prior_probabilities,
 }
 
 
