@@ -372,13 +372,9 @@ gari_dem, gari_layout = circuit_to_gari(
 # source syndrome into its physical rows; the added virtual entries stay zero.
 
 # %% id="gari-sample-example"
-gari_shots = 10
-source_syndromes = dets[:gari_shots]
-actual_observables = obs[:gari_shots]
-gari_syndromes = np.zeros(
-    (gari_shots, gari_dem.num_detectors), dtype=bool
-)
-gari_syndromes[:, gari_layout["source_to_gari"]] = source_syndromes
+num_shots = 10
+gari_dets = np.zeros((num_shots, gari_dem.num_detectors), dtype=bool)
+gari_dets[:, gari_layout["source_to_gari"]] = dets[:num_shots]
 
 # %% [markdown] id="gari-detector-order"
 # The layout is physical-then-virtual. Setting `num_det_orders=0` selects one
@@ -390,11 +386,11 @@ short_beam = tesseract_decoder.make_tesseract_sinter_decoders_dict()[
 ]
 short_beam.num_det_orders = 0
 gari_decoder = short_beam.compile_decoder_for_dem(dem=gari_dem).decoder
-predicted_observables = gari_decoder.decode_batch(gari_syndromes)
+predicted_observables = gari_decoder.decode_batch(gari_dets)
 logical_failures = np.count_nonzero(
-    np.any(predicted_observables != actual_observables, axis=1)
+    np.any(predicted_observables != obs[:num_shots], axis=1)
 )
-print(f"Logical failures: {logical_failures}/{gari_shots}")
+print(f"Logical failures: {logical_failures}/{num_shots}")
 
 # %% [markdown] id="BoEALeo3OYGp"
 # # Decoding Wild Stabilizer Codes under Code Capacity Noise with Tesseract
