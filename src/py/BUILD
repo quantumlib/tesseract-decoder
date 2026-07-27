@@ -80,7 +80,6 @@ py_test(
     ],
     imports = ["..", "."],
 )
-
 py_test(
     name = "tesseract_sinter_compat_test",
     srcs = ["tesseract_sinter_compat_test.py"],
@@ -93,6 +92,8 @@ py_test(
     ],
     imports = ["..", "."],
 )
+
+
 
 py_test(
     name = "stub_test",
