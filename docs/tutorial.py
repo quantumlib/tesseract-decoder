@@ -185,31 +185,6 @@ tesseract_dec = tesseract_config.compile_decoder()
 results = run_tesseract_decoder(tesseract_dec, dets, obs)
 print_results(results)
 
-# %% [markdown]
-# ## Sparsify errors
-#
-# Keep common low-degree errors hot; activate likely high-degree errors per shot.
-# [Benchmarks and plots](https://github.com/quantumlib/tesseract-decoder/pull/254) show roughly a
-# **10x speedup with little change to logical error rate (LER)**.
-#
-# | DEM | Base degree |
-# | --- | ---: |
-# | Surface / graphlike | `2` |
-# | Color / bivariate bicycle | `3` |
-# | Other | bulk single-error detector degree |
-
-# %%
-sparse_config = tesseract.TesseractConfig(
-    dem=dem,
-    pqlimit=10000,
-    no_revisit_dets=True,
-    sparsify_errors=True,
-    sparsify_base_degree=3,
-    sparsify_reactivate_limit=-1,  # Auto-tune.
-)
-results = run_tesseract_decoder(sparse_config.compile_decoder(), dets, obs)
-print_results(results)
-
 # %% [markdown] id="INvMKs7zc5T_"
 # #Decoding with ILP decoder
 
@@ -239,6 +214,31 @@ print(f"   Number of Errors / num_shots: {num_errors} / {num_shots_to_decode}")
 # * `pqlimit` - An integer that sets a limit on the number of nodes in the priority queue. This can be used to constrain the memory usage of the decoder. The default value is `sys.maxsize`, which means the size is effectively unbounded.
 #
 #
+
+# %% [markdown]
+# ## Sparsify errors
+#
+# Keep common low-degree errors hot; activate likely high-degree errors per shot.
+# [Benchmarks and plots](https://github.com/quantumlib/tesseract-decoder/pull/254) show roughly a
+# **10x speedup with little change to logical error rate (LER)**.
+#
+# | DEM | Base degree |
+# | --- | ---: |
+# | Surface / graphlike | `2` |
+# | Color / bivariate bicycle | `3` |
+# | Other | bulk single-error detector degree |
+
+# %%
+sparse_config = tesseract.TesseractConfig(
+    dem=dem,
+    pqlimit=10000,
+    no_revisit_dets=True,
+    sparsify_errors=True,
+    sparsify_base_degree=3,
+    sparsify_reactivate_limit=-1,  # Auto-tune.
+)
+results = run_tesseract_decoder(sparse_config.compile_decoder(), dets, obs)
+print_results(results)
 
 # %% colab={"base_uri": "https://localhost:8080/"} id="0pExdmuPQuGr" outputId="8e8ff3fd-bde9-4e31-d1e2-4f97c77ce43d"
 tesseract_config1 = tesseract.TesseractConfig(
