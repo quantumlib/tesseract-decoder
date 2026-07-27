@@ -187,39 +187,31 @@ def _matrices_to_gari_dem(
     logicals: scipy.sparse.csc_matrix,
     probabilities: np.ndarray,
 ) -> stim.DetectorErrorModel:
-    """Stores GARI transformed matrices using Stim's DEM syntax.
-
-    The result is a GARI matrix representation for decoding.
-    It is not a physical detector error model and must not be sampled to
-    generate shots.
-    """
-    gari_checks = checks.tocsc()
-    gari_logicals = logicals.tocsc()
-
+    """Stores GARI transformed matrices using Stim's DEM syntax."""
     detector_target = stim.target_relative_detector_id
     logical_target = stim.target_logical_observable_id
     gari_dem = stim.DetectorErrorModel()
     for column, probability in enumerate(probabilities):
         targets = [
             detector_target(detector)
-            for detector in _nonzero_column_rows(gari_checks, column)
+            for detector in _nonzero_column_rows(checks, column)
         ]
         targets.extend(
             logical_target(observable)
-            for observable in _nonzero_column_rows(gari_logicals, column)
+            for observable in _nonzero_column_rows(logicals, column)
         )
         gari_dem.append("error", float(probability), targets)
 
     # Declare only dimensions not already implied by the error targets.
-    if gari_dem.num_detectors < gari_checks.shape[0]:
+    if gari_dem.num_detectors < checks.shape[0]:
         gari_dem.append(
-            "detector", [], [detector_target(gari_checks.shape[0] - 1)]
+            "detector", [], [detector_target(checks.shape[0] - 1)]
         )
-    if gari_dem.num_observables < gari_logicals.shape[0]:
+    if gari_dem.num_observables < logicals.shape[0]:
         gari_dem.append(
             "logical_observable",
             [],
-            [logical_target(gari_logicals.shape[0] - 1)],
+            [logical_target(logicals.shape[0] - 1)],
         )
     return gari_dem
 
@@ -238,13 +230,7 @@ def detector_partition_from_fourth_coordinate(
     x_detectors: list[int] = []
     z_detectors: list[int] = []
     for detector in range(dem.num_detectors):
-        detector_coordinates = coordinates.get(detector)
-        if detector_coordinates is None or len(detector_coordinates) < 4:
-            raise ValueError(
-                f"Detector {detector} must have at least four coordinates."
-            )
-        role = detector_coordinates[3]
-        if role <= 2:
+        if coordinates[detector][3] <= 2:
             x_detectors.append(detector)
         else:
             z_detectors.append(detector)
@@ -275,10 +261,6 @@ def gari_transform(
     Returns:
         The transformed checks, physical logical map, projection matrices,
         source column classes, detector mapping, and row block slices.
-
-    Raises:
-        ValueError: The inputs do not satisfy the supported correlated CSS
-        structure.
     """
     source_checks = checks.tocsc()
     source_logicals = logicals.tocsc()
@@ -297,8 +279,8 @@ def gari_transform(
             "x_detectors and z_detectors must partition all detector rows."
         )
 
-    x_checks = source_checks[x_rows, :].tocsc()
-    z_checks = source_checks[z_rows, :].tocsc()
+    x_checks = source_checks[x_rows, :]
+    z_checks = source_checks[z_rows, :]
     x_support_counts = np.diff(x_checks.indptr)
     z_support_counts = np.diff(z_checks.indptr)
 
@@ -315,38 +297,22 @@ def gari_transform(
         (x_support_counts == 0) & (z_support_counts == 0)
     )
     if detectorless_columns.size:
-        source_column = int(detectorless_columns[0])
-        logical_support = list(
-            _nonzero_column_rows(source_logicals, source_column)
-        )
         raise ValueError(
-            f"Source column {source_column} is detectorless; logical support "
-            f"is {logical_support}."
+            f"Source column {int(detectorless_columns[0])} is detectorless."
         )
 
-    d_x = x_checks[:, e_z_columns].tocsc()
-    d_z = z_checks[:, e_x_columns].tocsc()
-    d_x_prime = x_checks[:, e_y_columns].tocsc()
-    d_z_prime = z_checks[:, e_y_columns].tocsc()
+    d_x = x_checks[:, e_z_columns]
+    d_z = z_checks[:, e_x_columns]
+    d_x_prime = x_checks[:, e_y_columns]
+    d_z_prime = z_checks[:, e_y_columns]
     d_x_lookup = _unique_column_index_by_rows(d_x, name="D_X")
     d_z_lookup = _unique_column_index_by_rows(d_z, name="D_Z")
 
     u_rows: list[int] = []
     v_rows: list[int] = []
-    for local_y_column, source_column_value in enumerate(e_y_columns):
-        source_column = int(source_column_value)
+    for local_y_column in range(len(e_y_columns)):
         x_projection = _nonzero_column_rows(d_x_prime, local_y_column)
-        if x_projection not in d_x_lookup:
-            raise ValueError(
-                f"Source column {source_column} has X-side projection "
-                f"{list(x_projection)}, which does not equal a D_X column."
-            )
         z_projection = _nonzero_column_rows(d_z_prime, local_y_column)
-        if z_projection not in d_z_lookup:
-            raise ValueError(
-                f"Source column {source_column} has Z-side projection "
-                f"{list(z_projection)}, which does not equal a D_Z column."
-            )
         u_rows.append(d_x_lookup[x_projection])
         v_rows.append(d_z_lookup[z_projection])
 
@@ -418,10 +384,7 @@ def gari_transform(
     )
 
     source_to_gari = np.empty(detector_count, dtype=np.int64)
-    source_to_gari[x_rows] = np.arange(x_row_count, dtype=np.int64)
-    source_to_gari[z_rows] = x_row_count + np.arange(
-        z_row_count, dtype=np.int64
-    )
+    source_to_gari[partition] = np.arange(detector_count, dtype=np.int64)
     return GariTransform(
         checks=augmented_checks,
         logicals=augmented_logicals,
