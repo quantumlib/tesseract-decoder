@@ -209,9 +209,7 @@ def _convert_circuit(
         prior_function=_PRIOR_FUNCTIONS[prior_policy],
     )
 
-    gari_dem_text = str(gari_dem)
-    if not gari_dem_text.endswith("\n"):
-        gari_dem_text += "\n"
+    gari_dem_text = str(gari_dem).rstrip("\n") + "\n"
     layout_text = json.dumps(
         _layout_dict(transform, prior_policy), indent=2, sort_keys=True
     ) + "\n"
@@ -296,9 +294,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    if args.circuit_directory is not None:
-        if args.output_prefix is not None:
-            parser.error("--output-prefix can only be used with --circuit.")
+    if args.circuit_directory is not None and args.output_prefix is not None:
+        parser.error("--output-prefix can only be used with --circuit.")
     try:
         if args.circuit_directory is not None:
             return _convert_directory(
@@ -306,7 +303,6 @@ def main(argv: list[str] | None = None) -> int:
                 prior_policy=args.prior_policy,
                 force=args.force,
             )
-        assert args.circuit is not None
         source_error_model, transform, gari_dem_path, layout_path = (
             _convert_circuit(
                 args.circuit,
@@ -333,7 +329,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{label + ':':23}{rows.stop - rows.start}")
     print(f"Prior policy:          {args.prior_policy}")
     print("Logical placement:     physical")
-    print("Detector order:        physical_then_virtual\n")
+    print("GARI row order:        physical_then_virtual\n")
     print("GARI DEM (.dem matrix storage only; do not sample):")
     print(f"  {gari_dem_path}\n")
     print("Detector layout:")

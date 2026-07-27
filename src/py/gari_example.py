@@ -21,6 +21,7 @@ import tesseract_decoder
 _LAYOUT_SCHEMA = "tesseract.gari_layout.v1"
 _DETECTOR_ORDER = "physical_then_virtual"
 _LOGICAL_PLACEMENT = "physical"
+_DECODER_PRESET = "tesseract-short-beam"
 
 
 def _workspace_path(path: Path) -> Path:
@@ -32,7 +33,7 @@ def _workspace_path(path: Path) -> Path:
     )
 
 
-def _load_layout(path: Path) -> tuple[int, int, tuple[int, ...], str, str, str]:
+def _load_layout(path: Path) -> tuple[int, int, tuple[int, ...], str]:
     with path.open(encoding="utf-8") as file:
         layout = json.load(file)
     if not isinstance(layout, dict) or layout.get("schema") != _LAYOUT_SCHEMA:
@@ -67,20 +68,15 @@ def _load_layout(path: Path) -> tuple[int, int, tuple[int, ...], str, str, str]:
         raise ValueError("Layout source_to_gari must be injective.")
 
     prior_policy = layout.get("prior_policy")
-    logical_placement = layout.get("logical_placement")
-    detector_order = layout.get("detector_order")
     if not isinstance(prior_policy, str) or not prior_policy:
         raise ValueError("Layout prior_policy must be a nonempty string.")
-    if logical_placement != _LOGICAL_PLACEMENT:
+    if layout.get("logical_placement") != _LOGICAL_PLACEMENT:
         raise ValueError("Layout logical_placement must be 'physical'.")
-    if detector_order != _DETECTOR_ORDER:
+    if layout.get("detector_order") != _DETECTOR_ORDER:
         raise ValueError(
             "Layout detector_order must be 'physical_then_virtual'."
         )
-    return (
-        source_count, gari_count, tuple(mapping),
-        prior_policy, logical_placement, detector_order,
-    )
+    return source_count, gari_count, tuple(mapping), prior_policy
 
 
 def _run(
@@ -98,14 +94,9 @@ def _run(
 
     circuit = stim.Circuit.from_file(str(circuit_path))
     gari_dem = stim.DetectorErrorModel.from_file(str(dem_path))
-    (
-        source_count,
-        gari_count,
-        source_to_gari,
-        prior_policy,
-        logical_placement,
-        detector_order,
-    ) = _load_layout(layout_path)
+    source_count, gari_count, source_to_gari, prior_policy = _load_layout(
+        layout_path
+    )
 
     count_checks = (
         ("Circuit detectors", circuit.num_detectors, source_count),
@@ -128,17 +119,21 @@ def _run(
     gari_samples = np.zeros((shots, gari_count), dtype=np.bool_)
     gari_samples[:, np.asarray(source_to_gari, dtype=np.int64)] = source_samples
 
-    config = tesseract_decoder.tesseract.TesseractConfig(
-        dem=gari_dem, det_orders=[list(range(gari_count))]
-    )
-    predictions = config.compile_decoder().decode_batch(gari_samples)
+    decoder = tesseract_decoder.make_tesseract_sinter_decoders_dict()[
+        _DECODER_PRESET
+    ]
+    decoder.num_det_orders = 1
+    compiled_decoder = decoder.compile_decoder_for_dem(dem=gari_dem)
+    predictions = compiled_decoder.decoder.decode_batch(gari_samples)
+    decoder_order_count = len(compiled_decoder.decoder.config.det_orders)
     if predictions.shape != actual_observables.shape:
         raise RuntimeError(
             f"Decoder returned observable shape {predictions.shape}; "
             f"expected {actual_observables.shape}."
         )
-    failures = np.any(predictions != actual_observables, axis=1)
-    logical_failures = int(np.count_nonzero(failures))
+    logical_failures = int(
+        np.count_nonzero(np.any(predictions != actual_observables, axis=1))
+    )
 
     print("GARI saved-artifact decoding completed")
     print(f"Source circuit:        {circuit_path}")
@@ -147,8 +142,10 @@ def _run(
     print(f"Source detectors:      {source_count}")
     print(f"GARI detectors:        {gari_count}")
     print(f"Prior policy:          {prior_policy}")
-    print(f"Logical placement:     {logical_placement}")
-    print(f"Detector order:        {detector_order}")
+    print(f"Decoder preset:        {_DECODER_PRESET}")
+    print(f"Decoder order count:   {decoder_order_count}")
+    print(f"Logical placement:     {_LOGICAL_PLACEMENT}")
+    print(f"GARI row order:        {_DETECTOR_ORDER}")
     print(f"Shots:                 {shots}")
     print(f"Logical failures:      {logical_failures}/{shots}")
     print("This small run is a functional smoke check, not a benchmark or proof.")

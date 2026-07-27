@@ -95,7 +95,7 @@ def circuit_to_gari_source_dem(
     ).flattened()
 
 
-def _column_support(
+def _nonzero_column_rows(
     matrix: scipy.sparse.csc_matrix, column: int
 ) -> tuple[int, ...]:
     start = matrix.indptr[column]
@@ -103,14 +103,14 @@ def _column_support(
     return tuple(int(v) for v in matrix.indices[start:stop])
 
 
-def _projection_lookup(
+def _unique_column_index_by_rows(
     projections: scipy.sparse.csc_matrix,
     *,
     name: str,
 ) -> dict[tuple[int, ...], int]:
     lookup: dict[tuple[int, ...], int] = {}
     for local_column in range(projections.shape[1]):
-        support = _column_support(projections, local_column)
+        support = _nonzero_column_rows(projections, local_column)
         if support in lookup:
             raise ValueError(f"{name} has duplicate columns.")
         lookup[support] = local_column
@@ -191,11 +191,11 @@ def _matrices_to_gari_dem(
     for column, probability in enumerate(probabilities):
         targets = [
             detector_target(detector)
-            for detector in _column_support(gari_checks, column)
+            for detector in _nonzero_column_rows(gari_checks, column)
         ]
         targets.extend(
             logical_target(observable)
-            for observable in _column_support(gari_logicals, column)
+            for observable in _nonzero_column_rows(gari_logicals, column)
         )
         gari_dem.append("error", float(probability), targets)
 
@@ -305,7 +305,9 @@ def gari_transform(
     )
     if detectorless_columns.size:
         source_column = int(detectorless_columns[0])
-        logical_support = list(_column_support(source_logicals, source_column))
+        logical_support = list(
+            _nonzero_column_rows(source_logicals, source_column)
+        )
         raise ValueError(
             f"Source column {source_column} is detectorless; logical support "
             f"is {logical_support}."
@@ -315,20 +317,20 @@ def gari_transform(
     d_z = z_checks[:, e_x_columns].tocsc()
     d_x_prime = x_checks[:, e_y_columns].tocsc()
     d_z_prime = z_checks[:, e_y_columns].tocsc()
-    d_x_lookup = _projection_lookup(d_x, name="D_X")
-    d_z_lookup = _projection_lookup(d_z, name="D_Z")
+    d_x_lookup = _unique_column_index_by_rows(d_x, name="D_X")
+    d_z_lookup = _unique_column_index_by_rows(d_z, name="D_Z")
 
     u_rows: list[int] = []
     v_rows: list[int] = []
     for local_y_column, source_column_value in enumerate(e_y_columns):
         source_column = int(source_column_value)
-        x_projection = _column_support(d_x_prime, local_y_column)
+        x_projection = _nonzero_column_rows(d_x_prime, local_y_column)
         if x_projection not in d_x_lookup:
             raise ValueError(
                 f"Source column {source_column} has X-side projection "
                 f"{list(x_projection)}, which does not equal a D_X column."
             )
-        z_projection = _column_support(d_z_prime, local_y_column)
+        z_projection = _nonzero_column_rows(d_z_prime, local_y_column)
         if z_projection not in d_z_lookup:
             raise ValueError(
                 f"Source column {source_column} has Z-side projection "
@@ -453,30 +455,17 @@ def paper_prior_probabilities(
     )
 
 
-def _auxiliary_xor_probabilities(
+def _barred_xor_probabilities(
     base_probabilities: np.ndarray,
     y_probabilities: np.ndarray,
     projection_matrix: scipy.sparse.csc_matrix,
 ) -> np.ndarray:
-    projection_rows = projection_matrix.tocsr()
-    result = np.empty(len(base_probabilities), dtype=np.float64)
-    for row, base_probability in enumerate(base_probabilities):
-        start = projection_rows.indptr[row]
-        stop = projection_rows.indptr[row + 1]
-        y_columns = projection_rows.indices[start:stop]
-        parity_probabilities = np.concatenate(
-            [np.asarray([base_probability]), y_probabilities[y_columns]]
+    """Returns marginals of ``base XOR projection_matrix @ e_Y``."""
+    with np.errstate(divide="ignore"):
+        log_even_bias = np.log1p(-2 * base_probabilities) + (
+            projection_matrix @ np.log1p(-2 * y_probabilities)
         )
-        if len(parity_probabilities) == 1:
-            result[row] = base_probability
-        elif np.any(parity_probabilities == 0.5):
-            result[row] = 0.5
-        else:
-            log_even_bias = np.sum(
-                np.log1p(-2 * parity_probabilities), dtype=np.float64
-            )
-            result[row] = -0.5 * np.expm1(log_even_bias)
-    return result
+    return -0.5 * np.expm1(log_even_bias)
 
 
 def tesseract_xor_prior_probabilities(
@@ -496,10 +485,10 @@ def tesseract_xor_prior_probabilities(
     p_e_z, p_e_x, p_e_y = _physical_probability_blocks(
         transform, source_probabilities
     )
-    p_bar_e_z = _auxiliary_xor_probabilities(
+    p_bar_e_z = _barred_xor_probabilities(
         p_e_z, p_e_y, transform.u
     )
-    p_bar_e_x = _auxiliary_xor_probabilities(
+    p_bar_e_x = _barred_xor_probabilities(
         p_e_x, p_e_y, transform.v
     )
     return np.concatenate([p_e_z, p_e_x, p_e_y, p_bar_e_z, p_bar_e_x])

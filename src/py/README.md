@@ -715,6 +715,7 @@ bazel run --jobs=1 //src/py:gari_example -- \
 ```
 
 The example samples only the original circuit, scatters its physical detector
-data according to the layout, leaves virtual detector entries zero, and uses
-the single `physical_then_virtual` detector order. A 10-shot run is a
+data according to the `physical_then_virtual` layout, and leaves virtual
+detector entries zero. It uses the `tesseract-short-beam` preset with one
+deterministic index-based (`DetIndex`) detector ordering. A 10-shot run is a
 functional smoke check, not a benchmark or mathematical proof.
