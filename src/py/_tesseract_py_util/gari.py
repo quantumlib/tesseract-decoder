@@ -69,20 +69,28 @@ import stim
 
 @dataclasses.dataclass(frozen=True)
 class GariTransform:
-    """Validated GARI transformed matrices and their block metadata."""
+    """Validated GARI matrices with source-index arrays and transformed slices."""
 
     checks: scipy.sparse.csc_matrix
     logicals: scipy.sparse.csc_matrix
     u: scipy.sparse.csc_matrix
     v: scipy.sparse.csc_matrix
+    source_checks_shape: tuple[int, int]
+    d_x_shape: tuple[int, int]
+    d_z_shape: tuple[int, int]
     e_z_columns: np.ndarray
     e_x_columns: np.ndarray
     e_y_columns: np.ndarray
     source_to_gari_detectors: np.ndarray
+    physical_rows: slice
+    virtual_rows: slice
     physical_x_rows: slice
     physical_z_rows: slice
     virtual_z_rows: slice
     virtual_x_rows: slice
+    physical_columns: slice
+    barred_z_columns: slice
+    barred_x_columns: slice
 
 
 def circuit_to_gari_source_dem(
@@ -398,6 +406,13 @@ def gari_transform(
     virtual_x_rows = slice(
         virtual_z_rows.stop, virtual_z_rows.stop + e_x_count
     )
+    physical_columns = slice(0, e_z_count + e_x_count + y_column_count)
+    barred_z_columns = slice(
+        physical_columns.stop, physical_columns.stop + e_z_count
+    )
+    barred_x_columns = slice(
+        barred_z_columns.stop, barred_z_columns.stop + e_x_count
+    )
 
     source_to_gari = np.empty(detector_count, dtype=np.int64)
     source_to_gari[x_rows] = np.arange(x_row_count, dtype=np.int64)
@@ -409,14 +424,22 @@ def gari_transform(
         logicals=augmented_logicals,
         u=u,
         v=v,
+        source_checks_shape=source_checks.shape,
+        d_x_shape=d_x.shape,
+        d_z_shape=d_z.shape,
         e_z_columns=e_z_columns,
         e_x_columns=e_x_columns,
         e_y_columns=e_y_columns,
         source_to_gari_detectors=source_to_gari,
+        physical_rows=slice(0, physical_z_rows.stop),
+        virtual_rows=slice(virtual_z_rows.start, virtual_x_rows.stop),
         physical_x_rows=physical_x_rows,
         physical_z_rows=physical_z_rows,
         virtual_z_rows=virtual_z_rows,
         virtual_x_rows=virtual_x_rows,
+        physical_columns=physical_columns,
+        barred_z_columns=barred_z_columns,
+        barred_x_columns=barred_x_columns,
     )
 
 

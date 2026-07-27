@@ -59,6 +59,14 @@ def test_tiny_transform():
     np.testing.assert_array_equal(
         transform.source_to_gari_detectors, [0, 2, 1, 3]
     )
+    assert transform.source_checks_shape == (4, 3)
+    assert transform.d_x_shape == (2, 1)
+    assert transform.d_z_shape == (2, 1)
+    assert transform.physical_rows == slice(0, 4)
+    assert transform.virtual_rows == slice(4, 6)
+    assert transform.physical_columns == slice(0, 3)
+    assert transform.barred_z_columns == slice(3, 4)
+    assert transform.barred_x_columns == slice(4, 5)
 
 
 def test_prior_probabilities_and_gari_dem_round_trip():
