@@ -186,7 +186,7 @@ def _matrices_to_gari_dem(
 ) -> stim.DetectorErrorModel:
     """Stores GARI transformed matrices using Stim's DEM syntax.
 
-    The result is a GARI matrix representation for decoding and interchange.
+    The result is a GARI matrix representation for decoding.
     It is not a physical detector error model and must not be sampled to
     generate shots.
     """
