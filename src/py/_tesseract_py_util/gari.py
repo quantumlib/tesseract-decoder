@@ -59,7 +59,10 @@ five-block structure uniform and the physical top-left blocks zero.
 from __future__ import annotations
 
 import dataclasses
+import json
+import sys
 from collections.abc import Callable, Sequence
+from pathlib import Path
 
 import numpy as np
 import scipy.optimize
@@ -631,4 +634,58 @@ def build_gari_dem(
     )
     return _matrices_to_gari_dem(
         transform.checks, transform.logicals, gari_probabilities
+    )
+
+
+def circuit_to_gari(
+    circuit: stim.Circuit,
+    *,
+    prior_function: Callable[[GariTransform, np.ndarray], np.ndarray],
+) -> tuple[stim.DetectorErrorModel, dict[str, object]]:
+    """Converts one circuit into a GARI matrix DEM and v1 layout."""
+    source_dem = circuit_to_gari_source_dem(circuit)
+    checks, logicals, probabilities = dem_to_matrices(source_dem)
+    x_detectors, z_detectors = detector_partition_from_fourth_coordinate(
+        source_dem
+    )
+    transform = gari_transform(
+        checks,
+        logicals,
+        x_detectors=x_detectors,
+        z_detectors=z_detectors,
+    )
+    gari_dem = build_gari_dem(
+        transform, probabilities, prior_function=prior_function
+    )
+    layout = {
+        "schema": "tesseract.gari_layout.v1",
+        "source_detector_count": len(transform.source_to_gari_detectors),
+        "gari_detector_count": transform.checks.shape[0],
+        "source_to_gari": transform.source_to_gari_detectors.tolist(),
+        "detector_order": "physical_then_virtual",
+    }
+    return gari_dem, layout
+
+
+if __name__ == "__main__":
+    circuit_name, prior_name = sys.argv[1:]
+    circuit_path = Path(circuit_name)
+    prior_function = {
+        "paper": paper_prior_probabilities,
+        "xor": tesseract_xor_prior_probabilities,
+        "lp-max-barred-cost": (
+            tesseract_lp_max_barred_cost_prior_probabilities
+        ),
+    }[prior_name]
+    gari_dem, gari_layout = circuit_to_gari(
+        stim.Circuit.from_file(str(circuit_path)),
+        prior_function=prior_function,
+    )
+    output_prefix = circuit_path.with_suffix("")
+    Path(f"{output_prefix}-gari-{prior_name}.dem").write_text(
+        str(gari_dem).rstrip("\n") + "\n", encoding="utf-8"
+    )
+    Path(f"{output_prefix}-gari-{prior_name}-layout.json").write_text(
+        json.dumps(gari_layout, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
     )
