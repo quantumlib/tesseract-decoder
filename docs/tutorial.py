@@ -66,21 +66,50 @@ num_errors = np.sum(np.any(predicted_observables != actual_observables, axis=1))
 
 print(f"Logical error rate: {num_errors}/{num_shots}")
 
-# %% [markdown] id="Xp7MyK0XVs_6"
-# ## Decode with new correlated matching!
+# %% [markdown] id="gari-correlated-decoding"
+# ## Decoding correlated errors
+#
+# ### GARI
+#
+# Graph augmentation and rewiring for inference (GARI) transforms a correlated
+# CSS detector matrix into a block form for Tesseract; see [Decoding correlated
+# errors in quantum LDPC codes](https://doi.org/10.1038/s41467-026-70556-3).
+# Sample only the original circuit: the GARI matrix DEM stores the transformed
+# matrices, and its virtual syndrome entries are initialized to zero.
 
-# %% colab={"base_uri": "https://localhost:8080/"} id="vufQ8G5iVx7b" outputId="3b0517a3-e65e-42b7-eb25-fbb068c4a912"
-dem = circuit.detector_error_model(decompose_errors=True)
-matching_corr = pymatching.Matching.from_detector_error_model(
-    model=dem, enable_correlations=True
-    )
-predicted_observables_corr = matching_corr.decode_batch(
-    shots=detector_outcomes,
-    enable_correlations=True
-    )
-num_errors_corr = np.sum(np.any(predicted_observables_corr != actual_observables, axis=1))
+# %% id="gari-transform-example"
+import tesseract_decoder
+from _tesseract_py_util.gari import (
+    circuit_to_gari,
+    tesseract_xor_prior_probabilities,
+)
 
-print(f"Logical error rate: {num_errors_corr}/{num_shots}")
+circuit = stim.Circuit.from_file(
+    "testdata/colorcodes/"
+    "r=3,d=3,p=0.001,noise=si1000,c=superdense_color_code_Z,q=13,gates=cz.stim"
+)
+gari_dem, gari_layout = circuit_to_gari(
+    circuit,
+    prior_function=tesseract_xor_prior_probabilities,
+)
+
+# %% id="gari-decode-example"
+sampler = circuit.compile_detector_sampler(seed=2384753)
+source_syndromes, actual_observables = sampler.sample(
+    shots=10,
+    separate_observables=True,
+)
+gari_syndromes = np.zeros((10, gari_dem.num_detectors), dtype=bool)
+gari_syndromes[:, gari_layout["source_to_gari"]] = source_syndromes
+
+short_beam = tesseract_decoder.make_tesseract_sinter_decoders_dict()[
+    "tesseract-short-beam"
+]
+short_beam.num_det_orders = 0  # One ascending physical-then-virtual order.
+gari_decoder = short_beam.compile_decoder_for_dem(dem=gari_dem).decoder
+predicted_observables = gari_decoder.decode_batch(gari_syndromes)
+logical_failures = np.any(predicted_observables != actual_observables, axis=1).sum()
+print(f"Logical failures: {logical_failures}/10")
 
 # %% [markdown] id="a-AMqTUeuqOe"
 # ## Getting a Color Code Circuit
