@@ -215,6 +215,31 @@ print(f"   Number of Errors / num_shots: {num_errors} / {num_shots_to_decode}")
 #
 #
 
+# %% [markdown] id="cf7a81ad"
+# ## Sparsify errors
+#
+# Keep common low-degree errors hot; activate likely high-degree errors per shot.
+# [Benchmarks and plots](https://github.com/quantumlib/tesseract-decoder/pull/254) show roughly a
+# **10x speedup with little change to logical error rate (LER)**.
+#
+# | DEM | Base degree |
+# | --- | ---: |
+# | Surface / graphlike | `2` |
+# | Color / bivariate bicycle | `3` |
+# | Other | bulk single-qubit-X-error detector degree |
+
+# %% id="dd61010b"
+sparse_config = tesseract.TesseractConfig(
+    dem=dem,
+    pqlimit=10000,
+    no_revisit_dets=True,
+    sparsify_errors=True,
+    sparsify_base_degree=3,
+    sparsify_reactivate_limit=-1,  # Auto-tune.
+)
+results = run_tesseract_decoder(sparse_config.compile_decoder(), dets, obs)
+print_results(results)
+
 # %% colab={"base_uri": "https://localhost:8080/"} id="0pExdmuPQuGr" outputId="8e8ff3fd-bde9-4e31-d1e2-4f97c77ce43d"
 tesseract_config1 = tesseract.TesseractConfig(
     dem=dem,
