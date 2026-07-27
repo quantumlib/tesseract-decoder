@@ -226,7 +226,7 @@ print(f"   Number of Errors / num_shots: {num_errors} / {num_shots_to_decode}")
 # | --- | ---: |
 # | Surface / graphlike | `2` |
 # | Color / bivariate bicycle | `3` |
-# | Other | bulk single-error detector degree |
+# | Other | bulk single-qubit-X-error detector degree |
 
 # %%
 sparse_config = tesseract.TesseractConfig(
