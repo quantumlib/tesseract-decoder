@@ -89,29 +89,10 @@ def circuit_to_gari_source_dem(
     circuit: stim.Circuit,
 ) -> stim.DetectorErrorModel:
     """Creates the flattened, undecomposed source DEM required by GARI."""
-    # flatten_loops removes repeats; flattened also resolves detector shifts.
     return circuit.detector_error_model(
         decompose_errors=False,
         flatten_loops=True,
-        allow_gauge_detectors=True,
-        approximate_disjoint_errors=1,
     ).flattened()
-
-
-def _canonical_binary_csc(
-    matrix: scipy.sparse.spmatrix, *, name: str
-) -> scipy.sparse.csc_matrix:
-    if not scipy.sparse.issparse(matrix):
-        raise ValueError(f"{name} must be a sparse matrix.")
-    if np.any((matrix.data != 0) & (matrix.data != 1)):
-        raise ValueError(f"{name} must contain only binary values 0 or 1.")
-    result = matrix.astype(np.int64).tocsc(copy=True)
-    result.sum_duplicates()
-    if np.any((result.data != 0) & (result.data != 1)):
-        raise ValueError(f"{name} must contain only binary values 0 or 1.")
-    result.eliminate_zeros()
-    result.sort_indices()
-    return result.astype(np.uint8)
 
 
 def _column_support(
@@ -153,13 +134,6 @@ def dem_to_matrices(
     probabilities: list[float] = []
 
     for instruction in dem:
-        if isinstance(instruction, stim.DemRepeatBlock) or (
-            instruction.type == "shift_detectors"
-        ):
-            raise ValueError(
-                "GARI requires a fully flattened DEM generated with "
-                "decompose_errors=False."
-            )
         if instruction.type != "error":
             continue
         targets = instruction.targets_copy()
@@ -226,17 +200,11 @@ def _matrices_to_gari_dem(
         gari_dem.append("error", float(probability), targets)
 
     # Declare only dimensions not already implied by the error targets.
-    if gari_checks.shape[0] and (
-        not gari_checks.nnz
-        or np.max(gari_checks.indices) < gari_checks.shape[0] - 1
-    ):
+    if gari_dem.num_detectors < gari_checks.shape[0]:
         gari_dem.append(
             "detector", [], [detector_target(gari_checks.shape[0] - 1)]
         )
-    if gari_logicals.shape[0] and (
-        not gari_logicals.nnz
-        or np.max(gari_logicals.indices) < gari_logicals.shape[0] - 1
-    ):
+    if gari_dem.num_observables < gari_logicals.shape[0]:
         gari_dem.append(
             "logical_observable",
             [],
@@ -252,8 +220,8 @@ def detector_partition_from_fourth_coordinate(
 
     This is the color-code-style convention followed by the test-data circuits
     associated with this repository, not a universal Stim convention. The
-    fourth coordinate is a finite integer: values at most ``2`` identify X
-    detectors, while values at least ``3`` identify Z detectors.
+    fourth-coordinate values at most ``2`` identify X detectors, while values
+    at least ``3`` identify Z detectors.
     """
     coordinates = dem.get_detector_coordinates()
     x_detectors: list[int] = []
@@ -265,11 +233,6 @@ def detector_partition_from_fourth_coordinate(
                 f"Detector {detector} must have at least four coordinates."
             )
         role = detector_coordinates[3]
-        if not np.isfinite(role) or not float(role).is_integer():
-            raise ValueError(
-                f"Detector {detector} has invalid fourth coordinate "
-                f"{role!r}; expected a finite integer."
-            )
         if role <= 2:
             x_detectors.append(detector)
         else:
@@ -306,8 +269,8 @@ def gari_transform(
         ValueError: The inputs do not satisfy the supported correlated CSS
         structure.
     """
-    source_checks = _canonical_binary_csc(checks, name="checks")
-    source_logicals = _canonical_binary_csc(logicals, name="logicals")
+    source_checks = checks.tocsc()
+    source_logicals = logicals.tocsc()
     if source_checks.shape[1] != source_logicals.shape[1]:
         raise ValueError(
             "checks and logicals must have the same source column count; "
@@ -315,15 +278,8 @@ def gari_transform(
         )
 
     detector_count = source_checks.shape[0]
-    x_rows = np.asarray(x_detectors)
-    z_rows = np.asarray(z_detectors)
-    if any(
-        rows.ndim != 1 or (rows.size and rows.dtype.kind not in "iu")
-        for rows in (x_rows, z_rows)
-    ):
-        raise ValueError("x_detectors and z_detectors must contain integers.")
-    x_rows = x_rows.astype(np.int64)
-    z_rows = z_rows.astype(np.int64)
+    x_rows = np.asarray(x_detectors, dtype=np.int64)
+    z_rows = np.asarray(z_detectors, dtype=np.int64)
     partition = np.concatenate([x_rows, z_rows])
     if not np.array_equal(np.sort(partition), np.arange(detector_count)):
         raise ValueError(
@@ -446,14 +402,6 @@ def gari_transform(
     source_to_gari[z_rows] = x_row_count + np.arange(
         z_row_count, dtype=np.int64
     )
-    for values in (
-        e_z_columns,
-        e_x_columns,
-        e_y_columns,
-        source_to_gari,
-    ):
-        values.setflags(write=False)
-
     return GariTransform(
         checks=augmented_checks,
         logicals=augmented_logicals,
@@ -476,37 +424,20 @@ def _validated_probabilities(
     expected_count: int,
     name: str,
 ) -> np.ndarray:
-    try:
-        result = np.asarray(values, dtype=np.float64)
-    except (TypeError, ValueError) as ex:
-        raise ValueError(f"{name} must be a numeric array.") from ex
-    if (
-        result.shape != (expected_count,)
-        or not np.all(np.isfinite(result))
-        or np.any(result <= 0)
-        or np.any(result > 0.5)
+    result = np.asarray(values, dtype=np.float64)
+    if result.shape != (expected_count,) or not np.all(
+        (result > 0) & (result <= 0.5)
     ):
         raise ValueError(
             f"{name} must contain {expected_count} finite values in (0, 0.5]."
         )
-    result = result.copy()
-    result.setflags(write=False)
     return result
 
 
 def _physical_probability_blocks(
     transform: GariTransform, source_probabilities: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    source_count = (
-        len(transform.e_z_columns)
-        + len(transform.e_x_columns)
-        + len(transform.e_y_columns)
-    )
-    probabilities = _validated_probabilities(
-        source_probabilities,
-        expected_count=source_count,
-        name="source_probabilities",
-    )
+    probabilities = np.asarray(source_probabilities, dtype=np.float64)
     return (
         probabilities[transform.e_z_columns],
         probabilities[transform.e_x_columns],
@@ -660,37 +591,10 @@ def tesseract_lp_maximin_prior_probabilities(
         raise RuntimeError(
             "LP maximin prior solver failed: " + str(result.message)
         )
-    solution = np.asarray(
-        [] if result.x is None else result.x, dtype=np.float64
-    )
-    if solution.shape != (auxiliary_count + 1,):
-        raise RuntimeError(
-            "LP maximin prior solver returned an invalid solution."
-        )
-    if not np.all(np.isfinite(solution)):
-        raise RuntimeError(
-            "LP maximin prior solver returned non-finite costs."
-        )
-    auxiliary_costs = solution[:-1]
+    auxiliary_costs = np.asarray(result.x[:-1])
     residual_costs = source_costs - np.asarray(
         cost_matrix @ auxiliary_costs
     ).reshape(-1)
-    if (
-        solution[-1] < 0
-        or np.any(auxiliary_costs < 0)
-        or np.any(residual_costs < 0)
-    ):
-        raise RuntimeError(
-            "LP maximin prior solver returned negative costs."
-        )
-    minimum_cost = solution[-1]
-    if np.any(auxiliary_costs < minimum_cost - 1e-8) or np.any(
-        residual_costs < minimum_cost - 1e-8
-    ):
-        raise RuntimeError(
-            "LP maximin prior solver returned a solution that violates the "
-            "maximin constraints."
-        )
     gari_costs = np.concatenate([residual_costs, auxiliary_costs])
     return np.exp(-np.logaddexp(0, gari_costs))
 
@@ -718,8 +622,6 @@ def build_gari_dem(
         expected_count=source_count,
         name="source_probabilities",
     )
-    if not callable(prior_function):
-        raise ValueError("prior_function must be callable.")
     gari_probabilities = _validated_probabilities(
         prior_function(transform, probabilities),
         expected_count=transform.checks.shape[1],

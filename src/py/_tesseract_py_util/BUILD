@@ -37,7 +37,6 @@ py_test(
         ":gari",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//scipy",
         "@pypi//stim",
     ],
 )

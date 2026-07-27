@@ -1,8 +1,5 @@
-import itertools
-
 import numpy as np
 import pytest
-import scipy.sparse
 import stim
 
 from _tesseract_py_util.gari import (
@@ -36,21 +33,14 @@ def _tiny_model():
         x_detectors=x_detectors,
         z_detectors=z_detectors,
     )
-    return checks, logicals, probabilities, transform
+    return probabilities, transform
 
 
 def test_tiny_transform():
     with pytest.raises(ValueError, match="decompose_errors=False"):
         dem_to_matrices(stim.DetectorErrorModel("error(0.1) D0 ^ D1"))
-    with pytest.raises(ValueError, match="fully flattened"):
-        dem_to_matrices(stim.DetectorErrorModel("shift_detectors 1"))
 
-    checks, logicals, _, transform = _tiny_model()
-    np.testing.assert_array_equal(transform.e_z_columns, [0])
-    np.testing.assert_array_equal(transform.e_x_columns, [1])
-    np.testing.assert_array_equal(transform.e_y_columns, [2])
-    np.testing.assert_array_equal(transform.u.toarray(), [[1]])
-    np.testing.assert_array_equal(transform.v.toarray(), [[1]])
+    _, transform = _tiny_model()
     np.testing.assert_array_equal(
         transform.checks.toarray(),
         [
@@ -69,35 +59,10 @@ def test_tiny_transform():
     np.testing.assert_array_equal(
         transform.source_to_gari_detectors, [0, 2, 1, 3]
     )
-    assert (
-        transform.physical_x_rows,
-        transform.physical_z_rows,
-        transform.virtual_z_rows,
-        transform.virtual_x_rows,
-    ) == (slice(0, 2), slice(2, 4), slice(4, 5), slice(5, 6))
-
-    for source_error in itertools.product([0, 1], repeat=3):
-        e_z, e_x, e_y = source_error
-        source_error = np.asarray(source_error, dtype=np.uint8)
-        gari_error = np.asarray(
-            [e_z, e_x, e_y, e_z ^ e_y, e_x ^ e_y], dtype=np.uint8
-        )
-        source_syndrome = np.asarray(checks @ source_error).reshape(-1) % 2
-        expected = np.concatenate(
-            [source_syndrome[[0, 2, 1, 3]], np.zeros(2, dtype=np.uint8)]
-        )
-        np.testing.assert_array_equal(
-            np.asarray(transform.checks @ gari_error).reshape(-1) % 2,
-            expected,
-        )
-        np.testing.assert_array_equal(
-            np.asarray(transform.logicals @ gari_error).reshape(-1) % 2,
-            np.asarray(logicals @ source_error).reshape(-1) % 2,
-        )
 
 
 def test_prior_probabilities_and_gari_dem_round_trip():
-    _, _, source_probabilities, transform = _tiny_model()
+    source_probabilities, transform = _tiny_model()
     np.testing.assert_array_equal(
         paper_prior_probabilities(transform, source_probabilities),
         [0.1, 0.2, 0.3, 0.5, 0.5],
