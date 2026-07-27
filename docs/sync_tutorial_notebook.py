@@ -16,13 +16,11 @@
 
 import argparse
 import difflib
-import json
 import os
 from pathlib import Path
-import shutil
 import sys
-import tempfile
 
+from jupytext import read, writes
 from jupytext.cli import jupytext
 
 FORMATS = "ipynb,py:percent"
@@ -71,12 +69,8 @@ def _write_notebook_from_source(root: Path) -> None:
     )
 
 
-def _canonical_json(path: Path) -> list[str]:
-    return json.dumps(
-        json.loads(path.read_text()),
-        indent=2,
-        sort_keys=True,
-    ).splitlines(keepends=True)
+def _canonical_source(path: Path) -> list[str]:
+    return writes(read(path), fmt="py:percent").splitlines(keepends=True)
 
 
 def _check_pair() -> int:
@@ -88,31 +82,22 @@ def _check_pair() -> int:
         sys.stderr.write(f"{SOURCE_PATH} is missing; run `bazel run //docs:sync_tutorial_notebook -- --write`.\n")
         return 1
 
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_root = Path(tmp)
-        tmp_docs = tmp_root / "docs"
-        tmp_docs.mkdir()
-        shutil.copy2(source, tmp_docs / SOURCE_PATH.name)
-        shutil.copy2(notebook, tmp_docs / NOTEBOOK_PATH.name)
-
-        _write_notebook_from_source(tmp_root)
-
-        expected = _canonical_json(notebook)
-        actual = _canonical_json(tmp_docs / NOTEBOOK_PATH.name)
-        if expected != actual:
-            sys.stderr.write(
-                f"{NOTEBOOK_PATH} is not synchronized with {SOURCE_PATH}. "
-                "Run `bazel run //docs:sync_tutorial_notebook -- --write`.\n"
+    expected = _canonical_source(source)
+    actual = _canonical_source(notebook)
+    if expected != actual:
+        sys.stderr.write(
+            f"{NOTEBOOK_PATH} is not synchronized with {SOURCE_PATH}. "
+            "Run `bazel run //docs:sync_tutorial_notebook -- --write`.\n"
+        )
+        sys.stderr.writelines(
+            difflib.unified_diff(
+                expected,
+                actual,
+                fromfile=str(SOURCE_PATH),
+                tofile=f"{NOTEBOOK_PATH} as py:percent",
             )
-            sys.stderr.writelines(
-                difflib.unified_diff(
-                    expected,
-                    actual,
-                    fromfile=str(NOTEBOOK_PATH),
-                    tofile="generated tutorial.ipynb",
-                )
-            )
-            return 1
+        )
+        return 1
 
     return 0
 
