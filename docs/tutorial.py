@@ -345,7 +345,7 @@ results = run_tesseract_decoder(tesseract_config2.compile_decoder(), dets, obs)
 print_results(results)
 
 # %% [markdown] id="gari-correlated-decoding"
-# # Decoding Correlated Errors with Tesseract
+# # Faster Methods of Decoding Correlated Errors with Tesseract
 #
 # ## GARI
 #
