@@ -21,8 +21,8 @@ stim::DetectorErrorModel load_test_dem(const std::string& filename) {
   std::stringstream ss;
   ss << is.rdbuf();
   stim::Circuit circuit(ss.str().c_str());
-  return stim::ErrorAnalyzer::circuit_to_detector_error_model(
-      circuit, true, true, false, false, false, 0.0);
+  return stim::ErrorAnalyzer::circuit_to_detector_error_model(circuit, true, true, false, false,
+                                                              false, 0.0);
 }
 
 auto chromobius_classifier = [](int index, const std::vector<double>& coords,
@@ -122,12 +122,9 @@ TEST(MultiPassTesseractDecoderTest, CausalScheduleSurfaceCode) {
   // Class 0: Detectors 0, 1
   // Class 1: Detectors 2, 3
   auto classifier = [](int index, const std::vector<double>& coords,
-                       const std::string& tag) -> int {
-    return (index < 2) ? 0 : 1;
-  };
+                       const std::string& tag) -> int { return (index < 2) ? 0 : 1; };
 
-  MultiPassTesseractDecoder decoder(dem, 2, classifier, TesseractConfig(), 1,
-                                    DetOrder::DetBFS, 0,
+  MultiPassTesseractDecoder decoder(dem, 2, classifier, TesseractConfig(), 1, DetOrder::DetBFS, 0,
                                     SchedulingStrategy::Causal);
 
   const auto& schedule = MultiPassDebugger::get_pass_schedule(decoder);
@@ -143,10 +140,9 @@ TEST(MultiPassTesseractDecoderTest, SurfaceCodePartitioning) {
   std::vector<int> distances = {3, 5, 7};
   for (int d : distances) {
     int q = 2 * d * d - 1;
-    std::string filename =
-        "r=" + std::to_string(d) + ",d=" + std::to_string(d) +
-        ",p=0.001,noise=si1000,c=surface_code_X,q=" + std::to_string(q) +
-        ",gates=cz.stim";
+    std::string filename = "r=" + std::to_string(d) + ",d=" + std::to_string(d) +
+                           ",p=0.001,noise=si1000,c=surface_code_X,q=" + std::to_string(q) +
+                           ",gates=cz.stim";
     stim::DetectorErrorModel dem = load_test_dem(filename);
     MultiPassTesseractDecoder decoder(dem, 1, chromobius_classifier);
     ASSERT_EQ(decoder.num_components(), 2) << "Failed partitioning for d=" << d;
@@ -157,17 +153,15 @@ TEST(MultiPassTesseractDecoderTest, SurfaceCodeCausalScheduling) {
   std::vector<int> distances = {3, 5, 7};
   for (int d : distances) {
     int q = 2 * d * d - 1;
-    std::string filename =
-        "r=" + std::to_string(d) + ",d=" + std::to_string(d) +
-        ",p=0.001,noise=si1000,c=surface_code_X,q=" + std::to_string(q) +
-        ",gates=cz.stim";
+    std::string filename = "r=" + std::to_string(d) + ",d=" + std::to_string(d) +
+                           ",p=0.001,noise=si1000,c=surface_code_X,q=" + std::to_string(q) +
+                           ",gates=cz.stim";
     stim::DetectorErrorModel dem = load_test_dem(filename);
 
     // 1-Pass: Should only schedule X component (0)
     {
-      MultiPassTesseractDecoder decoder(dem, 1, chromobius_classifier,
-                                        TesseractConfig(), 1, DetOrder::DetBFS,
-                                        0, SchedulingStrategy::Causal);
+      MultiPassTesseractDecoder decoder(dem, 1, chromobius_classifier, TesseractConfig(), 1,
+                                        DetOrder::DetBFS, 0, SchedulingStrategy::Causal);
       const auto& schedule = MultiPassDebugger::get_pass_schedule(decoder);
       ASSERT_EQ(schedule.size(), 1);
       ASSERT_EQ(schedule[0].size(), 1);
@@ -176,9 +170,8 @@ TEST(MultiPassTesseractDecoderTest, SurfaceCodeCausalScheduling) {
 
     // 2-Pass: Should schedule Z (1) then X (0)
     {
-      MultiPassTesseractDecoder decoder(dem, 2, chromobius_classifier,
-                                        TesseractConfig(), 1, DetOrder::DetBFS,
-                                        0, SchedulingStrategy::Causal);
+      MultiPassTesseractDecoder decoder(dem, 2, chromobius_classifier, TesseractConfig(), 1,
+                                        DetOrder::DetBFS, 0, SchedulingStrategy::Causal);
       const auto& schedule = MultiPassDebugger::get_pass_schedule(decoder);
       ASSERT_EQ(schedule.size(), 2);
       ASSERT_EQ(schedule[0].size(), 1);
@@ -189,9 +182,8 @@ TEST(MultiPassTesseractDecoderTest, SurfaceCodeCausalScheduling) {
 
     // 3-Pass: Should schedule X (0) then Z (1) then X (0)
     {
-      MultiPassTesseractDecoder decoder(dem, 3, chromobius_classifier,
-                                        TesseractConfig(), 1, DetOrder::DetBFS,
-                                        0, SchedulingStrategy::Causal);
+      MultiPassTesseractDecoder decoder(dem, 3, chromobius_classifier, TesseractConfig(), 1,
+                                        DetOrder::DetBFS, 0, SchedulingStrategy::Causal);
       const auto& schedule = MultiPassDebugger::get_pass_schedule(decoder);
       ASSERT_EQ(schedule.size(), 3);
       ASSERT_EQ(schedule[0].size(), 1);
@@ -208,14 +200,12 @@ TEST(MultiPassTesseractDecoderTest, PerfectResetSurfaceCode) {
   std::vector<int> distances = {3, 5, 7};
   for (int d : distances) {
     int q = 2 * d * d - 1;
-    std::string filename =
-        "r=" + std::to_string(d) + ",d=" + std::to_string(d) +
-        ",p=0.001,noise=si1000,c=surface_code_X,q=" + std::to_string(q) +
-        ",gates=cz.stim";
+    std::string filename = "r=" + std::to_string(d) + ",d=" + std::to_string(d) +
+                           ",p=0.001,noise=si1000,c=surface_code_X,q=" + std::to_string(q) +
+                           ",gates=cz.stim";
     stim::DetectorErrorModel dem = load_test_dem(filename);
-    MultiPassTesseractDecoder decoder(dem, 2, chromobius_classifier,
-                                      TesseractConfig(), 1, DetOrder::DetBFS, 0,
-                                      SchedulingStrategy::Causal);
+    MultiPassTesseractDecoder decoder(dem, 2, chromobius_classifier, TesseractConfig(), 1,
+                                      DetOrder::DetBFS, 0, SchedulingStrategy::Causal);
 
     size_t n_comp = MultiPassDebugger::num_components(decoder);
 
@@ -223,8 +213,7 @@ TEST(MultiPassTesseractDecoderTest, PerfectResetSurfaceCode) {
     std::vector<std::vector<double>> initial_likelihoods(n_comp);
     std::vector<std::vector<ErrorCost>> initial_error_costs(n_comp);
     for (size_t i = 0; i < n_comp; ++i) {
-      const auto& comp_dec =
-          MultiPassDebugger::get_component_decoder(decoder, i);
+      const auto& comp_dec = MultiPassDebugger::get_component_decoder(decoder, i);
       for (const auto& err : comp_dec.errors) {
         initial_likelihoods[i].push_back(err.likelihood_cost);
       }
@@ -247,28 +236,24 @@ TEST(MultiPassTesseractDecoderTest, PerfectResetSurfaceCode) {
 
       // Verify state is restored
       for (size_t i = 0; i < n_comp; ++i) {
-        const auto& comp_dec =
-            MultiPassDebugger::get_component_decoder(decoder, i);
+        const auto& comp_dec = MultiPassDebugger::get_component_decoder(decoder, i);
 
         for (size_t ei = 0; ei < comp_dec.errors.size(); ++ei) {
-          ASSERT_DOUBLE_EQ(comp_dec.errors[ei].likelihood_cost,
-                           initial_likelihoods[i][ei])
-              << "Likelihood mismatch at d=" << d << " shot=" << shot
-              << " comp=" << i << " err=" << ei;
+          ASSERT_DOUBLE_EQ(comp_dec.errors[ei].likelihood_cost, initial_likelihoods[i][ei])
+              << "Likelihood mismatch at d=" << d << " shot=" << shot << " comp=" << i
+              << " err=" << ei;
         }
 
-        const auto& current_error_costs =
-            TesseractDebugger::get_error_costs(comp_dec);
+        const auto& current_error_costs = TesseractDebugger::get_error_costs(comp_dec);
         ASSERT_EQ(current_error_costs.size(), initial_error_costs[i].size());
         for (size_t ei = 0; ei < current_error_costs.size(); ++ei) {
           ASSERT_DOUBLE_EQ(current_error_costs[ei].likelihood_cost,
                            initial_error_costs[i][ei].likelihood_cost)
-              << "Internal likelihood mismatch at d=" << d << " shot=" << shot
-              << " comp=" << i << " err=" << ei;
-          ASSERT_DOUBLE_EQ(current_error_costs[ei].min_cost,
-                           initial_error_costs[i][ei].min_cost)
-              << "Internal min_cost mismatch at d=" << d << " shot=" << shot
-              << " comp=" << i << " err=" << ei;
+              << "Internal likelihood mismatch at d=" << d << " shot=" << shot << " comp=" << i
+              << " err=" << ei;
+          ASSERT_DOUBLE_EQ(current_error_costs[ei].min_cost, initial_error_costs[i][ei].min_cost)
+              << "Internal min_cost mismatch at d=" << d << " shot=" << shot << " comp=" << i
+              << " err=" << ei;
         }
       }
     }
@@ -292,8 +277,7 @@ TEST(MultiPassTesseractDecoderTest, BoundaryConditionAndCappingTest) {
   TesseractConfig config;
   config.dem = dem;
 
-  MultiPassTesseractDecoder decoder(dem, 2, classifier, config, 1,
-                                    DetOrder::DetIndex, 12345,
+  MultiPassTesseractDecoder decoder(dem, 2, classifier, config, 1, DetOrder::DetIndex, 12345,
                                     SchedulingStrategy::Causal);
 
   std::vector<uint64_t> hits = {0};
@@ -316,8 +300,7 @@ TEST(MultiPassTesseractDecoderTest, IntermediatePassLeakageTest) {
   TesseractConfig config;
   config.dem = dem;
 
-  MultiPassTesseractDecoder decoder(dem, 3, classifier, config, 1,
-                                    DetOrder::DetIndex, 12345,
+  MultiPassTesseractDecoder decoder(dem, 3, classifier, config, 1, DetOrder::DetIndex, 12345,
                                     SchedulingStrategy::Causal);
 
   std::vector<uint64_t> hits = {0};
@@ -350,8 +333,7 @@ TEST(MultiPassTesseractDecoderTest, MultipleCausalTriggersMaxProbValidation) {
   TesseractConfig config;
   config.dem = dem;
 
-  MultiPassTesseractDecoder decoder(dem, 2, classifier, config, 1,
-                                    DetOrder::DetIndex, 12345,
+  MultiPassTesseractDecoder decoder(dem, 2, classifier, config, 1, DetOrder::DetIndex, 12345,
                                     SchedulingStrategy::Causal);
 
   // 1. Run a shot that triggers BOTH causal detectors D1 and D2
@@ -392,8 +374,7 @@ TEST(MultiPassTesseractDecoderTest, OverlappingSymptomsDistinctObservables) {
   TesseractConfig config;
   config.dem = dem;
 
-  MultiPassTesseractDecoder decoder(dem, 2, classifier, config, 1,
-                                    DetOrder::DetIndex, 12345,
+  MultiPassTesseractDecoder decoder(dem, 2, classifier, config, 1, DetOrder::DetIndex, 12345,
                                     SchedulingStrategy::Causal);
 
   const auto& comp0 = MultiPassDebugger::get_component_decoder_full(decoder, 0);
