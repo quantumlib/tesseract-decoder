@@ -65,8 +65,8 @@ expected to be fixed across the sweep.
 
 Each aggregate row retains observed outcomes (`num_shots`, `num_errors`,
 `num_low_confidence`, and `total_time_seconds`), its available circuit and
-decoder configuration, and authoritative model metadata emitted by the same
-Tesseract binary that performed the timed decode:
+decoder configuration, and model metadata reconstructed by the benchmark
+tooling from the immutable circuit snapshot stored with the run:
 
 - `num_detectors`: detector count used by the heuristic M calculation.
 - `num_raw_dem_errors`: error count in Stim's generated DEM.
@@ -80,13 +80,14 @@ Tesseract binary that performed the timed decode:
   `rounds`: explicit circuit identity fields in the aggregate.
 - `circuit_sha256`: content identity of the snapshotted circuit used by jobs.
 - `merge_errors` and `det_order_method`: model-compilation and detector-order
-  modes. New raw jobs record these directly; the historical rows use the
+  modes. New run manifests record these directly; the historical rows use the
   explicit assumptions documented in `provenance.json`.
 
-New per-job stats record detector/error counts after the runtime binary has
-performed its actual DEM compilation. Aggregation validates that those counts
-agree across repetitions and marks their source as `benchmark_runtime_stats`;
-it does not reconstruct them with the aggregation environment. Mandatory and
+The native per-job stats do not contain detector/error-model counts.
+Aggregation reconstructs those fields from each run's read-only circuit
+snapshot and marks their source as `snapshot_reconstruction`. If a newer
+binary emits any of the same fields, aggregation requires them to agree with
+the manifest and snapshot instead of silently overwriting them. Mandatory and
 optional counts are `null` for non-sparsified baseline rows.
 `num_errors` remains the observed decoding-failure count; it is deliberately
 not reused for error-model size.
@@ -159,5 +160,6 @@ bazel run --jobs=1 //benchmarking/sparsify_errors:plot -- \
   --output-dir benchmarking/sparsify_errors/plots
 ```
 
-Only PDFs are produced. The plotting dependencies are direct entries in
-`src/py/requirements.in` and are pinned by `src/py/requirements_lock.txt`.
+Only PDFs are produced. The plotting command uses packages already present in
+the repository's locked Python environment; no project dependency changes are
+required for these benchmark scripts.

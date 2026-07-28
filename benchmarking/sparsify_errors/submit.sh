@@ -160,6 +160,8 @@ manifest = {
     "hardware_description": hardware,
     "tesseract_binary_sha256": hashlib.sha256(binary_path.read_bytes()).hexdigest(),
     "git_dirty": False,
+    "det_order_method": "index",
+    "merge_errors": True,
     "circuit_sha256": circuits,
     "expected_job_count": expected_job_count,
     "sample_seed_namespace": sample_seed_namespace,

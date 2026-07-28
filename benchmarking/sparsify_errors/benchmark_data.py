@@ -122,6 +122,8 @@ RUN_MANIFEST_TYPES: dict[str, type | tuple[type, ...]] = {
     "hardware_description": str,
     "tesseract_binary_sha256": str,
     "git_dirty": bool,
+    "det_order_method": str,
+    "merge_errors": bool,
     "circuit_sha256": dict,
     "expected_job_count": int,
     "sample_seed_namespace": int,
@@ -643,6 +645,58 @@ def _validate_raw_row(row: Mapping[str, Any], source: str) -> None:
         )
 
 
+def _attach_snapshot_metadata(
+    rows: Sequence[tuple[str, dict[str, Any]]],
+    *,
+    manifest: Mapping[str, Any],
+    snapshot_root: Path,
+) -> None:
+    """Adds fields absent from native stats using the run's immutable snapshot."""
+
+    cache: dict[str, tuple[dict[str, Any], list[int]]] = {}
+    for source, row in rows:
+        validate_aggregate_row(row, source, require_metadata=False)
+        circuit_path = row["circuit_path"]
+        if circuit_path not in cache:
+            cache[circuit_path] = _load_circuit_metadata(snapshot_root, circuit_path)
+        metadata, degrees = cache[circuit_path]
+        expected_digest = manifest["circuit_sha256"].get(circuit_path)
+        if metadata["circuit_sha256"] != expected_digest:
+            raise BenchmarkDataError(
+                f"{_context(source, row)}: reconstructed circuit SHA-256 does not "
+                "match the run manifest"
+            )
+
+        reconstructed = {
+            "det_order_method": manifest["det_order_method"],
+            "merge_errors": manifest["merge_errors"],
+            "num_compiled_errors": metadata["num_compiled_errors"],
+            "num_detectors": metadata["num_detectors"],
+            "num_raw_dem_errors": metadata["num_raw_dem_errors"],
+        }
+        if row["sparsify_errors"]:
+            base_degree = row["sparsify_base_degree"]
+            max_degree = row["sparsify_max_degree"]
+            reconstructed["num_mandatory_errors"] = sum(
+                degree <= base_degree for degree in degrees
+            )
+            reconstructed["num_optional_errors"] = sum(
+                degree > base_degree and (max_degree == -1 or degree <= max_degree)
+                for degree in degrees
+            )
+        else:
+            reconstructed["num_mandatory_errors"] = None
+            reconstructed["num_optional_errors"] = None
+
+        for field, expected in reconstructed.items():
+            if field in row and row[field] != expected:
+                raise BenchmarkDataError(
+                    f"{_context(source, row)}: runtime field {field!r} disagrees "
+                    "with the run manifest or snapshotted circuit"
+                )
+            row[field] = expected
+
+
 def numerical_content_sha256(rows: Sequence[Mapping[str, Any]]) -> str:
     """Hashes the original numerical/configuration fields independent of line order."""
 
@@ -780,7 +834,7 @@ def aggregate_raw_rows(
             run_id: seed_namespaces[run_id]
             for run_id in sorted(contributing_run_ids[key])
         }
-        aggregate["model_metadata_source"] = "benchmark_runtime_stats"
+        aggregate["model_metadata_source"] = "snapshot_reconstruction"
 
         circuit_path = aggregate["circuit_path"]
         circuit_digest = expected_circuit_sha256.get(circuit_path)
@@ -819,6 +873,12 @@ def _validate_run_manifest(manifest: Mapping[str, Any], source: str) -> None:
     if manifest["git_dirty"]:
         raise BenchmarkDataError(
             f"{source}: benchmark submission used a dirty checkout"
+        )
+    if manifest["det_order_method"] not in SUPPORTED_DET_ORDER_METHODS:
+        raise BenchmarkDataError(f"{source}: unsupported det_order_method")
+    if not manifest["merge_errors"]:
+        raise BenchmarkDataError(
+            f"{source}: snapshot metadata reconstruction requires merge_errors=true"
         )
     if not manifest["hardware_description"].strip():
         raise BenchmarkDataError(f"{source}: hardware_description must not be empty")
@@ -1095,6 +1155,11 @@ def read_run_directories(
                     f"{job_path}: each job file must contain exactly one JSON object"
                 )
             run_rows.extend(job_rows)
+        _attach_snapshot_metadata(
+            run_rows,
+            manifest=manifest,
+            snapshot_root=directory / "artifacts" / "repo",
+        )
         _validate_run_coverage(manifest, run_rows, str(directory))
         manifests.append(manifest)
         rows.extend((source, row, manifest["run_id"]) for source, row in run_rows)
@@ -1104,6 +1169,8 @@ def read_run_directories(
         "stim_revision",
         "hardware_description",
         "tesseract_binary_sha256",
+        "det_order_method",
+        "merge_errors",
         "circuit_sha256",
         "expected_job_count",
         "sample_seed_scheme",
