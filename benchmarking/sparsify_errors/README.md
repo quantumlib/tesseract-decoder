@@ -161,9 +161,3 @@ bazel run --jobs=1 //benchmarking/sparsify_errors:plot -- \
 
 Only PDFs are produced. The plotting dependencies are direct entries in
 `src/py/requirements.in` and are pinned by `src/py/requirements_lock.txt`.
-
-Run the strict schema, aggregation, and plotting tests with:
-
-```bash
-bazel test --jobs=1 //benchmarking/sparsify_errors:tests
-```

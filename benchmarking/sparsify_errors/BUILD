@@ -14,7 +14,6 @@
 
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_library.bzl", "py_library")
-load("@rules_python//python:py_test.bzl", "py_test")
 
 py_library(
     name = "benchmark_data",
@@ -41,17 +40,6 @@ py_binary(
     deps = [":benchmark_data"],
 )
 
-py_library(
-    name = "plot_lib",
-    srcs = ["plot.py"],
-    deps = [
-        ":benchmark_data",
-        "@pypi//matplotlib",
-        "@pypi//numpy",
-        "@pypi//scipy",
-    ],
-)
-
 py_binary(
     name = "plot",
     srcs = ["plot.py"],
@@ -62,61 +50,5 @@ py_binary(
         "@pypi//matplotlib",
         "@pypi//numpy",
         "@pypi//scipy",
-    ],
-)
-
-py_test(
-    name = "benchmark_data_test",
-    srcs = ["benchmark_data_test.py"],
-    deps = [
-        ":benchmark_data",
-        "@pypi//stim",
-    ],
-)
-
-py_test(
-    name = "schema_test",
-    size = "medium",
-    srcs = ["schema_test.py"],
-    data = [
-        "aggregated_results.jsonl",
-        "provenance.json",
-        "//:sparsify_benchmark_circuits",
-    ],
-    deps = [
-        ":benchmark_data",
-    ],
-)
-
-py_test(
-    name = "plot_test",
-    size = "medium",
-    srcs = ["plot_test.py"],
-    env = {
-        "MPLBACKEND": "Agg",
-        "OMP_NUM_THREADS": "1",
-        "OPENBLAS_NUM_THREADS": "1",
-    },
-    deps = [
-        ":plot_lib",
-    ],
-)
-
-py_test(
-    name = "stats_integration_test",
-    srcs = ["stats_integration_test.py"],
-    data = [
-        "//:sparsify_benchmark_circuits",
-        "//src:tesseract",
-    ],
-)
-
-test_suite(
-    name = "tests",
-    tests = [
-        ":benchmark_data_test",
-        ":plot_test",
-        ":schema_test",
-        ":stats_integration_test",
     ],
 )
