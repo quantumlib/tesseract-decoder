@@ -56,9 +56,20 @@ def get_sinter_decoders():
             num_det_orders=21,
             seed=2384753
         ),
+        "tesseract_multipass_1pass": MultiPassSinterDecoder(
+            num_passes=1,
+            strategy=_core.Causal,
+            det_beam=20,
+            beam_climbing=True,
+            no_revisit_dets=True,
+            merge_errors=True,
+            pqlimit=1000000,
+            num_det_orders=21,
+            seed=2384753
+        ),
         "tesseract_multipass_2pass": MultiPassSinterDecoder(
             num_passes=2,
-            multipass_strategy="causal",
+            strategy=_core.Causal,
             det_beam=20,
             beam_climbing=True,
             no_revisit_dets=True,
@@ -69,7 +80,7 @@ def get_sinter_decoders():
         ),
         "tesseract_multipass_3pass": MultiPassSinterDecoder(
             num_passes=3,
-            multipass_strategy="causal",
+            strategy=_core.Causal,
             det_beam=20,
             beam_climbing=True,
             no_revisit_dets=True,
