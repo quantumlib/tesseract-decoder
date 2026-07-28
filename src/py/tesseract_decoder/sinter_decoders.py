@@ -19,6 +19,20 @@ class MultiPassSinterDecoder(sinter.Decoder):
         # 2. Attach the classifier if provided
         if self.detector_classifier is not None:
             cpp_decoder.detector_classifier = self.detector_classifier
+        else:
+            def default_classifier(index: int, coords: list[float], tag: str) -> int:
+                if '"basis": "X"' in tag:
+                    return 0
+                if '"basis": "Z"' in tag:
+                    return 1
+                if len(coords) >= 4:
+                    c3 = int(coords[3])
+                    if 0 <= c3 <= 2:
+                        return 0
+                    if 3 <= c3 <= 5:
+                        return 1
+                return 0
+            cpp_decoder.detector_classifier = default_classifier
         
         # 3. Apply base configuration (pqlimit, det_beam, etc.)
         for key, value in self.base_config_kwargs.items():
@@ -29,3 +43,50 @@ class MultiPassSinterDecoder(sinter.Decoder):
 
         # 4. Compile and return the native CompiledDecoder
         return cpp_decoder.compile_decoder_for_dem(dem=dem)
+
+def get_sinter_decoders():
+    from ._core.tesseract_sinter_compat import TesseractSinterDecoder
+    return {
+        "tesseract_mono": TesseractSinterDecoder(
+            det_beam=20,
+            beam_climbing=True,
+            no_revisit_dets=True,
+            merge_errors=True,
+            pqlimit=1000000,
+            num_det_orders=21,
+            seed=2384753
+        ),
+        "tesseract_multipass_1pass": MultiPassSinterDecoder(
+            num_passes=1,
+            strategy=_core.Causal,
+            det_beam=20,
+            beam_climbing=True,
+            no_revisit_dets=True,
+            merge_errors=True,
+            pqlimit=1000000,
+            num_det_orders=21,
+            seed=2384753
+        ),
+        "tesseract_multipass_2pass": MultiPassSinterDecoder(
+            num_passes=2,
+            strategy=_core.Causal,
+            det_beam=20,
+            beam_climbing=True,
+            no_revisit_dets=True,
+            merge_errors=True,
+            pqlimit=1000000,
+            num_det_orders=21,
+            seed=2384753
+        ),
+        "tesseract_multipass_3pass": MultiPassSinterDecoder(
+            num_passes=3,
+            strategy=_core.Causal,
+            det_beam=20,
+            beam_climbing=True,
+            no_revisit_dets=True,
+            merge_errors=True,
+            pqlimit=1000000,
+            num_det_orders=21,
+            seed=2384753
+        ),
+    }

@@ -41,7 +41,6 @@ std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec) {
   return os;
 }
 
-<<<<<<< HEAD
 int suggest_sparsify_reactivate_limit_capped(size_t num_detectors, int sparsify_base_degree,
                                              int max_limit) {
   if (sparsify_base_degree < 0) {
@@ -65,7 +64,8 @@ int suggest_sparsify_reactivate_limit_capped(size_t num_detectors, int sparsify_
   if (rounded >= max_result) {
     return max_limit;
   }
-  return static_cast<int>(rounded);}
+  return static_cast<int>(rounded);
+}
 };  // namespace
 
 namespace std {
@@ -205,7 +205,7 @@ void TesseractDecoder::update_internal_costs(const std::vector<size_t>& modified
     // Update error_costs for the modified error
     error_costs[ei] = {errors[ei].likelihood_cost,
                        errors[ei].likelihood_cost / errors[ei].symptom.detectors.size()};
-    
+
     // Collect all detectors affected by this error to re-sort their d2e lists
     for (int d : edets[ei]) {
       affected_detectors.insert(d);
@@ -379,11 +379,7 @@ void TesseractDecoder::flip_detectors_and_block_errors(
     size_t ei = node.error_index;
     size_t min_detector = node.min_detector;
 
-<<<<<<< HEAD
     for (int oei : active_d2e[min_detector]) {
-=======
-    for (size_t oei : d2e[min_detector]) {
->>>>>>> 4b1c379 (Add update_internal_costs to TesseractDecoder)
       detector_cost_tuples[oei].error_blocked = 1;
       if (oei == ei) break;
     }

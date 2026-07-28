@@ -11,7 +11,6 @@ double bernoulli_xor(double p1, double p2);
 // The weight is calculated as w = ln((1-p)/p).
 double to_weight(double probability);
 
-} // namespace two_pass_decoding
+}  // namespace tesseract
 
-#endif // BERN_UTILS_H
-
+#endif  // BERN_UTILS_H

@@ -58,7 +58,7 @@ TEST(tesseract, DecodeToErrorsCorrectness_SimpleGrid) {
   for (size_t ei : decoder.predicted_errors_buffer) {
     total_cost += decoder.errors[ei].likelihood_cost;
   }
-  EXPECT_LT(total_cost, 0.5); // 4 * -log(0.1) is roughly 9.2, so cost should be low.
+  EXPECT_LT(total_cost, 0.5);  // 4 * -log(0.1) is roughly 9.2, so cost should be low.
 }
 
 TEST(tesseract, EneighborsCorrectness_SimpleGrid) {
@@ -404,14 +404,14 @@ TEST(tesseract, UpdateInternalCostsBehavior) {
     )DEM");
 
   TesseractConfig config{dem};
-  config.merge_errors = false; // Important: do not merge errors for this test
+  config.merge_errors = false;  // Important: do not merge errors for this test
   TesseractDecoder decoder(config);
 
   // Initial decode: D0 fires. Should pick Error 0 (index 0) as it's more likely.
   std::vector<uint64_t> detections = {0};
   decoder.decode_to_errors(detections);
   ASSERT_EQ(decoder.predicted_errors_buffer.size(), 1);
-  ASSERT_EQ(decoder.predicted_errors_buffer[0], 0); // Should pick Error 0 (index 0)
+  ASSERT_EQ(decoder.predicted_errors_buffer[0], 0);  // Should pick Error 0 (index 0)
 
   // Manually change the likelihood_cost of Error 1 to be lower (more likely) than Error 0
   // Original: Error 0 (prob 0.2, cost ~1.386), Error 1 (prob 0.1, cost ~2.197)
@@ -425,7 +425,7 @@ TEST(tesseract, UpdateInternalCostsBehavior) {
   // Now, D0 fires. It should pick Error 1 (index 1) as it's now more likely.
   decoder.decode_to_errors(detections);
   ASSERT_EQ(decoder.predicted_errors_buffer.size(), 1);
-  ASSERT_EQ(decoder.predicted_errors_buffer[0], 1); // Should now pick Error 1 (index 1)
+  ASSERT_EQ(decoder.predicted_errors_buffer[0], 1);  // Should now pick Error 1 (index 1)
 }
 
-} // namespace
+}  // namespace

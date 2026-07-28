@@ -164,6 +164,5 @@ class TesseractDebugger {
     return decoder.d2e;
   }
 };
-};
 
 #endif  // TESSERACT_DECODER_H
