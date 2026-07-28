@@ -639,62 +639,46 @@ int main(int argc, char* argv[]) {
   }
 
   int effective_sparsify_reactivate_limit = config.sparsify_reactivate_limit;
-  const TesseractDecoder* metadata_decoder = nullptr;
   for (const auto& decoder : decoders) {
     if (decoder) {
       effective_sparsify_reactivate_limit = decoder->config.sparsify_reactivate_limit;
-      metadata_decoder = decoder.get();
       break;
     }
   }
-  std::unique_ptr<TesseractDecoder> fallback_metadata_decoder;
-  if (!args.stats_out_fname.empty() && metadata_decoder == nullptr) {
-    fallback_metadata_decoder = std::make_unique<TesseractDecoder>(config);
-    metadata_decoder = fallback_metadata_decoder.get();
-    effective_sparsify_reactivate_limit = metadata_decoder->config.sparsify_reactivate_limit;
+  if (config.sparsify_errors && effective_sparsify_reactivate_limit == -1) {
+    effective_sparsify_reactivate_limit = suggest_sparsify_reactivate_limit(
+        config.dem.count_detectors(), config.sparsify_base_degree);
+    effective_sparsify_reactivate_limit = std::min(
+        effective_sparsify_reactivate_limit,
+        static_cast<int>(std::min<uint64_t>(
+            config.dem.count_errors(), static_cast<uint64_t>(std::numeric_limits<int>::max()))));
   }
 
   bool print_final_stats = true;
   if (!args.stats_out_fname.empty()) {
-    assert(metadata_decoder != nullptr);
-    const char* det_order_method = args.det_order_bfs          ? "bfs"
-                                   : args.det_order_coordinate ? "coordinate"
-                                                               : "index";
-    nlohmann::json num_mandatory_errors = nullptr;
-    nlohmann::json num_optional_errors = nullptr;
-    if (config.sparsify_errors) {
-      num_mandatory_errors = metadata_decoder->sparsify_mandatory_errors.size();
-      num_optional_errors = metadata_decoder->sparsify_optional_errors.size();
-    }
-    nlohmann::json stats_json = {{"circuit_path", args.circuit_path},
-                                 {"dem_path", args.dem_path},
-                                 {"max_errors", args.max_errors},
-                                 {"sample_seed", args.sample_seed},
+    nlohmann::json stats_json = {
+        {"circuit_path", args.circuit_path},
+        {"dem_path", args.dem_path},
+        {"max_errors", args.max_errors},
+        {"sample_seed", args.sample_seed},
 
-                                 {"det_beam", args.det_beam},
-                                 {"det_order_method", det_order_method},
-                                 {"det_penalty", args.det_penalty},
-                                 {"beam_climbing", args.beam_climbing},
-                                 {"merge_errors", config.merge_errors},
-                                 {"no_revisit_dets", args.no_revisit_dets},
-                                 {"pqlimit", args.pqlimit},
-                                 {"num_det_orders", args.num_det_orders},
-                                 {"det_order_seed", args.det_order_seed},
-                                 {"total_time_seconds", total_time_seconds},
-                                 {"num_errors", has_obs ? nlohmann::json(num_errors) : nullptr},
-                                 {"num_low_confidence", num_low_confidence},
-                                 {"num_shots", shot},
-                                 {"num_threads", args.num_threads},
-                                 {"sample_num_shots", args.sample_num_shots},
-                                 {"sparsify_errors", args.sparsify_errors},
-                                 {"sparsify_base_degree", args.sparsify_base_degree},
-                                 {"sparsify_max_degree", args.sparsify_max_degree},
-                                 {"sparsify_reactivate_limit", effective_sparsify_reactivate_limit},
-                                 {"num_detectors", metadata_decoder->num_detectors},
-                                 {"num_raw_dem_errors", original_dem.count_errors()},
-                                 {"num_compiled_errors", metadata_decoder->num_errors},
-                                 {"num_mandatory_errors", num_mandatory_errors},
-                                 {"num_optional_errors", num_optional_errors}};
+        {"det_beam", args.det_beam},
+        {"det_penalty", args.det_penalty},
+        {"beam_climbing", args.beam_climbing},
+        {"no_revisit_dets", args.no_revisit_dets},
+        {"pqlimit", args.pqlimit},
+        {"num_det_orders", args.num_det_orders},
+        {"det_order_seed", args.det_order_seed},
+        {"total_time_seconds", total_time_seconds},
+        {"num_errors", has_obs ? nlohmann::json(num_errors) : nullptr},
+        {"num_low_confidence", num_low_confidence},
+        {"num_shots", shot},
+        {"num_threads", args.num_threads},
+        {"sample_num_shots", args.sample_num_shots},
+        {"sparsify_errors", args.sparsify_errors},
+        {"sparsify_base_degree", args.sparsify_base_degree},
+        {"sparsify_max_degree", args.sparsify_max_degree},
+        {"sparsify_reactivate_limit", effective_sparsify_reactivate_limit}};
 
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;

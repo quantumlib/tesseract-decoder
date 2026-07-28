@@ -321,9 +321,7 @@ matplotlib==3.10.7 \
     --hash=sha256:f19410b486fdd139885ace124e57f938c1e6a3210ea13dd29cab58f5d4bc12c7 \
     --hash=sha256:f79d5de970fc90cd5591f60053aecfce1fcd736e0303d9f0bf86be649fa68fb8 \
     --hash=sha256:fba2974df0bf8ce3c995fa84b79cde38326e0f7b5409e7a3a481c1141340bcf7
-    # via
-    #   -r src/py/requirements.in
-    #   sinter
+    # via sinter
 mdit-py-plugins==0.6.1 \
     --hash=sha256:214c82fb2ac524472ab6a5bcab1de80f73b50443e187f401bfd77efbc7c6481d \
     --hash=sha256:a2bca0f039f39dbd35fb74ae1b5f998608c437463371f0ff7f49a19a17a114d0
@@ -393,7 +391,6 @@ numpy==2.2.6 \
     --hash=sha256:fe27749d33bb772c80dcd84ae7e8df2adc920ae8297400dabec45f0dedb3f6de \
     --hash=sha256:fee4236c876c4e8369388054d02d0e9bb84821feb1a64dd59e137e6511a551f8
     # via
-    #   -r src/py/requirements.in
     #   contourpy
     #   matplotlib
     #   scipy
@@ -804,9 +801,7 @@ scipy==1.16.3 \
     --hash=sha256:f667a4542cc8917af1db06366d3f78a5c8e83badd56409f94d1eac8d8d9133fa \
     --hash=sha256:fb4b29f4cf8cc5a8d628bc8d8e26d12d7278cd1f219f22698a378c3d67db5e4b \
     --hash=sha256:ffa6eea95283b2b8079b821dc11f50a17d0571c92b43e2b5b12764dc5f9b285d
-    # via
-    #   -r src/py/requirements.in
-    #   sinter
+    # via sinter
 sinter==1.16.0 \
     --hash=sha256:fd0f7bff97cb951345893f53b347d76f99b53977590054abc3d057150f82037b
     # via -r src/py/requirements.in
