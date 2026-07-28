@@ -6,3 +6,6 @@ pytest
 sinter
 pybind11-stubgen
 jupytext
+matplotlib
+numpy
+scipy
