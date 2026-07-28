@@ -39,3 +39,6 @@ user.bazelrc
 src/tesseract_decoder*.so
 
 MODULE.bazel.lock
+
+# Raw benchmark jobs and submission-time manifests.
+/benchmarking/sparsify_errors/out/

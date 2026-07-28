@@ -32,6 +32,9 @@ updates:
       - dependency-name: sinter
       - dependency-name: pybind11-stubgen
       - dependency-name: jupytext
+      - dependency-name: matplotlib
+      - dependency-name: numpy
+      - dependency-name: scipy
     schedule:
       interval: "monthly"
     versioning-strategy: "increase-if-necessary"

@@ -13,6 +13,39 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+filegroup(
+    name = "sparsify_benchmark_circuits",
+    srcs = glob([
+        "testdata/bivariatebicyclecodes/r=6,*p=0.001,noise=si1000,c=*.stim",
+        "testdata/bivariatebicyclecodes/r=6,*p=0.002,noise=si1000,c=*.stim",
+        "testdata/bivariatebicyclecodes/r=10,*p=0.001,noise=si1000,c=*.stim",
+        "testdata/bivariatebicyclecodes/r=10,*p=0.002,noise=si1000,c=*.stim",
+        "testdata/bivariatebicyclecodes/r=12,*p=0.001,noise=si1000,c=*.stim",
+        "testdata/bivariatebicyclecodes/r=12,*p=0.002,noise=si1000,c=*.stim",
+        "testdata/colorcodes/r=3,*p=0.001,noise=si1000,c=superdense_color_code_*.stim",
+        "testdata/colorcodes/r=3,*p=0.002,noise=si1000,c=superdense_color_code_*.stim",
+        "testdata/colorcodes/r=5,*p=0.001,noise=si1000,c=superdense_color_code_*.stim",
+        "testdata/colorcodes/r=5,*p=0.002,noise=si1000,c=superdense_color_code_*.stim",
+        "testdata/colorcodes/r=7,*p=0.001,noise=si1000,c=superdense_color_code_*.stim",
+        "testdata/colorcodes/r=7,*p=0.002,noise=si1000,c=superdense_color_code_*.stim",
+        "testdata/colorcodes/r=9,*p=0.001,noise=si1000,c=superdense_color_code_*.stim",
+        "testdata/colorcodes/r=9,*p=0.002,noise=si1000,c=superdense_color_code_*.stim",
+        "testdata/colorcodes/r=11,*p=0.001,noise=si1000,c=superdense_color_code_*.stim",
+        "testdata/colorcodes/r=11,*p=0.002,noise=si1000,c=superdense_color_code_*.stim",
+        "testdata/surfacecodes/r=3,*p=0.001,noise=si1000,c=surface_code_*.stim",
+        "testdata/surfacecodes/r=3,*p=0.002,noise=si1000,c=surface_code_*.stim",
+        "testdata/surfacecodes/r=5,*p=0.001,noise=si1000,c=surface_code_*.stim",
+        "testdata/surfacecodes/r=5,*p=0.002,noise=si1000,c=surface_code_*.stim",
+        "testdata/surfacecodes/r=7,*p=0.001,noise=si1000,c=surface_code_*.stim",
+        "testdata/surfacecodes/r=7,*p=0.002,noise=si1000,c=surface_code_*.stim",
+        "testdata/surfacecodes/r=9,*p=0.001,noise=si1000,c=surface_code_*.stim",
+        "testdata/surfacecodes/r=9,*p=0.002,noise=si1000,c=surface_code_*.stim",
+        "testdata/surfacecodes/r=11,*p=0.001,noise=si1000,c=surface_code_*.stim",
+        "testdata/surfacecodes/r=11,*p=0.002,noise=si1000,c=surface_code_*.stim",
+    ]),
+    visibility = ["//benchmarking/sparsify_errors:__pkg__"],
+)
+
 MANYLINUX_VERSION="manylinux_2_17_x86_64.manylinux2014_x86_64"
 
 py_wheel(
