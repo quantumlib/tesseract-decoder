@@ -417,9 +417,11 @@ int main(int argc, char* argv[]) {
         total_time_seconds += decoding_time_seconds[shot_index];
         if (args.print_stats) {
           std::cout << "num_shots = " << (shot_index + 1)
-                    << " num_low_confidence = " << num_low_confidence
-                    << " num_errors = " << num_errors
-                    << " states_expanded = " << num_states_expanded_per_shot[shot_index]
+                    << " num_low_confidence = " << num_low_confidence;
+          if (has_obs) {
+            std::cout << " num_errors = " << num_errors;
+          }
+          std::cout << " states_expanded = " << num_states_expanded_per_shot[shot_index]
                     << " states_merged = " << num_states_merged_per_shot[shot_index]
                     << " max_beam = " << max_beam_size_per_shot[shot_index]
                     << " frontier_width = " << max_frontier_width_per_shot[shot_index]

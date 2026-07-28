@@ -603,8 +603,6 @@ int main(int argc, char* argv[]) {
                     << " num_low_confidence = " << num_low_confidence;
           if (has_obs) {
             std::cout << " num_errors = " << num_errors;
-          } else {
-            std::cout << " num_errors = N/A";
           }
           std::cout << " total_time_seconds = " << total_time_seconds << std::endl;
           std::cout << "cost = " << cost_predicted[shot_index] << std::endl;
