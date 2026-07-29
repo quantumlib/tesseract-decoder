@@ -370,7 +370,7 @@ MultiPassDecodeResult MultiPassTesseractDecoder::decode_result(
       aggregate_low_confidence = true;
     }
     if (!preds.empty()) {
-      aggregate_cost += cd.decoder->get_predicted_cost(preds);
+      aggregate_cost += cd.decoder->cost_from_errors(preds);
       std::vector<int> local_flips = cd.decoder->get_flipped_observables(preds);
       for (int obs : local_flips) {
         if (flipped_observables.count(obs))

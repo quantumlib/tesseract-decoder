@@ -586,7 +586,7 @@ int main(int argc, char* argv[]) {
   std::atomic<size_t> num_low_confidence(0);
   std::atomic<double> total_time_seconds(0);
 
-  if (args.multipass && !args.dem_out.empty()) {
+  if (args.multipass && !args.dem_out_fname.empty()) {
     std::cerr << "Error: --dem-out is not supported when --multipass is enabled." << std::endl;
     return 1;
   }
