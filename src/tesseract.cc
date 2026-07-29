@@ -202,9 +202,11 @@ void TesseractDecoder::update_internal_costs(const std::vector<size_t>& modified
   std::unordered_set<int> affected_detectors;
 
   for (size_t ei : modified_error_indices) {
-    // Update error_costs for the modified error
-    error_costs[ei] = {errors[ei].likelihood_cost,
-                       errors[ei].likelihood_cost / errors[ei].symptom.detectors.size()};
+    if (ei >= errors.size()) continue;
+    double min_cost = errors[ei].symptom.detectors.empty()
+                          ? errors[ei].likelihood_cost
+                          : errors[ei].likelihood_cost / errors[ei].symptom.detectors.size();
+    error_costs[ei] = {errors[ei].likelihood_cost, min_cost};
 
     // Collect all detectors affected by this error to re-sort their d2e lists
     for (int d : edets[ei]) {
@@ -214,9 +216,11 @@ void TesseractDecoder::update_internal_costs(const std::vector<size_t>& modified
 
   // Re-sort d2e lists only for affected detectors
   for (int d : affected_detectors) {
-    std::sort(d2e[d].begin(), d2e[d].end(), [this](size_t idx_a, size_t idx_b) {
-      return error_costs[idx_a].min_cost < error_costs[idx_b].min_cost;
-    });
+    if (d >= 0 && (size_t)d < d2e.size()) {
+      std::sort(d2e[d].begin(), d2e[d].end(), [this](size_t idx_a, size_t idx_b) {
+        return error_costs[idx_a].min_cost < error_costs[idx_b].min_cost;
+      });
+    }
   }
 }
 
