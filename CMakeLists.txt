@@ -74,7 +74,13 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 
-set(OPT_COPTS -Ofast -fno-fast-math -march=native -include cstdint)
+option(TESSERACT_NATIVE_ARCH "Enable -march=native host CPU optimizations" OFF)
+
+if(TESSERACT_NATIVE_ARCH)
+  set(OPT_COPTS -Ofast -fno-fast-math -march=native -include cstdint)
+else()
+  set(OPT_COPTS -Ofast -fno-fast-math -march=x86-64-v3 -include cstdint)
+endif()
 
 set(TESSERACT_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 

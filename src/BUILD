@@ -33,7 +33,7 @@ OPT_COPTS = select({
         "//conditions:default": ["-std=c++20"],
 }) + select({
     "@platforms//os:macos": ["-mmacosx-version-min=10.15",],
-    "//conditions:default": ["-march=native",],
+    "//conditions:default": ["-march=x86-64-v3",],
 })
 
 OPT_LINKOPTS = select({
