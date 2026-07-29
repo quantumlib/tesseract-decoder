@@ -139,7 +139,7 @@ target_link_libraries(simplex PUBLIC common utils tesseract_lib highs libstim Th
 # === Executables ===
 add_executable(tesseract ${TESSERACT_SRC_DIR}/tesseract_main.cc)
 target_compile_options(tesseract PRIVATE ${OPT_COPTS})
-target_link_libraries(tesseract PRIVATE tesseract_lib argparse::argparse nlohmann_json::nlohmann_json)
+target_link_libraries(tesseract PRIVATE tesseract_lib multi_pass_tesseract_decoder argparse::argparse nlohmann_json::nlohmann_json)
 
 add_executable(tesseract_trellis ${TESSERACT_SRC_DIR}/tesseract_trellis_main.cc)
 target_compile_options(tesseract_trellis PRIVATE ${OPT_COPTS})
