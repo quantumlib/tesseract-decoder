@@ -46,7 +46,12 @@ void MultiPassTesseractDecoder::validate_annotations(const stim::DetectorErrorMo
     std::vector<double> c = coords_map.count(i) ? coords_map.at(i) : std::vector<double>{};
     std::string t = tags.count(i) ? tags.at(i) : "";
     int cls = classifier((int)i, c, t);
-    if (cls != -1) unique_classes.insert(cls);
+    if (cls < 0) {
+      throw std::invalid_argument(
+          "Detector D" + std::to_string(i) +
+          " could not be classified (missing basis annotation or valid coordinates).");
+    }
+    unique_classes.insert(cls);
   }
   if (unique_classes.size() < 2) {
     throw std::invalid_argument(
@@ -256,6 +261,11 @@ void MultiPassTesseractDecoder::build_causal_schedule() {
 }
 
 std::vector<int> MultiPassTesseractDecoder::decode(const std::vector<uint64_t>& detections) {
+  return decode_result(detections).predictions;
+}
+
+MultiPassDecodeResult MultiPassTesseractDecoder::decode_result(
+    const std::vector<uint64_t>& detections) {
   last_shot_num_reweights = 0;
 
   // 1. Multi-Pass Loop: Sequentially schedules component passes and propagates
@@ -351,16 +361,23 @@ std::vector<int> MultiPassTesseractDecoder::decode(const std::vector<uint64_t>& 
   // 2. Unified Logical Extraction: Collect final predictions from ALL
   // components that ran during the shot.
   std::set<int> flipped_observables;
+  bool aggregate_low_confidence = false;
+  double aggregate_cost = 0.0;
+
   for (const auto& [comp_idx, preds] : component_predictions) {
     auto& cd = component_decoders[comp_idx];
-    if (preds.empty()) continue;
-
-    std::vector<int> local_flips = cd.decoder->get_flipped_observables(preds);
-    for (int obs : local_flips) {
-      if (flipped_observables.count(obs))
-        flipped_observables.erase(obs);
-      else
-        flipped_observables.insert(obs);
+    if (cd.decoder->low_confidence_flag) {
+      aggregate_low_confidence = true;
+    }
+    if (!preds.empty()) {
+      aggregate_cost += cd.decoder->get_predicted_cost(preds);
+      std::vector<int> local_flips = cd.decoder->get_flipped_observables(preds);
+      for (int obs : local_flips) {
+        if (flipped_observables.count(obs))
+          flipped_observables.erase(obs);
+        else
+          flipped_observables.insert(obs);
+      }
     }
   }
 
@@ -380,7 +397,11 @@ std::vector<int> MultiPassTesseractDecoder::decode(const std::vector<uint64_t>& 
   modified_component_indices.clear();
   final_pass_active_components.clear();
 
-  return std::vector<int>(flipped_observables.begin(), flipped_observables.end());
+  MultiPassDecodeResult res;
+  res.predictions = std::vector<int>(flipped_observables.begin(), flipped_observables.end());
+  res.low_confidence = aggregate_low_confidence;
+  res.total_cost = aggregate_cost;
+  return res;
 }
 
 }  // namespace tesseract

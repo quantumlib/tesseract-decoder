@@ -19,6 +19,12 @@ enum class SchedulingStrategy {
   Causal   // Topological: Causal back-propagation
 };
 
+struct MultiPassDecodeResult {
+  std::vector<int> predictions;
+  bool low_confidence = false;
+  double total_cost = 0.0;
+};
+
 class MultiPassTesseractDecoder {
  public:
   MultiPassTesseractDecoder(const stim::DetectorErrorModel& dem, size_t num_passes,
@@ -29,6 +35,7 @@ class MultiPassTesseractDecoder {
                             SchedulingStrategy strategy = SchedulingStrategy::Static);
 
   std::vector<int> decode(const std::vector<uint64_t>& detections);
+  MultiPassDecodeResult decode_result(const std::vector<uint64_t>& detections);
 
   void decode_shots(std::vector<stim::SparseShot>& shots,
                     std::vector<std::vector<int>>& obs_predicted);

@@ -586,6 +586,17 @@ int main(int argc, char* argv[]) {
   std::atomic<size_t> num_low_confidence(0);
   std::atomic<double> total_time_seconds(0);
 
+  if (args.multipass && !args.dem_out.empty()) {
+    std::cerr << "Error: --dem-out is not supported when --multipass is enabled." << std::endl;
+    return 1;
+  }
+
+  if (args.multipass_strategy != "static" && args.multipass_strategy != "causal") {
+    std::cerr << "Error: Invalid --multipass-strategy '" << args.multipass_strategy
+              << "'. Expected 'static' or 'causal'." << std::endl;
+    return 1;
+  }
+
   auto classifier = [](int index, const std::vector<double>& coords,
                        const std::string& tag) -> int {
     if (tag.find("\"basis\": \"X\"") != std::string::npos) return 0;
@@ -595,7 +606,7 @@ int main(int argc, char* argv[]) {
       if (c3 >= 0 && c3 <= 2) return 0;
       if (c3 >= 3 && c3 <= 5) return 1;
     }
-    return 0;
+    return -1;
   };
   tesseract::SchedulingStrategy strategy_val = (args.multipass_strategy == "static")
                                                    ? tesseract::SchedulingStrategy::Static
@@ -621,7 +632,7 @@ int main(int argc, char* argv[]) {
                 args.det_order_method, args.det_order_seed, strategy_val);
           }
           auto start_time = std::chrono::high_resolution_clock::now();
-          auto flips = mp_decoders[thread_index]->decode(shots[shot_index].hits);
+          auto res = mp_decoders[thread_index]->decode_result(shots[shot_index].hits);
           auto stop_time = std::chrono::high_resolution_clock::now();
           decoding_time_seconds[shot_index] =
               std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time)
@@ -629,13 +640,13 @@ int main(int argc, char* argv[]) {
               1e6;
 
           obs_predicted[shot_index].clear();
-          for (int o : flips) {
+          for (int o : res.predictions) {
             if (o >= 0 && (size_t)o < num_observables) {
               obs_predicted[shot_index][o] ^= 1;
             }
           }
-          low_confidence[shot_index] = false;
-          cost_predicted[shot_index] = 0;
+          low_confidence[shot_index] = res.low_confidence;
+          cost_predicted[shot_index] = res.total_cost;
         } else {
           if (!decoders[thread_index]) {
             decoders[thread_index] = std::make_unique<TesseractDecoder>(config);
