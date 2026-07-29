@@ -612,7 +612,6 @@ int main(int argc, char* argv[]) {
   size_t shot = parallel_for_shots_in_order(
       shots.size(), args.num_threads,
       [&](size_t thread_index, size_t shot_index) {
-        auto start_time = std::chrono::high_resolution_clock::now();
         auto& error_use = error_use_per_thread[thread_index];
 
         if (args.multipass) {
@@ -621,6 +620,7 @@ int main(int argc, char* argv[]) {
                 config.dem, args.num_passes, classifier, config, args.num_det_orders,
                 args.det_order_method, args.det_order_seed, strategy_val);
           }
+          auto start_time = std::chrono::high_resolution_clock::now();
           auto flips = mp_decoders[thread_index]->decode(shots[shot_index].hits);
           auto stop_time = std::chrono::high_resolution_clock::now();
           decoding_time_seconds[shot_index] =
@@ -641,6 +641,7 @@ int main(int argc, char* argv[]) {
             decoders[thread_index] = std::make_unique<TesseractDecoder>(config);
           }
           auto& decoder = *decoders[thread_index];
+          auto start_time = std::chrono::high_resolution_clock::now();
           decoder.decode_to_errors(shots[shot_index].hits);
           auto stop_time = std::chrono::high_resolution_clock::now();
           decoding_time_seconds[shot_index] =
@@ -747,7 +748,8 @@ int main(int argc, char* argv[]) {
         {"pqlimit", args.pqlimit},
         {"num_det_orders", args.num_det_orders},
         {"det_order_seed", args.det_order_seed},
-        {"total_time_seconds", global_elapsed},
+        {"total_time_seconds", total_time_seconds.load()},
+        {"wall_clock_time_seconds", global_elapsed},
         {"num_errors", has_obs ? nlohmann::json(num_errors.load()) : nullptr},
         {"num_low_confidence", num_low_confidence.load()},
         {"num_shots", shot},
@@ -775,7 +777,7 @@ int main(int argc, char* argv[]) {
     if (has_obs) {
       std::cout << " num_errors = " << num_errors.load();
     }
-    std::cout << " total_time_seconds = " << global_elapsed;
+    std::cout << " total_time_seconds = " << total_time_seconds.load();
     std::cout << std::endl;
   }
 }
