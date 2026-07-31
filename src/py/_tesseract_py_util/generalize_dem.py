@@ -198,11 +198,10 @@ def main():
     import argparse
     import sys
 
-    argv = sys.argv[1:]
-    parser = argparse.ArgumentParser(
-        description="Generalize detector error models or create GARI files."
-    )
-    if argv[:1] == ["gari"]:
+    if sys.argv[1:2] == ["gari"]:
+        parser = argparse.ArgumentParser(
+            description="Create GARI files from one circuit."
+        )
         parser.add_argument("--circuit", required=True)
         parser.add_argument(
             "--prior",
@@ -210,12 +209,15 @@ def main():
             required=True,
         )
         parser.add_argument("--out-prefix", required=True)
-        args = parser.parse_args(argv[1:])
+        args = parser.parse_args(sys.argv[2:])
         call_gari(
             _command_path(args.circuit), args.prior, _command_path(args.out_prefix)
         )
         return
 
+    parser = argparse.ArgumentParser(
+        description="Generalize detector error models using templates and scaffold."
+    )
     parser.add_argument(
         "--template",
         required=True,
@@ -230,7 +232,7 @@ def main():
         "--verbose",
         action="store_true",
     )
-    args = parser.parse_args(argv)
+    args = parser.parse_args()
     call_generalize(
         [_command_path(path) for path in args.template],
         _command_path(args.scaffold),
