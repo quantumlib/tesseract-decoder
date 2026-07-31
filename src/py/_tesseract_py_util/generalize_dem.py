@@ -247,12 +247,7 @@ def main():
         action="store_true",
     )
     args = parser.parse_args()
-    call_generalize(
-        args.template,
-        args.scaffold,
-        args.out,
-        verbose=args.verbose,
-    )
+    call_generalize(args.template, args.scaffold, args.out, verbose=args.verbose)
 
 
 if __name__ == "__main__":
