@@ -1,6 +1,6 @@
 import sinter
 import stim
-from . import _core
+import tesseract_decoder as _core
 
 class MultiPassSinterDecoder(sinter.Decoder):
     """
@@ -15,7 +15,7 @@ class MultiPassSinterDecoder(sinter.Decoder):
     def compile_decoder_for_dem(self, *, dem: stim.DetectorErrorModel) -> sinter.CompiledDecoder:
         # 1. Access the native C++ class
         cpp_decoder = _core.MultiPassSinterDecoder(num_passes=self.num_passes)
-        
+
         # 2. Attach the classifier if provided
         if self.detector_classifier is not None:
             cpp_decoder.detector_classifier = self.detector_classifier
@@ -33,7 +33,7 @@ class MultiPassSinterDecoder(sinter.Decoder):
                         return 1
                 return 0
             cpp_decoder.detector_classifier = default_classifier
-        
+
         # 3. Apply base configuration (pqlimit, det_beam, etc.)
         for key, value in self.base_config_kwargs.items():
             if hasattr(cpp_decoder.base_config, key):
@@ -45,7 +45,7 @@ class MultiPassSinterDecoder(sinter.Decoder):
         return cpp_decoder.compile_decoder_for_dem(dem=dem)
 
 def get_sinter_decoders():
-    from ._core.tesseract_sinter_compat import TesseractSinterDecoder
+    TesseractSinterDecoder = _core.TesseractSinterDecoder
     return {
         "tesseract_mono": TesseractSinterDecoder(
             det_beam=20,

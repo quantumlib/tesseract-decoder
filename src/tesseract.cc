@@ -66,6 +66,7 @@ int suggest_sparsify_reactivate_limit_capped(size_t num_detectors, int sparsify_
   }
   return static_cast<int>(rounded);
 }
+
 };  // namespace
 
 namespace std {

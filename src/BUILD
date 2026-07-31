@@ -84,13 +84,21 @@ pybind_library(
 )
 
 pybind_extension(
-    name = "_core",
+    name = "tesseract_decoder",
     srcs = [
         "tesseract.pybind.cc",
     ],
     copts = OPT_COPTS,
     deps = [
         ":tesseract_decoder_pybind",
+    ],
+)
+
+py_library(
+    name="lib_tesseract_decoder",
+    deps=[
+        ":tesseract_decoder",
+        "//src/py/_tesseract_py_util:_tesseract_py_util",
     ],
 )
 

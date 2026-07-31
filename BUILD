@@ -19,12 +19,15 @@ py_wheel(
     name="tesseract_decoder_wheel",
     distribution = "tesseract_decoder",
     deps=[
+        "//src:tesseract_decoder",
         "//src/py:generated_stubs",
-        "//src/py:tesseract_decoder",
+        "//src/py:multi_pass_sinter_decoders",
+        "//src/py/_tesseract_py_util:_tesseract_py_util",
         ":package_data",
     ],
     version = "$(VERSION)",
     requires=[
+        "sinter",
         "stim",
     ],
     python_tag="$(TARGET_VERSION)",
