@@ -82,7 +82,7 @@ class GariTransform:
     source_to_gari_detectors: np.ndarray
 
 
-def circuit_to_gari_source_dem(
+def _circuit_to_gari_source_dem(
     circuit: stim.Circuit,
 ) -> stim.DetectorErrorModel:
     """Creates the flattened, undecomposed source DEM required by GARI."""
@@ -246,7 +246,7 @@ def _matrices_to_gari_dem(
     return gari_dem
 
 
-def detector_partition_from_fourth_coordinate(
+def _detector_partition_from_fourth_coordinate(
     dem: stim.DetectorErrorModel,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Partitions detectors using the repository's fourth-coordinate rule.
@@ -283,7 +283,7 @@ def detector_partition_from_fourth_coordinate(
     )
 
 
-def gari_transform(
+def _gari_transform(
     checks: scipy.sparse.csc_matrix,
     logicals: scipy.sparse.csc_matrix,
     *,
@@ -553,7 +553,7 @@ def tesseract_lp_max_barred_cost_prior_probabilities(
     return np.exp(-np.logaddexp(0, gari_costs))
 
 
-def build_gari_dem(
+def _build_gari_dem(
     transform: GariTransform,
     source_probabilities: np.ndarray,
     *,
@@ -605,18 +605,18 @@ def circuit_to_gari(
     prior_function: Callable[[GariTransform, np.ndarray], np.ndarray],
 ) -> tuple[stim.DetectorErrorModel, dict[str, object]]:
     """Converts one circuit into a GARI matrix DEM and v1 layout."""
-    source_dem = circuit_to_gari_source_dem(circuit)
+    source_dem = _circuit_to_gari_source_dem(circuit)
     checks, logicals, probabilities = dem_to_matrices(source_dem)
-    x_detectors, z_detectors = detector_partition_from_fourth_coordinate(
+    x_detectors, z_detectors = _detector_partition_from_fourth_coordinate(
         source_dem
     )
-    transform = gari_transform(
+    transform = _gari_transform(
         checks,
         logicals,
         x_detectors=x_detectors,
         z_detectors=z_detectors,
     )
-    gari_dem = build_gari_dem(
+    gari_dem = _build_gari_dem(
         transform, probabilities, prior_function=prior_function
     )
     layout = {

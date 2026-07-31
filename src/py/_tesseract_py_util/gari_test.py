@@ -16,10 +16,10 @@ def _tiny_model():
         detector(0, 0, 0, 4) D3
     """)
     checks, logicals, probabilities = gari.dem_to_matrices(source_dem)
-    x_detectors, z_detectors = gari.detector_partition_from_fourth_coordinate(
+    x_detectors, z_detectors = gari._detector_partition_from_fourth_coordinate(
         source_dem
     )
-    transform = gari.gari_transform(
+    transform = gari._gari_transform(
         checks,
         logicals,
         x_detectors=x_detectors,
@@ -41,7 +41,7 @@ def test_tiny_transform():
     np.testing.assert_allclose(probabilities, [0.1, 0.1])
 
     with pytest.raises(ValueError, match="integer from 0 to 2"):
-        gari.detector_partition_from_fourth_coordinate(
+        gari._detector_partition_from_fourth_coordinate(
             stim.DetectorErrorModel("detector(0, 0, 0, 2.5) D0")
         )
 
@@ -85,7 +85,7 @@ def test_prior_probabilities_and_gari_dem_round_trip():
         xor_probabilities, [0.1, 0.2, 0.3, 0.34, 0.38]
     )
 
-    gari_dem = gari.build_gari_dem(
+    gari_dem = gari._build_gari_dem(
         transform,
         source_probabilities,
         prior_function=gari.tesseract_xor_prior_probabilities,
