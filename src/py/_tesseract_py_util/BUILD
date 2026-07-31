@@ -6,24 +6,10 @@ py_library(
     name = "_tesseract_py_util",
     srcs = glob(
         ["*.py"],
-        exclude = [
-            "*_test.py",
-            "gari.py",
-        ],
+        exclude = ["*_test.py"],
     ),
     visibility = ["//:__subpackages__"],
     deps = [
-        "@pypi//stim",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "gari",
-    srcs = ["gari.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":_tesseract_py_util",
         "@pypi//numpy",
         "@pypi//scipy",
         "@pypi//stim",
@@ -31,14 +17,14 @@ py_library(
 )
 
 py_binary(
-    name = "gari_main",
-    srcs = ["gari.py"],
-    main = "gari.py",
+    name = "generalize_dem",
+    srcs = ["generalize_dem.py"],
+    imports = ["..", "."],
+    main = "generalize_dem.py",
     visibility = ["//visibility:public"],
     deps = [
         ":_tesseract_py_util",
         "@pypi//numpy",
-        "@pypi//scipy",
         "@pypi//stim",
     ],
 )
@@ -46,13 +32,13 @@ py_binary(
 py_test(
     name = "gari_test",
     srcs = ["gari_test.py"],
-    imports = ["..", "."],
+    imports = ["..", ".", "../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":gari",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//stim",
+        "//src:lib_tesseract_decoder",
     ],
 )
 

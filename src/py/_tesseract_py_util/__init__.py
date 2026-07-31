@@ -13,10 +13,19 @@
 # limitations under the License.
 
 """
-This module is a dispatcher for DEMfunctionality such as decomposition and re-generalization,
-and related utilities, in `decompose_errors.py` and `generalize_dem.py`.
+This module exposes detector-error-model utilities.
 """
+
+import importlib
 
 from _tesseract_py_util.demutil import decompose_errors
 from _tesseract_py_util.generalize_dem import \
     generalize as regeneralize_spatial_dem
+
+
+def __getattr__(name: str):
+    if name == "gari":
+        module = importlib.import_module("_tesseract_py_util.gari")
+        globals()[name] = module
+        return module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

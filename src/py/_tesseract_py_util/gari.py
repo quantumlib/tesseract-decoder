@@ -59,10 +59,7 @@ five-block structure uniform and the physical top-left blocks zero.
 from __future__ import annotations
 
 import dataclasses
-import json
-import sys
 from collections.abc import Callable, Sequence
-from pathlib import Path
 
 import numpy as np
 import scipy.optimize
@@ -70,30 +67,18 @@ import scipy.sparse
 import stim
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass
 class GariTransform:
-    """Validated GARI matrices with source-index arrays and transformed slices."""
+    """GARI matrices and their source-column and detector mappings."""
 
     checks: scipy.sparse.csc_matrix
     logicals: scipy.sparse.csc_matrix
     u: scipy.sparse.csc_matrix
     v: scipy.sparse.csc_matrix
-    source_checks_shape: tuple[int, int]
-    d_x_shape: tuple[int, int]
-    d_z_shape: tuple[int, int]
     e_z_columns: np.ndarray
     e_x_columns: np.ndarray
     e_y_columns: np.ndarray
     source_to_gari_detectors: np.ndarray
-    physical_rows: slice
-    virtual_rows: slice
-    physical_x_rows: slice
-    physical_z_rows: slice
-    virtual_z_rows: slice
-    virtual_x_rows: slice
-    physical_columns: slice
-    barred_z_columns: slice
-    barred_x_columns: slice
 
 
 def circuit_to_gari_source_dem(
@@ -114,18 +99,43 @@ def _nonzero_column_rows(
     return tuple(int(v) for v in matrix.indices[start:stop])
 
 
-def _unique_column_index_by_rows(
-    projections: scipy.sparse.csc_matrix,
+def _projection_matrix(
+    pure_columns: scipy.sparse.csc_matrix,
+    mixed_projections: scipy.sparse.csc_matrix,
+    mixed_source_columns: np.ndarray,
     *,
-    name: str,
-) -> dict[tuple[int, ...], int]:
+    matrix_name: str,
+    pure_name: str,
+) -> scipy.sparse.csc_matrix:
     lookup: dict[tuple[int, ...], int] = {}
-    for local_column in range(projections.shape[1]):
-        support = _nonzero_column_rows(projections, local_column)
+    for local_column in range(pure_columns.shape[1]):
+        support = _nonzero_column_rows(pure_columns, local_column)
         if support in lookup:
-            raise ValueError(f"{name} has duplicate columns.")
+            raise ValueError(f"{pure_name} has duplicate columns.")
         lookup[support] = local_column
-    return lookup
+
+    rows: list[int] = []
+    for local_column, source_column in enumerate(mixed_source_columns):
+        support = _nonzero_column_rows(mixed_projections, local_column)
+        if support not in lookup:
+            raise ValueError(
+                f"{matrix_name} mixed source column {int(source_column)} has "
+                f"no corresponding {pure_name} pure column."
+            )
+        rows.append(lookup[support])
+
+    column_count = len(mixed_source_columns)
+    return scipy.sparse.csc_matrix(
+        (
+            np.ones(column_count, dtype=np.uint8),
+            (
+                np.asarray(rows, dtype=np.int64),
+                np.arange(column_count, dtype=np.int64),
+            ),
+        ),
+        shape=(pure_columns.shape[1], column_count),
+        dtype=np.uint8,
+    )
 
 
 def dem_to_matrices(
@@ -133,10 +143,13 @@ def dem_to_matrices(
 ) -> tuple[
     scipy.sparse.csc_matrix, scipy.sparse.csc_matrix, np.ndarray
 ]:
-    """Extracts matrices from a flattened DEM made with no decomposition.
+    """Extracts matrices from a flattened, undecomposed source DEM.
 
-    Each Stim ``error`` instruction becomes one source matrix column. A ``^``
-    separator is rejected because GARI requires ``decompose_errors=False``.
+    Each Stim ``error`` instruction becomes exactly one source matrix column.
+    The input must already be flattened and should be generated with
+    ``decompose_errors=False``. This function does not merge duplicate
+    instructions or reconstruct correlations split across instructions. A
+    Stim ``^`` decomposition separator is rejected.
     """
     detector_rows: list[int] = []
     detector_columns: list[int] = []
@@ -230,7 +243,14 @@ def detector_partition_from_fourth_coordinate(
     x_detectors: list[int] = []
     z_detectors: list[int] = []
     for detector in range(dem.num_detectors):
-        if coordinates[detector][3] <= 2:
+        coordinate = coordinates.get(detector)
+        if coordinate is None or len(coordinate) < 4:
+            raise ValueError(
+                f"Detector {detector} is missing the fourth coordinate "
+                "required by GARI's color-code-style convention (<= 2 for "
+                "X detectors; >= 3 for Z detectors)."
+            )
+        if coordinate[3] <= 2:
             x_detectors.append(detector)
         else:
             z_detectors.append(detector)
@@ -260,7 +280,7 @@ def gari_transform(
 
     Returns:
         The transformed checks, physical logical map, projection matrices,
-        source column classes, detector mapping, and row block slices.
+        source column classes, and detector mapping.
     """
     source_checks = checks.tocsc()
     source_logicals = logicals.tocsc()
@@ -305,37 +325,20 @@ def gari_transform(
     d_z = z_checks[:, e_x_columns]
     d_x_prime = x_checks[:, e_y_columns]
     d_z_prime = z_checks[:, e_y_columns]
-    d_x_lookup = _unique_column_index_by_rows(d_x, name="D_X")
-    d_z_lookup = _unique_column_index_by_rows(d_z, name="D_Z")
-
-    u_rows: list[int] = []
-    v_rows: list[int] = []
-    for local_y_column in range(len(e_y_columns)):
-        x_projection = _nonzero_column_rows(d_x_prime, local_y_column)
-        z_projection = _nonzero_column_rows(d_z_prime, local_y_column)
-        u_rows.append(d_x_lookup[x_projection])
-        v_rows.append(d_z_lookup[z_projection])
-
-    y_column_count = len(e_y_columns)
-    y_indices = np.arange(y_column_count, dtype=np.int64)
-    u = scipy.sparse.csc_matrix(
-        (
-            np.ones(y_column_count, dtype=np.uint8),
-            (np.asarray(u_rows, dtype=np.int64), y_indices),
-        ),
-        shape=(len(e_z_columns), y_column_count),
-        dtype=np.uint8,
+    u = _projection_matrix(
+        d_x,
+        d_x_prime,
+        e_y_columns,
+        matrix_name="U",
+        pure_name="D_X",
     )
-    v = scipy.sparse.csc_matrix(
-        (
-            np.ones(y_column_count, dtype=np.uint8),
-            (np.asarray(v_rows, dtype=np.int64), y_indices),
-        ),
-        shape=(len(e_x_columns), y_column_count),
-        dtype=np.uint8,
+    v = _projection_matrix(
+        d_z,
+        d_z_prime,
+        e_y_columns,
+        matrix_name="V",
+        pure_name="D_Z",
     )
-    x_row_count = len(x_rows)
-    z_row_count = len(z_rows)
     e_z_count = len(e_z_columns)
     e_x_count = len(e_x_columns)
     zero = scipy.sparse.csc_matrix
@@ -367,22 +370,6 @@ def gari_transform(
         format="csc",
     ).astype(np.uint8)
 
-    physical_x_rows = slice(0, x_row_count)
-    physical_z_rows = slice(x_row_count, x_row_count + z_row_count)
-    virtual_z_rows = slice(
-        physical_z_rows.stop, physical_z_rows.stop + e_z_count
-    )
-    virtual_x_rows = slice(
-        virtual_z_rows.stop, virtual_z_rows.stop + e_x_count
-    )
-    physical_columns = slice(0, e_z_count + e_x_count + y_column_count)
-    barred_z_columns = slice(
-        physical_columns.stop, physical_columns.stop + e_z_count
-    )
-    barred_x_columns = slice(
-        barred_z_columns.stop, barred_z_columns.stop + e_x_count
-    )
-
     source_to_gari = np.empty(detector_count, dtype=np.int64)
     source_to_gari[partition] = np.arange(detector_count, dtype=np.int64)
     return GariTransform(
@@ -390,22 +377,10 @@ def gari_transform(
         logicals=augmented_logicals,
         u=u,
         v=v,
-        source_checks_shape=source_checks.shape,
-        d_x_shape=d_x.shape,
-        d_z_shape=d_z.shape,
         e_z_columns=e_z_columns,
         e_x_columns=e_x_columns,
         e_y_columns=e_y_columns,
         source_to_gari_detectors=source_to_gari,
-        physical_rows=slice(0, physical_z_rows.stop),
-        virtual_rows=slice(virtual_z_rows.start, virtual_x_rows.stop),
-        physical_x_rows=physical_x_rows,
-        physical_z_rows=physical_z_rows,
-        virtual_z_rows=virtual_z_rows,
-        virtual_x_rows=virtual_x_rows,
-        physical_columns=physical_columns,
-        barred_z_columns=barred_z_columns,
-        barred_x_columns=barred_x_columns,
     )
 
 
@@ -628,27 +603,3 @@ def circuit_to_gari(
         "detector_order": "physical_then_virtual",
     }
     return gari_dem, layout
-
-
-if __name__ == "__main__":
-    circuit_name, prior_name = sys.argv[1:]
-    circuit_path = Path(circuit_name)
-    prior_function = {
-        "paper": paper_prior_probabilities,
-        "xor": tesseract_xor_prior_probabilities,
-        "lp-max-barred-cost": (
-            tesseract_lp_max_barred_cost_prior_probabilities
-        ),
-    }[prior_name]
-    gari_dem, gari_layout = circuit_to_gari(
-        stim.Circuit.from_file(str(circuit_path)),
-        prior_function=prior_function,
-    )
-    output_prefix = circuit_path.with_suffix("")
-    Path(f"{output_prefix}-gari-{prior_name}.dem").write_text(
-        str(gari_dem).rstrip("\n") + "\n", encoding="utf-8"
-    )
-    Path(f"{output_prefix}-gari-{prior_name}-layout.json").write_text(
-        json.dumps(gari_layout, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )

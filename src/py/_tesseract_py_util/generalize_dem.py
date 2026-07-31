@@ -12,10 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+import os
+from pathlib import Path
 from typing import List
 
 import numpy as np
 import stim
+
+
+def _command_path(path: str) -> str:
+    workspace = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
+    if workspace and path != "-" and not Path(path).is_absolute():
+        return str(Path(workspace, path))
+    return path
 
 
 def get_dets_logicals(error: stim.DemInstruction):
@@ -165,12 +175,47 @@ def call_generalize(
         output_dem.to_file(output_fname)
 
 
+def call_gari(circuit_fname: str, prior_name: str, output_prefix: str):
+    from _tesseract_py_util import gari
+
+    prior_function = {
+        "paper": gari.paper_prior_probabilities,
+        "xor": gari.tesseract_xor_prior_probabilities,
+        "lp-max-barred-cost": gari.tesseract_lp_max_barred_cost_prior_probabilities,
+    }[prior_name]
+    gari_dem, layout = gari.circuit_to_gari(
+        stim.Circuit.from_file(circuit_fname), prior_function=prior_function
+    )
+    output_name = f"{output_prefix}-gari-{prior_name}"
+    gari_dem.to_file(f"{output_name}.dem")
+    Path(f"{output_name}-layout.json").write_text(
+        json.dumps(layout, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def main():
     import argparse
+    import sys
 
+    argv = sys.argv[1:]
     parser = argparse.ArgumentParser(
-        description="Generalize detector error models using templates and scaffold."
+        description="Generalize detector error models or create GARI files."
     )
+    if argv[:1] == ["gari"]:
+        parser.add_argument("--circuit", required=True)
+        parser.add_argument(
+            "--prior",
+            choices=("paper", "xor", "lp-max-barred-cost"),
+            required=True,
+        )
+        parser.add_argument("--out-prefix", required=True)
+        args = parser.parse_args(argv[1:])
+        call_gari(
+            _command_path(args.circuit), args.prior, _command_path(args.out_prefix)
+        )
+        return
+
     parser.add_argument(
         "--template",
         required=True,
@@ -185,8 +230,13 @@ def main():
         "--verbose",
         action="store_true",
     )
-    args = parser.parse_args()
-    call_generalize(args.template, args.scaffold, args.out, verbose=args.verbose)
+    args = parser.parse_args(argv)
+    call_generalize(
+        [_command_path(path) for path in args.template],
+        _command_path(args.scaffold),
+        _command_path(args.out),
+        verbose=args.verbose,
+    )
 
 
 if __name__ == "__main__":
