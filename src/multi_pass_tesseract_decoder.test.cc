@@ -34,6 +34,18 @@ auto chromobius_classifier = [](int index, const std::vector<double>& coords,
   return -1;
 };
 
+TEST(MultiPassTesseractDecoderTest, RejectsZeroPasses) {
+  stim::DetectorErrorModel dem;
+  auto classifier = [](int, const std::vector<double>&, const std::string&) -> int { return 0; };
+
+  for (auto strategy : {SchedulingStrategy::Static, SchedulingStrategy::Causal}) {
+    EXPECT_THROW(
+        MultiPassTesseractDecoder(dem, 0, classifier, TesseractConfig(), 1, DetOrder::DetBFS, 0,
+                                  strategy),
+        std::invalid_argument);
+  }
+}
+
 TEST(MultiPassTesseractDecoderTest, TwoPassCorrelationBenefit) {
   // Component 0: D0 (Causal)
   // Component 1: D1 (Affected) -> Observable L0

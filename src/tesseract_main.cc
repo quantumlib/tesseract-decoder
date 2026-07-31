@@ -136,6 +136,9 @@ struct Args {
     if (num_threads == 0) {
       throw std::invalid_argument("--threads must be at least 1.");
     }
+    if (num_passes == 0) {
+      throw std::invalid_argument("--num-passes must be at least 1.");
+    }
     if (num_threads > 1000) {
       throw std::invalid_argument(
           "There is a maximum limit of 1000 threads imposed to avoid "
@@ -560,12 +563,12 @@ int main(int argc, char* argv[]) {
 
   try {
     program.parse_args(argc, argv);
+    args.validate(program);
   } catch (const std::exception& err) {
     std::cerr << err.what() << std::endl;
     std::cerr << program;
     return EXIT_FAILURE;
   }
-  args.validate(program);
   TesseractConfig config;
   std::vector<stim::SparseShot> shots;
   std::unique_ptr<stim::MeasureRecordWriter> writer;

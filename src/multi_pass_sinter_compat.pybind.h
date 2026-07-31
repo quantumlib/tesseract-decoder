@@ -85,7 +85,11 @@ struct MultiPassSinterDecoder {
         num_det_orders(1),
         det_order_method(::DetOrder::DetBFS),
         seed(0),
-        strategy(SchedulingStrategy::Static) {}
+        strategy(SchedulingStrategy::Static) {
+    if (num_passes == 0) {
+      throw std::invalid_argument("num_passes must be at least 1.");
+    }
+  }
 
   MultiPassSinterCompiledDecoder compile_decoder_for_dem(const py::object& dem) {
     stim::DetectorErrorModel stim_dem;
