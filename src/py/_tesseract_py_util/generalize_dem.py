@@ -21,13 +21,6 @@ import numpy as np
 import stim
 
 
-def _command_path(path: str) -> str:
-    workspace = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
-    if workspace and path != "-" and not Path(path).is_absolute():
-        return str(Path(workspace, path))
-    return path
-
-
 def get_dets_logicals(error: stim.DemInstruction):
     dets = set()
     logicals = set()
@@ -198,6 +191,8 @@ def main():
     import argparse
     import sys
 
+    os.chdir(os.environ.get("BUILD_WORKSPACE_DIRECTORY", "."))
+
     if sys.argv[1:2] == ["gari"]:
         parser = argparse.ArgumentParser(
             prog=f"{Path(sys.argv[0]).name} gari",
@@ -214,14 +209,14 @@ def main():
         )
         parser.add_argument("--out-prefix", required=True)
         args = parser.parse_args(sys.argv[2:])
-        call_gari(
-            _command_path(args.circuit), args.prior, _command_path(args.out_prefix)
-        )
+        call_gari(args.circuit, args.prior, args.out_prefix)
         return
 
     parser = argparse.ArgumentParser(
-        description="Generalize detector error models using templates and scaffold.",
-        epilog="For GARI circuit conversion, run '%(prog)s gari --help'.",
+        description=(
+            "Generalize detector error models using templates and scaffold. "
+            "For GARI circuit conversion, run '%(prog)s gari --help'."
+        ),
     )
     parser.add_argument(
         "--template",
@@ -239,9 +234,9 @@ def main():
     )
     args = parser.parse_args()
     call_generalize(
-        [_command_path(path) for path in args.template],
-        _command_path(args.scaffold),
-        _command_path(args.out),
+        args.template,
+        args.scaffold,
+        args.out,
         verbose=args.verbose,
     )
 
