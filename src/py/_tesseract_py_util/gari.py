@@ -150,7 +150,8 @@ def dem_to_matrices(
     ``error`` instruction becomes exactly one source matrix column. The input
     should be generated with ``decompose_errors=False``. This function does
     not merge duplicate instructions or reconstruct correlations split across
-    instructions. A Stim ``^`` decomposition separator is rejected.
+    instructions. A Stim ``^`` decomposition separator and repeated detector
+    or logical targets within one instruction are rejected.
     """
     dem = dem.flattened()
     detector_rows: list[int] = []
@@ -168,14 +169,28 @@ def dem_to_matrices(
                 "GARI requires a DEM generated with decompose_errors=False."
             )
         column = len(probabilities)
-        probabilities.append(float(instruction.args_copy()[0]))
+        seen_detectors: set[int] = set()
+        seen_logicals: set[int] = set()
         for target in targets:
             if target.is_relative_detector_id():
+                if target.val in seen_detectors:
+                    raise ValueError(
+                        f"GARI cannot safely transform source error column "
+                        f"{column}: repeated detector target D{target.val}."
+                    )
+                seen_detectors.add(target.val)
                 detector_rows.append(target.val)
                 detector_columns.append(column)
             elif target.is_logical_observable_id():
+                if target.val in seen_logicals:
+                    raise ValueError(
+                        f"GARI cannot safely transform source error column "
+                        f"{column}: repeated logical target L{target.val}."
+                    )
+                seen_logicals.add(target.val)
                 logical_rows.append(target.val)
                 logical_columns.append(column)
+        probabilities.append(float(instruction.args_copy()[0]))
 
     source_column_count = len(probabilities)
     checks = scipy.sparse.csc_matrix(

@@ -356,11 +356,12 @@ print_results(results)
 # data from above, and applies the XOR prior policy.
 #
 # From a repository checkout, the same one-circuit conversion can be written to
-# `model-gari-xor.dem` and `model-gari-xor-layout.json` with:
+# `gari_output/d5r5colorcode_p001_gari_xor.dem` and
+# `gari_output/d5r5colorcode_p001_gari_xor_layout.json` with:
 #
 # ```bash
 # bazel run --jobs=1 //src/py/_tesseract_py_util:generalize_dem -- gari \
-#     --circuit circuit_file.stim --prior xor --out-prefix model
+#     --circuit d5r5colorcode_p001.stim --prior xor --out-dir gari_output
 # ```
 
 # %% id="gari-transform-example"

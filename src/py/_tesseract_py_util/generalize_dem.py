@@ -168,7 +168,7 @@ def call_generalize(
         output_dem.to_file(output_fname)
 
 
-def call_gari(circuit_fname: str, prior_name: str, output_prefix: str):
+def call_gari(circuit_fname: str, prior_name: str, output_dir: str):
     from _tesseract_py_util import gari
 
     prior_function = {
@@ -179,9 +179,11 @@ def call_gari(circuit_fname: str, prior_name: str, output_prefix: str):
     gari_dem, layout = gari.circuit_to_gari(
         stim.Circuit.from_file(circuit_fname), prior_function=prior_function
     )
-    output_name = f"{output_prefix}-gari-{prior_name}"
-    gari_dem.to_file(f"{output_name}.dem")
-    Path(f"{output_name}-layout.json").write_text(
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    output_name = f"{Path(circuit_fname).stem}_gari_{prior_name.replace('-', '_')}"
+    gari_dem.to_file(output_path / f"{output_name}.dem")
+    (output_path / f"{output_name}_layout.json").write_text(
         json.dumps(layout, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
@@ -198,18 +200,30 @@ def main():
             prog=f"{Path(sys.argv[0]).name} gari",
             description=(
                 "Convert one Stim circuit into a GARI matrix DEM and "
-                "detector-layout JSON file."
+                "detector-layout JSON file. Output filenames are derived "
+                "from the circuit name and prior policy."
             ),
         )
-        parser.add_argument("--circuit", required=True)
+        parser.add_argument(
+            "--circuit", required=True, help="Input Stim circuit file."
+        )
         parser.add_argument(
             "--prior",
             choices=("paper", "xor", "lp-max-barred-cost"),
             required=True,
+            help="Prior policy used for the GARI matrix probabilities.",
         )
-        parser.add_argument("--out-prefix", required=True)
+        parser.add_argument(
+            "--out-dir",
+            required=True,
+            help=(
+                "Output directory, created if needed. Files are named "
+                "<circuit>_gari_<prior>.dem and "
+                "<circuit>_gari_<prior>_layout.json."
+            ),
+        )
         args = parser.parse_args(sys.argv[2:])
-        call_gari(args.circuit, args.prior, args.out_prefix)
+        call_gari(args.circuit, args.prior, args.out_dir)
         return
 
     parser = argparse.ArgumentParser(

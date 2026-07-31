@@ -48,6 +48,9 @@ def test_tiny_transform():
     with pytest.raises(ValueError, match="decompose_errors=False"):
         gari.dem_to_matrices(stim.DetectorErrorModel("error(0.1) D0 ^ D1"))
 
+    with pytest.raises(ValueError, match="repeated detector target D0"):
+        gari.dem_to_matrices(stim.DetectorErrorModel("error(0.1) D0 D0"))
+
     _, transform = _tiny_model()
     np.testing.assert_array_equal(
         transform.checks.toarray(),
