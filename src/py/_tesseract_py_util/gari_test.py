@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 import stim
 
-from tesseract_decoder.demutil import gari
+from _tesseract_py_util import gari
 
 
 def _tiny_model():
@@ -29,6 +29,22 @@ def _tiny_model():
 
 
 def test_tiny_transform():
+    folded_dem = stim.DetectorErrorModel("""
+        repeat 2 {
+            error(0.1) D0 L0
+            shift_detectors 1
+        }
+    """)
+    checks, logicals, probabilities = gari.dem_to_matrices(folded_dem)
+    np.testing.assert_array_equal(checks.toarray(), np.eye(2, dtype=np.uint8))
+    np.testing.assert_array_equal(logicals.toarray(), [[1, 1]])
+    np.testing.assert_allclose(probabilities, [0.1, 0.1])
+
+    with pytest.raises(ValueError, match="integer from 0 to 2"):
+        gari.detector_partition_from_fourth_coordinate(
+            stim.DetectorErrorModel("detector(0, 0, 0, 2.5) D0")
+        )
+
     with pytest.raises(ValueError, match="decompose_errors=False"):
         gari.dem_to_matrices(stim.DetectorErrorModel("error(0.1) D0 ^ D1"))
 

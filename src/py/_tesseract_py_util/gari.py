@@ -40,10 +40,11 @@ be stored using Stim's DEM syntax, but the resulting GARI DEM is only a matrix
 storage and decoding representation. It is not a physical detector error model
 and must not be sampled.
 
-GARI source DEMs must be generated with ``decompose_errors=False`` and
-``flatten_loops=True``, then fully flattened. Each undecomposed Stim ``error``
-instruction is one source matrix column. Instructions containing Stim's ``^``
-decomposition separator are not supported.
+GARI source DEMs must be undecomposed. Circuit conversion generates them with
+``decompose_errors=False`` and ``flatten_loops=True``. Matrix extraction also
+flattens its input before treating each Stim ``error`` instruction as one
+source matrix column. Instructions containing Stim's ``^`` decomposition
+separator are not supported.
 
 For certain single-basis CSS memory experiments, the paper instead evaluates
 the logical observable on ``bar(e)_X`` or ``bar(e)_Z``. That placement is
@@ -143,14 +144,15 @@ def dem_to_matrices(
 ) -> tuple[
     scipy.sparse.csc_matrix, scipy.sparse.csc_matrix, np.ndarray
 ]:
-    """Extracts matrices from a flattened, undecomposed source DEM.
+    """Extracts matrices from an undecomposed source DEM.
 
-    Each Stim ``error`` instruction becomes exactly one source matrix column.
-    The input must already be flattened and should be generated with
-    ``decompose_errors=False``. This function does not merge duplicate
-    instructions or reconstruct correlations split across instructions. A
-    Stim ``^`` decomposition separator is rejected.
+    Repeat blocks and detector shifts are flattened first. Each resulting Stim
+    ``error`` instruction becomes exactly one source matrix column. The input
+    should be generated with ``decompose_errors=False``. This function does
+    not merge duplicate instructions or reconstruct correlations split across
+    instructions. A Stim ``^`` decomposition separator is rejected.
     """
+    dem = dem.flattened()
     detector_rows: list[int] = []
     detector_columns: list[int] = []
     logical_rows: list[int] = []
@@ -236,8 +238,8 @@ def detector_partition_from_fourth_coordinate(
 
     This is the color-code-style convention followed by the test-data circuits
     associated with this repository, not a universal Stim convention. The
-    fourth-coordinate values at most ``2`` identify X detectors, while values
-    at least ``3`` identify Z detectors.
+    fourth-coordinate values ``0``, ``1``, or ``2`` identify X detectors,
+    while values ``3``, ``4``, or ``5`` identify Z detectors.
     """
     coordinates = dem.get_detector_coordinates()
     x_detectors: list[int] = []
@@ -247,13 +249,20 @@ def detector_partition_from_fourth_coordinate(
         if coordinate is None or len(coordinate) < 4:
             raise ValueError(
                 f"Detector {detector} is missing the fourth coordinate "
-                "required by GARI's color-code-style convention (<= 2 for "
-                "X detectors; >= 3 for Z detectors)."
+                "required by GARI's color-code-style convention (0, 1, or 2 "
+                "for X detectors; 3, 4, or 5 for Z detectors)."
             )
-        if coordinate[3] <= 2:
+        basis = coordinate[3]
+        if basis in (0, 1, 2):
             x_detectors.append(detector)
-        else:
+        elif basis in (3, 4, 5):
             z_detectors.append(detector)
+        else:
+            raise ValueError(
+                f"Detector {detector} has fourth coordinate {basis}; GARI's "
+                "color-code-style convention requires an integer from 0 to 2 "
+                "for X detectors or 3 to 5 for Z detectors."
+            )
     return np.asarray(x_detectors, dtype=np.int64), np.asarray(
         z_detectors, dtype=np.int64
     )

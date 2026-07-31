@@ -200,7 +200,11 @@ def main():
 
     if sys.argv[1:2] == ["gari"]:
         parser = argparse.ArgumentParser(
-            description="Create GARI files from one circuit."
+            prog=f"{Path(sys.argv[0]).name} gari",
+            description=(
+                "Convert one Stim circuit into a GARI matrix DEM and "
+                "detector-layout JSON file."
+            ),
         )
         parser.add_argument("--circuit", required=True)
         parser.add_argument(
@@ -216,7 +220,8 @@ def main():
         return
 
     parser = argparse.ArgumentParser(
-        description="Generalize detector error models using templates and scaffold."
+        description="Generalize detector error models using templates and scaffold.",
+        epilog="For GARI circuit conversion, run '%(prog)s gari --help'.",
     )
     parser.add_argument(
         "--template",
