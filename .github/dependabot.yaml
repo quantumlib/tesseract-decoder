@@ -28,6 +28,7 @@ updates:
     directory: "/src/py"
     allow:
       - dependency-name: stim
+      - dependency-name: scipy
       - dependency-name: pytest
       - dependency-name: sinter
       - dependency-name: pybind11-stubgen

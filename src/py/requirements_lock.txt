@@ -801,7 +801,9 @@ scipy==1.16.3 \
     --hash=sha256:f667a4542cc8917af1db06366d3f78a5c8e83badd56409f94d1eac8d8d9133fa \
     --hash=sha256:fb4b29f4cf8cc5a8d628bc8d8e26d12d7278cd1f219f22698a378c3d67db5e4b \
     --hash=sha256:ffa6eea95283b2b8079b821dc11f50a17d0571c92b43e2b5b12764dc5f9b285d
-    # via sinter
+    # via
+    #   -r src/py/requirements.in
+    #   sinter
 sinter==1.16.0 \
     --hash=sha256:fd0f7bff97cb951345893f53b347d76f99b53977590054abc3d057150f82037b
     # via -r src/py/requirements.in

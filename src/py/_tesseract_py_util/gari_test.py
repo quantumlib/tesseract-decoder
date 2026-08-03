@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http:#www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -25,9 +25,9 @@ from tesseract_decoder import demutil
 def _tiny_circuit():
     return stim.Circuit("""
         R 0 1 2 3 4 5
-        CORRELATED_ERROR(0.1) X0 X2 X4
-        CORRELATED_ERROR(0.2) X1 X3 X5
-        CORRELATED_ERROR(0.3) X0 X1 X2 X3 X4
+        CORRELATED_ERROR(0.01) X0 X2 X4
+        CORRELATED_ERROR(0.02) X1 X3 X5
+        CORRELATED_ERROR(0.04) X0 X1 X2 X3 X4
         M 0 1 2 3 4 5
         DETECTOR(0, 0, 0, 0) rec[-6]
         DETECTOR(0, 0, 0, 3) rec[-5]
@@ -105,14 +105,18 @@ def test_prior_probabilities_and_gari_dem_round_trip():
     source_probabilities, transform = _tiny_model()
     np.testing.assert_array_equal(
         gari.paper_prior_probabilities(transform, source_probabilities),
-        [0.1, 0.2, 0.3, 0.5, 0.5],
+        [0.01, 0.02, 0.04, 0.5, 0.5],
     )
     xor_probabilities = gari.tesseract_xor_prior_probabilities(
         transform, source_probabilities
     )
     np.testing.assert_allclose(
-        xor_probabilities, [0.1, 0.2, 0.3, 0.34, 0.38]
+        xor_probabilities, [0.01, 0.02, 0.04, 0.0492, 0.0584]
     )
+    lp_probabilities = gari.tesseract_lp_max_barred_cost_prior_probabilities(
+        transform, source_probabilities
+    )
+    assert lp_probabilities[2] == pytest.approx(0.5)
 
     gari_dem = gari._build_gari_dem(
         transform,
