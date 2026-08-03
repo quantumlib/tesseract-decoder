@@ -25,11 +25,15 @@
 #include <thread>
 
 #include "common.h"
+#include "multi_pass_tesseract_decoder.h"
 #include "stim.h"
 #include "tesseract.h"
 #include "utils.h"
 
 struct Args {
+  bool multipass = false;
+  std::string multipass_strategy = "causal";
+  size_t num_passes = 2;
   std::string circuit_path;
   std::string dem_path;
   bool no_merge_errors = false;
@@ -40,6 +44,7 @@ struct Args {
   bool det_order_bfs = false;
   bool det_order_index = false;
   bool det_order_coordinate = false;
+  DetOrder det_order_method = DetOrder::DetBFS;
 
   // Sampling options
   size_t sample_num_shots = 0;
@@ -130,6 +135,9 @@ struct Args {
     }
     if (num_threads == 0) {
       throw std::invalid_argument("--threads must be at least 1.");
+    }
+    if (num_passes == 0) {
+      throw std::invalid_argument("--num-passes must be at least 1.");
     }
     if (num_threads > 1000) {
       throw std::invalid_argument(
@@ -233,6 +241,7 @@ struct Args {
       } else if (det_order_coordinate) {
         order = DetOrder::DetCoordinate;
       }
+      det_order_method = order;
       config.det_orders = build_det_orders(config.dem, num_det_orders, order, det_order_seed);
     }
 
@@ -510,6 +519,23 @@ int main(int argc, char* argv[]) {
           "during decoding.")
       .flag()
       .store_into(args.print_stats);
+  program.add_argument("--multipass")
+      .help("Enable multi-pass graph shattering for correlated error decoding")
+      .flag()
+      .store_into(args.multipass);
+  program.add_argument("--multipass-strategy", "--multipass_strategy")
+      .help(
+          "Multi-pass scheduling strategy: static or causal (default = causal). Note: static "
+          "scheduling is experimental and was never systematically benchmarked.")
+      .default_value(std::string("causal"))
+      .store_into(args.multipass_strategy);
+  program.add_argument("--num-passes", "--num_passes")
+      .help(
+          "Number of prior propagation passes: 1 (uncorrelated independent CSS decoding) or 2 "
+          "(standard causally reweighted decoding, default = 2). Note: values > 2 are experimental "
+          "and were never systematically benchmarked.")
+      .default_value(size_t(2))
+      .store_into(args.num_passes);
 
   program.add_argument("--sparsify-errors")
       .help("Enables per-shot sparse error activation.")
@@ -537,12 +563,12 @@ int main(int argc, char* argv[]) {
 
   try {
     program.parse_args(argc, argv);
+    args.validate(program);
   } catch (const std::exception& err) {
     std::cerr << err.what() << std::endl;
     std::cerr << program;
     return EXIT_FAILURE;
   }
-  args.validate(program);
   TesseractConfig config;
   std::vector<stim::SparseShot> shots;
   std::unique_ptr<stim::MeasureRecordWriter> writer;
@@ -555,35 +581,100 @@ int main(int argc, char* argv[]) {
   std::vector<std::atomic<bool>> low_confidence(shots.size());
   const stim::DetectorErrorModel original_dem = config.dem.flattened();
   std::vector<std::unique_ptr<TesseractDecoder>> decoders(args.num_threads);
+  std::vector<std::unique_ptr<tesseract::MultiPassTesseractDecoder>> mp_decoders(args.num_threads);
   std::vector<std::vector<size_t>> error_use_per_thread(
       args.num_threads, std::vector<size_t>(original_dem.count_errors()));
   bool has_obs = args.has_observables();
-  size_t num_errors = 0;
-  size_t num_low_confidence = 0;
-  double total_time_seconds = 0;
+  std::atomic<size_t> num_errors(0);
+  std::atomic<size_t> num_low_confidence(0);
+  std::atomic<double> total_time_seconds(0);
+
+  if (args.multipass && !args.dem_out_fname.empty()) {
+    std::cerr << "Error: --dem-out is not supported when --multipass is enabled." << std::endl;
+    return 1;
+  }
+
+  if (args.multipass_strategy != "static" && args.multipass_strategy != "causal") {
+    std::cerr << "Error: Invalid --multipass-strategy '" << args.multipass_strategy
+              << "'. Expected 'static' or 'causal'." << std::endl;
+    return 1;
+  }
+
+  auto classifier = [](int index, const std::vector<double>& coords,
+                       const std::string& tag) -> int {
+    if (tag.find("\"basis\": \"X\"") != std::string::npos) return 0;
+    if (tag.find("\"basis\": \"Z\"") != std::string::npos) return 1;
+    if (coords.size() >= 4) {
+      int c3 = (int)coords[3];
+      if (c3 >= 0 && c3 <= 2) return 0;
+      if (c3 >= 3 && c3 <= 5) return 1;
+    }
+    return -1;
+  };
+  tesseract::SchedulingStrategy strategy_val = (args.multipass_strategy == "static")
+                                                   ? tesseract::SchedulingStrategy::Static
+                                                   : tesseract::SchedulingStrategy::Causal;
+
+  // Validate stabilizer component count at the CLI interface layer when multi-pass is requested.
+  // We enforce this validation here to fail fast and cleanly for command-line users, whilst
+  // preserving core library constructor flexibility to allow programmatic and C++ unit testing.
+  if (args.multipass) {
+    tesseract::MultiPassTesseractDecoder::validate_annotations(config.dem, classifier);
+  }
+
+  auto start_global_time = std::chrono::high_resolution_clock::now();
   size_t shot = parallel_for_shots_in_order(
       shots.size(), args.num_threads,
       [&](size_t thread_index, size_t shot_index) {
-        if (!decoders[thread_index]) {
-          decoders[thread_index] = std::make_unique<TesseractDecoder>(config);
-        }
-        auto& decoder = *decoders[thread_index];
         auto& error_use = error_use_per_thread[thread_index];
-        auto start_time = std::chrono::high_resolution_clock::now();
-        decoder.decode_to_errors(shots[shot_index].hits);
-        auto stop_time = std::chrono::high_resolution_clock::now();
-        decoding_time_seconds[shot_index] =
-            std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
-            1e6;
-        obs_predicted[shot_index].clear();
-        for (int obs_idx : decoder.get_flipped_observables(decoder.predicted_errors_buffer)) {
-          obs_predicted[shot_index][obs_idx] ^= 1;
-        }
-        low_confidence[shot_index] = decoder.low_confidence_flag;
-        cost_predicted[shot_index] = decoder.cost_from_errors(decoder.predicted_errors_buffer);
-        if (!has_obs or shots[shot_index].obs_mask == obs_predicted[shot_index]) {
-          for (size_t ei : decoder.predicted_errors_buffer) {
-            ++error_use[ei];
+
+        if (args.multipass) {
+          if (!mp_decoders[thread_index]) {
+            mp_decoders[thread_index] = std::make_unique<tesseract::MultiPassTesseractDecoder>(
+                config.dem, args.num_passes, classifier, config, args.num_det_orders,
+                args.det_order_method, args.det_order_seed, strategy_val);
+          }
+          auto start_time = std::chrono::high_resolution_clock::now();
+          auto res = mp_decoders[thread_index]->decode_result(shots[shot_index].hits);
+          auto stop_time = std::chrono::high_resolution_clock::now();
+          decoding_time_seconds[shot_index] =
+              std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time)
+                  .count() /
+              1e6;
+
+          obs_predicted[shot_index].clear();
+          for (int o : res.predictions) {
+            if (o >= 0 && (size_t)o < num_observables) {
+              obs_predicted[shot_index][o] ^= 1;
+            }
+          }
+          low_confidence[shot_index] = res.low_confidence;
+          cost_predicted[shot_index] = res.total_cost;
+        } else {
+          if (!decoders[thread_index]) {
+            decoders[thread_index] = std::make_unique<TesseractDecoder>(config);
+          }
+          auto& decoder = *decoders[thread_index];
+          auto start_time = std::chrono::high_resolution_clock::now();
+          decoder.decode_to_errors(shots[shot_index].hits);
+          auto stop_time = std::chrono::high_resolution_clock::now();
+          decoding_time_seconds[shot_index] =
+              std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time)
+                  .count() /
+              1e6;
+
+          obs_predicted[shot_index].clear();
+          for (int o : decoder.get_flipped_observables(decoder.predicted_errors_buffer)) {
+            if (o >= 0 && (size_t)o < num_observables) {
+              obs_predicted[shot_index][o] ^= 1;
+            }
+          }
+          low_confidence[shot_index] = decoder.low_confidence_flag;
+          cost_predicted[shot_index] = decoder.cost_from_errors(decoder.predicted_errors_buffer);
+          if (!has_obs || shots[shot_index].obs_mask == obs_predicted[shot_index]) {
+            for (size_t ei : decoder.predicted_errors_buffer) {
+              ++error_use[ei];
+            }
           }
         }
       },
@@ -597,21 +688,27 @@ int main(int argc, char* argv[]) {
         } else if (has_obs && obs_predicted[shot_index] != shots[shot_index].obs_mask) {
           ++num_errors;
         }
-        total_time_seconds += decoding_time_seconds[shot_index];
+        total_time_seconds = total_time_seconds + decoding_time_seconds[shot_index];
         if (args.print_stats) {
           std::cout << "num_shots = " << (shot_index + 1)
-                    << " num_low_confidence = " << num_low_confidence;
+                    << " num_low_confidence = " << num_low_confidence.load();
           if (has_obs) {
-            std::cout << " num_errors = " << num_errors;
+            std::cout << " num_errors = " << num_errors.load();
           }
-          std::cout << " total_time_seconds = " << total_time_seconds << std::endl;
+          std::cout << " total_time_seconds = " << total_time_seconds.load() << std::endl;
           std::cout << "cost = " << cost_predicted[shot_index] << std::endl;
           std::cout.flush();
         }
         // Disable early termination due to \`--max-errors\` when we don't have the ground-truth
         // observables
-        return !has_obs || num_errors < args.max_errors;
+        return !has_obs || num_errors.load() < args.max_errors;
       });
+
+  auto stop_global_time = std::chrono::high_resolution_clock::now();
+  double global_elapsed =
+      std::chrono::duration_cast<std::chrono::microseconds>(stop_global_time - start_global_time)
+          .count() /
+      1e6;
 
   std::vector<size_t> error_use_totals(original_dem.count_errors());
   for (const auto& error_use : error_use_per_thread) {
@@ -625,7 +722,7 @@ int main(int argc, char* argv[]) {
     size_t num_usage_dem_shots = shot;
     if (has_obs) {
       // When we know the obs, we only count non-error shots.
-      num_usage_dem_shots -= num_errors;
+      num_usage_dem_shots -= num_errors.load();
     }
     stim::DetectorErrorModel est_dem =
         common::dem_from_counts(original_dem, counts, num_usage_dem_shots);
@@ -667,11 +764,15 @@ int main(int argc, char* argv[]) {
         {"pqlimit", args.pqlimit},
         {"num_det_orders", args.num_det_orders},
         {"det_order_seed", args.det_order_seed},
-        {"total_time_seconds", total_time_seconds},
-        {"num_errors", has_obs ? nlohmann::json(num_errors) : nullptr},
-        {"num_low_confidence", num_low_confidence},
+        {"total_time_seconds", total_time_seconds.load()},
+        {"wall_clock_time_seconds", global_elapsed},
+        {"num_errors", has_obs ? nlohmann::json(num_errors.load()) : nullptr},
+        {"num_low_confidence", num_low_confidence.load()},
         {"num_shots", shot},
         {"num_threads", args.num_threads},
+        {"multipass", args.multipass},
+        {"strategy", args.multipass_strategy},
+        {"num_passes", args.num_passes},
         {"sample_num_shots", args.sample_num_shots},
         {"sparsify_errors", args.sparsify_errors},
         {"sparsify_base_degree", args.sparsify_base_degree},
@@ -688,11 +789,11 @@ int main(int argc, char* argv[]) {
   }
   if (print_final_stats) {
     std::cout << "num_shots = " << shot;
-    std::cout << " num_low_confidence = " << num_low_confidence;
+    std::cout << " num_low_confidence = " << num_low_confidence.load();
     if (has_obs) {
-      std::cout << " num_errors = " << num_errors;
+      std::cout << " num_errors = " << num_errors.load();
     }
-    std::cout << " total_time_seconds = " << total_time_seconds;
+    std::cout << " total_time_seconds = " << total_time_seconds.load();
     std::cout << std::endl;
   }
 }

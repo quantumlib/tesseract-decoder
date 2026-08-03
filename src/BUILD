@@ -33,7 +33,7 @@ OPT_COPTS = select({
         "//conditions:default": ["-std=c++20"],
 }) + select({
     "@platforms//os:macos": ["-mmacosx-version-min=10.15",],
-    "//conditions:default": ["-march=native",],
+    "//conditions:default": ["-march=x86-64-v3",],
 })
 
 OPT_LINKOPTS = select({
@@ -71,6 +71,7 @@ pybind_library(
         "visualization.pybind.h",
         "tesseract.pybind.h",
         "tesseract_sinter_compat.pybind.h",
+        "multi_pass_sinter_compat.pybind.h",
     ],
     copts = OPT_COPTS,
     deps = [
@@ -78,6 +79,7 @@ pybind_library(
         ":libutils",
         ":libsimplex",
         ":libtesseract",
+        ":libmulti_pass_tesseract_decoder",
     ],
 )
 
@@ -153,6 +155,116 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "libmulti_pass_tesseract_decoder",
+    srcs = ["multi_pass_tesseract_decoder.cc"],
+    hdrs = ["multi_pass_tesseract_decoder.h"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    deps = [
+        ":libtesseract",
+        ":libtanner_graph",
+        ":liberror_correlations",
+        ":libdem_decomposition",
+        "@stim//:stim_lib",
+    ],
+)
+
+cc_test(
+    name = "multi_pass_tesseract_decoder_tests",
+    srcs = ["multi_pass_tesseract_decoder.test.cc"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    data = ["//:testdata"],
+    deps = [
+        ":libmulti_pass_tesseract_decoder",
+        "@gtest",
+        "@gtest//:gtest_main",
+        "@stim//:stim_lib",
+    ],
+)
+
+cc_library(
+    name = "liberror_correlations",
+    srcs = ["error_correlations.cc"],
+    hdrs = ["error_correlations.h"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    deps = [
+        "@stim//:stim_lib",
+    ],
+)
+
+cc_test(
+    name = "error_correlations_tests",
+    srcs = ["error_correlations.test.cc"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    deps = [
+        ":liberror_correlations",
+        "@gtest",
+        "@gtest//:gtest_main",
+        "@stim//:stim_lib",
+    ],
+)
+
+cc_library(
+    name = "libtanner_graph",
+    srcs = ["tanner_graph.cc"],
+    hdrs = ["tanner_graph.h"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    deps = [
+        "@stim//:stim_lib",
+    ],
+)
+
+cc_test(
+    name = "tanner_graph_tests",
+    srcs = ["tanner_graph.test.cc"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    deps = [
+        ":libtanner_graph",
+        "@gtest",
+        "@gtest//:gtest_main",
+        "@stim//:stim_lib",
+    ],
+)
+
+cc_library(
+    name = "libbern_utils",
+    srcs = ["bern_utils.cc"],
+    hdrs = ["bern_utils.h"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+)
+
+cc_library(
+    name = "libdem_decomposition",
+    srcs = ["dem_decomposition.cc"],
+    hdrs = ["dem_decomposition.h"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    deps = [
+        ":libbern_utils",
+        "@stim//:stim_lib",
+    ],
+)
+
+cc_test(
+    name = "dem_decomposition_tests",
+    srcs = ["dem_decomposition.test.cc"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    deps = [
+        ":libdem_decomposition",
+        "@gtest",
+        "@gtest//:gtest_main",
+        "@stim//:stim_lib",
+    ],
+)
+
 cc_binary(
     name = "tesseract",
     srcs = ["tesseract_main.cc"],
@@ -160,6 +272,7 @@ cc_binary(
     linkopts = OPT_LINKOPTS,
     deps = [
         ":libtesseract",
+        ":libmulti_pass_tesseract_decoder",
         "@argparse",
         "@nlohmann_json//:json",
         "@stim//:stim_lib",

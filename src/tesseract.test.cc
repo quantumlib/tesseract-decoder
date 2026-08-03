@@ -559,3 +559,40 @@ TEST(tesseract, MoreThan64Observables) {
     ASSERT_EQ(flipped[i], i);
   }
 }
+
+// Test to ensure update_internal_costs correctly reflects changes to error likelihoods
+TEST(tesseract, UpdateInternalCostsBehavior) {
+  // Define a simple DEM with two errors that can explain detector D0
+  // Error 0: D0 (prob 0.2) -> likelihood_cost: ~1.386
+  // Error 1: D0 (prob 0.1) -> likelihood_cost: ~2.197
+  // Initially, Error 0 is more likely (lower likelihood_cost)
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.2) D0
+        error(0.1) D0
+        detector(0,0,0) D0
+    )DEM");
+
+  TesseractConfig config{dem};
+  config.merge_errors = false;  // Important: do not merge errors for this test
+  TesseractDecoder decoder(config);
+
+  // Initial decode: D0 fires. Should pick Error 0 (index 0) as it's more likely.
+  std::vector<uint64_t> detections = {0};
+  decoder.decode_to_errors(detections);
+  ASSERT_EQ(decoder.predicted_errors_buffer.size(), 1);
+  ASSERT_EQ(decoder.predicted_errors_buffer[0], 0);  // Should pick Error 0 (index 0)
+
+  // Manually change the likelihood_cost of Error 1 to be lower (more likely) than Error 0
+  // Original: Error 0 (prob 0.2, cost ~1.386), Error 1 (prob 0.1, cost ~2.197)
+  // Modify: Error 1 to prob 0.3 (cost ~0.847). Now Error 1 is more likely.
+  decoder.errors[1].set_with_probability(0.3);
+
+  // Call update_internal_costs to re-synchronize the decoder's state
+  decoder.update_internal_costs({1});
+
+  // Decode again with the same detections.
+  // Now, D0 fires. It should pick Error 1 (index 1) as it's now more likely.
+  decoder.decode_to_errors(detections);
+  ASSERT_EQ(decoder.predicted_errors_buffer.size(), 1);
+  ASSERT_EQ(decoder.predicted_errors_buffer[0], 1);  // Should now pick Error 1 (index 1)
+}
