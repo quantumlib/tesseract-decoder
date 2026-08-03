@@ -110,6 +110,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":libcommon",
+        "@nlohmann_json//:json",
         "@stim//:stim_lib",
     ],
 )

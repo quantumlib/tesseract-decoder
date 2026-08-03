@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <algorithm>
 #include <argparse/argparse.hpp>
 #include <atomic>
 #include <fstream>
-#include <limits>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -26,84 +24,6 @@
 #include "simplex.h"
 #include "stim.h"
 #include "utils.h"
-
-namespace {
-
-constexpr char kGariLayoutSchema[] = "tesseract.gari_layout.v1";
-
-struct GariLayout {
-  std::vector<size_t> source_to_gari;
-};
-
-std::invalid_argument gari_layout_error(const std::string& path, const std::string& detail) {
-  return std::invalid_argument("Invalid GARI layout '" + path + "': " + detail);
-}
-
-size_t read_layout_size(const nlohmann::json& value, const std::string& path) {
-  if (!value.is_number_integer()) {
-    throw gari_layout_error(path, "detector counts and mapping entries must be integers.");
-  }
-  if (value.is_number_unsigned()) {
-    uint64_t result = value.get<uint64_t>();
-    if (result > std::numeric_limits<size_t>::max()) {
-      throw gari_layout_error(path, "integer is too large.");
-    }
-    return static_cast<size_t>(result);
-  }
-  int64_t result = value.get<int64_t>();
-  if (result < 0) {
-    throw gari_layout_error(path, "detector counts and mapping entries must be nonnegative.");
-  }
-  return static_cast<size_t>(result);
-}
-
-GariLayout load_gari_layout(const std::string& path, size_t gari_detector_count) {
-  std::ifstream input(path);
-  if (!input.is_open()) {
-    throw std::invalid_argument("Could not open GARI layout: " + path);
-  }
-
-  nlohmann::json document;
-  input >> document;
-  if (document.at("schema").get<std::string>() != kGariLayoutSchema) {
-    throw gari_layout_error(path, "unsupported schema.");
-  }
-
-  size_t source_detector_count = read_layout_size(document.at("source_detector_count"), path);
-  const auto& mapping = document.at("source_to_gari");
-  if (read_layout_size(document.at("gari_detector_count"), path) != gari_detector_count ||
-      gari_detector_count < source_detector_count || !mapping.is_array() ||
-      mapping.size() != source_detector_count) {
-    throw gari_layout_error(path, "detector counts do not agree with the mapping.");
-  }
-
-  GariLayout layout;
-  std::vector<bool> used(gari_detector_count);
-  layout.source_to_gari.reserve(source_detector_count);
-  for (const auto& entry : mapping) {
-    size_t target = read_layout_size(entry, path);
-    if (target >= gari_detector_count || used[target]) {
-      throw gari_layout_error(path, "source_to_gari must contain distinct GARI detector rows.");
-    }
-    used[target] = true;
-    layout.source_to_gari.push_back(target);
-  }
-  return layout;
-}
-
-std::vector<uint64_t> map_gari_hits(std::vector<uint64_t> source_hits, const GariLayout& layout,
-                                    const std::string& path) {
-  for (uint64_t& source : source_hits) {
-    if (source >= layout.source_to_gari.size()) {
-      throw gari_layout_error(path, "source detector index is out of range.");
-    }
-    source = layout.source_to_gari[source];
-  }
-  std::sort(source_hits.begin(), source_hits.end());
-  return source_hits;
-}
-
-}  // namespace
 
 struct Args {
   std::string circuit_path;
@@ -258,16 +178,8 @@ struct Args {
     std::optional<GariLayout> gari_layout;
     if (!gari_layout_path.empty()) {
       gari_layout = load_gari_layout(gari_layout_path, config.dem.count_detectors());
-      if (sample_num_shots > 0) {
-        size_t source_count = circuit.count_detectors();
-        if (source_count != gari_layout->source_to_gari.size()) {
-          throw gari_layout_error(gari_layout_path,
-                                  "source_detector_count does not match the sampled circuit.");
-        }
-        if (circuit.count_observables() != config.dem.count_observables()) {
-          throw gari_layout_error(gari_layout_path,
-                                  "the circuit and DEM observable counts differ.");
-        }
+      if (!circuit_path.empty()) {
+        gari_layout->validate_source(circuit, config.dem);
       }
     } else if (sample_num_shots > 0 and !dem_path.empty() and
                circuit.count_detectors() != config.dem.count_detectors()) {
@@ -289,11 +201,6 @@ struct Args {
             shots[k].hits.push_back(d);
           }
         }
-        if (gari_layout) {
-          // The GARI matrix augments the physical syndrome with zero-valued virtual constraints.
-          // Sparse shots contain mapped physical hits only, so virtual rows remain zero.
-          shots[k].hits = map_gari_hits(std::move(shots[k].hits), *gari_layout, gari_layout_path);
-        }
       }
     }
 
@@ -305,7 +212,7 @@ struct Args {
       }
       stim::FileFormatData shots_in_format = stim::format_name_to_enum_map().at(in_format);
       size_t source_detector_count =
-          gari_layout ? gari_layout->source_to_gari.size() : config.dem.count_detectors();
+          gari_layout ? gari_layout->source_detector_count() : config.dem.count_detectors();
       auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
           shots_file, shots_in_format.id, 0, source_detector_count,
           append_observables * config.dem.count_observables());
@@ -314,14 +221,16 @@ struct Args {
       stim::SparseShot sparse_shot;
       sparse_shot.clear();
       while (reader->start_and_read_entire_record(sparse_shot)) {
-        if (gari_layout) {
-          sparse_shot.hits =
-              map_gari_hits(std::move(sparse_shot.hits), *gari_layout, gari_layout_path);
-        }
         shots.push_back(sparse_shot);
         sparse_shot.clear();
       }
       fclose(shots_file);
+    }
+
+    if (gari_layout) {
+      for (auto& shot : shots) {
+        gari_layout->map_hits(shot.hits);
+      }
     }
 
     // Load observable flips, if applicable
@@ -637,6 +546,9 @@ int main(int argc, char* argv[]) {
                                  {"num_errors", has_obs ? nlohmann::json(num_errors) : nullptr},
                                  {"num_shots", shot},
                                  {"sample_num_shots", args.sample_num_shots}};
+    stats_json["gari_layout_path"] = args.gari_layout_path.empty()
+                                         ? nlohmann::json(nullptr)
+                                         : nlohmann::json(args.gari_layout_path);
 
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;

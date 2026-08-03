@@ -15,7 +15,9 @@
 #include "tesseract.h"
 
 #include <cstdlib>
+#include <fstream>
 #include <limits>
+#include <string>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -557,5 +559,51 @@ TEST(tesseract, MoreThan64Observables) {
   ASSERT_EQ(flipped.size(), 70);
   for (int i = 0; i < 70; i++) {
     ASSERT_EQ(flipped[i], i);
+  }
+}
+
+static std::string write_gari_layout(const std::string& text) {
+  std::string path = testing::TempDir() + "gari_layout_test.json";
+  std::ofstream(path) << text;
+  return path;
+}
+
+TEST(utils, GariLayoutMapsAndValidatesSource) {
+  std::string path =
+      write_gari_layout(R"({"schema":"tesseract.gari_layout.v1","source_detector_count":2,)"
+                        R"("gari_detector_count":4,"source_to_gari":[1,0],)"
+                        R"("detector_order":"physical_then_virtual"})");
+  GariLayout layout = load_gari_layout(path, 4);
+  std::vector<uint64_t> hits{0, 0, 1};
+  layout.map_hits(hits);
+  EXPECT_EQ(hits, (std::vector<uint64_t>{0, 1, 1}));
+
+  stim::Circuit circuit(
+      "M 0 1\nDETECTOR rec[-1]\nDETECTOR rec[-2]\n"
+      "OBSERVABLE_INCLUDE(0) rec[-1]");
+  stim::DetectorErrorModel dem("error(0.1) D0 D1 D2 D3 L0");
+  EXPECT_NO_THROW(layout.validate_source(circuit, dem));
+  EXPECT_THROW(layout.validate_source(stim::Circuit("M 0\nDETECTOR rec[-1]"), dem),
+               std::invalid_argument);
+}
+
+TEST(utils, GariLayoutRejectsInvalidV1) {
+  const std::string valid = R"({"schema":"tesseract.gari_layout.v1","source_detector_count":2,)"
+                            R"("gari_detector_count":4,"source_to_gari":[1,0],)"
+                            R"("detector_order":"physical_then_virtual"})";
+  auto replacing = [&](const std::string& from, const std::string& to) {
+    std::string result = valid;
+    result.replace(result.find(from), from.size(), to);
+    return result;
+  };
+  for (const std::string& text :
+       {replacing("[1,0]", "[0,3]"), replacing("[1,0]", "[0,0]"), std::string("{")}) {
+    std::string path = write_gari_layout(text);
+    try {
+      load_gari_layout(path, 4);
+      FAIL() << "Invalid layout was accepted.";
+    } catch (const std::invalid_argument& ex) {
+      EXPECT_NE(std::string(ex.what()).find(path), std::string::npos);
+    }
   }
 }
