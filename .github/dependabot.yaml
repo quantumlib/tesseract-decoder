@@ -20,6 +20,8 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    cooldown:
+      default-days: 7
     labels:
       - "area/devops"
       - "area/health"
@@ -35,6 +37,8 @@ updates:
       - dependency-name: jupytext
     schedule:
       interval: "monthly"
+    cooldown:
+      default-days: 7
     versioning-strategy: "increase-if-necessary"
     groups:
       python-dependencies:
