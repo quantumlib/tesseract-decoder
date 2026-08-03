@@ -28,6 +28,7 @@ struct Args {
   std::string circuit_path;
   std::string dem_path;
   bool no_merge_errors = false;
+  std::string det_mapping_file;
 
   // Sampling options
   size_t sample_num_shots = 0;
@@ -138,6 +139,18 @@ struct Args {
 
   void extract(SimplexConfig& config, std::vector<stim::SparseShot>& shots,
                std::unique_ptr<stim::MeasureRecordWriter>& writer) {
+    std::vector<uint64_t> det_mapping;
+    uint64_t num_original_detectors = 0;
+    if (!det_mapping_file.empty()) {
+      std::ifstream f(det_mapping_file);
+      if (!f) {
+        throw std::invalid_argument("Could not open the mapping file: " + det_mapping_file);
+      }
+      nlohmann::json j = nlohmann::json::parse(f);
+      num_original_detectors = j.at("num_original_detectors").get<uint64_t>();
+      det_mapping = j.at("mapping").get<std::vector<uint64_t>>();
+    }
+
     // Get a circuit, if available
     stim::Circuit circuit;
     if (!circuit_path.empty()) {
@@ -182,7 +195,7 @@ struct Args {
         shots[k].obs_mask = obs_T[k];
         for (size_t d = 0; d < num_detectors; d++) {
           if (dets[d][k]) {
-            shots[k].hits.push_back(d);
+            shots[k].hits.push_back(!det_mapping.empty() ? det_mapping[d] : d);
           }
         }
       }
@@ -195,14 +208,20 @@ struct Args {
         throw std::invalid_argument("Could not open the file: " + in_fname);
       }
       stim::FileFormatData shots_in_format = stim::format_name_to_enum_map().at(in_format);
+      size_t num_dets = det_mapping.empty() ? config.dem.count_detectors() : num_original_detectors;
       auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
-          shots_file, shots_in_format.id, 0, config.dem.count_detectors(),
+          shots_file, shots_in_format.id, 0, num_dets,
           append_observables * config.dem.count_observables());
 
       // Load the shots from a file
       stim::SparseShot sparse_shot;
       sparse_shot.clear();
       while (reader->start_and_read_entire_record(sparse_shot)) {
+        if (!det_mapping.empty()) {
+          for (auto& hit : sparse_shot.hits) {
+            hit = det_mapping[hit];
+          }
+        }
         shots.push_back(sparse_shot);
         sparse_shot.clear();
       }
@@ -277,6 +296,7 @@ int main(int argc, char* argv[]) {
   program.add_argument("--no-merge-errors")
       .help("If provided, will not merge identical error mechanisms.")
       .store_into(args.no_merge_errors);
+  program.add_argument("--det-mapping-file").help("JSON file containing detector mapping").default_value(std::string("")).store_into(args.det_mapping_file);
   program.add_argument("--sample-num-shots")
       .help(
           "If provided, will sample the requested number of shots from the "
