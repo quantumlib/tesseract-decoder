@@ -354,16 +354,6 @@ print_results(results)
 # errors in quantum LDPC codes](https://doi.org/10.1038/s41467-026-70556-3).
 # This example reuses the superdense color-code memory-Z circuit and sampled
 # data from above, and applies the XOR prior policy.
-#
-# From a repository checkout, the same one-circuit conversion can be written to
-# `gari_output/d5r5colorcode_p001_gari_xor.dem` and
-# `gari_output/d5r5colorcode_p001_gari_xor_layout.json` with:
-#
-# ```bash
-# bazel run --jobs=1 //src/py/_tesseract_py_util:gari -- \
-#     --circuit "$PWD/d5r5colorcode_p001.stim" --prior xor \
-#     --out-dir "$PWD/gari_output"
-# ```
 
 # %% id="gari-transform-example"
 gari = tesseract_decoder.demutil.gari

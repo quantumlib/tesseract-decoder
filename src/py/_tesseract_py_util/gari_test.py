@@ -12,23 +12,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+
 import numpy as np
 import pytest
 import stim
 
 from _tesseract_py_util import gari
+from tesseract_decoder import demutil
+
+
+def _tiny_circuit():
+    return stim.Circuit("""
+        R 0 1 2 3 4 5
+        CORRELATED_ERROR(0.1) X0 X2 X4
+        CORRELATED_ERROR(0.2) X1 X3 X5
+        CORRELATED_ERROR(0.3) X0 X1 X2 X3 X4
+        M 0 1 2 3 4 5
+        DETECTOR(0, 0, 0, 0) rec[-6]
+        DETECTOR(0, 0, 0, 3) rec[-5]
+        DETECTOR(0, 0, 0, 2) rec[-4]
+        DETECTOR(0, 0, 0, 4) rec[-3]
+        OBSERVABLE_INCLUDE(0) rec[-2]
+        OBSERVABLE_INCLUDE(1) rec[-1]
+    """)
 
 
 def _tiny_model():
-    source_dem = stim.DetectorErrorModel("""
-        error(0.1) D0 D2 L0
-        error(0.2) D1 D3 L1
-        error(0.3) D0 D1 D2 D3 L0
-        detector(0, 0, 0, 0) D0
-        detector(0, 0, 0, 3) D1
-        detector(0, 0, 0, 2) D2
-        detector(0, 0, 0, 4) D3
-    """)
+    source_dem = gari._circuit_to_gari_source_dem(_tiny_circuit())
     checks, logicals, probabilities = gari.dem_to_matrices(source_dem)
     x_detectors, z_detectors = gari._detector_partition_from_fourth_coordinate(
         source_dem
@@ -114,6 +125,40 @@ def test_prior_probabilities_and_gari_dem_round_trip():
     assert (checks != transform.checks).nnz == 0
     assert (logicals != transform.logicals).nnz == 0
     np.testing.assert_allclose(probabilities, xor_probabilities)
+
+
+def test_public_circuit_conversion_and_file_output(tmp_path):
+    public_gari = demutil.gari
+    circuit = _tiny_circuit()
+    gari_dem, layout = public_gari.circuit_to_gari(
+        circuit,
+        prior_function=public_gari.tesseract_xor_prior_probabilities,
+    )
+    assert layout == {
+        "schema": "tesseract.gari_layout.v1",
+        "source_detector_count": 4,
+        "gari_detector_count": 6,
+        "source_to_gari": [0, 2, 1, 3],
+        "detector_order": "physical_then_virtual",
+    }
+    assert gari_dem.num_detectors == 6
+    assert gari_dem.num_observables == 2
+
+    circuit_path = tmp_path / "tiny.stim"
+    circuit.to_file(circuit_path)
+    output_dir = tmp_path / "gari"
+    public_gari.call_gari(str(circuit_path), "xor", str(output_dir))
+    output_name = "tiny_gari_xor"
+    written_dem = stim.DetectorErrorModel.from_file(
+        output_dir / f"{output_name}.dem"
+    )
+    written_layout = json.loads(
+        (output_dir / f"{output_name}_layout.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert str(written_dem) == str(gari_dem)
+    assert written_layout == layout
 
 
 if __name__ == "__main__":

@@ -523,6 +523,8 @@ def tesseract_lp_max_barred_cost_prior_probabilities(
         format="csc",
     )
     auxiliary_count = cost_matrix.shape[1]
+    if auxiliary_count == 0:
+        return physical_probabilities
 
     # A guarded alternative is to first maximize a common floor t, then
     # maximize sum(g) while requiring t >= t_star - numerical_tolerance.
