@@ -360,12 +360,13 @@ print_results(results)
 # `gari_output/d5r5colorcode_p001_gari_xor_layout.json` with:
 #
 # ```bash
-# bazel run --jobs=1 //src/py/_tesseract_py_util:generalize_dem -- gari \
-#     --circuit d5r5colorcode_p001.stim --prior xor --out-dir gari_output
+# bazel run --jobs=1 //src/py/_tesseract_py_util:gari -- \
+#     --circuit "$PWD/d5r5colorcode_p001.stim" --prior xor \
+#     --out-dir "$PWD/gari_output"
 # ```
 
 # %% id="gari-transform-example"
-from tesseract_decoder.demutil import gari
+gari = tesseract_decoder.demutil.gari
 
 gari_dem, gari_layout = gari.circuit_to_gari(
     circuit,

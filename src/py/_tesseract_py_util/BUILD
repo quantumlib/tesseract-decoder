@@ -4,27 +4,23 @@ load("@rules_python//python:py_binary.bzl", "py_binary")
 
 py_library(
     name = "_tesseract_py_util",
-    srcs = glob(
-        ["*.py"],
-        exclude = ["*_test.py"],
-    ),
+    srcs = glob(["*.py"], exclude=["*_test.py"]),
     visibility = ["//:__subpackages__"],
     deps = [
+        "@pypi//stim",
         "@pypi//numpy",
         "@pypi//scipy",
-        "@pypi//stim",
     ],
 )
 
 py_binary(
-    name = "generalize_dem",
-    srcs = ["generalize_dem.py"],
-    imports = ["..", "."],
-    main = "generalize_dem.py",
+    name = "gari",
+    srcs = ["gari.py"],
+    main = "gari.py",
     visibility = ["//visibility:public"],
     deps = [
-        ":_tesseract_py_util",
         "@pypi//numpy",
+        "@pypi//scipy",
         "@pypi//stim",
     ],
 )

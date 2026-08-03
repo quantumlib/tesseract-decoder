@@ -17,10 +17,7 @@ This module is a dispatcher for DEMfunctionality such as decomposition and re-ge
 and related utilities, in `decompose_errors.py` and `generalize_dem.py`.
 """
 
-import sys
-
+from _tesseract_py_util import gari as gari
 from _tesseract_py_util.demutil import decompose_errors
 from _tesseract_py_util.generalize_dem import \
     generalize as regeneralize_spatial_dem
-
-sys.modules["tesseract_decoder.demutil"] = sys.modules[__name__]

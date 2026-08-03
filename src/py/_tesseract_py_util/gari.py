@@ -44,7 +44,8 @@ GARI source DEMs must be undecomposed. Circuit conversion generates them with
 ``decompose_errors=False`` and ``flatten_loops=True``. Matrix extraction also
 flattens its input before treating each Stim ``error`` instruction as one
 source matrix column. Instructions containing Stim's ``^`` decomposition
-separator are not supported.
+separator are not supported. Repeated detector or logical targets are reduced
+modulo two, following Stim's GF(2) parity semantics.
 
 For certain single-basis CSS memory experiments, the paper instead evaluates
 the logical observable on ``bar(e)_X`` or ``bar(e)_Z``. That placement is
@@ -60,7 +61,9 @@ five-block structure uniform and the physical top-left blocks zero.
 from __future__ import annotations
 
 import dataclasses
+import json
 from collections.abc import Callable, Sequence
+from pathlib import Path
 
 import numpy as np
 import scipy.optimize
@@ -150,8 +153,8 @@ def dem_to_matrices(
     ``error`` instruction becomes exactly one source matrix column. The input
     should be generated with ``decompose_errors=False``. This function does
     not merge duplicate instructions or reconstruct correlations split across
-    instructions. A Stim ``^`` decomposition separator and repeated detector
-    or logical targets within one instruction are rejected.
+    instructions. A Stim ``^`` decomposition separator is rejected. Repeated
+    detector or logical targets within an instruction are reduced modulo two.
     """
     dem = dem.flattened()
     detector_rows: list[int] = []
@@ -169,27 +172,17 @@ def dem_to_matrices(
                 "GARI requires a DEM generated with decompose_errors=False."
             )
         column = len(probabilities)
-        seen_detectors: set[int] = set()
-        seen_logicals: set[int] = set()
+        detectors: set[int] = set()
+        logicals: set[int] = set()
         for target in targets:
             if target.is_relative_detector_id():
-                if target.val in seen_detectors:
-                    raise ValueError(
-                        f"GARI cannot safely transform source error column "
-                        f"{column}: repeated detector target D{target.val}."
-                    )
-                seen_detectors.add(target.val)
-                detector_rows.append(target.val)
-                detector_columns.append(column)
+                detectors ^= {target.val}
             elif target.is_logical_observable_id():
-                if target.val in seen_logicals:
-                    raise ValueError(
-                        f"GARI cannot safely transform source error column "
-                        f"{column}: repeated logical target L{target.val}."
-                    )
-                seen_logicals.add(target.val)
-                logical_rows.append(target.val)
-                logical_columns.append(column)
+                logicals ^= {target.val}
+        detector_rows.extend(sorted(detectors))
+        detector_columns.extend([column] * len(detectors))
+        logical_rows.extend(sorted(logicals))
+        logical_columns.extend([column] * len(logicals))
         probabilities.append(float(instruction.args_copy()[0]))
 
     source_column_count = len(probabilities)
@@ -627,3 +620,59 @@ def circuit_to_gari(
         "detector_order": "physical_then_virtual",
     }
     return gari_dem, layout
+
+
+def call_gari(circuit_fname: str, prior_name: str, output_dir: str) -> None:
+    """Converts one circuit and writes its GARI DEM and layout files."""
+    prior_function = {
+        "paper": paper_prior_probabilities,
+        "xor": tesseract_xor_prior_probabilities,
+        "lp-max-barred-cost": tesseract_lp_max_barred_cost_prior_probabilities,
+    }[prior_name]
+    gari_dem, layout = circuit_to_gari(
+        stim.Circuit.from_file(circuit_fname),
+        prior_function=prior_function,
+    )
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    output_name = f"{Path(circuit_fname).stem}_gari_{prior_name.replace('-', '_')}"
+    gari_dem.to_file(output_path / f"{output_name}.dem")
+    (output_path / f"{output_name}_layout.json").write_text(
+        json.dumps(layout, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Convert one Stim circuit into a GARI matrix DEM and "
+            "detector-layout JSON file."
+        )
+    )
+    parser.add_argument(
+        "--circuit", required=True, help="Input Stim circuit file."
+    )
+    parser.add_argument(
+        "--prior",
+        choices=("paper", "xor", "lp-max-barred-cost"),
+        required=True,
+        help="Prior policy used for the GARI matrix probabilities.",
+    )
+    parser.add_argument(
+        "--out-dir",
+        required=True,
+        help=(
+            "Output directory, created if needed. Files are named "
+            "<circuit>_gari_<prior>.dem and "
+            "<circuit>_gari_<prior>_layout.json."
+        ),
+    )
+    args = parser.parse_args()
+    call_gari(args.circuit, args.prior, args.out_dir)
+
+
+if __name__ == "__main__":
+    main()

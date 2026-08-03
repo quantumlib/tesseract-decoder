@@ -29,12 +29,10 @@ def _demo_dem() -> stim.DetectorErrorModel:
 
 
 def test_import_exposes_demutil_submodule():
-    from tesseract_decoder.demutil import gari
-
     assert hasattr(tesseract_decoder, "demutil")
     assert hasattr(demutil, "regeneralize_spatial_dem")
     assert hasattr(demutil, "decompose_errors")
-    assert hasattr(gari, "circuit_to_gari")
+    assert hasattr(demutil.gari, "circuit_to_gari")
 
 
 def test_decompose_errors_rejects_unknown_method():
