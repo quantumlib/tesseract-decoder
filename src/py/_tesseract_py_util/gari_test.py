@@ -103,8 +103,11 @@ def test_tiny_transform():
 
 def test_prior_probabilities_and_gari_dem_round_trip():
     source_probabilities, transform = _tiny_model()
+    paper_probabilities = gari.paper_prior_probabilities(
+        transform, source_probabilities
+    )
     np.testing.assert_array_equal(
-        gari.paper_prior_probabilities(transform, source_probabilities),
+        paper_probabilities,
         [0.01, 0.02, 0.04, 0.5, 0.5],
     )
     xor_probabilities = gari.tesseract_xor_prior_probabilities(
@@ -116,7 +119,22 @@ def test_prior_probabilities_and_gari_dem_round_trip():
     lp_probabilities = gari.tesseract_lp_max_barred_cost_prior_probabilities(
         transform, source_probabilities
     )
-    assert lp_probabilities[2] == pytest.approx(0.5)
+    source_costs = np.log1p(-paper_probabilities[:3]) - np.log(
+        paper_probabilities[:3]
+    )
+    lp_costs = np.log1p(-lp_probabilities) - np.log(lp_probabilities)
+    assert np.all(lp_costs > 0)
+    np.testing.assert_allclose(
+        lp_costs[2:], source_costs[2] / 3, rtol=1e-6
+    )
+    np.testing.assert_allclose(
+        [
+            lp_costs[0] + lp_costs[3],
+            lp_costs[1] + lp_costs[4],
+            lp_costs[2] + lp_costs[3] + lp_costs[4],
+        ],
+        source_costs,
+    )
 
     gari_dem = gari._build_gari_dem(
         transform,

@@ -492,18 +492,24 @@ def tesseract_xor_prior_probabilities(
 def tesseract_lp_max_barred_cost_prior_probabilities(
     transform: GariTransform, source_probabilities: np.ndarray
 ) -> np.ndarray:
-    """Maximizes the total barred-variable search cost for Tesseract.
+    """Balances physical and barred-variable search costs with two LPs.
 
     The source costs ``c = log((1-p)/p)`` are ordered as ``[e_Z, e_X, e_Y]``.
     The auxiliary costs ``g`` are ordered as ``[bar(e)_Z, bar(e)_X]``. The
     incidence matrix is ``A = [[I, 0], [0, I], [U.T, V.T]]``, so the residual
     physical costs are ``r = c - A g``.
 
-    The LP maximizes ``sum(g)`` subject to ``A g <= c`` and ``g >= 0``. It
-    returns ``[r, g]`` converted back to probabilities in GARI column order.
-    This experimental policy is not part of the GARI paper. It only defines
-    search costs and makes no claim about decoding optimality. Solver failure
-    is a hard error; there is no fallback.
+    Maximizing only ``sum(g)`` can put most of the cost on a few variables and
+    leave many physical or auxiliary costs at zero. A zero cost becomes
+    probability ``0.5`` and gives Tesseract no search preference. The first LP
+    instead maximizes a common floor for every entry of ``r`` and ``g``. The
+    second LP keeps that floor and then maximizes ``sum(g)``. This gives a more
+    balanced set of search costs while still favoring the barred variables.
+
+    The result is ``[r, g]`` converted back to probabilities in GARI column
+    order. This experimental policy is not part of the GARI paper. It only
+    defines search costs and makes no claim about decoding optimality. Solver
+    failure is a hard error; there is no fallback.
     """
     p_e_z, p_e_x, p_e_y = _physical_probability_blocks(
         transform, source_probabilities
@@ -526,25 +532,51 @@ def tesseract_lp_max_barred_cost_prior_probabilities(
     if auxiliary_count == 0:
         return physical_probabilities
 
-    # A guarded alternative is to first maximize a common floor t, then
-    # maximize sum(g) while requiring t >= t_star - numerical_tolerance.
-    objective = -np.ones(auxiliary_count, dtype=np.float64)
-    result = scipy.optimize.linprog(
-        objective,
-        A_ub=cost_matrix,
-        b_ub=source_costs,
+    # First maximize t subject to every physical and auxiliary cost being at
+    # least t: c - A g >= t and g >= t.
+    floor_constraints = scipy.sparse.bmat(
+        [
+            [cost_matrix, np.ones((len(source_costs), 1))],
+            [
+                -identity(auxiliary_count, format="csc"),
+                np.ones((auxiliary_count, 1)),
+            ],
+        ],
+        format="csc",
+    )
+    floor_objective = np.zeros(auxiliary_count + 1, dtype=np.float64)
+    floor_objective[-1] = -1
+    floor_result = scipy.optimize.linprog(
+        floor_objective,
+        A_ub=floor_constraints,
+        b_ub=np.concatenate([source_costs, np.zeros(auxiliary_count)]),
         bounds=(0, None),
         method="highs",
     )
-    if not result.success:
+    if not floor_result.success:
         raise RuntimeError(
-            "LP max-barred-cost prior solver failed: " + str(result.message)
+            "LP prior floor solver failed: " + str(floor_result.message)
         )
     tolerance = 1e-7 * max(
         1.0, float(np.max(source_costs, initial=0.0))
     )
+    cost_floor = max(0.0, float(floor_result.x[-1]) - tolerance)
+
+    # Then maximize the total barred cost without lowering the common floor.
+    objective = -np.ones(auxiliary_count, dtype=np.float64)
+    result = scipy.optimize.linprog(
+        objective,
+        A_ub=cost_matrix,
+        b_ub=source_costs - cost_floor,
+        bounds=(cost_floor, None),
+        method="highs",
+    )
+    if not result.success:
+        raise RuntimeError(
+            "LP prior barred-cost solver failed: " + str(result.message)
+        )
     auxiliary_costs = np.asarray(result.x)
-    if np.min(auxiliary_costs, initial=0.0) < -tolerance:
+    if np.min(auxiliary_costs) < cost_floor - tolerance:
         raise RuntimeError(
             "LP max-barred-cost solver returned an infeasible solution."
         )
@@ -552,7 +584,7 @@ def tesseract_lp_max_barred_cost_prior_probabilities(
     residual_costs = source_costs - np.asarray(
         cost_matrix @ auxiliary_costs
     ).reshape(-1)
-    if np.min(residual_costs, initial=0.0) < -tolerance:
+    if np.min(residual_costs) < cost_floor - tolerance:
         raise RuntimeError(
             "LP max-barred-cost solver returned an infeasible solution."
         )
