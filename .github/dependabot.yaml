@@ -20,8 +20,6 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
-    cooldown:
-      default-days: 7
     labels:
       - "area/devops"
       - "area/health"
@@ -30,15 +28,12 @@ updates:
     directory: "/src/py"
     allow:
       - dependency-name: stim
-      - dependency-name: scipy
       - dependency-name: pytest
       - dependency-name: sinter
       - dependency-name: pybind11-stubgen
       - dependency-name: jupytext
     schedule:
       interval: "monthly"
-    cooldown:
-      default-days: 7
     versioning-strategy: "increase-if-necessary"
     groups:
       python-dependencies:

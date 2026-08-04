@@ -2,7 +2,6 @@
 # list in ../../.github/dependabot.yaml.
 
 stim
-scipy
 pytest
 sinter
 pybind11-stubgen
