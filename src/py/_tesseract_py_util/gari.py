@@ -645,7 +645,14 @@ def circuit_to_gari(
     *,
     prior_function: Callable[[GariTransform, np.ndarray], np.ndarray],
 ) -> tuple[stim.DetectorErrorModel, dict[str, object]]:
-    """Converts one circuit into a GARI matrix DEM and v1 layout."""
+    """Converts a supported CSS circuit into a GARI matrix DEM and v1 layout.
+
+    The source DEM is generated undecomposed (``decompose_errors=False``) and
+    flattened. Every detector must follow the repository's fourth-coordinate
+    convention: integer values 0–2 identify X detectors and 3–5 identify Z
+    detectors. The returned DEM stores transformed matrices for decoding and
+    must not be sampled.
+    """
     source_dem = _circuit_to_gari_source_dem(circuit)
     checks, logicals, probabilities = dem_to_matrices(source_dem)
     x_detectors, z_detectors = _detector_partition_from_fourth_coordinate(
