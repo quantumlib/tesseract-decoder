@@ -169,6 +169,7 @@ def dem_to_matrices(
     not merge duplicate instructions or reconstruct correlations split across
     instructions. A Stim ``^`` decomposition separator is rejected. Repeated
     detector or logical targets within an instruction are reduced modulo two.
+    Resulting no-op errors are omitted, and logical-only errors are rejected.
     """
     dem = dem.flattened()
     detector_rows: list[int] = []
@@ -185,7 +186,6 @@ def dem_to_matrices(
             raise ValueError(
                 "GARI requires a DEM generated with decompose_errors=False."
             )
-        column = len(probabilities)
         detectors: set[int] = set()
         logicals: set[int] = set()
         for target in targets:
@@ -193,6 +193,11 @@ def dem_to_matrices(
                 detectors ^= {target.val}
             elif target.is_logical_observable_id():
                 logicals ^= {target.val}
+        if not detectors and not logicals:
+            continue
+        if not detectors:
+            raise ValueError("GARI does not support logical-only source errors.")
+        column = len(probabilities)
         detector_rows.extend(sorted(detectors))
         detector_columns.extend([column] * len(detectors))
         logical_rows.extend(sorted(logicals))
