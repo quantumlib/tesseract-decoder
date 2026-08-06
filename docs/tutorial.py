@@ -344,6 +344,51 @@ print ("Second version")
 results = run_tesseract_decoder(tesseract_config2.compile_decoder(), dets, obs)
 print_results(results)
 
+# %% [markdown] id="gari-correlated-decoding"
+# # Faster Methods of Decoding Correlated Errors with Tesseract
+#
+# ## GARI
+#
+# Graph augmentation and rewiring for inference (GARI) transforms a correlated
+# CSS detector matrix into a block form for Tesseract; see [Decoding correlated
+# errors in quantum LDPC codes](https://doi.org/10.1038/s41467-026-70556-3).
+# This example reuses the superdense color-code memory-Z circuit and sampled
+# data from above, and applies the XOR prior policy.
+
+# %% id="gari-transform-example"
+gari = tesseract_decoder.demutil.gari
+
+gari_dem, gari_layout = gari.circuit_to_gari(
+    circuit,
+    prior_function=gari.tesseract_xor_prior_probabilities,
+)
+
+# %% [markdown] id="gari-syndrome-layout"
+# Sample detection events only from the original circuit. The GARI matrix DEM
+# stores the transformed matrices for decoding and is not sampled. Copy the
+# source syndrome into its physical rows; the added virtual entries stay zero.
+
+# %% id="gari-sample-example"
+num_shots = 10
+gari_dets = np.zeros((num_shots, gari_dem.num_detectors), dtype=bool)
+gari_dets[:, gari_layout["source_to_gari"]] = dets[:num_shots]
+
+# %% [markdown] id="gari-detector-order"
+# The layout is physical-then-virtual. Setting `num_det_orders=0` selects one
+# ascending detector order, so Tesseract processes the rows in that order.
+
+# %% id="gari-decode-example"
+short_beam = tesseract_decoder.make_tesseract_sinter_decoders_dict()[
+    "tesseract-short-beam"
+]
+short_beam.num_det_orders = 0
+gari_decoder = short_beam.compile_decoder_for_dem(dem=gari_dem).decoder
+predicted_observables = gari_decoder.decode_batch(gari_dets)
+logical_failures = np.count_nonzero(
+    np.any(predicted_observables != obs[:num_shots], axis=1)
+)
+print(f"Logical failures: {logical_failures}/{num_shots}")
+
 # %% [markdown] id="BoEALeo3OYGp"
 # # Decoding Wild Stabilizer Codes under Code Capacity Noise with Tesseract
 #
