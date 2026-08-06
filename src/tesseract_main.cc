@@ -111,6 +111,10 @@ struct Args {
     }
     explicit_det_order = det_order_flags > 0 || program.is_used("--num-det-orders") ||
                          program.is_used("--det-order-seed");
+    if (!gari_layout_path.empty() && explicit_det_order && num_det_orders > 0 &&
+        circuit_path.empty()) {
+      throw std::invalid_argument("GARI detector ordering requires --circuit.");
+    }
 
     int num_data_sources = int(sample_num_shots > 0) + int(!in_fname.empty());
     if (num_data_sources != 1) {
@@ -254,26 +258,16 @@ struct Args {
         } else if (det_order_coordinate) {
           order = DetOrder::DetCoordinate;
         }
-        config.det_orders = build_det_orders(config.dem, num_det_orders, order, det_order_seed);
+        config.det_orders =
+            gari_layout ? build_gari_detector_orders(circuit, *gari_layout, num_det_orders, order,
+                                                     det_order_seed)
+                        : build_det_orders(config.dem, num_det_orders, order, det_order_seed);
       }
     }
 
     if (sample_num_shots > 0) {
       assert(!circuit_path.empty());
-      std::mt19937_64 rng(sample_seed);
-      size_t num_detectors = circuit.count_detectors();
-      const auto [dets, obs] =
-          stim::sample_batch_detection_events<64>(circuit, sample_num_shots, rng);
-      stim::simd_bit_table<64> obs_T = obs.transposed();
-      shots.resize(sample_num_shots);
-      for (size_t k = 0; k < sample_num_shots; k++) {
-        shots[k].obs_mask = obs_T[k];
-        for (size_t d = 0; d < num_detectors; d++) {
-          if (dets[d][k]) {
-            shots[k].hits.push_back(d);
-          }
-        }
-      }
+      sample_shots(sample_seed, circuit, sample_num_shots, shots);
     }
 
     if (!in_fname.empty()) {
@@ -300,9 +294,7 @@ struct Args {
     }
 
     if (gari_layout) {
-      for (auto& shot : shots) {
-        gari_layout->map_hits(shot.hits);
-      }
+      gari_layout->map_shots(shots);
     }
 
     // Load observable flips, if applicable
@@ -719,7 +711,7 @@ int main(int argc, char* argv[]) {
                                          ? nlohmann::json(nullptr)
                                          : nlohmann::json(args.gari_layout_path);
     stats_json["gari_default_detector_order_used"] =
-        !args.gari_layout_path.empty() && !args.explicit_det_order;
+        !args.gari_layout_path.empty() && config.det_orders.empty();
 
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;

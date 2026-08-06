@@ -574,9 +574,10 @@ TEST(utils, GariLayoutMapsAndValidatesSource) {
                         R"("gari_detector_count":4,"source_to_gari":[1,0],)"
                         R"("detector_order":"physical_then_virtual"})");
   GariLayout layout = load_gari_layout(path, 4);
-  std::vector<uint64_t> hits{0, 0, 1};
-  layout.map_hits(hits);
-  EXPECT_EQ(hits, (std::vector<uint64_t>{0, 1, 1}));
+  std::vector<stim::SparseShot> shots(1);
+  shots[0].hits = {0, 0, 1};
+  layout.map_shots(shots);
+  EXPECT_EQ(shots[0].hits, (std::vector<uint64_t>{0, 1, 1}));
 
   stim::Circuit circuit(
       "M 0 1\nDETECTOR rec[-1]\nDETECTOR rec[-2]\n"
@@ -585,6 +586,21 @@ TEST(utils, GariLayoutMapsAndValidatesSource) {
   EXPECT_NO_THROW(layout.validate_source(circuit, dem));
   EXPECT_THROW(layout.validate_source(stim::Circuit("M 0\nDETECTOR rec[-1]"), dem),
                std::invalid_argument);
+
+  stim::DetectorErrorModel source_dem = stim::ErrorAnalyzer::circuit_to_detector_error_model(
+      circuit, false, true, true, 1, false, false);
+  for (DetOrder method : {DetOrder::DetIndex, DetOrder::DetBFS, DetOrder::DetCoordinate}) {
+    auto source_orders = build_det_orders(source_dem, 2, method, 5);
+    auto gari_orders = build_gari_detector_orders(circuit, layout, 2, method, 5);
+    for (size_t order = 0; order < source_orders.size(); ++order) {
+      for (size_t position = 0; position < layout.source_detector_count(); ++position) {
+        EXPECT_EQ(gari_orders[order][position],
+                  layout.source_to_gari[source_orders[order][position]]);
+      }
+      EXPECT_EQ(gari_orders[order][2], 2);
+      EXPECT_EQ(gari_orders[order][3], 3);
+    }
+  }
 }
 
 TEST(utils, GariLayoutRejectsInvalidV1) {

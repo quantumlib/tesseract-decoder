@@ -79,6 +79,7 @@ GariLayout load_gari_layout(const std::string& path, size_t expected_gari_detect
 
     GariLayout layout;
     layout.path = path;
+    layout.gari_detector_count = gari_detector_count;
     std::vector<bool> used(source_detector_count);
     layout.source_to_gari.reserve(source_detector_count);
     for (const auto& entry : mapping) {
@@ -103,6 +104,12 @@ void GariLayout::map_hits(std::vector<uint64_t>& hits) const {
     source = source_to_gari[source];
   }
   std::sort(hits.begin(), hits.end());
+}
+
+void GariLayout::map_shots(std::vector<stim::SparseShot>& shots) const {
+  for (auto& shot : shots) {
+    map_hits(shot.hits);
+  }
 }
 
 void GariLayout::validate_source(const stim::Circuit& circuit,
@@ -288,6 +295,56 @@ std::vector<std::vector<size_t>> build_det_orders(const stim::DetectorErrorModel
       return build_det_orders_index(dem, num_det_orders, rng);
   }
   throw std::invalid_argument("Unknown det order method");
+}
+
+std::vector<std::vector<size_t>> build_gari_detector_orders(const stim::Circuit& source_circuit,
+                                                            const GariLayout& layout,
+                                                            size_t num_det_orders, DetOrder method,
+                                                            uint64_t seed) {
+  if (num_det_orders == 0) {
+    return {};
+  }
+  if (source_circuit.count_detectors() != layout.source_detector_count()) {
+    throw gari_layout_error(layout.path,
+                            "source_detector_count does not match the ordering circuit.");
+  }
+  if (layout.source_detector_count() > layout.gari_detector_count) {
+    throw gari_layout_error(layout.path, "source detector count exceeds GARI detector count.");
+  }
+
+  std::vector<std::vector<size_t>> source_orders;
+  if (layout.source_detector_count() == 0) {
+    source_orders.resize(num_det_orders);
+  } else {
+    stim::DetectorErrorModel source_dem = stim::ErrorAnalyzer::circuit_to_detector_error_model(
+        source_circuit, /*decompose_errors=*/false, /*fold_loops=*/true,
+        /*allow_gauge_detectors=*/true,
+        /*approximate_disjoint_errors_threshold=*/1,
+        /*ignore_decomposition_failures=*/false,
+        /*block_decomposition_from_introducing_remnant_edges=*/false);
+    source_orders = build_det_orders(source_dem, num_det_orders, method, seed);
+  }
+
+  std::vector<std::vector<size_t>> gari_orders;
+  gari_orders.reserve(source_orders.size());
+  for (const auto& source_order : source_orders) {
+    if (source_order.size() != layout.source_detector_count()) {
+      throw gari_layout_error(layout.path, "source detector order has the wrong size.");
+    }
+    std::vector<size_t> gari_order;
+    gari_order.reserve(layout.gari_detector_count);
+    // Existing orders contain source detector IDs. Map those IDs to physical
+    // GARI rows, then visit the virtual rows in their natural order.
+    for (size_t source : source_order) {
+      gari_order.push_back(layout.source_to_gari.at(source));
+    }
+    for (size_t detector = layout.source_detector_count(); detector < layout.gari_detector_count;
+         ++detector) {
+      gari_order.push_back(detector);
+    }
+    gari_orders.push_back(std::move(gari_order));
+  }
+  return gari_orders;
 }
 
 bool sampling_from_dem(uint64_t seed, size_t num_shots, stim::DetectorErrorModel dem,

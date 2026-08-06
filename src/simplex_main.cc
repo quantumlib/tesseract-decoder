@@ -188,20 +188,7 @@ struct Args {
 
     if (sample_num_shots > 0) {
       assert(!circuit_path.empty());
-      std::mt19937_64 rng(sample_seed);
-      size_t num_detectors = circuit.count_detectors();
-      const auto [dets, obs] =
-          stim::sample_batch_detection_events<64>(circuit, sample_num_shots, rng);
-      stim::simd_bit_table<64> obs_T = obs.transposed();
-      shots.resize(sample_num_shots);
-      for (size_t k = 0; k < sample_num_shots; k++) {
-        shots[k].obs_mask = obs_T[k];
-        for (size_t d = 0; d < num_detectors; d++) {
-          if (dets[d][k]) {
-            shots[k].hits.push_back(d);
-          }
-        }
-      }
+      sample_shots(sample_seed, circuit, sample_num_shots, shots);
     }
 
     if (!in_fname.empty()) {
@@ -228,9 +215,7 @@ struct Args {
     }
 
     if (gari_layout) {
-      for (auto& shot : shots) {
-        gari_layout->map_hits(shot.hits);
-      }
+      gari_layout->map_shots(shots);
     }
 
     // Load observable flips, if applicable
