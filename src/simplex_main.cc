@@ -181,14 +181,24 @@ struct Args {
       if (!circuit_path.empty()) {
         gari_layout->validate_source(circuit, config.dem);
       }
-    } else if (sample_num_shots > 0 and !dem_path.empty() and
-               circuit.count_detectors() != config.dem.count_detectors()) {
-      throw std::invalid_argument("Circuit and DEM detector counts differ; supply --gari-layout.");
     }
 
     if (sample_num_shots > 0) {
       assert(!circuit_path.empty());
-      sample_shots(sample_seed, circuit, sample_num_shots, shots);
+      std::mt19937_64 rng(sample_seed);
+      size_t num_detectors = circuit.count_detectors();
+      const auto [dets, obs] =
+          stim::sample_batch_detection_events<64>(circuit, sample_num_shots, rng);
+      stim::simd_bit_table<64> obs_T = obs.transposed();
+      shots.resize(sample_num_shots);
+      for (size_t k = 0; k < sample_num_shots; k++) {
+        shots[k].obs_mask = obs_T[k];
+        for (size_t d = 0; d < num_detectors; d++) {
+          if (dets[d][k]) {
+            shots[k].hits.push_back(d);
+          }
+        }
+      }
     }
 
     if (!in_fname.empty()) {
@@ -531,9 +541,9 @@ int main(int argc, char* argv[]) {
                                  {"num_errors", has_obs ? nlohmann::json(num_errors) : nullptr},
                                  {"num_shots", shot},
                                  {"sample_num_shots", args.sample_num_shots}};
-    stats_json["gari_layout_path"] = args.gari_layout_path.empty()
-                                         ? nlohmann::json(nullptr)
-                                         : nlohmann::json(args.gari_layout_path);
+    if (!args.gari_layout_path.empty()) {
+      stats_json["gari_layout_path"] = args.gari_layout_path;
+    }
 
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;
