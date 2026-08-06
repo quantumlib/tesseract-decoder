@@ -678,3 +678,48 @@ nice_calibrated_dem = demutil.regeneralize_spatial_dem(
 )
 # Result will have error probability (0.1 + 0.2) / 2 = 0.15
 ```
+
+#### GARI transformed matrices
+
+`demutil.gari.circuit_to_gari` converts a supported correlated CSS Stim
+circuit into a GARI matrix DEM and companion layout for Tesseract. It
+generates a flattened source DEM with `decompose_errors=False`. Detectors must
+follow the repository's fourth-coordinate convention: values `0`–`2` identify
+X detectors and `3`–`5` identify Z detectors.
+
+```python
+import stim
+from tesseract_decoder import demutil
+
+circuit = stim.Circuit.from_file("circuitFile.stim")
+gari_dem, gari_layout = demutil.gari.circuit_to_gari(
+    circuit,
+    prior_function=demutil.gari.tesseract_xor_prior_probabilities,
+)
+```
+
+`circuit_to_gari` returns:
+
+* `gari_dem`: the augmented detector and logical matrices stored using Stim
+  DEM syntax.
+* `gari_layout`: a `tesseract.gari_layout.v1` dictionary containing the source
+  and GARI detector counts, the `source_to_gari` detector mapping, and the
+  `physical_then_virtual` detector order.
+
+Related public APIs:
+
+* `demutil.gari.dem_to_matrices(dem)` returns the sparse detector matrix,
+  sparse logical matrix, and one probability per source error column.
+* `demutil.gari.GariTransform` is passed to prior-policy callbacks. It exposes
+  the transformed detector and logical matrices, the `U` and `V` projection
+  matrices, the source `e_Z`, `e_X`, and `e_Y` column indices, and the source
+  detector mapping.
+* `paper_prior_probabilities`, `tesseract_xor_prior_probabilities`, and
+  `tesseract_lp_max_barred_cost_prior_probabilities` return one probability for
+  each transformed GARI column. A user-defined prior can follow the same
+  callable interface.
+
+The returned GARI matrix DEM stores transformed matrices for decoding and must
+not be sampled. Sample from the original circuit and use the companion layout
+to place its physical syndrome. See the
+[GARI tutorial](../../docs/tutorial.ipynb) for a complete decoding example.
