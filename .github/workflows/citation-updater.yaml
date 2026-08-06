@@ -12,9 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Zero-config modular workflow for updating CITATION.cff upon new releases.
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 name: CITATION.cff updater
 run-name: Update CITATION.cff for new release
 
@@ -22,7 +19,6 @@ on:
   release:
     types: [published]
 
-  # Allow manual invocation.
   workflow_dispatch:
     inputs:
       use_tag:
@@ -34,13 +30,12 @@ on:
         type: string
         required: true
 
-# Declare default permissions as read only.
-permissions: read-all
-
-# Cancel any previously-started but still active runs on the same branch.
 concurrency:
   cancel-in-progress: true
   group: ${{github.workflow}}-${{github.event.pull_request.number||github.ref}}
+
+permissions:
+  contents: read
 
 jobs:
   update-citation-cff:

@@ -25,13 +25,12 @@ defaults:
   run:
     shell: bash
 
-# Cancels a previous run if a new commit is made on the same pull request
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# Declare default workflow permissions as read only.
-permissions: read-all
+permissions:
+  contents: read
 
 jobs:
   clang-format-check:
