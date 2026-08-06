@@ -4,5 +4,6 @@
 stim
 pytest
 sinter
+scipy
 pybind11-stubgen
 jupytext

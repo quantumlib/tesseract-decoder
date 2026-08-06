@@ -9,9 +9,21 @@ bazel_dep(name = "pybind11_bazel", version = "3.0.1")
 DEFAULT_PYTHON_VERSION = "3.13"
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.defaults(python_version = DEFAULT_PYTHON_VERSION)
 python.toolchain(
-    python_version = DEFAULT_PYTHON_VERSION,
-    is_default = True,
+    python_version = "3.10",
+    ignore_root_user_error = True,
+)
+python.toolchain(
+    python_version = "3.11",
+    ignore_root_user_error = True,
+)
+python.toolchain(
+    python_version = "3.12",
+    ignore_root_user_error = True,
+)
+python.toolchain(
+    python_version = "3.13",
     ignore_root_user_error = True,
 )
 
@@ -21,10 +33,16 @@ use_repo(python_configure, "local_config_python")
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 
+REQUIREMENTS_LOCK = (
+    "//src/py:requirements_lock_3_10.txt"
+    if DEFAULT_PYTHON_VERSION == "3.10"
+    else "//src/py:requirements_lock.txt"
+)
+
 pip.parse(
     hub_name = "pypi",
     python_version = DEFAULT_PYTHON_VERSION,
-    requirements_lock = "//src/py:requirements_lock.txt",
+    requirements_lock = REQUIREMENTS_LOCK,
     extra_pip_args = ["--index-url=https://pypi.org/simple"],
 )
 
@@ -101,4 +119,3 @@ http_archive(
 
 cc_compatibility_proxy = use_extension("@rules_cc//cc:extensions.bzl", "compatibility_proxy")
 use_repo(cc_compatibility_proxy, "cc_compatibility_proxy")
-

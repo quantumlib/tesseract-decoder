@@ -138,6 +138,15 @@ genrule(
 compile_pip_requirements(
     name = "requirements",
     src = "requirements.in",
+    python_version = "3.13",
     requirements_txt = "requirements_lock.txt",
+    timeout = "long",
+)
+
+compile_pip_requirements(
+    name = "requirements_3_10",
+    src = "requirements.in",
+    python_version = "3.10",
+    requirements_txt = "requirements_lock_3_10.txt",
     timeout = "long",
 )

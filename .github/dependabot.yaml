@@ -30,6 +30,7 @@ updates:
       - dependency-name: stim
       - dependency-name: pytest
       - dependency-name: sinter
+      - dependency-name: scipy
       - dependency-name: pybind11-stubgen
       - dependency-name: jupytext
     schedule:
