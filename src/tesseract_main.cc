@@ -229,6 +229,9 @@ struct Args {
       if (!circuit_path.empty()) {
         gari_layout->validate_source(circuit, config.dem);
       }
+    } else if (sample_num_shots > 0 and !dem_path.empty() and
+               circuit.count_detectors() != config.dem.count_detectors()) {
+      throw std::invalid_argument("Circuit and DEM detector counts differ; supply --gari-layout.");
     }
 
     // Sample orientations of the error model to use for the det priority
