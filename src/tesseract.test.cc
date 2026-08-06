@@ -603,6 +603,41 @@ TEST(utils, GariLayoutMapsAndValidatesSource) {
   }
 }
 
+TEST(utils, GariSourceShotRemappingDecodes) {
+  stim::Circuit circuit(R"STIM(
+    X_ERROR(1) 0 3
+    M 0 1 2 3 4 5
+    DETECTOR rec[-6]
+    DETECTOR rec[-5]
+    DETECTOR rec[-4]
+    DETECTOR rec[-3]
+    OBSERVABLE_INCLUDE(0) rec[-6]
+    OBSERVABLE_INCLUDE(1) rec[-2]
+    OBSERVABLE_INCLUDE(2) rec[-1]
+  )STIM");
+  stim::DetectorErrorModel gari_dem(R"DEM(
+    error(0.1) D1 D2 L0
+    error(0.1) D0 D3
+    error(0.1) D4 L1
+    error(0.1) D5 L2
+  )DEM");
+  GariLayout layout;
+  layout.gari_detector_count = 6;
+  layout.source_to_gari = {2, 0, 3, 1};
+
+  std::vector<stim::SparseShot> shots;
+  sample_shots(0, circuit, 1, shots);
+  ASSERT_EQ(shots.size(), 1);
+  EXPECT_EQ(shots[0].hits, (std::vector<uint64_t>{0, 3}));
+  layout.map_shots(shots);
+  EXPECT_EQ(shots[0].hits, (std::vector<uint64_t>{1, 2}));
+
+  TesseractDecoder tesseract(TesseractConfig{gari_dem});
+  SimplexDecoder simplex(SimplexConfig{gari_dem});
+  EXPECT_EQ(tesseract.decode(shots[0].hits), (std::vector<int>{0}));
+  EXPECT_EQ(simplex.decode(shots[0].hits), (std::vector<int>{0}));
+}
+
 TEST(utils, GariLayoutRejectsInvalidV1) {
   const std::string valid = R"({"schema":"tesseract.gari_layout.v1","source_detector_count":2,)"
                             R"("gari_detector_count":4,"source_to_gari":[1,0],)"
