@@ -26,6 +26,8 @@ py_wheel(
     ],
     version = "$(VERSION)",
     requires=[
+        "numpy",
+        "scipy",
         "stim",
     ],
     python_tag="$(TARGET_VERSION)",
