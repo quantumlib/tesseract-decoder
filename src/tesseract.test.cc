@@ -14,8 +14,11 @@
 
 #include "tesseract.h"
 
+#include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <limits>
+#include <string>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -557,5 +560,149 @@ TEST(tesseract, MoreThan64Observables) {
   ASSERT_EQ(flipped.size(), 70);
   for (int i = 0; i < 70; i++) {
     ASSERT_EQ(flipped[i], i);
+  }
+}
+
+static std::string write_gari_layout(const std::string& text) {
+  std::string path = testing::TempDir() + "gari_layout_test.json";
+  std::ofstream(path) << text;
+  return path;
+}
+
+TEST(utils, GariLayoutMapsAndValidatesSource) {
+  std::string path =
+      write_gari_layout(R"({"schema":"tesseract.gari_layout.v1","source_detector_count":2,)"
+                        R"("gari_detector_count":4,"source_to_gari":[1,0],)"
+                        R"("detector_order":"physical_then_virtual"})");
+  GariLayout layout = load_gari_layout(path, 4);
+  std::vector<stim::SparseShot> shots(1);
+  shots[0].hits = {0, 1};
+  layout.map_shots(shots);
+  EXPECT_EQ(shots[0].hits, (std::vector<uint64_t>{0, 1}));
+
+  stim::Circuit circuit(
+      "M 0 1\nDETECTOR rec[-1]\nDETECTOR rec[-2]\n"
+      "OBSERVABLE_INCLUDE(0) rec[-1]");
+  stim::DetectorErrorModel dem("error(0.1) D0 D1 D2 D3 L0");
+  EXPECT_NO_THROW(layout.validate_source(circuit, dem));
+  EXPECT_THROW(layout.validate_source(stim::Circuit("M 0\nDETECTOR rec[-1]"), dem),
+               std::invalid_argument);
+
+  stim::DetectorErrorModel source_dem = stim::ErrorAnalyzer::circuit_to_detector_error_model(
+      circuit, false, true, true, 1, false, false);
+  for (DetOrder method : {DetOrder::DetIndex, DetOrder::DetBFS, DetOrder::DetCoordinate}) {
+    auto source_orders = build_det_orders(source_dem, 2, method, 5);
+    auto gari_orders = build_gari_detector_orders(circuit, layout, 2, method, 5);
+    for (size_t order = 0; order < source_orders.size(); ++order) {
+      for (size_t position = 0; position < layout.source_detector_count(); ++position) {
+        EXPECT_EQ(gari_orders[order][position],
+                  layout.source_to_gari[source_orders[order][position]]);
+      }
+      EXPECT_EQ(gari_orders[order][2], 2);
+      EXPECT_EQ(gari_orders[order][3], 3);
+    }
+  }
+}
+
+TEST(utils, GariSourceShotRemappingDecodes) {
+  stim::Circuit circuit(R"STIM(
+    X_ERROR(1) 0 3
+    M 0 1 2 3 4 5
+    DETECTOR rec[-6]
+    DETECTOR rec[-5]
+    DETECTOR rec[-4]
+    DETECTOR rec[-3]
+    OBSERVABLE_INCLUDE(0) rec[-6]
+    OBSERVABLE_INCLUDE(1) rec[-2]
+    OBSERVABLE_INCLUDE(2) rec[-1]
+  )STIM");
+  stim::DetectorErrorModel gari_dem(R"DEM(
+    error(0.1) D1 D2 L0
+    error(0.1) D0 D3
+    error(0.1) D4 L1
+    error(0.1) D5 L2
+  )DEM");
+  GariLayout layout;
+  layout.gari_detector_count = 6;
+  layout.source_to_gari = {2, 0, 3, 1};
+
+  std::vector<stim::SparseShot> shots;
+  sample_shots(0, circuit, 1, shots);
+  ASSERT_EQ(shots.size(), 1);
+  EXPECT_EQ(shots[0].hits, (std::vector<uint64_t>{0, 3}));
+  layout.map_shots(shots);
+  EXPECT_EQ(shots[0].hits, (std::vector<uint64_t>{1, 2}));
+
+  TesseractDecoder tesseract(TesseractConfig{gari_dem});
+  SimplexDecoder simplex(SimplexConfig{gari_dem});
+  EXPECT_EQ(tesseract.decode(shots[0].hits), (std::vector<int>{0}));
+  EXPECT_EQ(simplex.decode(shots[0].hits), (std::vector<int>{0}));
+}
+
+TEST(utils, GariB8SourceWidthPreservesShotRecords) {
+  stim::DetectorErrorModel gari_dem(R"DEM(
+    error(0.1) D1 D2 L0
+    error(0.1) D0 D5 L1
+    detector D9
+  )DEM");
+  GariLayout layout = load_gari_layout(
+      write_gari_layout(R"({"schema":"tesseract.gari_layout.v1","source_detector_count":7,)"
+                        R"("gari_detector_count":10,"source_to_gari":[2,0,4,1,6,3,5],)"
+                        R"("detector_order":"physical_then_virtual"})"),
+      gari_dem.count_detectors());
+
+  std::string path = testing::TempDir() + "gari_source_shots.b8";
+  {
+    std::ofstream output(path, std::ios::binary);
+    output.put('\x09');  // D0 D3.
+    output.put('\x42');  // D1 D6.
+  }
+
+  FILE* file = fopen(path.c_str(), "rb");
+  ASSERT_NE(file, nullptr);
+  auto format = stim::format_name_to_enum_map().at("b8");
+  auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
+      file, format.id, 0, layout.source_detector_count(), 0);
+  std::vector<stim::SparseShot> shots;
+  stim::SparseShot shot;
+  while (reader->start_and_read_entire_record(shot)) {
+    shots.push_back(shot);
+    shot.clear();
+  }
+  fclose(file);
+
+  ASSERT_EQ(shots.size(), 2);
+  EXPECT_EQ(shots[0].hits, (std::vector<uint64_t>{0, 3}));
+  EXPECT_EQ(shots[1].hits, (std::vector<uint64_t>{1, 6}));
+  layout.map_shots(shots);
+  EXPECT_EQ(shots[0].hits, (std::vector<uint64_t>{1, 2}));
+  EXPECT_EQ(shots[1].hits, (std::vector<uint64_t>{0, 5}));
+
+  TesseractDecoder tesseract(TesseractConfig{gari_dem});
+  SimplexDecoder simplex(SimplexConfig{gari_dem});
+  EXPECT_EQ(tesseract.decode(shots[0].hits), (std::vector<int>{0}));
+  EXPECT_EQ(tesseract.decode(shots[1].hits), (std::vector<int>{1}));
+  EXPECT_EQ(simplex.decode(shots[0].hits), (std::vector<int>{0}));
+  EXPECT_EQ(simplex.decode(shots[1].hits), (std::vector<int>{1}));
+}
+
+TEST(utils, GariLayoutRejectsInvalidV1) {
+  const std::string valid = R"({"schema":"tesseract.gari_layout.v1","source_detector_count":2,)"
+                            R"("gari_detector_count":4,"source_to_gari":[1,0],)"
+                            R"("detector_order":"physical_then_virtual"})";
+  auto replacing = [&](const std::string& from, const std::string& to) {
+    std::string result = valid;
+    result.replace(result.find(from), from.size(), to);
+    return result;
+  };
+  for (const std::string& text :
+       {replacing("[1,0]", "[0,3]"), replacing("[1,0]", "[0,0]"), std::string("{")}) {
+    std::string path = write_gari_layout(text);
+    try {
+      load_gari_layout(path, 4);
+      FAIL() << "Invalid layout was accepted.";
+    } catch (const std::invalid_argument& ex) {
+      EXPECT_NE(std::string(ex.what()).find(path), std::string::npos);
+    }
   }
 }

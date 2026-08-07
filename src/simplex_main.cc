@@ -17,6 +17,7 @@
 #include <fstream>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <thread>
 
 #include "common.h"
@@ -27,6 +28,7 @@
 struct Args {
   std::string circuit_path;
   std::string dem_path;
+  std::string gari_layout_path;
   bool no_merge_errors = false;
 
   // Sampling options
@@ -82,6 +84,9 @@ struct Args {
   void validate() {
     if (circuit_path.empty() and dem_path.empty()) {
       throw std::invalid_argument("Must provide at least one of --circuit or --dem");
+    }
+    if (!gari_layout_path.empty() and dem_path.empty()) {
+      throw std::invalid_argument("--gari-layout requires --dem.");
     }
 
     int num_data_sources = int(sample_num_shots > 0) + int(!in_fname.empty());
@@ -170,6 +175,17 @@ struct Args {
 
     config.merge_errors = !no_merge_errors;
 
+    std::optional<GariLayout> gari_layout;
+    if (!gari_layout_path.empty()) {
+      gari_layout = load_gari_layout(gari_layout_path, config.dem.count_detectors());
+      if (!circuit_path.empty()) {
+        gari_layout->validate_source(circuit, config.dem);
+      }
+    } else if (sample_num_shots > 0 and !dem_path.empty() and
+               circuit.count_detectors() != config.dem.count_detectors()) {
+      throw std::invalid_argument("Circuit and DEM detector counts differ; supply --gari-layout.");
+    }
+
     if (sample_num_shots > 0) {
       assert(!circuit_path.empty());
       std::mt19937_64 rng(sample_seed);
@@ -195,8 +211,10 @@ struct Args {
         throw std::invalid_argument("Could not open the file: " + in_fname);
       }
       stim::FileFormatData shots_in_format = stim::format_name_to_enum_map().at(in_format);
+      size_t source_detector_count =
+          gari_layout ? gari_layout->source_detector_count() : config.dem.count_detectors();
       auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
-          shots_file, shots_in_format.id, 0, config.dem.count_detectors(),
+          shots_file, shots_in_format.id, 0, source_detector_count,
           append_observables * config.dem.count_observables());
 
       // Load the shots from a file
@@ -207,6 +225,10 @@ struct Args {
         sparse_shot.clear();
       }
       fclose(shots_file);
+    }
+
+    if (gari_layout) {
+      gari_layout->map_shots(shots);
     }
 
     // Load observable flips, if applicable
@@ -274,6 +296,13 @@ int main(int argc, char* argv[]) {
   Args args;
   program.add_argument("--circuit").help("Stim circuit file path").store_into(args.circuit_path);
   program.add_argument("--dem").help("Stim dem file path").store_into(args.dem_path);
+  program.add_argument("--gari-layout")
+      .help(
+          "Companion JSON layout for a GARI matrix file. Maps source detector data into GARI "
+          "rows; virtual rows remain zero.")
+      .metavar("FILE")
+      .default_value(std::string(""))
+      .store_into(args.gari_layout_path);
   program.add_argument("--no-merge-errors")
       .help("If provided, will not merge identical error mechanisms.")
       .store_into(args.no_merge_errors);
@@ -515,6 +544,9 @@ int main(int argc, char* argv[]) {
                                  {"num_errors", has_obs ? nlohmann::json(num_errors) : nullptr},
                                  {"num_shots", shot},
                                  {"sample_num_shots", args.sample_num_shots}};
+    if (!args.gari_layout_path.empty()) {
+      stats_json["gari_layout_path"] = args.gari_layout_path;
+    }
 
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;

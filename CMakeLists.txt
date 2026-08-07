@@ -87,6 +87,7 @@ add_library(utils ${TESSERACT_SRC_DIR}/utils.cc ${TESSERACT_SRC_DIR}/utils.h)
 target_include_directories(utils PUBLIC ${TESSERACT_SRC_DIR})
 target_compile_options(utils PRIVATE ${OPT_COPTS})
 target_link_libraries(utils PUBLIC common libstim Threads::Threads)
+target_link_libraries(utils PRIVATE nlohmann_json::nlohmann_json)
 
 add_library(visualization ${TESSERACT_SRC_DIR}/visualization.cc ${TESSERACT_SRC_DIR}/visualization.h)
 target_include_directories(visualization PUBLIC ${TESSERACT_SRC_DIR})

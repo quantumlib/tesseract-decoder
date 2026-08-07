@@ -44,6 +44,28 @@ std::vector<std::vector<size_t>> build_det_orders(const stim::DetectorErrorModel
                                                   DetOrder method = DetOrder::DetIndex,
                                                   uint64_t seed = 0);
 
+struct GariLayout {
+  std::string path;
+  size_t gari_detector_count = 0;
+  std::vector<size_t> source_to_gari;
+
+  size_t source_detector_count() const {
+    return source_to_gari.size();
+  }
+  void map_hits(std::vector<uint64_t>& hits) const;
+  void map_shots(std::vector<stim::SparseShot>& shots) const;
+  void validate_source(const stim::Circuit& circuit,
+                       const stim::DetectorErrorModel& gari_dem) const;
+};
+
+GariLayout load_gari_layout(const std::string& path, size_t expected_gari_detector_count);
+
+std::vector<std::vector<size_t>> build_gari_detector_orders(const stim::Circuit& source_circuit,
+                                                            const GariLayout& layout,
+                                                            size_t num_det_orders,
+                                                            DetOrder method = DetOrder::DetIndex,
+                                                            uint64_t seed = 0);
+
 const double INF = std::numeric_limits<double>::infinity();
 
 bool sampling_from_dem(uint64_t seed, size_t num_shots, stim::DetectorErrorModel dem,
