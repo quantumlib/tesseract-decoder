@@ -92,7 +92,7 @@ jobs:
           sed -i "s/^version:.*$/version: '$version'/" CITATION.cff
           sed -i "s/^date-released:.*$/date-released: $date/" CITATION.cff
 
-          # Sanity-check that the result looks valid.
+          # Check that the result looks valid.
           success=true
           yamllint CITATION.cff > /dev/null 2>&1 || success=false
           written_version=$(yq -r .version CITATION.cff)
