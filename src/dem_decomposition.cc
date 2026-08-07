@@ -109,10 +109,10 @@ std::vector<std::vector<int>> get_component_obs_matching_undecomposed_obs(
     }
   }
 
-  // Best effort logic if allow_remnant_errors is true
-  if (allow_remnant_errors) {
+  // If allow_remnant_errors is true and we have missing components where NO combination matched,
+  // but there are missing components that can carry the residual:
+  if (allow_remnant_errors && num_missing_components > 0) {
     if (!obs_options_by_component.empty()) {
-      // Use the first combination and force residual into the first component
       std::vector<std::vector<int>> first_combination;
       for (const auto& options : obs_options_by_component) {
         first_combination.push_back(*options.begin());
@@ -123,13 +123,12 @@ std::vector<std::vector<int>> get_component_obs_matching_undecomposed_obs(
       residual_input.insert(residual_input.end(), first_obs_sum.begin(), first_obs_sum.end());
       std::vector<int> residual = reduce_symmetric_difference(residual_input);
 
-      std::vector<int> forced_first_input = first_combination[0];
-      forced_first_input.insert(forced_first_input.end(), residual.begin(), residual.end());
-      first_combination[0] = reduce_symmetric_difference(forced_first_input);
-
-      for (int i = 0; i < num_missing_components; ++i) first_combination.push_back({});
-      return first_combination;
-    } else if (num_missing_components > 0) {
+      // Assign the residual strictly to the first missing component
+      std::vector<std::vector<int>> result = first_combination;
+      result.push_back(residual);
+      for (int i = 0; i < num_missing_components - 1; ++i) result.push_back({});
+      return result;
+    } else {
       // No known components? Put everything in the first missing one.
       std::vector<std::vector<int>> result;
       result.push_back(error_obs_reduced);
@@ -243,12 +242,20 @@ stim::DetectorErrorModel decompose_errors_using_generic_classifier(
   for (uint64_t d : all_detector_indices) {
     std::vector<double> coords =
         detector_coords.count(d) ? detector_coords.at(d) : std::vector<double>{};
-    classification_cache[d] = classifier((int)d, coords, detector_tags[d]);
+    int cls = classifier((int)d, coords, detector_tags[d]);
+    if (cls < 0) {
+      throw std::invalid_argument("Detector D" + std::to_string(d) + " could not be classified.");
+    }
+    classification_cache[d] = cls;
   }
 
   // 3. Decompose using the cached classification
   auto component_func = [&](int d) {
-    return classification_cache.count(d) ? classification_cache.at(d) : 0;
+    if (!classification_cache.count(d)) {
+      throw std::invalid_argument("Detector D" + std::to_string(d) +
+                                  " missing from classification cache.");
+    }
+    return classification_cache.at(d);
   };
 
   return decompose_errors_using_detector_assignment(dem, component_func, allow_remnant_errors);

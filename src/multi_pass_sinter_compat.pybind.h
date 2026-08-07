@@ -130,7 +130,7 @@ struct MultiPassSinterDecoder {
                                                                 const std::vector<double>& coords,
                                                                 const std::string& tag) -> int {
       if (index >= 0 && (size_t)index < classification.size()) return classification[index];
-      return 0;
+      return -1;
     };
 
     auto decoder = std::make_unique<tesseract::MultiPassTesseractDecoder>(
