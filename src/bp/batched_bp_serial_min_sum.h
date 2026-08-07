@@ -11,7 +11,7 @@ namespace bp {
 template <typename T>
 std::vector<BPResult> batched_bp_serial_min_sum(
     BatchedTannerGraph<T>& graph, const std::vector<std::vector<size_t>>& detection_events_batch,
-    std::vector<std::vector<T>>& posteriors_batch, size_t max_iters, float normalization_factor,
+    std::vector<T>& posteriors_flat, size_t max_iters, float normalization_factor,
     bool stop_at_convergence = true);
 
 }  // namespace bp

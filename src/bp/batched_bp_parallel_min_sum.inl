@@ -10,7 +10,7 @@ namespace bp {
 template <typename T>
 std::vector<BPResult> batched_bp_parallel_min_sum(
     BatchedTannerGraph<T>& graph, const std::vector<std::vector<size_t>>& detection_events_batch,
-    std::vector<std::vector<T>>& posteriors_batch, size_t max_iters, float normalization_factor,
+    std::vector<T>& posteriors_flat, size_t max_iters, float normalization_factor,
     bool stop_at_convergence) {
   size_t actual_batch_size = detection_events_batch.size();
   if (actual_batch_size > BP_BATCH_SIZE) {
@@ -145,11 +145,12 @@ std::vector<BPResult> batched_bp_parallel_min_sum(
 
     // --- Posterior and Convergence Check ---
     if (stop_at_convergence || (iter == max_iters - 1)) {
-      // Calculate current posteriors for active shots
+      // Calculate current posteriors for active shots in flat layout
       for (size_t i = 0; i < graph.num_variables; ++i) {
         size_t start = graph.var_edge_offsets[i];
         size_t end = graph.var_edge_offsets[i + 1];
         T prior_val = graph.priors[i];
+        size_t var_post_idx = i * BP_BATCH_SIZE;
 
 #pragma GCC ivdep
         for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
@@ -158,7 +159,7 @@ std::vector<BPResult> batched_bp_parallel_min_sum(
           for (size_t e = start; e < end; ++e) {
             post += graph.check_to_var_messages[e * BP_BATCH_SIZE + b];
           }
-          posteriors_batch[b][i] = post;
+          posteriors_flat[var_post_idx + b] = post;
         }
       }
 
@@ -178,7 +179,7 @@ std::vector<BPResult> batched_bp_parallel_min_sum(
           uint8_t posterior_parity = 0;
           for (size_t e = start; e < end; ++e) {
             size_t v_idx = graph.check_edges[e];
-            if (posteriors_batch[b][v_idx] < 0) {
+            if (posteriors_flat[v_idx * BP_BATCH_SIZE + b] < 0) {
               posterior_parity ^= 1;
             }
           }

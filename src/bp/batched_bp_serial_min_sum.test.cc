@@ -33,26 +33,26 @@ TEST(BatchedBpSerialMinSumTest, ConvergesOnSimpleErrors) {
   batched_syndromes.push_back({0, 3});  // Shot 1: Error at V0, V4
   for (size_t i = 2; i < BP_BATCH_SIZE; i++) batched_syndromes.push_back({});  // Other shots empty
 
-  std::vector<std::vector<float>> batched_posteriors(BP_BATCH_SIZE, std::vector<float>(5, 0));
+  std::vector<float> batched_posteriors(5 * BP_BATCH_SIZE, 0.0f);
 
   auto batched_results = batched_bp_serial_min_sum(
       batched_graph, batched_syndromes, batched_posteriors, 20, kNormalizationFactor, true);
 
   // Shot 0 should converge to fixing V2
   EXPECT_TRUE(batched_results[0].converged);
-  EXPECT_GT(batched_posteriors[0][0], 0);
-  EXPECT_GT(batched_posteriors[0][1], 0);
-  EXPECT_LT(batched_posteriors[0][2], 0);  // V2 is negative (error)
-  EXPECT_GT(batched_posteriors[0][3], 0);
-  EXPECT_GT(batched_posteriors[0][4], 0);
+  EXPECT_GT(batched_posteriors[0 * BP_BATCH_SIZE + 0], 0);
+  EXPECT_GT(batched_posteriors[1 * BP_BATCH_SIZE + 0], 0);
+  EXPECT_LT(batched_posteriors[2 * BP_BATCH_SIZE + 0], 0);  // V2 is negative (error)
+  EXPECT_GT(batched_posteriors[3 * BP_BATCH_SIZE + 0], 0);
+  EXPECT_GT(batched_posteriors[4 * BP_BATCH_SIZE + 0], 0);
 
   // Shot 1 should converge to fixing V0, V4
   EXPECT_TRUE(batched_results[1].converged);
-  EXPECT_LT(batched_posteriors[1][0], 0);  // V0 is negative
-  EXPECT_GT(batched_posteriors[1][1], 0);
-  EXPECT_GT(batched_posteriors[1][2], 0);
-  EXPECT_GT(batched_posteriors[1][3], 0);
-  EXPECT_LT(batched_posteriors[1][4], 0);  // V4 is negative
+  EXPECT_LT(batched_posteriors[0 * BP_BATCH_SIZE + 1], 0);  // V0 is negative
+  EXPECT_GT(batched_posteriors[1 * BP_BATCH_SIZE + 1], 0);
+  EXPECT_GT(batched_posteriors[2 * BP_BATCH_SIZE + 1], 0);
+  EXPECT_GT(batched_posteriors[3 * BP_BATCH_SIZE + 1], 0);
+  EXPECT_LT(batched_posteriors[4 * BP_BATCH_SIZE + 1], 0);  // V4 is negative
 }
 
 }  // namespace bp
