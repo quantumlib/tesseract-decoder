@@ -576,9 +576,9 @@ TEST(utils, GariLayoutMapsAndValidatesSource) {
                         R"("detector_order":"physical_then_virtual"})");
   GariLayout layout = load_gari_layout(path, 4);
   std::vector<stim::SparseShot> shots(1);
-  shots[0].hits = {0, 0, 1};
+  shots[0].hits = {0, 1};
   layout.map_shots(shots);
-  EXPECT_EQ(shots[0].hits, (std::vector<uint64_t>{0, 1, 1}));
+  EXPECT_EQ(shots[0].hits, (std::vector<uint64_t>{0, 1}));
 
   stim::Circuit circuit(
       "M 0 1\nDETECTOR rec[-1]\nDETECTOR rec[-2]\n"
