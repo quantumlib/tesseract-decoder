@@ -31,7 +31,8 @@ concurrency:
   cancel-in-progress: true
 
 # Declare default workflow permissions as read only.
-permissions: read-all
+permissions:
+  contents: read
 
 jobs:
   clang-format-check:
