@@ -398,3 +398,76 @@ TEST(MultiPassTesseractDecoderTest, OverlappingSymptomsDistinctObservables) {
   // vector!
   ASSERT_EQ(it->second.size(), 2);
 }
+
+TEST(MultiPassTesseractDecoderTest, PristineResetAcrossMultiplePasses) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 D1 L0
+        error(0.01) D0
+        error(0.2) D1 L0
+        detector D0
+        detector D1
+        logical_observable L0
+    )DEM");
+
+  auto classifier = [](int index, const std::vector<double>& coords,
+                       const std::string& tag) -> int { return index; };
+
+  TesseractConfig config;
+  config.dem = dem;
+
+  for (size_t num_passes : {1, 2, 3, 4}) {
+    for (auto strategy : {SchedulingStrategy::Static, SchedulingStrategy::Causal}) {
+      MultiPassTesseractDecoder decoder(dem, num_passes, classifier, config, 1, DetOrder::DetIndex,
+                                        12345, strategy);
+
+      const auto& comp1 = MultiPassDebugger::get_component_decoder_full(decoder, 1);
+      std::vector<double> initial_costs;
+      for (const auto& err : comp1.decoder->errors) {
+        initial_costs.push_back(err.likelihood_cost);
+      }
+
+      // Run multiple shots that trigger reweighting
+      for (int rep = 0; rep < 5; ++rep) {
+        std::vector<uint64_t> detections = {0, 1};
+        decoder.decode(detections);
+
+        // Verify that after each shot, internal costs return 100% to initial state
+        for (size_t i = 0; i < comp1.decoder->errors.size(); ++i) {
+          EXPECT_DOUBLE_EQ(comp1.decoder->errors[i].likelihood_cost, initial_costs[i]);
+        }
+      }
+    }
+  }
+}
+
+TEST(MultiPassTesseractDecoderTest, DecodeShotsBatchAPI) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 D1 L0
+        error(0.01) D0
+        error(0.2) D1 L0
+        detector D0
+        detector D1
+        logical_observable L0
+    )DEM");
+
+  auto classifier = [](int index, const std::vector<double>& coords,
+                       const std::string& tag) -> int { return index; };
+
+  TesseractConfig config;
+  config.dem = dem;
+
+  MultiPassTesseractDecoder decoder(dem, 2, classifier, config, 1, DetOrder::DetIndex, 12345,
+                                    SchedulingStrategy::Causal);
+
+  std::vector<stim::SparseShot> shots(3);
+  shots[0].hits = {0, 1};
+  shots[1].hits = {};
+  shots[2].hits = {0};
+
+  std::vector<std::vector<int>> obs_predicted;
+  decoder.decode_shots(shots, obs_predicted);
+
+  ASSERT_EQ(obs_predicted.size(), 3);
+  EXPECT_FALSE(obs_predicted[0].empty());
+  EXPECT_TRUE(obs_predicted[1].empty());
+}

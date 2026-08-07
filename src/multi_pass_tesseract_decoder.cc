@@ -267,12 +267,20 @@ std::vector<int> MultiPassTesseractDecoder::decode(const std::vector<uint64_t>& 
   return decode_result(detections).predictions;
 }
 
+void MultiPassTesseractDecoder::decode_shots(std::vector<stim::SparseShot>& shots,
+                                             std::vector<std::vector<int>>& obs_predicted) {
+  obs_predicted.resize(shots.size());
+  for (size_t i = 0; i < shots.size(); ++i) {
+    obs_predicted[i] = decode(shots[i].hits);
+  }
+}
+
 MultiPassDecodeResult MultiPassTesseractDecoder::decode_result(
     const std::vector<uint64_t>& detections) {
   last_shot_num_reweights = 0;
 
   // 1. Multi-Pass Loop: Sequentially schedules component passes and propagates
-  // priors.
+  // priors strictly layer-by-layer.
   for (size_t pass = 0; pass < num_passes; ++pass) {
     bool is_final_pass = (pass == num_passes - 1);
 
@@ -292,29 +300,26 @@ MultiPassDecodeResult MultiPassTesseractDecoder::decode_result(
     }
 
     if (!is_final_pass) {
-      // Step A: Apply Damped Fractional Memory to previously modified priors.
-      // Smoothly decay current modifications back toward the baseline to
-      // prevent message saturation.
-      double gamma = 0.5;  // Tunable decay factor: 1.0 is strict isolation, 0.0
-                           // is full accumulation.
-
+      // Step A: Reset any previously modified components back to their clean baseline
+      // so that each pass depends strictly on the immediately preceding pass.
       for (size_t m_comp_idx : modified_component_indices) {
         auto& cd = component_decoders[m_comp_idx];
         if (!cd.shot_all_modified_error_indices.empty()) {
           for (size_t idx : cd.shot_all_modified_error_indices) {
-            double baseline_cost = cd.original_costs[idx];
-            double current_cost = cd.decoder->errors[idx].likelihood_cost;
-            cd.decoder->errors[idx].likelihood_cost =
-                gamma * baseline_cost + (1.0 - gamma) * current_cost;
+            cd.decoder->errors[idx].likelihood_cost = cd.original_costs[idx];
           }
           cd.decoder->update_internal_costs(cd.shot_all_modified_error_indices);
-          // Retain tracking indices so the final Surgical Reset completely
-          // clears cross-shot state.
+          cd.shot_all_modified_error_indices.clear();
         }
       }
+      modified_component_indices.clear();
 
-      // Step B: Broadcast reweighting rules derived strictly from the latest
-      // predictions.
+      // Step B: Set of components scheduled in the immediate next pass (pass + 1).
+      std::set<size_t> next_pass_components(pass_schedule[pass + 1].begin(),
+                                            pass_schedule[pass + 1].end());
+
+      // Step C: Broadcast reweighting rules derived strictly from the latest
+      // predictions to components in the immediate next pass.
       for (size_t comp_idx : pass_schedule[pass]) {
         auto& cd = component_decoders[comp_idx];
         for (size_t dem_err_idx : cd.decoder->predicted_errors_buffer) {
@@ -322,12 +327,15 @@ MultiPassDecodeResult MultiPassTesseractDecoder::decode_result(
           if (internal_err_idx == std::numeric_limits<size_t>::max()) continue;
 
           for (const auto& rule : cd.error_index_to_rules[internal_err_idx]) {
-            auto& target_cd = component_decoders[rule.target_comp_idx];
+            // Strict 1-hop rule: Only apply to components scheduled in the next pass.
+            if (!next_pass_components.count(rule.target_comp_idx)) {
+              continue;
+            }
 
+            auto& target_cd = component_decoders[rule.target_comp_idx];
             modified_component_indices.push_back(rule.target_comp_idx);
 
-            // Apply Max-Prob Rule safely for concurrent rules within this pass
-            // layer.
+            // Apply Max-Prob Rule safely for concurrent rules targeting the same error.
             double current_p = target_cd.decoder->errors[rule.target_error_idx].get_probability();
             if (rule.conditional_prob > current_p) {
               target_cd.decoder->errors[rule.target_error_idx].set_with_probability(
@@ -339,8 +347,8 @@ MultiPassDecodeResult MultiPassTesseractDecoder::decode_result(
         }
       }
 
-      // Step C: Deduplicate modified tracking vectors and synchronize internal
-      // graph costs.
+      // Step D: Deduplicate modified tracking vectors and synchronize internal
+      // graph costs for components in the next pass.
       std::sort(modified_component_indices.begin(), modified_component_indices.end());
       modified_component_indices.erase(
           std::unique(modified_component_indices.begin(), modified_component_indices.end()),
