@@ -55,13 +55,15 @@ jobs:
     steps:
       - if: ${{!env.version_tag || !env.pub_date}}
         name: Quit if the release tag or publication date is empty
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v7
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             core.setFailed('The release version and/or date could not be read')
 
       - name: Check out a copy of the git repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Verify that this repo has a CITATION.cff file
         id: check
@@ -71,7 +73,7 @@ jobs:
 
       - if: steps.check.outputs.has_cff_file == 'false'
         name: Quit if there is no CITATION.cff file
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v7
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             core.setFailed('Could not find a CITATION.cff file')
@@ -84,9 +86,9 @@ jobs:
           echo "::endgroup::"
 
           set -x
-          version="${{env.version_tag}}"
+          version="${version_tag}"
           version="${version#v}"
-          date=$(date -u -d "${{env.pub_date}}" +"%Y-%m-%d")
+          date=$(date -u -d "${pub_date}" +"%Y-%m-%d")
           sed -i "s/^version:.*$/version: '$version'/" CITATION.cff
           sed -i "s/^date-released:.*$/date-released: $date/" CITATION.cff
 
@@ -103,7 +105,7 @@ jobs:
 
       - if: steps.update.outputs.success == 'false'
         name: Quit if CITATION.cff update failed
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v7
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             core.setFailed('CITATION.cff update failed or the file is not valid')
