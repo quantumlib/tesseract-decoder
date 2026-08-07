@@ -25,6 +25,7 @@ MultiPassTesseractDecoder::MultiPassTesseractDecoder(
   if (num_passes == 0) {
     throw std::invalid_argument("num_passes must be at least 1.");
   }
+  validate_annotations(dem, classifier);
   initialize(dem, classifier);
 }
 
