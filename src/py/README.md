@@ -621,8 +621,8 @@ The `tesseract_decoder.demutil` module provides utilities for manipulating `stim
 **Example Usage**:
 
 ```python
-import tesseract_decoder.demutil as demutil
 import stim
+from tesseract_decoder import demutil
 
 dem = stim.DetectorErrorModel("""
     detector(0, 0, 0) D0
@@ -648,6 +648,34 @@ nice_matchable_dem3 = demutil.decompose_errors(
 )
 ```
 
+#### Command-line decomposition
+
+Installed wheels provide `tesseract-dem-decompose`, a composable command that
+uses the same decomposition implementations as the Python API:
+
+```bash
+tesseract-dem-decompose \
+    --method=last-coordinate-index \
+    --out output.dem \
+    input.dem
+```
+
+The input defaults to standard input and `--out` defaults to standard output,
+so the command can also be used in a pipeline:
+
+```bash
+tesseract-dem-decompose --method=stim-surfacecode-coords \
+    < input.dem > output.dem
+```
+
+Pass `--strip-undecomposable-errors` to drop errors that cannot be decomposed
+instead of returning an error. From a source checkout, the same command can be
+run with:
+
+```bash
+bazel run --jobs=1 //src/py/_tesseract_py_util:decompose_errors_cli -- --help
+```
+
 * `demutil.regeneralize_spatial_dem(templates: list[stim.DetectorErrorModel], scaffold: stim.DetectorErrorModel, verbose: bool = False) -> stim.DetectorErrorModel`
   * Updates the error probabilities in a `scaffold` DEM by averaging probabilities from matching errors in a list of `template` DEMs. Errors are matched based on their spatial geometry (relative coordinates of detectors).
   * **Important:** The scaffold errors must have the same structure and **same absolute coordinates** (for the first detector) as the template errors to be matched.
@@ -655,8 +683,8 @@ nice_matchable_dem3 = demutil.decompose_errors(
 **Example Usage**:
 
 ```python
-import tesseract_decoder.demutil as demutil
 import stim
+from tesseract_decoder import demutil
 
 # Take one or more DEMs **with detector coordinates**, aggregate the error probabilities
 template1 = stim.DetectorErrorModel("""

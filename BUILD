@@ -24,6 +24,11 @@ py_wheel(
         "//src/py/_tesseract_py_util:_tesseract_py_util",
         ":package_data",
     ],
+    entry_points = {
+        "console_scripts": [
+            "tesseract-dem-decompose = _tesseract_py_util.decompose_errors_cli:main",
+        ],
+    },
     version = "$(VERSION)",
     requires=[
         "numpy",

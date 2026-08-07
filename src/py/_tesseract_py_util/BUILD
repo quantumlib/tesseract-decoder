@@ -1,3 +1,4 @@
+load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_test.bzl", "py_test")
 load("@rules_python//python:py_library.bzl", "py_library")
 
@@ -9,6 +10,17 @@ py_library(
         "@pypi//stim",
         "@pypi//numpy",
         "@pypi//scipy",
+    ],
+)
+
+py_binary(
+    name = "decompose_errors_cli",
+    srcs = ["decompose_errors_cli.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":_tesseract_py_util",
+        "@pypi//stim",
     ],
 )
 
@@ -26,29 +38,27 @@ py_test(
     ],
 )
 
-
-py_test(
-    name = "demutil_test",
-    srcs = ["demutil_test.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "@pypi//pytest",
-        "@pypi//stim",
-        "//src:lib_tesseract_decoder",
-        ":_tesseract_py_util",
-    ],
-    imports = ["..", ".", "../.."],
-)
-
-
 py_test(
     name = "decompose_errors_test",
     srcs = ["decompose_errors_test.py"],
+    imports = ["..", ".", "../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":_tesseract_py_util",
+        "@pypi//pytest",
+        "@pypi//stim",
+        "//src:lib_tesseract_decoder",
+    ],
+)
+
+py_test(
+    name = "decompose_errors_cli_test",
+    srcs = ["decompose_errors_cli_test.py"],
+    imports = ["..", "."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":_tesseract_py_util",
         "@pypi//pytest",
         "@pypi//stim",
     ],
-    imports = ["..", "."],
 )
