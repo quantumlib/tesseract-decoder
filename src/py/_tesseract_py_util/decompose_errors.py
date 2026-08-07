@@ -13,8 +13,9 @@
 # limitations under the License.
 
 import itertools
+import sys
 from collections import defaultdict
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from functools import reduce
 
 import stim
@@ -424,3 +425,74 @@ def undecompose_errors(dem: stim.DetectorErrorModel) -> stim.DetectorErrorModel:
             )
         )
     return undecomposed_dem
+
+
+def call_decompose_errors(
+    input_path: str,
+    output_path: str,
+    *,
+    method: str,
+    strip_undecomposable_errors: bool,
+) -> None:
+    """Reads, decomposes, and writes one detector error model."""
+    if input_path == "-":
+        dem = stim.DetectorErrorModel(sys.stdin.read())
+    else:
+        dem = stim.DetectorErrorModel.from_file(input_path)
+
+    output_dem = decompose_errors(
+        dem,
+        method=method,
+        strip_undecomposable_errors=strip_undecomposable_errors,
+    )
+    if output_path == "-":
+        print(output_dem)
+    else:
+        output_dem.to_file(output_path)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Decompose errors in a Stim detector error model."
+    )
+    parser.add_argument(
+        "input",
+        nargs="?",
+        default="-",
+        help="Input DEM file (default: standard input; use '-' for standard input).",
+    )
+    parser.add_argument(
+        "-o",
+        "--out",
+        default="-",
+        help="Output DEM file (default: standard output; use '-' for standard output).",
+    )
+    parser.add_argument(
+        "--method",
+        choices=("stim-surfacecode-coords", "last-coordinate-index"),
+        default="stim-surfacecode-coords",
+        help="Detector-component convention used for decomposition.",
+    )
+    parser.add_argument(
+        "--strip-undecomposable-errors",
+        action="store_true",
+        help="Drop errors that cannot be decomposed instead of failing.",
+    )
+    args = parser.parse_args(argv)
+    try:
+        call_decompose_errors(
+            args.input,
+            args.out,
+            method=args.method,
+            strip_undecomposable_errors=args.strip_undecomposable_errors,
+        )
+    except (IndexError, KeyError, OSError, ValueError) as ex:
+        print(f"{parser.prog}: error: {ex}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

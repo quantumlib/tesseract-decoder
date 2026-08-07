@@ -15,11 +15,11 @@ py_library(
 
 py_binary(
     name = "decompose_errors_cli",
-    srcs = ["decompose_errors_cli.py"],
+    srcs = ["decompose_errors.py"],
     imports = [".."],
+    main = "decompose_errors.py",
     visibility = ["//visibility:public"],
     deps = [
-        ":_tesseract_py_util",
         "@pypi//stim",
     ],
 )

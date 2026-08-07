@@ -26,7 +26,7 @@ py_wheel(
     ],
     entry_points = {
         "console_scripts": [
-            "tesseract-dem-decompose = _tesseract_py_util.decompose_errors_cli:main",
+            "tesseract-dem-decompose = _tesseract_py_util.decompose_errors:main",
         ],
     },
     version = "$(VERSION)",

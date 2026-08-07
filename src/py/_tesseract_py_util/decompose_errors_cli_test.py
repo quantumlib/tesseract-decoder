@@ -19,7 +19,7 @@ import sys
 import pytest
 import stim
 
-from _tesseract_py_util import decompose_errors_cli
+from _tesseract_py_util.decompose_errors import main
 
 
 def _decomposable_dem() -> stim.DetectorErrorModel:
@@ -45,7 +45,7 @@ def _expected_decomposed_dem() -> stim.DetectorErrorModel:
 def test_main_reads_stdin_and_writes_stdout(monkeypatch, capsys):
     monkeypatch.setattr(sys, "stdin", io.StringIO(str(_decomposable_dem())))
 
-    exit_code = decompose_errors_cli.main(["--method", "last-coordinate-index"])
+    exit_code = main(["--method", "last-coordinate-index"])
 
     captured = capsys.readouterr()
     assert exit_code == 0
@@ -58,7 +58,7 @@ def test_main_reads_and_writes_files(tmp_path: Path):
     output_path = tmp_path / "output.dem"
     _decomposable_dem().to_file(input_path)
 
-    exit_code = decompose_errors_cli.main([str(input_path), "--out", str(output_path)])
+    exit_code = main([str(input_path), "--out", str(output_path)])
 
     assert exit_code == 0
     assert stim.DetectorErrorModel.from_file(output_path) == _expected_decomposed_dem()
@@ -73,7 +73,7 @@ def test_main_forwards_strip_undecomposable_errors(monkeypatch, capsys):
     """)
     monkeypatch.setattr(sys, "stdin", io.StringIO(str(dem)))
 
-    exit_code = decompose_errors_cli.main(
+    exit_code = main(
         ["--method", "last-coordinate-index", "--strip-undecomposable-errors"]
     )
 
@@ -96,7 +96,7 @@ def test_main_reports_decomposition_failure_on_stderr(monkeypatch, capsys):
     """)
     monkeypatch.setattr(sys, "stdin", io.StringIO(str(dem)))
 
-    exit_code = decompose_errors_cli.main(["--method", "last-coordinate-index"])
+    exit_code = main(["--method", "last-coordinate-index"])
 
     captured = capsys.readouterr()
     assert exit_code == 1
@@ -106,7 +106,7 @@ def test_main_reports_decomposition_failure_on_stderr(monkeypatch, capsys):
 
 def test_main_rejects_unknown_method(capsys):
     with pytest.raises(SystemExit) as ex_info:
-        decompose_errors_cli.main(["--method", "unknown"])
+        main(["--method", "unknown"])
 
     captured = capsys.readouterr()
     assert ex_info.value.code == 2
