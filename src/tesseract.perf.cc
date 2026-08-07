@@ -28,8 +28,8 @@ void benchmark_decoder(Decoder& decoder, stim::Circuit& circuit, size_t num_shot
   std::vector<stim::SparseShot> shots;
   sample_shots(test_data_seed, circuit, num_shots, shots);
 
-  // Use volatile to try to ensure compiler does not optimize out the decoding
-  volatile size_t total_num_errors_used = 0;
+  // There is no need to use volatile because the cout at the end is a side-effect
+  size_t total_num_errors_used = 0;
   size_t num_low_confidence = 0;
   size_t num_errors = 0;
   size_t num_decoded = 0;
