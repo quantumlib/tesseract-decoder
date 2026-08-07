@@ -15,7 +15,7 @@ template <typename T>
 std::vector<BPResult> batched_bp_serial_min_sum(
     BatchedTannerGraph<T>& graph, const std::vector<std::vector<size_t>>& detection_events_batch,
     std::vector<T>& posteriors_flat, size_t max_iters, float normalization_factor,
-    bool stop_at_convergence) {
+    bool stop_at_convergence, bool random_schedule, uint64_t random_seed) {
   size_t actual_batch_size = detection_events_batch.size();
   if (actual_batch_size > BP_BATCH_SIZE) {
     throw std::invalid_argument("Provided batch size exceeds BP_BATCH_SIZE");
@@ -59,6 +59,18 @@ std::vector<BPResult> batched_bp_serial_min_sum(
 #endif
   }
 
+  std::vector<size_t> check_order(graph.num_checks);
+  for (size_t i = 0; i < graph.num_checks; ++i) {
+    check_order[i] = i;
+  }
+  uint64_t rng_state = random_seed ? random_seed : 123456789ULL;
+  auto fast_rand = [&rng_state]() -> uint32_t {
+    rng_state ^= rng_state >> 12;
+    rng_state ^= rng_state << 25;
+    rng_state ^= rng_state >> 27;
+    return static_cast<uint32_t>((rng_state * 0x2545F4914F6CDD1DULL) >> 32);
+  };
+
 #if defined(__AVX512F__) && defined(__AVX512BW__) && defined(__AVX512DQ__)
   if constexpr (std::is_same_v<T, int32_t>) {
     const __m512 v_norm = _mm512_set1_ps(normalization_factor);
@@ -66,8 +78,16 @@ std::vector<BPResult> batched_bp_serial_min_sum(
 
     size_t iter = 0;
     for (iter = 0; iter < max_iters && active_mask != 0; ++iter) {
+      if (random_schedule && graph.num_checks > 1) {
+        for (size_t i = graph.num_checks - 1; i > 0; --i) {
+          size_t j = fast_rand() % (i + 1);
+          std::swap(check_order[i], check_order[j]);
+        }
+      }
+
       // Horizontal / Layered Schedule: Iterate through check nodes
-      for (size_t c = 0; c < graph.num_checks; ++c) {
+      for (size_t c_idx = 0; c_idx < graph.num_checks; ++c_idx) {
+        size_t c = check_order[c_idx];
         size_t start = graph.check_edge_offsets[c];
         size_t end = graph.check_edge_offsets[c + 1];
         size_t deg = end - start;
@@ -209,7 +229,15 @@ std::vector<BPResult> batched_bp_serial_min_sum(
 
   size_t iter = 0;
   for (iter = 0; iter < max_iters && num_active > 0; ++iter) {
-    for (size_t c = 0; c < graph.num_checks; ++c) {
+    if (random_schedule && graph.num_checks > 1) {
+      for (size_t i = graph.num_checks - 1; i > 0; --i) {
+        size_t j = fast_rand() % (i + 1);
+        std::swap(check_order[i], check_order[j]);
+      }
+    }
+
+    for (size_t c_idx = 0; c_idx < graph.num_checks; ++c_idx) {
+      size_t c = check_order[c_idx];
       size_t start = graph.check_edge_offsets[c];
       size_t end = graph.check_edge_offsets[c + 1];
       size_t deg = end - start;

@@ -10,7 +10,7 @@ namespace bp {
 template <typename T>
 BPResult bp_serial_min_sum(TannerGraph<T>& graph, const std::vector<size_t>& detection_events,
                            std::vector<T>& posteriors, size_t max_iters, float normalization_factor,
-                           bool stop_at_convergence) {
+                           bool stop_at_convergence, bool random_schedule, uint64_t random_seed) {
   graph.add_detection_events(detection_events);
 
   // Initialize posteriors to priors
@@ -22,11 +22,31 @@ BPResult bp_serial_min_sum(TannerGraph<T>& graph, const std::vector<size_t>& det
   using T_MAG = typename llr_traits<T>::magnitude_type;
   const T_MAG max_mag = std::numeric_limits<T_MAG>::max();
 
+  std::vector<size_t> check_order(graph.check_nodes.size());
+  for (size_t i = 0; i < graph.check_nodes.size(); ++i) {
+    check_order[i] = i;
+  }
+  uint64_t rng_state = random_seed ? random_seed : 123456789ULL;
+  auto fast_rand = [&rng_state]() -> uint32_t {
+    rng_state ^= rng_state >> 12;
+    rng_state ^= rng_state << 25;
+    rng_state ^= rng_state >> 27;
+    return static_cast<uint32_t>((rng_state * 0x2545F4914F6CDD1DULL) >> 32);
+  };
+
   bool has_converged = false;
   size_t iter = 0;
   for (iter = 0; iter < max_iters; ++iter) {
+    if (random_schedule && graph.check_nodes.size() > 1) {
+      for (size_t i = graph.check_nodes.size() - 1; i > 0; --i) {
+        size_t j = fast_rand() % (i + 1);
+        std::swap(check_order[i], check_order[j]);
+      }
+    }
+
     // Horizontal / Layered Schedule: Iterate through check nodes
-    for (size_t c = 0; c < graph.check_nodes.size(); ++c) {
+    for (size_t c_idx = 0; c_idx < graph.check_nodes.size(); ++c_idx) {
+      size_t c = check_order[c_idx];
       auto& check = graph.check_nodes[c];
       size_t start = graph.check_edge_offsets[c];
       size_t end = graph.check_edge_offsets[c + 1];
