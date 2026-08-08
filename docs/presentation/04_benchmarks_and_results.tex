@@ -1,0 +1,73 @@
+\section{Benchmarks, Empirical Results \& Future Outlook}
+
+\begin{frame}{Benchmark Methodology \& Environment}
+    \begin{block}{Evaluation Setup}
+        \begin{itemize}
+            \item \textbf{Hardware}: 48-vCPU Intel Xeon Workstation with AVX-512 vector support.
+            \item \textbf{Sample Size}: 100,000 Monte Carlo shots per quantum code configuration.
+            \item \textbf{Code Benchmark Families}:
+                  \begin{itemize}
+                      \item Surface Codes ($d=3, 5, 7, 9$, physical error rate $p=0.001$).
+                      \item Color Codes ($d=5, 7$ Superdense).
+                      \item Bivariate Bicycle Codes ($[[72,12,6]]$, $[[90,8,10]]$, $[[108,8,10]]$, $[[144,12,12]]$).
+                  \end{itemize}
+        \end{itemize}
+    \end{block}
+\end{frame}
+
+\begin{frame}{Empirical Benchmark Throughput Comparison}
+    \centering
+    \scriptsize
+    \begin{tabular}{l l r r c}
+        \toprule
+        \textbf{Quantum Code Family} & \textbf{Decoder Config} & \textbf{Baseline (shots/s)} & \textbf{Optimized (shots/s)} & \textbf{Speedup} \\
+        \midrule
+        \textbf{Surface Code ($d=3$, $p=0.001$)} & `serial-batched` (BP) & 306,867.6 & \textbf{922,330.5} & \textbf{3.01x (+200.6\%)} \\
+        \textbf{Surface Code ($d=5$, $p=0.001$)} & `serial-batched` (BP) & 30,728.0 & \textbf{161,361.1} & \textbf{5.25x (+425.1\%)} \\
+        \textbf{Surface Code ($d=7$, $p=0.001$)} & `serial-batched` (BP) & 6,777.6 & \textbf{32,631.1} & \textbf{4.81x (+381.5\%)} \\
+        \textbf{Surface Code ($d=9$, $p=0.001$)} & `serial-batched` (BP) & 2,258.9 & \textbf{8,660.9} & \textbf{3.83x (+283.4\%)} \\
+        \midrule
+        \textbf{Color Code Superdense ($d=5$)} & `serial-batched` (BP) & 14,815.3 & \textbf{65,647.4} & \textbf{4.43x (+343.1\%)} \\
+        \textbf{Color Code Superdense ($d=7$)} & `serial-batched` (BP) & 3,062.9 & \textbf{9,399.2} & \textbf{3.07x (+206.9\%)} \\
+        \midrule
+        \textbf{Bivariate Bicycle $[[72,12,6]]$} & `serial-batched + OSD-0` & 1,384.9 & \textbf{4,142.6} & \textbf{2.99x (+199.1\%)} \\
+        \textbf{Bivariate Bicycle $[[72,12,6]]$} & `serial-batched + OSD-1` & 978.5 & \textbf{2,165.6} & \textbf{2.21x (+121.3\%)} \\
+        \textbf{Bivariate Bicycle $[[90,8,10]]$} & `serial-batched + OSD-0` & 539.3 & \textbf{1,466.1} & \textbf{2.72x (+171.8\%)} \\
+        \textbf{Bivariate Bicycle $[[108,8,10]]$} & `serial-batched + OSD-0` & 414.3 & \textbf{1,096.1} & \textbf{2.65x (+164.6\%)} \\
+        \textbf{Bivariate Bicycle $[[144,12,12]]$} & `serial-batched + OSD-0` & 208.9 & \textbf{462.0} & \textbf{2.21x (+121.2\%)} \\
+        \bottomrule
+    \end{tabular}
+\end{frame}
+
+\begin{frame}{Performance Analysis \& Speedup Drivers}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \begin{block}{Why Did Throughput Increase 2.2x to 5.25x?}
+                \begin{itemize}
+                    \item \textbf{L1 Cache locality}: 1D Interleaved layout eliminated L1 cache flushes during SIMD loads.
+                    \item \textbf{50\% Bandwidth Reduction}: Eliminating $R_{c,v}$ 2D message tables doubled memory bus efficiency.
+                    \item \textbf{AVX-512 Intrinsics}: 16-shot SIMD vector registers executed without branch latency.
+                \end{itemize}
+            \end{block}
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \begin{block}{Trapping Set Resolution}
+                \begin{itemize}
+                    \item Stochastic check node permutations broke static trapping set loops in Bivariate Bicycle and Color codes.
+                    \item Average iterations to convergence dropped significantly across complex qLDPC topologies!
+                \end{itemize}
+            \end{block}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Future Roadmap \& Open Scope}
+    \begin{block}{Next Steps for Tesseract-BP}
+        \begin{enumerate}
+            \item \textbf{Vectorized OSD Gaussian Elimination}: Batching column-pivoted Gaussian elimination over 16-shot SIMD blocks when BP fails to converge.
+            \item \textbf{OSD-2 Priority Search Pruning}: Restricting perturbation search space candidates using LLR priority bounds.
+            \item \textbf{BP-Guided Search Integration}: Feeding BP posteriors directly into Tesseract A* Search heuristic cost matrices ($g(n) + h(n)$).
+        \end{enumerate}
+    \end{block}
+\end{frame}

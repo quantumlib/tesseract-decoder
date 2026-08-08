@@ -1,0 +1,182 @@
+\section{Tesseract-BP Architecture \& Optimization Deep-Dive}
+
+\begin{frame}{Tesseract-BP High-Level Data Flow}
+    \centering
+    \begin{tikzpicture}[node distance=1.2cm, auto, >=stealth]
+        \node [rectangle, draw, fill=googleblue!15, rounded corners, text width=2.5cm, align=center] (dem) {\textbf{Stim DEM}\\\scriptsize Circuit Error Model};
+        \node [rectangle, draw, fill=googleblue!30, rounded corners, text width=2.5cm, align=center, right=0.6cm of dem] (csr) {\textbf{CSR Tanner Graph}\\\scriptsize Sparse Checks/Vars};
+        \node [rectangle, draw, fill=googleyellow!25, rounded corners, text width=2.8cm, align=center, right=0.6cm of csr] (bp) {\textbf{AVX-512 BP Engine}\\\scriptsize Layered Serial Min-Sum\\(Batches of 16)};
+        \node [diamond, draw, fill=googleyellow!50, align=center, right=0.6cm of bp, aspect=1.5] (check) {\scriptsize Converged?};
+        \node [rectangle, draw, fill=googlegreen!30, rounded corners, text width=2.2cm, align=center, above right=0.4cm and 0.8cm of check] (out) {\textbf{Hard Decision}\\\scriptsize Syndrome Cleared};
+        \node [rectangle, draw, fill=googlered!25, rounded corners, text width=2.5cm, align=center, below right=0.4cm and 0.8cm of check] (osd) {\textbf{OSD Solver}\\\scriptsize Gaussian Elimination};
+        
+        \draw [->, thick] (dem) -- (csr);
+        \draw [->, thick] (csr) -- (bp);
+        \draw [->, thick] (bp) -- (check);
+        \draw [->, thick] (check) -- node[above] {\scriptsize Yes} (out);
+        \draw [->, thick] (check) -- node[below] {\scriptsize No} (osd);
+        \draw [->, thick] (osd) |- (out);
+    \end{tikzpicture}
+\end{frame}
+
+\begin{frame}[fragile]{Architecture: Pointer-Chasing vs. Bidirectional CSR}
+    \begin{columns}[T]
+        \begin{column}{0.5\textwidth}
+            \begin{block}{\textcolor{googlered}{Naive BP}: Pointer-Chasing Graph}
+                \tiny
+                \begin{lstlisting}[language=C++]
+struct Node {
+    std::vector<Node*> neighbors;
+    std::vector<double> messages;
+};
+std::vector<Node*> nodes;
+                \end{lstlisting}
+                \normalsize
+                \begin{itemize}
+                    \item Follows \texttt{std::vector} memory allocations.
+                    \item Nodes scattered across fragmented heap memory.
+                    \item Traversing neighbors means chasing pointers $\rightarrow$ \textbf{L1/L2 Cache Miss Penalty}!
+                \end{itemize}
+            \end{block}
+        \end{column}
+        
+        \begin{column}{0.5\textwidth}
+            \begin{block}{\textcolor{googlegreen}{Tesseract BP}: Bidirectional CSR}
+                \tiny
+                \begin{lstlisting}[language=C++]
+// Flat integer arrays, no pointers!
+vector<int> check_to_var_indices;
+vector<int> check_to_var_offsets;
+vector<int> var_to_check_indices;
+vector<int> var_to_check_offsets;
+                \end{lstlisting}
+                \normalsize
+                \begin{itemize}
+                    \item \textbf{Compressed Sparse Row (CSR)}: Graph represented as 1D contiguous arrays.
+                    \item \textbf{Bidirectional}: Fast $O(1)$ neighborhood lookups in both directions ($C \rightarrow V$ and $V \rightarrow C$).
+                    \item Sequential memory access ensures hardware prefetcher efficiency.
+                \end{itemize}
+            \end{block}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Optimization 1: Memory Foundation Rewrite (Interleaved 1D Array)}
+    \begin{columns}[T]
+        \begin{column}{0.5\textwidth}
+            \begin{block}{\textcolor{googlered}{BEFORE}: Vector of Vectors (Non-Interleaved)}
+                \tiny
+                \begin{verbatim}
+Shot 0:  [ Var0, Var1, Var2, ..., VarN ]
+Shot 1:  [ Var0, Var1, Var2, ..., VarN ]  (RAM Gap)
+Shot 2:  [ Var0, Var1, Var2, ..., VarN ]  (RAM Gap)
+...
+Shot 15: [ Var0, Var1, Var2, ..., VarN ]
+                \end{verbatim}
+                \normalsize
+                \begin{itemize}
+                    \item Loading Variable $V_i$ across 16 SIMD shots required fetching \textbf{16 separate RAM addresses}.
+                    \item Transfers 1,024 bytes to extract 64 bytes of data $\rightarrow$ \textbf{L1 Cache Flushed!}
+                \end{itemize}
+            \end{block}
+        \end{column}
+        
+        \begin{column}{0.5\textwidth}
+            \begin{block}{\textcolor{googlegreen}{AFTER}: Flat Interleaved 1D Array}
+                \tiny
+                \begin{verbatim}
+RAM: [ Var0_S0..S15 | Var1_S0..S15 | Var2_S0..S15 ]
+                \end{verbatim}
+                \normalsize
+                \begin{itemize}
+                    \item Memory address: \texttt{posteriors\_flat[v * 16 + b]}.
+                    \item All 16 shot streams for Variable $V_i$ sit \textbf{physically contiguous} in RAM (64 bytes).
+                    \item \textbf{1 SIMD Aligned Load} = 1 L1 Cache Line Hit!
+                \end{itemize}
+            \end{block}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Optimization 2: Horizontal Layered Serial Scheduling}
+    \begin{block}{Algorithmic Transformation}
+        Instead of updating variable node posteriors sequentially, iteration loops operate directly over \textbf{check nodes ($c \in C$)}:
+        \begin{enumerate}
+            \item For each check node $c$, calculate check-to-variable updates dynamically:
+                  $$Q_{c,v} = L_v - R_{c,v}$$
+            \item Compute the updated check message $R'_{c,v}$ using Min-Sum across check neighbors.
+            \item Immediately update the variable posteriors in RAM:
+                  $$L'_v = Q_{c,v} + R'_{c,v}$$
+        \end{enumerate}
+    \end{block}
+    
+    \begin{block}{50\% Memory Bandwidth Reduction}
+        \begin{itemize}
+            \item By performing $L_v - R_{c,v}$ on the fly, the explicit 2D message matrix $R_{c,v}$ is \textbf{completely eliminated from memory}!
+            \item Reduces BP memory payload by \textbf{50\%}, doubling memory bus efficiency.
+        \end{itemize}
+    \end{block}
+\end{frame}
+
+\begin{frame}{Optimization 3: Explicit AVX-512 SIMD Vectorization}
+    \begin{block}{Vector Register Mapping}
+        16 parallel decoding shots ($32$-bit integer LLRs) map directly into one 512-bit AVX-512 register (\texttt{\_\_m512i}):
+        $$16 \times 32 \text{ bits} = 512 \text{ bits}$$
+    \end{block}
+    
+    \begin{block}{Core AVX-512 Intrinsic Operations}
+        \begin{itemize}
+            \item \texttt{\_mm512\_abs\_epi32}: Compute absolute LLR magnitudes for 16 shots simultaneously.
+            \item \texttt{\_mm512\_min\_epi32}: Track minimum LLRs (\texttt{min1}, \texttt{min2}) without conditional branching latency.
+            \item \texttt{\_mm512\_sub\_epi32} / \texttt{\_mm512\_add\_epi32}: Vectorized posterior updates.
+            \item \texttt{\_mm512\_mask\_blend\_epi32} / \texttt{\_mm512\_movepi32\_mask}: Masked updates for active unconverged shots.
+        \end{itemize}
+    \end{block}
+\end{frame}
+
+\begin{frame}[fragile]{Optimization 4: Stochastic Check-Node Schedule Permutations}
+    \begin{columns}[T]
+        \begin{column}{0.55\textwidth}
+            \begin{block}{Breaking Trapping Sets with PRNG}
+                \begin{itemize}
+                    \item Fixed schedule $0 \rightarrow M-1$ locks into symmetric LDPC trapping sets.
+                    \item \textbf{Solution}: Apply Fisher-Yates check-node permutation before each BP iteration using a fast \textbf{Xorshift64 PRNG}.
+                    \item Because memory is interleaved in 64-byte blocks, random check node hopping incurs \textbf{zero SIMD alignment penalty}!
+                    \item Resolves trapping sets in Color Codes and Bivariate Bicycle codes seamlessly.
+                \end{itemize}
+            \end{block}
+        \end{column}
+        
+        \begin{column}{0.42\textwidth}
+            \begin{block}{Xorshift64 PRNG}
+                \scriptsize
+                \begin{lstlisting}[language=C++]
+inline uint64_t xorshift64(uint64_t &state) {
+    uint64_t x = state;
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    return state = x;
+}
+                \end{lstlisting}
+            \end{block}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Optimization 5: Ordered Statistic Decoding (OSD) Integration}
+    \begin{block}{Algebraic Fallback Pipeline}
+        When BP fails to clear all syndrome bits after \texttt{max\_iter}:
+        \begin{enumerate}
+            \item \textbf{Reliability Ordering}: Sort variable nodes by absolute LLR magnitude $|L_v|$ (highest magnitude = highest reliability).
+            \item \textbf{Information Set Basis}: Perform column-pivoted Gaussian elimination on $H$ matrix over SIMD bitsets (\texttt{stim::simd\_bits}).
+            \item \textbf{Perturbation Search}:
+                  \begin{itemize}
+                      \item \textbf{OSD-0}: Hard decision on basis + solver solution.
+                      \item \textbf{OSD-1}: Test 1-bit perturbations on least reliable columns.
+                      \item \textbf{OSD-2}: Test 2-bit perturbations on candidate combinations.
+                  \end{itemize}
+            \item Select candidate matching syndrome $s$ with minimum total weight/cost.
+        \end{enumerate}
+    \end{block}
+\end{frame}

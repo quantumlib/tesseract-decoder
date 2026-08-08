@@ -1,0 +1,125 @@
+\section{qLDPC Codes \& Belief Propagation Foundations}
+
+\begin{frame}{Brief History of Belief Propagation}
+    \begin{itemize}
+        \item \textbf{1962 — Robert Gallager}: Introduces Low-Density Parity-Check (LDPC) codes and iterative belief propagation decoding in his MIT PhD thesis. (Ignored for decades due to hardware limitations!).
+        \item \textbf{1982 — Judea Pearl}: Formalizes Belief Propagation on Bayesian networks and Directed Acyclic Graphs (DAGs).
+        \item \textbf{1996 — David MacKay \& Radford Neal}: Rediscover LDPC codes and demonstrate near Shannon-limit capacity performance over noisy channels.
+        \item \textbf{2000s-Present — Quantum Adaptation}: Adaptation of BP and Min-Sum message-passing algorithms to Quantum LDPC and surface codes for real-time and offline decoding.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Log-Likelihood Ratio (LLR) Mathematics}
+    \begin{block}{LLR Definition}
+        For a binary random variable $v_i \in \{0, 1\}$, the Log-Likelihood Ratio is defined as:
+        $$L(v_i) = \ln \left( \frac{P(v_i = 0)}{P(v_i = 1)} \right)$$
+        \begin{itemize}
+            \item $L(v_i) > 0 \implies v_i = 0$ is more likely (no error).
+            \item $L(v_i) < 0 \implies v_i = 1$ is more likely (error present).
+            \item $|L(v_i)|$ represents the \textbf{reliability} / confidence of the belief.
+        \end{itemize}
+    \end{block}
+    
+    \begin{block}{Channel Prior Initialization from Stim DEM}
+        Given physical error probability $p_i$ from the Stim Detector Error Model:
+        $$L_{\text{prior}}(v_i) = \ln \left( \frac{1 - p_i}{p_i} \right)$$
+        For integer SIMD execution, LLRs are scaled and fixed into 32-bit signed integers (\texttt{LLR\_INT}).
+    \end{block}
+\end{frame}
+
+\begin{frame}{Sum-Product vs. Min-Sum Update Rules}
+    \begin{block}{Sum-Product Check Update (Exact)}
+        Check-to-variable message $R_{c \rightarrow v}$ in exact Sum-Product:
+        $$\tanh\left(\frac{R_{c \rightarrow v}}{2}\right) = \left( \prod_{v' \in N(c) \setminus \{v\}} \text{sign}(Q_{v' \rightarrow c}) \right) \times \prod_{v' \in N(c) \setminus \{v\}} \tanh\left(\frac{|Q_{v' \rightarrow c}|}{2}\right)$$
+        \textit{Requires expensive transcendental evaluations ($\tanh, \text{atanh}$) per edge per iteration!}
+    \end{block}
+    
+    \begin{block}{Min-Sum Approximation (Fast Vectorizable)}
+        Applies the identity $\tanh(x) \approx \min(x)$ for large LLRs:
+        $$R_{c \rightarrow v} = \alpha \times \left( \prod_{v' \in N(c) \setminus \{v\}} \text{sign}(Q_{v' \rightarrow c}) \right) \times \min_{v' \in N(c) \setminus \{v\}} |Q_{v' \rightarrow c}|$$
+        \begin{itemize}
+            \item \textbf{Normalization / Damping Factor}: $\alpha = 0.625$ compensates for Min-Sum over-estimation.
+            \item Purely dynamic comparison and integer addition $\rightarrow$ ideal for SIMD hardware execution!
+        \end{itemize}
+    \end{block}
+\end{frame}
+
+\begin{frame}{BP Scheduling Modalities: Parallel vs. Serial}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \begin{block}{1. Synchronous (Parallel) Schedule}
+                Two distinct phases per iteration:
+                \begin{enumerate}
+                    \item Compute all $V \rightarrow C$ messages concurrently.
+                    \item Compute all $C \rightarrow V$ messages concurrently.
+                \end{enumerate}
+                \textbf{Pros}: Massive potential parallelism.\\
+                \textbf{Cons}: Delayed message propagation; requires 2x memory iteration state.
+            \end{block}
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \begin{block}{2. Asynchronous (Serial) Schedule}
+                Sequential update across nodes:
+                \begin{enumerate}
+                    \item Select node (variable or check).
+                    \item Immediately update posterior belief $L_v$.
+                    \item Immediately propagate updated belief to neighboring nodes.
+                \end{enumerate}
+                \textbf{Pros}: 2x faster iteration convergence!\\
+                \textbf{Cons}: Requires careful ordering to prevent L1 cache thrashing.
+            \end{block}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{LDPC Trapping Sets \& Convergence Obstacles}
+    \begin{columns}[T]
+        \begin{column}{0.55\textwidth}
+            \begin{block}{What is an LDPC Trapping Set?}
+                \begin{itemize}
+                    \item A sub-graph of variable nodes and check nodes that fails to converge due to symmetric graph loops.
+                    \item In QEC codes (Color codes, Bivariate Bicycle codes), short 4-cycles and 6-cycles form \textbf{symmetric trapping sets}.
+                    \item Under fixed linear serial schedules ($0 \rightarrow N-1$), beliefs bounce back and forth between states endlessly.
+                \end{itemize}
+            \end{block}
+        \end{column}
+        
+        \begin{column}{0.42\textwidth}
+            \begin{block}{Trapping Set Traversal}
+                \centering
+                \begin{tikzpicture}[scale=0.85]
+                    \node[draw, circle, fill=googlered!30] (v1) at (0, 1.5) {$v_1$};
+                    \node[draw, circle, fill=googlered!30] (v2) at (2.5, 1.5) {$v_2$};
+                    \node[draw, rectangle, fill=googleblue!30] (c1) at (1.25, 2.5) {$c_1$};
+                    \node[draw, rectangle, fill=googleblue!30] (c2) at (1.25, 0.5) {$c_2$};
+                    
+                    \draw[thick, <->] (v1) -- (c1);
+                    \draw[thick, <->] (v2) -- (c1);
+                    \draw[thick, <->] (v1) -- (c2);
+                    \draw[thick, <->] (v2) -- (c2);
+                    
+                    \node[below=0.2cm of c2] {\tiny Symmetric 4-Cycle Oscillation};
+                \end{tikzpicture}
+            \end{block}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Why Standard BP Struggles with Quantum Codes}
+    \begin{block}{The Quantum Trapping Set Problem}
+        \begin{itemize}
+            \item Classical LDPC codes are designed with large girth (no short cycles).
+            \item Quantum LDPC codes (due to commutativity constraints $H_X H_Z^T = 0$) inherently contain abundant short cycles (length 4 and 6).
+            \item These form \textbf{symmetric trapping sets}—sub-graphs that trick BP into endless oscillation.
+        \end{itemize}
+    \end{block}
+    
+    \begin{block}{The Need for OSD and Advanced Scheduling}
+        \begin{itemize}
+            \item \textbf{Without Scheduling}: Parallel updates bounce messages back and forth synchronously, failing to break symmetry.
+            \item \textbf{Without OSD}: BP gives up when it can't converge, leaving the syndrome uncleared (logical failure).
+            \item \textbf{Solution}: We must break graph symmetry (via Stochastic Scheduling) and provide an algebraic fallback (via OSD) when heuristic BP fails.
+        \end{itemize}
+    \end{block}
+\end{frame}

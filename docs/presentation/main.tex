@@ -1,0 +1,89 @@
+\documentclass[aspectratio=169, 10pt]{beamer}
+
+% --- Theme & Styling ---
+\usetheme{Madrid}
+\usecolortheme{seahorse}
+
+\definecolor{googleblue}{RGB}{26, 115, 232}
+\definecolor{googlered}{RGB}{234, 67, 53}
+\definecolor{googleyellow}{RGB}{251, 188, 4}
+\definecolor{googlegreen}{RGB}{52, 168, 83}
+\definecolor{darknavy}{RGB}{15, 23, 42}
+\definecolor{codebg}{RGB}{241, 245, 249}
+
+\setbeamercolor{palette primary}{bg=darknavy,fg=white}
+\setbeamercolor{palette secondary}{bg=googleblue,fg=white}
+\setbeamercolor{palette tertiary}{bg=darknavy,fg=white}
+\setbeamercolor{titlelike}{bg=darknavy,fg=white}
+\setbeamercolor{structure}{fg=googleblue}
+\setbeamercolor{block title}{bg=googleblue,fg=white}
+\setbeamercolor{block body}{bg=codebg,fg=black}
+
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+
+% --- Packages ---
+\usepackage{amsmath, amssymb, amsfonts}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, calc, chains, matrix, backgrounds}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{multicol}
+\usepackage{array}
+
+% --- Code Listing Syntax ---
+\lstset{
+    backgroundcolor=\color{codebg},
+    basicstyle=\ttfamily\scriptsize,
+    breaklines=true,
+    captionpos=b,
+    commentstyle=\color{googlegreen},
+    keywordstyle=\color{googleblue}\bfseries,
+    stringstyle=\color{googlered},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    frame=single,
+    rulecolor=\color{gray!30}
+}
+
+% --- Title Information ---
+\title[Tesseract-BP Architecture]{Tesseract-BP: High-Performance Belief Propagation \& Layered Serial SIMD Vectorization}
+\subtitle{The Tiered QEC Decoding Vision \& High-Throughput Min-Sum Architecture}
+\author[Tesseract Team]{Tesseract QEC Decoding Team}
+\institute[Google DeepMind]{Advanced Agentic Coding / Quantum Decoding Group}
+\date{\today}
+
+\begin{document}
+
+% --- Title Slide ---
+\begin{frame}
+    \titlepage
+\end{frame}
+
+% --- Table of Contents ---
+\begin{frame}{Lecture Overview}
+    \tableofcontents
+\end{frame}
+
+% --- Include Sections ---
+\input{01_introduction_qec.tex}
+\input{02_qldpc_and_bp.tex}
+\input{03_tesseract_bp_architecture.tex}
+\input{04_benchmarks_and_results.tex}
+
+% --- Closing Slide ---
+\begin{frame}{Summary \& Q\&A}
+    \begin{block}{Key Takeaways}
+        \begin{itemize}
+            \item \textbf{Tesseract Decoding Vision}: Tiered QEC workflow (BP $\rightarrow$ MultiPass $\rightarrow$ Full Tesseract Search).
+            \item \textbf{High-Throughput BP Engine}: 1D Interleaved Flat Array + Horizontal Layered Serial Min-Sum.
+            \item \textbf{AVX-512 Vectorization}: 16 parallel shot streams processed in a single 512-bit register.
+            \item \textbf{LDPC Trapping Set Solution}: Stochastic Fisher-Yates schedule permutations.
+            \item \textbf{Empirical Gains}: \textbf{2.2x to 5.25x throughput speedup} across Surface, Color, and Bivariate Bicycle codes.
+        \end{itemize}
+    \end{block}
+    \centerline{\Huge\textcolor{googleblue}{\textbf{Questions \& Discussion}}}
+\end{frame}
+
+\end{document}

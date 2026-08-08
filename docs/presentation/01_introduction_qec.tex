@@ -1,0 +1,145 @@
+\section{The Tesseract Vision \& QEC Decoding Fundamentals}
+
+\begin{frame}{The Grand Vision: Tesseract as a One-Stop QEC Engine}
+    \begin{block}{Repository Objective}
+        Make \textbf{Tesseract} the unified, highly optimized \textbf{one-stop platform for all offline Quantum Error Correction (QEC) decoding needs}.
+    \end{block}
+    
+    \vspace{0.3cm}
+    \begin{columns}[T]
+        \begin{column}{0.31\textwidth}
+            \centering
+            \colorbox{googleblue!15}{\parbox{0.92\textwidth}{
+                \textbf{\textcolor{googleblue}{Tier 1: Fast Baseline}}\\[0.1cm]
+                \textbf{Belief Propagation (BP) + OSD}\\[0.1cm]
+                \scriptsize Fast heuristic evaluation ($10^5-10^6$ shots/s). First stop for code construction \& rapid feedback.
+            }}
+        \end{column}
+        
+        \begin{column}{0.31\textwidth}
+            \centering
+            \colorbox{googleyellow!20}{\parbox{0.92\textwidth}{
+                \textbf{\textcolor{darknavy}{Tier 2: Refined Accuracy}}\\[0.1cm]
+                \textbf{MultiPass / Gari Tesseract}\\[0.1cm]
+                \scriptsize Heuristic path-search refinement for near-threshold verification.
+            }}
+        \end{column}
+        
+        \begin{column}{0.31\textwidth}
+            \centering
+            \colorbox{googlegreen!15}{\parbox{0.92\textwidth}{
+                \textbf{\textcolor{googlegreen}{Tier 3: Exact Optimum}}\\[0.1cm]
+                \textbf{Full Tesseract (A* Search)}\\[0.1cm]
+                \scriptsize Exact optimal path decoding for ground-truth physical error rate bounds.
+            }}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Recommended Code Development Workflow}
+    \centering
+    \begin{tikzpicture}[node distance=1.5cm, auto, >=stealth]
+        \node [rectangle, draw, fill=googleblue!10, rounded corners, text width=3.2cm, align=center, minimum height=1cm] (code) {\textbf{1. Design New Quantum Code}\\\scriptsize (Surface, Color, qLDPC)};
+        \node [rectangle, draw, fill=googleblue!25, rounded corners, text width=3.2cm, align=center, minimum height=1cm, right=0.8cm of code] (bp) {\textbf{2. Run BP / BP+OSD}\\\scriptsize Fast baseline \& error rate threshold};
+        \node [rectangle, draw, fill=googleyellow!30, rounded corners, text width=3.2cm, align=center, minimum height=1cm, right=0.8cm of bp] (multipass) {\textbf{3. MultiPass Tesseract}\\\scriptsize Refine candidates for sub-threshold accuracy};
+        \node [rectangle, draw, fill=googlegreen!30, rounded corners, text width=3.2cm, align=center, minimum height=1cm, right=0.8cm of multipass] (full) {\textbf{4. Full Tesseract}\\\scriptsize Ground-truth optimal solution};
+        
+        \draw [->, thick] (code) -- (bp);
+        \draw [->, thick] (bp) -- (multipass);
+        \draw [->, thick] (multipass) -- (full);
+    \end{tikzpicture}
+    
+    \vspace{0.5cm}
+    \begin{block}{Why start with BP?}
+        \begin{itemize}
+            \item Ultra-high throughput enables sampling millions of Monte Carlo shots in seconds.
+            \item Direct measurement of syndrome graph connectivity and trapping set vulnerabilities.
+        \end{itemize}
+    \end{block}
+\end{frame}
+
+\begin{frame}{Quantum Error Correction \& Syndrome Decoding}
+    \begin{columns}[T]
+        \begin{column}{0.5\textwidth}
+            \begin{block}{Physical Error to Syndrome Mapping}
+                \begin{itemize}
+                    \item Physical errors $e \in \mathbb{F}_2^N$ occur on physical qubits.
+                    \item Quantum non-demolition (QND) stabilizer measurements yield syndrome $s \in \mathbb{F}_2^M$:
+                          $$s = H \cdot e \pmod 2$$
+                    \item \textbf{Parity-Check Matrix ($H$)}: $M \times N$ binary matrix mapping $N$ potential error channels to $M$ detectors.
+                \end{itemize}
+            \end{block}
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            \begin{block}{The Decoding Problem}
+                Given observed syndrome $s$, find the most likely error candidate $\hat{e}$ satisfying:
+                $$H \cdot \hat{e} = s \pmod 2$$
+                \begin{itemize}
+                    \item \textbf{Maximum Likelihood Decoding (MLD)}:
+                          $$\hat{e}_{MLD} = \arg\max_{e: He=s} P(e)$$
+                    \item \textbf{NP-Hardness}: MLD over arbitrary linear block codes is strictly NP-hard!
+                \end{itemize}
+            \end{block}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Syndrome Generation from Stim DEM}
+    \begin{block}{Detector Error Model (DEM)}
+        \begin{itemize}
+            \item Stim describes circuit-level noise (T1/T2, gate faults) as probabilistic error mechanisms.
+            \item Each error mechanism flips a specific set of parity check measurements (detectors).
+        \end{itemize}
+    \end{block}
+    
+    \begin{block}{Constructing the Parity Check Matrix ($H$)}
+        \begin{itemize}
+            \item \textbf{Columns ($N$)}: Correspond to independent error mechanisms in the DEM.
+            \item \textbf{Rows ($M$)}: Correspond to detectors (syndrome bits) triggered by errors.
+            \item $H_{i,j} = 1$ if error $j$ triggers detector $i$, otherwise $0$.
+            \item \textbf{Priors}: Each column $j$ has a prior probability $p_j$ defined by the DEM.
+        \end{itemize}
+    \end{block}
+\end{frame}
+
+\begin{frame}{The Shift to qLDPC Codes \& Tanner Graphs}
+    \begin{columns}[T]
+        \begin{column}{0.55\textwidth}
+            \begin{block}{Quantum Low-Density Parity-Check (qLDPC)}
+                \begin{itemize}
+                    \item Standard Surface Codes scale as $O(d^2)$ physical qubits per logical qubit.
+                    \item \textbf{qLDPC Codes} (e.g., Bivariate Bicycle Codes $[[72,12,6]]$, $[[144,12,12]]$) achieve constant encoding rate:
+                          $$\frac{K}{N} = \text{const} > 0$$
+                    \item Parity-check matrix $H$ is sparse (constant row/column weights).
+                \end{itemize}
+            \end{block}
+        \end{column}
+        
+        \begin{column}{0.42\textwidth}
+            \begin{block}{Bipartite Tanner Graph}
+                \centering
+                \begin{tikzpicture}[scale=0.8, >=stealth]
+                    % Check nodes
+                    \node[draw, rectangle, fill=googlered!30, inner sep=4pt] (c0) at (0, 2.5) {$c_0$};
+                    \node[draw, rectangle, fill=googlered!30, inner sep=4pt] (c1) at (0, 1.2) {$c_1$};
+                    \node[draw, rectangle, fill=googlered!30, inner sep=4pt] (c2) at (0, -0.1) {$c_2$};
+                    
+                    % Variable nodes
+                    \node[draw, circle, fill=googleblue!30, inner sep=3pt] (v0) at (3, 3) {$v_0$};
+                    \node[draw, circle, fill=googleblue!30, inner sep=3pt] (v1) at (3, 1.8) {$v_1$};
+                    \node[draw, circle, fill=googleblue!30, inner sep=3pt] (v2) at (3, 0.6) {$v_2$};
+                    \node[draw, circle, fill=googleblue!30, inner sep=3pt] (v3) at (3, -0.6) {$v_3$};
+                    
+                    % Edges
+                    \draw (c0) -- (v0); \draw (c0) -- (v1);
+                    \draw (c1) -- (v1); \draw (c1) -- (v2); \draw (c1) -- (v3);
+                    \draw (c2) -- (v0); \draw (c2) -- (v3);
+                    
+                    \node[above=0.1cm of c0] {\tiny Checks ($M$)};
+                    \node[above=0.1cm of v0] {\tiny Variables ($N$)};
+                \end{tikzpicture}
+            \end{block}
+        \end{column}
+    \end{columns}
+\end{frame}
