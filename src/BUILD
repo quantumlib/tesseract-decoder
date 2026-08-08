@@ -23,6 +23,14 @@ config_setting(
     values = {"compilation_mode": "dbg"},
 )
 
+# CI restores its Linux disk cache across runners with different CPUs. Avoid
+# caching binaries containing instructions specific to whichever runner built first.
+config_setting(
+    name = "portable_linux",
+    constraint_values = ["@platforms//os:linux"],
+    define_values = {"tesseract_portable": "true"},
+)
+
 OPT_COPTS = select({
     "//conditions:default": [
         "-Ofast",
@@ -33,6 +41,7 @@ OPT_COPTS = select({
         "//conditions:default": ["-std=c++20"],
 }) + select({
     "@platforms//os:macos": ["-mmacosx-version-min=10.15",],
+    ":portable_linux": [],
     "//conditions:default": ["-march=native",],
 })
 

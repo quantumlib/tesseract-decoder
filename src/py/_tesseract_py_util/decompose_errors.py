@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import itertools
+import sys
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from functools import reduce
@@ -354,6 +355,26 @@ def decompose_errors_for_stim_surface_code_coords(
     )
 
 
+def decompose_errors(
+    dem: stim.DetectorErrorModel,
+    method: str = "stim-surfacecode-coords",
+    strip_undecomposable_errors: bool = False,
+) -> stim.DetectorErrorModel:
+    """Dispatches to a decomposition strategy selected by name."""
+    if method == "stim-surfacecode-coords":
+        return decompose_errors_for_stim_surface_code_coords(
+            dem, strip_undecomposable_errors=strip_undecomposable_errors
+        )
+    if method == "last-coordinate-index":
+        return decompose_errors_using_last_coordinate_index(
+            dem, strip_undecomposable_errors=strip_undecomposable_errors
+        )
+    raise ValueError(
+        "Unknown decomposition method "
+        f"{method!r}. Expected 'stim-surfacecode-coords' or 'last-coordinate-index'."
+    )
+
+
 def undecompose_errors(dem: stim.DetectorErrorModel) -> stim.DetectorErrorModel:
     """Returns a detector error model with any error decompositions removed.
 
@@ -404,3 +425,68 @@ def undecompose_errors(dem: stim.DetectorErrorModel) -> stim.DetectorErrorModel:
             )
         )
     return undecomposed_dem
+
+
+def call_decompose_errors(
+    input_fname: str,
+    output_fname: str,
+    method: str,
+    strip_undecomposable_errors: bool,
+) -> None:
+    """Reads, decomposes, and writes one detector error model."""
+    if input_fname == "-":
+        dem = stim.DetectorErrorModel(sys.stdin.read())
+    else:
+        dem = stim.DetectorErrorModel.from_file(input_fname)
+
+    output_dem = decompose_errors(
+        dem,
+        method=method,
+        strip_undecomposable_errors=strip_undecomposable_errors,
+    )
+    if output_fname == "-":
+        print(output_dem)
+    else:
+        output_dem.to_file(output_fname)
+
+
+def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Decompose errors in a Stim detector error model."
+    )
+    parser.add_argument(
+        "input",
+        nargs="?",
+        default="-",
+        help="Input DEM file (default: standard input; use '-' for standard input).",
+    )
+    parser.add_argument(
+        "-o",
+        "--out",
+        default="-",
+        help="Output DEM file (default: standard output; use '-' for standard output).",
+    )
+    parser.add_argument(
+        "--method",
+        choices=("stim-surfacecode-coords", "last-coordinate-index"),
+        default="stim-surfacecode-coords",
+        help="Detector-component convention used for decomposition.",
+    )
+    parser.add_argument(
+        "--strip-undecomposable-errors",
+        action="store_true",
+        help="Drop errors that cannot be decomposed instead of failing.",
+    )
+    args = parser.parse_args()
+    call_decompose_errors(
+        args.input,
+        args.out,
+        method=args.method,
+        strip_undecomposable_errors=args.strip_undecomposable_errors,
+    )
+
+
+if __name__ == "__main__":
+    main()

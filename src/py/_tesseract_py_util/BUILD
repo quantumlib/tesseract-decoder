@@ -26,29 +26,15 @@ py_test(
     ],
 )
 
-
-py_test(
-    name = "demutil_test",
-    srcs = ["demutil_test.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "@pypi//pytest",
-        "@pypi//stim",
-        "//src:lib_tesseract_decoder",
-        ":_tesseract_py_util",
-    ],
-    imports = ["..", ".", "../.."],
-)
-
-
 py_test(
     name = "decompose_errors_test",
     srcs = ["decompose_errors_test.py"],
+    imports = ["..", ".", "../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":_tesseract_py_util",
         "@pypi//pytest",
         "@pypi//stim",
+        "//src:lib_tesseract_decoder",
     ],
-    imports = ["..", "."],
 )

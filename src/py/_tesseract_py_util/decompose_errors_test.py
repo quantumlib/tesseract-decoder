@@ -2,14 +2,100 @@ from collections.abc import Iterable
 
 import pytest
 import stim
+import tesseract_decoder
 from _tesseract_py_util.decompose_errors import (
+    decompose_errors,
     decompose_errors_for_stim_surface_code_coords,
     decompose_errors_using_detector_coordinate_assignment,
     decompose_errors_using_last_coordinate_index,
     detector_coord_to_basis_for_stim_surface_code_convention,
     get_component_obs_matching_undecomposed_obs,
-    reduce_set_symmetric_difference, reduce_symmetric_difference,
-    undecompose_errors)
+    reduce_set_symmetric_difference,
+    reduce_symmetric_difference,
+    undecompose_errors,
+)
+from tesseract_decoder import demutil
+
+
+def _demo_dem() -> stim.DetectorErrorModel:
+    return stim.DetectorErrorModel("""
+        detector(0, 0, 0) D0
+        detector(2, 0, 1) D1
+        error(0.1) D0
+        error(0.2) D1
+        error(0.3) D0 D1
+        """)
+
+
+def test_import_exposes_demutil_facade():
+    assert tesseract_decoder.demutil is demutil
+    assert hasattr(demutil, "regeneralize_spatial_dem")
+    assert demutil.decompose_errors is decompose_errors
+    assert hasattr(demutil.gari, "circuit_to_gari")
+
+
+def test_decompose_errors_rejects_unknown_method():
+    with pytest.raises(ValueError, match="Unknown decomposition method"):
+        demutil.decompose_errors(_demo_dem(), method="bad-method")
+
+
+def test_decompose_errors_public_default_method():
+    actual = demutil.decompose_errors(_demo_dem())
+    expected = stim.DetectorErrorModel("""
+        detector(0, 0, 0) D0
+        detector(2, 0, 1) D1
+        error(0.1) D0
+        error(0.2) D1
+        error(0.3) D1 ^ D0
+        """)
+    assert actual == expected
+
+
+def test_regeneralize_spatial_dem_averages_template_probabilities():
+    template_1 = stim.DetectorErrorModel("""
+        detector(0, 0, 0) D0
+        detector(2, 0, 0) D1
+        error(0.1) D0
+        error(0.2) D1
+        """)
+    template_2 = stim.DetectorErrorModel("""
+        detector(0, 0, 0) D0
+        detector(2, 0, 0) D1
+        error(0.3) D0
+        error(0.4) D1
+        """)
+    scaffold = stim.DetectorErrorModel("""
+        detector(0, 0, 0) D0
+        detector(2, 0, 0) D1
+        error(0.9) D0
+        error(0.9) D1
+        """)
+
+    out = demutil.regeneralize_spatial_dem(
+        templates=[template_1, template_2], scaffold=scaffold
+    )
+
+    probs = [inst.args_copy()[0] for inst in out if inst.type == "error"]
+    assert probs == pytest.approx([0.2, 0.3])
+
+
+def test_decompose_errors_public_strip_undecomposable_errors():
+    dem = stim.DetectorErrorModel("""
+detector(0) D0
+detector(1) D1
+error(0.1) D0 D1
+error(0.1) D0
+""")
+
+    actual = demutil.decompose_errors(
+        dem, method="last-coordinate-index", strip_undecomposable_errors=True
+    )
+    expected = stim.DetectorErrorModel("""
+detector(0) D0
+detector(1) D1
+error(0.1) D0
+""")
+    assert actual == expected
 
 
 @pytest.mark.parametrize(

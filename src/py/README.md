@@ -610,7 +610,7 @@ print(f"Logical error rate: {result.errors / result.shots}")
 The `tesseract_decoder.demutil` module provides utilities for manipulating `stim.DetectorErrorModel` objects, specifically for decomposing complex error mechanisms into simpler components and regeneralizing spatial error models.
 
 #### Functions
-* `demutil.decompose_errors(dem: stim.DetectorErrorModel, method: str, strip_undecomposable_errors: bool = False) -> stim.DetectorErrorModel`
+* `demutil.decompose_errors(dem: stim.DetectorErrorModel, method: str = "stim-surfacecode-coords", strip_undecomposable_errors: bool = False) -> stim.DetectorErrorModel`
   * Decomposes error mechanisms in a DEM into simpler components based on the specified method.
   * Supported methods:
     * `"stim-surfacecode-coords"`: Decomposes errors based on the spatial coordinates of detectors, assuming a surface code layout where coordinates indicate X or Z basis.
@@ -621,8 +621,8 @@ The `tesseract_decoder.demutil` module provides utilities for manipulating `stim
 **Example Usage**:
 
 ```python
-import tesseract_decoder.demutil as demutil
 import stim
+from tesseract_decoder import demutil
 
 dem = stim.DetectorErrorModel("""
     detector(0, 0, 0) D0
@@ -648,6 +648,31 @@ nice_matchable_dem3 = demutil.decompose_errors(
 )
 ```
 
+#### Command-line decomposition
+
+Like the other DEM utility modules, `decompose_errors.py` can also be run
+directly:
+
+```bash
+python src/py/_tesseract_py_util/decompose_errors.py \
+    --method=last-coordinate-index \
+    --out output.dem \
+    input.dem
+```
+
+The input defaults to standard input, `--out` defaults to standard output, and
+`--method` defaults to `stim-surfacecode-coords`, so the command can also be
+used in a pipeline:
+
+```bash
+python src/py/_tesseract_py_util/decompose_errors.py \
+    --method=stim-surfacecode-coords \
+    < input.dem > output.dem
+```
+
+Pass `--strip-undecomposable-errors` to drop errors that cannot be decomposed
+instead of returning an error.
+
 * `demutil.regeneralize_spatial_dem(templates: list[stim.DetectorErrorModel], scaffold: stim.DetectorErrorModel, verbose: bool = False) -> stim.DetectorErrorModel`
   * Updates the error probabilities in a `scaffold` DEM by averaging probabilities from matching errors in a list of `template` DEMs. Errors are matched based on their spatial geometry (relative coordinates of detectors).
   * **Important:** The scaffold errors must have the same structure and **same absolute coordinates** (for the first detector) as the template errors to be matched.
@@ -655,8 +680,8 @@ nice_matchable_dem3 = demutil.decompose_errors(
 **Example Usage**:
 
 ```python
-import tesseract_decoder.demutil as demutil
 import stim
+from tesseract_decoder import demutil
 
 # Take one or more DEMs **with detector coordinates**, aggregate the error probabilities
 template1 = stim.DetectorErrorModel("""
