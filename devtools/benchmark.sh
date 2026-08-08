@@ -34,8 +34,8 @@ echo " Threads: ${THREADS}"
 echo "============================================================"
 
 # Build binaries using Bazel (single-core for build as per rules)
-echo "=== Building C++ Binaries (bazel build --jobs=1 src:bp src:tesseract) ==="
-bazel build --jobs=1 src:bp src:tesseract
+echo "=== Building C++ Binaries (bazel build -c opt --jobs=1 src:bp src:tesseract) ==="
+bazel build -c opt --jobs=1 src:bp src:tesseract
 
 BP_BIN="${WORKSPACE_ROOT}/bazel-bin/src/bp"
 TESSERACT_BIN="${WORKSPACE_ROOT}/bazel-bin/src/tesseract"
