@@ -1,4 +1,3 @@
-load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_test.bzl", "py_test")
 load("@rules_python//python:py_library.bzl", "py_library")
 
@@ -10,17 +9,6 @@ py_library(
         "@pypi//stim",
         "@pypi//numpy",
         "@pypi//scipy",
-    ],
-)
-
-py_binary(
-    name = "decompose_errors_cli",
-    srcs = ["decompose_errors.py"],
-    imports = [".."],
-    main = "decompose_errors.py",
-    visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//stim",
     ],
 )
 
