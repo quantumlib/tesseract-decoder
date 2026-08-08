@@ -43,3 +43,6 @@ MODULE.bazel.lock
 # Python build artifacts
 *.so
 *.egg-info/
+
+# Local CMake build directory
+build/

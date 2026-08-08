@@ -29,7 +29,9 @@ void add_bp_module(py::module& root) {
       .def_readwrite("max_iter", &BPParams::max_iter)
       .def_readwrite("update_rule", &BPParams::update_rule)
       .def_readwrite("schedule", &BPParams::schedule)
-      .def_readwrite("normalization_factor", &BPParams::normalization_factor);
+      .def_readwrite("normalization_factor", &BPParams::normalization_factor)
+      .def_readwrite("random_schedule", &BPParams::random_schedule)
+      .def_readwrite("random_seed", &BPParams::random_seed);
 
   py::class_<PostProcessor, std::shared_ptr<PostProcessor>>(m, "PostProcessor");
 

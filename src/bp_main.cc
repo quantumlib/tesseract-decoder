@@ -59,6 +59,7 @@ struct Args {
   int osd_order = -1;  // -1 means HardDecision, >= 0 means OSD
   int osd_weight = 0;
   bool use_batched_bp = false;
+  bool random_schedule = false;
 
   std::string stats_out_fname = "";
   std::string sinter_csv_out = "";
@@ -117,6 +118,9 @@ struct Args {
     params.update_rule = update_rule;
     params.schedule = schedule;
     params.normalization_factor = (float)normalization_factor;
+    params.random_schedule = random_schedule || schedule == "random-serial" ||
+                             schedule == "stochastic-serial" || schedule == "random";
+    params.random_seed = sample_seed;
 
     if (sample_num_shots > 0) {
       std::mt19937_64 rng(sample_seed);
@@ -224,6 +228,10 @@ int main(int argc, char* argv[]) {
       .help("Use AVX-512 batching across shots")
       .flag()
       .store_into(args.use_batched_bp);
+  program.add_argument("--random-schedule")
+      .help("Use randomized check node permutation in serial BP to prevent trapping sets")
+      .flag()
+      .store_into(args.random_schedule);
   program.add_argument("--threads")
       .default_value(size_t(
           std::thread::hardware_concurrency() == 0 ? 1 : std::thread::hardware_concurrency()))
@@ -388,21 +396,34 @@ int main(int argc, char* argv[]) {
       std::chrono::duration_cast<std::chrono::microseconds>(stop_global_time - start_global_time)
           .count() /
       1e6;
+  double cpu_time = total_time_seconds.load();
+  size_t final_shots = processed_shots.load();
+  double wall_throughput = (global_elapsed > 0) ? (double)final_shots / global_elapsed : 0.0;
+  double cpu_throughput = (cpu_time > 0) ? (double)final_shots / cpu_time : 0.0;
 
   std::string decoder_name =
-      std::string(args.use_batched_bp ? "batched-" : "scalar-") + args.schedule + "-bp";
+      std::string(args.use_batched_bp ? "batched-" : "scalar-") +
+      (params.random_schedule ? "random-" : "") + args.schedule + "-bp";
   if (args.osd_order >= 0) decoder_name += "+osd";
 
   if (!args.stats_out_fname.empty()) {
-    nlohmann::json stats_json = {{"circuit_path", args.circuit_path},
-                                 {"dem_path", args.dem_path},
-                                 {"max_errors", args.max_errors},
-                                 {"sample_seed", args.sample_seed},
-                                 {"total_time_seconds", global_elapsed},
-                                 {"num_errors", has_obs ? nlohmann::json(num_errors.load()) : nullptr},
-                                 {"num_shots", processed_shots.load()},
-                                 {"num_discards", num_discards.load()},
-                                 {"decoder", decoder_name}};
+    nlohmann::json stats_json = {
+        {"circuit_path", args.circuit_path},
+        {"dem_path", args.dem_path},
+        {"max_errors", args.max_errors},
+        {"sample_seed", args.sample_seed},
+        {"num_threads", args.num_threads},
+        {"sample_num_shots", args.sample_num_shots},
+        {"num_shots", final_shots},
+        {"num_errors", has_obs ? nlohmann::json(num_errors.load()) : nullptr},
+        {"num_discards", num_discards.load()},
+        {"decoder", decoder_name},
+        {"total_time_seconds", cpu_time},
+        {"cpu_time_seconds", cpu_time},
+        {"wall_time_seconds", global_elapsed},
+        {"shots_per_second", wall_throughput},
+        {"shots_per_cpu_second", cpu_throughput}};
+
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;
     } else {
@@ -413,7 +434,7 @@ int main(int argc, char* argv[]) {
 
   if (!args.sinter_csv_out.empty()) {
     std::stringstream csv_line;
-    csv_line << processed_shots.load() << ",";
+    csv_line << final_shots << ",";
     if (has_obs) {
       csv_line << num_errors.load();
     }
@@ -428,14 +449,17 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  if (args.stats_out_fname.empty() && args.sinter_csv_out.empty()) {
-    std::cout << "num_shots = " << processed_shots.load();
+  if (args.print_stats || (args.stats_out_fname.empty() && args.sinter_csv_out.empty())) {
+    std::cout << "num_shots = " << final_shots;
     if (has_obs) {
       std::cout << " num_errors = " << num_errors.load();
     } else {
       std::cout << " num_errors = N/A";
     }
-    std::cout << " total_time_seconds = " << global_elapsed << std::endl;
+    std::cout << " wall_time_seconds = " << global_elapsed
+              << " total_time_seconds = " << cpu_time
+              << " (wall shots/sec = " << std::fixed << std::setprecision(1) << wall_throughput << ")"
+              << std::endl;
   }
 
   return 0;

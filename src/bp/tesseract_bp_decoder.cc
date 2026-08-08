@@ -78,16 +78,20 @@ std::vector<uint8_t> TesseractBpDecoder::decode(
     const std::shared_ptr<PostProcessor>& post_processor) {
   std::vector<LLR_INT> posteriors(graph_.variable_nodes.size());
 
+  bool is_random_sched = params_.random_schedule || params_.schedule == "random-serial" ||
+                         params_.schedule == "stochastic-serial" || params_.schedule == "random";
+
   BPResult result;
   if (params_.schedule == "parallel" && params_.update_rule == "min-sum") {
     std::vector<size_t> dets(detection_events.begin(), detection_events.end());
     result =
         bp_parallel_min_sum<LLR_INT>(graph_, dets, posteriors, params_.max_iter,
                                      params_.normalization_factor, params_.stop_at_convergence);
-  } else if (params_.schedule == "serial" && params_.update_rule == "min-sum") {
+  } else if ((params_.schedule == "serial" || is_random_sched) && params_.update_rule == "min-sum") {
     std::vector<size_t> dets(detection_events.begin(), detection_events.end());
     result = bp_serial_min_sum<LLR_INT>(graph_, dets, posteriors, params_.max_iter,
-                                        params_.normalization_factor, params_.stop_at_convergence);
+                                        params_.normalization_factor, params_.stop_at_convergence,
+                                        is_random_sched, params_.random_seed);
   } else {
     throw std::invalid_argument(
         "Unsupported schedule/update_rule combination. Only min-sum is supported in this phase.");
@@ -119,9 +123,13 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
   size_t num_shots = detection_events_batch.size();
   std::vector<std::vector<uint8_t>> results(num_shots);
 
+  size_t num_vars = graph_.variable_nodes.size();
   std::vector<std::vector<size_t>> current_batch;
-  std::vector<std::vector<LLR_INT>> posteriors_batch(
-      BP_BATCH_SIZE, std::vector<LLR_INT>(graph_.variable_nodes.size()));
+  alignas(64) std::vector<LLR_INT> posteriors_flat(num_vars * BP_BATCH_SIZE);
+  std::vector<LLR_INT> shot_posteriors(num_vars);
+
+  bool is_random_sched = params_.random_schedule || params_.schedule == "random-serial" ||
+                         params_.schedule == "stochastic-serial" || params_.schedule == "random";
 
   for (size_t shot = 0; shot < num_shots; ++shot) {
     current_batch.push_back(std::vector<size_t>(detection_events_batch[shot].begin(),
@@ -134,20 +142,24 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
       }
 
       std::vector<BPResult> bp_results;
-      if (params_.schedule == "serial") {
-        bp_results = batched_bp_serial_min_sum(batched_graph_, current_batch, posteriors_batch,
+      if (params_.schedule == "serial" || is_random_sched) {
+        bp_results = batched_bp_serial_min_sum(batched_graph_, current_batch, posteriors_flat,
                                                params_.max_iter, params_.normalization_factor,
-                                               params_.stop_at_convergence);
+                                               params_.stop_at_convergence, is_random_sched,
+                                               params_.random_seed);
       } else {
-        bp_results = batched_bp_parallel_min_sum(batched_graph_, current_batch, posteriors_batch,
+        bp_results = batched_bp_parallel_min_sum(batched_graph_, current_batch, posteriors_flat,
                                                  params_.max_iter, params_.normalization_factor,
                                                  params_.stop_at_convergence);
       }
 
       for (size_t b = 0; b < actual_size; ++b) {
         size_t real_shot_idx = shot - actual_size + 1 + b;
+        for (size_t v = 0; v < num_vars; ++v) {
+          shot_posteriors[v] = posteriors_flat[v * BP_BATCH_SIZE + b];
+        }
         results[real_shot_idx] =
-            post_processor->process(bp_results[b], posteriors_batch[b],
+            post_processor->process(bp_results[b], shot_posteriors,
                                     detection_events_batch[real_shot_idx], hyperedge_observables_);
       }
       current_batch.clear();
