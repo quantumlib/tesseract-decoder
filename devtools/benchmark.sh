@@ -49,6 +49,7 @@ run_bp_benchmark() {
     local osd_weight="${6:-0}"
     local max_iter="${7:-30}"
     local max_errors="${8:-100}"
+    local schedule="${9:-serial}"
 
     if [[ ! -f "${circuit}" ]]; then
         echo "[SKIP] Circuit not found: ${circuit}"
@@ -60,7 +61,7 @@ run_bp_benchmark() {
     echo "------------------------------------------------------------"
     echo ">> Running: ${name}"
     echo "   Circuit: ${circuit}"
-    echo "   Config: schedule=serial, batched=true, osd_order=${osd_order}, osd_weight=${osd_weight}, norm=${norm}"
+    echo "   Config: schedule=${schedule}, batched=true, osd_order=${osd_order}, osd_weight=${osd_weight}, norm=${norm}"
     echo "------------------------------------------------------------"
 
     local cmd=(
@@ -72,7 +73,7 @@ run_bp_benchmark() {
         --max-errors "${max_errors}"
         --normalization-factor "${norm}"
         --max-iter "${max_iter}"
-        --schedule "serial"
+        --schedule "${schedule}"
         --batched
         --print-stats
         --stats-out "${out_json}"
@@ -131,10 +132,24 @@ run_bp_benchmark \
     0.625
 
 run_bp_benchmark \
+    "surface_code_d3_p001_parallel_batched" \
+    "testdata/surfacecodes/r=3,d=3,p=0.001,noise=si1000,c=surface_code_Z,q=17,gates=cz.stim" \
+    100000 \
+    0.625 \
+    -1 0 30 100 "parallel"
+
+run_bp_benchmark \
     "surface_code_d5_p001_serial_batched" \
     "testdata/surfacecodes/r=5,d=5,p=0.001,noise=si1000,c=surface_code_Z,q=49,gates=cz.stim" \
     100000 \
     0.625
+
+run_bp_benchmark \
+    "surface_code_d5_p001_parallel_batched" \
+    "testdata/surfacecodes/r=5,d=5,p=0.001,noise=si1000,c=surface_code_Z,q=49,gates=cz.stim" \
+    100000 \
+    0.625 \
+    -1 0 30 100 "parallel"
 
 run_bp_benchmark \
     "surface_code_d7_p001_serial_batched" \
