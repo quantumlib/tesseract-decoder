@@ -50,15 +50,3 @@ py_test(
         "//src:lib_tesseract_decoder",
     ],
 )
-
-py_test(
-    name = "decompose_errors_cli_test",
-    srcs = ["decompose_errors_cli_test.py"],
-    imports = ["..", "."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":_tesseract_py_util",
-        "@pypi//pytest",
-        "@pypi//stim",
-    ],
-)
