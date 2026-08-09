@@ -335,6 +335,14 @@ std::vector<int> MultiPassTesseractDecoder::decode(const std::vector<uint64_t>& 
 
 MultiPassDecodeResult MultiPassTesseractDecoder::decode_result(
     const std::vector<uint64_t>& detections) {
+  for (uint64_t d : detections) {
+    if (d >= total_global_detectors) {
+      throw std::invalid_argument("Detector D" + std::to_string(d) +
+                                  " is out of range for a model with " +
+                                  std::to_string(total_global_detectors) + " detectors.");
+    }
+  }
+
   last_shot_num_reweights = 0;
 
   // 1. Multi-Pass Loop: Sequentially schedules component passes and propagates
@@ -348,7 +356,7 @@ MultiPassDecodeResult MultiPassTesseractDecoder::decode_result(
       auto& cd = component_decoders[comp_idx];
       std::vector<uint64_t> local_dets;
       for (uint64_t d : detections) {
-        if (cd.component_detectors.count((int)d)) {
+        if (cd.component_detectors.count(static_cast<int>(d))) {
           local_dets.push_back(d);
         }
       }

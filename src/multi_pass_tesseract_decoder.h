@@ -71,9 +71,6 @@ class MultiPassTesseractDecoder {
   std::vector<int> decode(const std::vector<uint64_t>& detections);
   MultiPassDecodeResult decode_result(const std::vector<uint64_t>& detections);
 
-  void decode_shots(std::vector<stim::SparseShot>& shots,
-                    std::vector<std::vector<int>>& obs_predicted);
-
   size_t get_last_shot_num_reweights() const {
     return last_shot_num_reweights;
   }
