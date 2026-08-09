@@ -57,6 +57,11 @@ struct BPParams {
   float normalization_factor;
   bool random_schedule;
   uint64_t random_seed;
+  // Factor used to truncate the number of columns in the dense OSD parity-check matrix.
+  // The matrix width is bounded by min(num_errors, num_detectors * factor).
+  // A value of 1.2 provides significant speedups without degrading LER.
+  // A value of 0.0 disables truncation (falls back to exact OSD width).
+  float osd_truncation_factor;
 
   BPParams(size_t max_iter = DEFAULT_MAX_ITER, std::string update_rule = DEFAULT_UPDATE_RULE,
            std::string schedule = DEFAULT_SCHEDULE,
@@ -65,7 +70,8 @@ struct BPParams {
            double variable_node_truncation_fraction = DEFAULT_VARIABLE_NODE_TRUNCATION_FRACTION,
            float normalization_factor = 0.875f,
            bool random_schedule = DEFAULT_RANDOM_SCHEDULE,
-           uint64_t random_seed = DEFAULT_RANDOM_SEED)
+           uint64_t random_seed = DEFAULT_RANDOM_SEED,
+           float osd_truncation_factor = 1.2f)
       : max_iter(max_iter),
         update_rule(update_rule),
         schedule(schedule),
@@ -74,7 +80,8 @@ struct BPParams {
         variable_node_truncation_fraction(variable_node_truncation_fraction),
         normalization_factor(normalization_factor),
         random_schedule(random_schedule),
-        random_seed(random_seed) {}
+        random_seed(random_seed),
+        osd_truncation_factor(osd_truncation_factor) {}
 
   bool operator==(const BPParams& other) const {
     return max_iter == other.max_iter && update_rule == other.update_rule &&
@@ -83,7 +90,8 @@ struct BPParams {
            variable_node_truncation_fraction == other.variable_node_truncation_fraction &&
            normalization_factor == other.normalization_factor &&
            random_schedule == other.random_schedule &&
-           random_seed == other.random_seed;
+           random_seed == other.random_seed &&
+           osd_truncation_factor == other.osd_truncation_factor;
   }
 };
 }  // namespace bp

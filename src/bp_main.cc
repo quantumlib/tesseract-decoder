@@ -60,6 +60,7 @@ struct Args {
   int osd_weight = 0;
   bool use_batched_bp = false;
   bool random_schedule = false;
+  double osd_truncation_factor = 0.0;
 
   std::string stats_out_fname = "";
   std::string sinter_csv_out = "";
@@ -121,6 +122,7 @@ struct Args {
     params.random_schedule = random_schedule || schedule == "random-serial" ||
                              schedule == "stochastic-serial" || schedule == "random";
     params.random_seed = sample_seed;
+    params.osd_truncation_factor = (float)osd_truncation_factor;
 
     if (sample_num_shots > 0) {
       std::mt19937_64 rng(sample_seed);
@@ -224,6 +226,10 @@ int main(int argc, char* argv[]) {
       .store_into(args.normalization_factor);
   program.add_argument("--osd-order").default_value(-1).store_into(args.osd_order);
   program.add_argument("--osd-weight").default_value(0).store_into(args.osd_weight);
+  program.add_argument("--osd-truncation-factor")
+      .help("Multiplier defining the maximum number of free columns for the dense OSD Gaussian elimination matrix (e.g. 1.2 bounds to 1.2x the number of defect detectors). Use 0.0 to disable truncation.")
+      .default_value(1.2)
+      .store_into(args.osd_truncation_factor);
   program.add_argument("--batched")
       .help("Use AVX-512 batching across shots")
       .flag()

@@ -102,7 +102,7 @@ std::vector<uint8_t> TesseractBpDecoder::decode(
 
 std::shared_ptr<PostProcessor> TesseractBpDecoder::create_osd_post_processor(
     size_t osd_order, size_t osd_weight) const {
-  return std::make_shared<OsdPostProcessor>(graph_, osd_order, osd_weight);
+  return std::make_shared<OsdPostProcessor>(graph_, osd_order, osd_weight, params_.osd_truncation_factor);
 }
 
 size_t TesseractBpDecoder::num_observables() const {

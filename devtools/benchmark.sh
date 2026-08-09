@@ -50,6 +50,7 @@ run_bp_benchmark() {
     local max_iter="${7:-30}"
     local max_errors="${8:-100}"
     local schedule="${9:-serial}"
+    local osd_trunc="${10:-1.2}"
 
     if [[ ! -f "${circuit}" ]]; then
         echo "[SKIP] Circuit not found: ${circuit}"
@@ -61,7 +62,7 @@ run_bp_benchmark() {
     echo "------------------------------------------------------------"
     echo ">> Running: ${name}"
     echo "   Circuit: ${circuit}"
-    echo "   Config: schedule=${schedule}, batched=true, osd_order=${osd_order}, osd_weight=${osd_weight}, norm=${norm}"
+    echo "   Config: schedule=${schedule}, batched=true, osd_order=${osd_order}, osd_weight=${osd_weight}, norm=${norm}, osd_trunc=${osd_trunc}"
     echo "------------------------------------------------------------"
 
     local cmd=(
@@ -80,7 +81,7 @@ run_bp_benchmark() {
     )
 
     if [[ "${osd_order}" -ge 0 ]]; then
-        cmd+=(--osd-order "${osd_order}" --osd-weight "${osd_weight}")
+        cmd+=(--osd-order "${osd_order}" --osd-weight "${osd_weight}" --osd-truncation-factor "${osd_trunc}")
     fi
 
     "${cmd[@]}"
