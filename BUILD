@@ -27,6 +27,8 @@ py_wheel(
     ],
     version = "$(VERSION)",
     requires=[
+        "numpy",
+        "scipy",
         "sinter",
         "stim",
     ],
