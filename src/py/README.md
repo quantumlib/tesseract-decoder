@@ -650,7 +650,7 @@ nice_matchable_dem3 = demutil.decompose_errors(
 
 #### Command-line decomposition
 
-Like the other DEM utility modules, `decompose_errors.py` can also be run
+Like the other DEM utility tools, `decompose_errors.py` can also be run
 directly:
 
 ```bash
