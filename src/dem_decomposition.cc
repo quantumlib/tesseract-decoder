@@ -99,41 +99,11 @@ std::vector<std::vector<int>> get_component_obs_matching_undecomposed_obs(
       return result;
     }
 
-    if (num_missing_components >= 1 && allow_remnant_errors) {
-      // Case B: Residual is non-empty and at least one component is missing.
-      // Assign the entire residual to the first missing component.
+    if (num_missing_components == 1 && allow_remnant_errors) {
+      // Case B: Residual is non-empty and one component is missing.
+      // Assign the entire residual to the missing component.
       std::vector<std::vector<int>> result = combination;
       result.push_back(residual);
-      for (int i = 0; i < num_missing_components - 1; ++i) result.push_back({});
-      return result;
-    }
-  }
-
-  // Best effort logic if allow_remnant_errors is true
-  if (allow_remnant_errors) {
-    if (!obs_options_by_component.empty()) {
-      // Use the first combination and force residual into the first component
-      std::vector<std::vector<int>> first_combination;
-      for (const auto& options : obs_options_by_component) {
-        first_combination.push_back(*options.begin());
-      }
-      std::vector<int> first_obs_sum = reduce_set_symmetric_difference(first_combination);
-
-      std::vector<int> residual_input = error_obs_reduced;
-      residual_input.insert(residual_input.end(), first_obs_sum.begin(), first_obs_sum.end());
-      std::vector<int> residual = reduce_symmetric_difference(residual_input);
-
-      std::vector<int> forced_first_input = first_combination[0];
-      forced_first_input.insert(forced_first_input.end(), residual.begin(), residual.end());
-      first_combination[0] = reduce_symmetric_difference(forced_first_input);
-
-      for (int i = 0; i < num_missing_components; ++i) first_combination.push_back({});
-      return first_combination;
-    } else if (num_missing_components > 0) {
-      // No known components? Put everything in the first missing one.
-      std::vector<std::vector<int>> result;
-      result.push_back(error_obs_reduced);
-      for (int i = 0; i < num_missing_components - 1; ++i) result.push_back({});
       return result;
     }
   }

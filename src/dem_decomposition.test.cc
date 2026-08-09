@@ -54,16 +54,23 @@ TEST(DemDecompositionTest, RemnantErrorsNoKnownComponents) {
   std::vector<std::vector<int>> expected_output = {{1, 2}};
   ASSERT_EQ(get_component_obs_matching_undecomposed_obs(component_obs, error_obs, 1, true),
             expected_output);
+  ASSERT_TRUE(
+      get_component_obs_matching_undecomposed_obs(component_obs, error_obs, 2, true).empty());
 }
 
-TEST(DemDecompositionTest, RemnantErrorsBestEffortForcedFirst) {
-  // Known components provide {1}. Error needs {2}. Residual is {1, 2}.
-  // Forced first takes {1} XOR {1, 2} = {2}.
-  std::vector<std::set<std::vector<int>>> component_obs = {{{1}}};
-  std::vector<int> error_obs = {2};
-  std::vector<std::vector<int>> expected_output = {{2}};
-  ASSERT_EQ(get_component_obs_matching_undecomposed_obs(component_obs, error_obs, 0, true),
-            expected_output);
+TEST(DemDecompositionTest, RejectsInconsistentObservableDecomposition) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 L0
+        error(0.1) D1 L1
+        error(0.2) D0 D1 L0
+        detector D0
+        detector D1
+        logical_observable L0
+        logical_observable L1
+    )DEM");
+  auto component = [](int detector) { return detector; };
+  EXPECT_THROW(decompose_errors_using_detector_assignment(dem, component, true),
+               std::invalid_argument);
 }
 
 TEST(DemDecompositionTest, DecomposeErrorsUsingGenericClassifier) {

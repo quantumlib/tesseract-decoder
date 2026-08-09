@@ -166,10 +166,10 @@ TEST(MultiPassTesseractDecoderTest, CausalScheduleSurfaceCode) {
   // Error: D2 ^ D0 (Bridge)
   stim::DetectorErrorModel dem(R"DEM(
         error(0.1) D0 D2 L0
-        error(0.01) D0
+        error(0.01) D0 L0
         error(0.01) D2
         error(0.1) D1 D3 L0
-        error(0.01) D1
+        error(0.01) D1 L0
         error(0.01) D3
         detector D0
         detector D1

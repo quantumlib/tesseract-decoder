@@ -34,8 +34,8 @@ std::pair<std::vector<int>, std::vector<int>> undecomposed_error_detectors_and_o
  *                                 observable flip combinations for a component.
  * @param error_obs The total logical observables flipped by the undecomposed error.
  * @param num_missing_components Number of components that were not found in the DEM.
- * @param allow_remnant_errors If true, allow components missing from the DEM to be assigned
- *                             residual observables.
+ * @param allow_remnant_errors If true, allow one component missing from the DEM to be assigned
+ *                             residual observables. Multiple missing components are ambiguous.
  */
 std::vector<std::vector<int>> get_component_obs_matching_undecomposed_obs(
     const std::vector<std::set<std::vector<int>>>& obs_options_by_component,
@@ -47,8 +47,8 @@ std::vector<std::vector<int>> get_component_obs_matching_undecomposed_obs(
  *
  * @param dem The input DetectorErrorModel.
  * @param detector_component_func A function that maps a detector ID to a component ID (int).
- * @param allow_remnant_errors If true, allow the decomposition to succeed even if some
- *                             components are missing from the DEM, by inferring their observables.
+ * @param allow_remnant_errors If true, allow the decomposition to infer observables for one
+ *                             component missing from the DEM.
  */
 stim::DetectorErrorModel decompose_errors_using_detector_assignment(
     const stim::DetectorErrorModel& dem, const std::function<int(int)>& detector_component_func,
