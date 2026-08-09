@@ -69,7 +69,7 @@ class MultiPassTesseractDecoder {
     std::set<int> component_detectors;  // Global indices
     std::map<int, int> global_to_local_det;
     std::vector<double> original_costs;
-    std::map<Hyperedge, std::vector<size_t>> symptom_to_error_index;
+    std::map<ComponentSymptom, std::vector<size_t>> symptom_to_error_index;
     std::vector<std::vector<LocalReweightRule>> error_index_to_rules;
     std::vector<size_t> modified_error_indices;
     std::vector<size_t> shot_all_modified_error_indices;

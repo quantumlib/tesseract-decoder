@@ -12,11 +12,19 @@
 
 namespace tesseract {
 
+struct ComponentSymptom {
+  std::vector<int> detectors;
+  std::vector<int> observables;
+
+  bool operator==(const ComponentSymptom& other) const;
+  bool operator<(const ComponentSymptom& other) const;
+};
+
 /**
- * Represents a probability adjustment for an affected hyperedge given a causal hyperedge.
+ * Represents a probability adjustment for an affected component symptom.
  */
 struct ImpliedProbability {
-  std::vector<int> affected_hyperedge;
+  ComponentSymptom affected_symptom;
   double probability;  // Represents the conditional probability P(affected | causal)
 
   std::string str() const;
@@ -24,18 +32,12 @@ struct ImpliedProbability {
   bool operator<(const ImpliedProbability& other) const;
 };
 
-// Type alias for hyperedge (sorted detector indices)
-using Hyperedge = std::vector<int>;
-// Type alias for joint probabilities map: causal_hyperedge -> {affected_hyperedge -> joint_prob}
-using JointProbsMap = std::map<Hyperedge, std::map<Hyperedge, double>>;
-// Type alias for implied probabilities map: causal_hyperedge -> list of conditional probability
-// updates
-using ImpliedProbsMap = std::map<Hyperedge, std::vector<ImpliedProbability>>;
+using JointProbsMap = std::map<ComponentSymptom, std::map<ComponentSymptom, double>>;
+using ImpliedProbsMap = std::map<ComponentSymptom, std::vector<ImpliedProbability>>;
 
 /**
- * Calculates marginal and joint probabilities for hyperedges in a DEM.
- * Note: Assumes the input DEM has NOT been decomposed yet, as we need bridging errors
- * to find joint probabilities.
+ * Calculates marginal and joint probabilities for component symptoms in a decomposed DEM.
+ * Separated groups in one error instruction retain the original physical correlation.
  */
 JointProbsMap get_hyperedge_joint_probabilities(const stim::DetectorErrorModel& dem,
                                                 const std::vector<int>& global_det_to_comp_id);

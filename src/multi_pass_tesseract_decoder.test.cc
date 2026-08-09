@@ -387,8 +387,8 @@ TEST(MultiPassTesseractDecoderTest, MultipleCausalTriggersMaxProbValidation) {
 
   const auto& comp0 = MultiPassDebugger::get_component_decoder_full(decoder, 0);
 
-  // 2. Find the target error index for symptom {0}
-  std::vector<int> target_symptom = {0};
+  // 2. Find the target error index for symptom D0 L0.
+  ComponentSymptom target_symptom{{0}, {0}};
   auto it = comp0.symptom_to_error_index.find(target_symptom);
   ASSERT_NE(it, comp0.symptom_to_error_index.end());
 
@@ -404,11 +404,12 @@ TEST(MultiPassTesseractDecoderTest, MultipleCausalTriggersMaxProbValidation) {
   ASSERT_EQ(decoder.get_last_shot_num_reweights(), 2);
 }
 
-TEST(MultiPassTesseractDecoderTest, OverlappingSymptomsDistinctObservables) {
+TEST(MultiPassTesseractDecoderTest, CorrelationRulesDistinguishObservables) {
   stim::DetectorErrorModel dem(R"DEM(
-        error(0.1) D0 L0
-        error(0.05) D0 L1
-        error(0.01) D1
+        error(0.1) D0 D1 L0
+        error(0.01) D0
+        error(0.2) D1 L0
+        error(0.05) D1 L1
         detector D0
         detector D1
         logical_observable L0
@@ -424,13 +425,6 @@ TEST(MultiPassTesseractDecoderTest, OverlappingSymptomsDistinctObservables) {
   MultiPassTesseractDecoder decoder(dem, 2, classifier, config, 1, DetOrder::DetIndex, 12345,
                                     SchedulingStrategy::Causal);
 
-  const auto& comp0 = MultiPassDebugger::get_component_decoder_full(decoder, 0);
-
-  std::vector<int> symptom = {0};
-  auto it = comp0.symptom_to_error_index.find(symptom);
-  ASSERT_NE(it, comp0.symptom_to_error_index.end());
-
-  // Rigorously assert that degenerate errors are successfully tracked in a
-  // vector!
-  ASSERT_EQ(it->second.size(), 2);
+  decoder.decode({0});
+  EXPECT_EQ(decoder.get_last_shot_num_reweights(), 1);
 }

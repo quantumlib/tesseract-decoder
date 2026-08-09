@@ -1,28 +1,42 @@
 #include "error_correlations.h"
 
-#include <iostream>
 #include <sstream>
+#include <stdexcept>
 
 namespace tesseract {
 
+bool ComponentSymptom::operator==(const ComponentSymptom& other) const {
+  return detectors == other.detectors && observables == other.observables;
+}
+
+bool ComponentSymptom::operator<(const ComponentSymptom& other) const {
+  if (detectors != other.detectors) return detectors < other.detectors;
+  return observables < other.observables;
+}
+
 std::string ImpliedProbability::str() const {
   std::stringstream ss;
-  ss << "ImpliedProbability(affected={";
-  for (size_t i = 0; i < affected_hyperedge.size(); ++i) {
-    ss << affected_hyperedge[i] << (i == affected_hyperedge.size() - 1 ? "" : ",");
+  ss << "ImpliedProbability(detectors={";
+  for (size_t i = 0; i < affected_symptom.detectors.size(); ++i) {
+    ss << affected_symptom.detectors[i] << (i == affected_symptom.detectors.size() - 1 ? "" : ",");
+  }
+  ss << "}, observables={";
+  for (size_t i = 0; i < affected_symptom.observables.size(); ++i) {
+    ss << affected_symptom.observables[i]
+       << (i == affected_symptom.observables.size() - 1 ? "" : ",");
   }
   ss << "}, prob=" << probability << ")";
   return ss.str();
 }
 
 bool ImpliedProbability::operator==(const ImpliedProbability& other) const {
-  return affected_hyperedge == other.affected_hyperedge &&
+  return affected_symptom == other.affected_symptom &&
          std::abs(probability - other.probability) < 1e-12;
 }
 
 bool ImpliedProbability::operator<(const ImpliedProbability& other) const {
-  if (affected_hyperedge != other.affected_hyperedge) {
-    return affected_hyperedge < other.affected_hyperedge;
+  if (!(affected_symptom == other.affected_symptom)) {
+    return affected_symptom < other.affected_symptom;
   }
   return probability < other.probability;
 }
@@ -37,21 +51,35 @@ JointProbsMap get_hyperedge_joint_probabilities(const stim::DetectorErrorModel& 
 
     double p = inst.arg_data[0];
 
-    std::map<int, Hyperedge> comp_targets;
-    for (const auto& target : inst.target_data) {
-      if (target.is_relative_detector_id()) {
-        int d = target.val();
-        int cid =
-            (d >= 0 && (size_t)d < global_det_to_comp_id.size()) ? global_det_to_comp_id[d] : -1;
-        if (cid != -1) comp_targets[cid].push_back(d);
+    std::vector<ComponentSymptom> components;
+    inst.for_separated_targets([&](std::span<const stim::DemTarget> group) {
+      ComponentSymptom symptom;
+      int component_id = -1;
+      for (const auto& target : group) {
+        if (target.is_relative_detector_id()) {
+          int detector = target.val();
+          if (detector < 0 || (size_t)detector >= global_det_to_comp_id.size() ||
+              global_det_to_comp_id[detector] < 0) {
+            throw std::invalid_argument("Invalid component assignment for detector D" +
+                                        std::to_string(detector) + ".");
+          }
+          int detector_component = global_det_to_comp_id[detector];
+          if (component_id != -1 && component_id != detector_component) {
+            throw std::invalid_argument(
+                "A decomposed error group contains detectors from multiple components.");
+          }
+          component_id = detector_component;
+          symptom.detectors.push_back(detector);
+        } else if (target.is_observable_id()) {
+          symptom.observables.push_back(target.val());
+        }
       }
-    }
 
-    std::vector<Hyperedge> components;
-    for (auto& [cid, h] : comp_targets) {
-      std::sort(h.begin(), h.end());
-      components.push_back(h);
-    }
+      if (symptom.detectors.empty()) return;
+      std::sort(symptom.detectors.begin(), symptom.detectors.end());
+      std::sort(symptom.observables.begin(), symptom.observables.end());
+      components.push_back(std::move(symptom));
+    });
 
     // 1. Marginal probabilities (diagonal)
     for (const auto& h : components) {

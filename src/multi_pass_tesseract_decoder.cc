@@ -143,7 +143,7 @@ void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
       decompose_errors_using_detector_assignment(flattened, detector_component, true);
   stim::DetectorErrorModel merged = merge_indistinguishable_errors(decomposed);
 
-  ImpliedProbsMap raw_correlations = process_dem_correlations(flattened, global_det_to_comp_id);
+  ImpliedProbsMap raw_correlations = process_dem_correlations(decomposed, global_det_to_comp_id);
 
   auto component_dems_raw = split_dem_by_component(merged, detector_component);
 
@@ -188,30 +188,25 @@ void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
 
     for (size_t ei = 0; ei < cd.decoder->errors.size(); ++ei) {
       cd.original_costs.push_back(cd.decoder->errors[ei].likelihood_cost);
-      Hyperedge global_symptom = cd.decoder->errors[ei].symptom.detectors;
-      std::sort(global_symptom.begin(), global_symptom.end());
+      ComponentSymptom global_symptom{cd.decoder->errors[ei].symptom.detectors,
+                                      cd.decoder->errors[ei].symptom.observables};
+      std::sort(global_symptom.detectors.begin(), global_symptom.detectors.end());
+      std::sort(global_symptom.observables.begin(), global_symptom.observables.end());
       cd.symptom_to_error_index[global_symptom].push_back(ei);
     }
   }
 
   for (const auto& [global_symptom, implied_probs] : raw_correlations) {
-    Hyperedge causal_symptom = global_symptom;
-    std::sort(causal_symptom.begin(), causal_symptom.end());
-    int causal_comp = -1;
-    if (!causal_symptom.empty()) causal_comp = global_det_to_comp_id[causal_symptom[0]];
-    if (causal_comp == -1) continue;
+    int causal_comp = global_det_to_comp_id[global_symptom.detectors[0]];
 
-    auto it = component_decoders[causal_comp].symptom_to_error_index.find(causal_symptom);
+    auto it = component_decoders[causal_comp].symptom_to_error_index.find(global_symptom);
     if (it == component_decoders[causal_comp].symptom_to_error_index.end()) continue;
 
     // Loop through all degenerate causal error indices!
     for (size_t causal_err_idx : it->second) {
       for (const auto& imp : implied_probs) {
-        Hyperedge target_symptom = imp.affected_hyperedge;
-        std::sort(target_symptom.begin(), target_symptom.end());
-        int target_comp = -1;
-        if (!target_symptom.empty()) target_comp = global_det_to_comp_id[target_symptom[0]];
-        if (target_comp == -1) continue;
+        const ComponentSymptom& target_symptom = imp.affected_symptom;
+        int target_comp = global_det_to_comp_id[target_symptom.detectors[0]];
 
         auto t_it = component_decoders[target_comp].symptom_to_error_index.find(target_symptom);
         if (t_it != component_decoders[target_comp].symptom_to_error_index.end()) {
