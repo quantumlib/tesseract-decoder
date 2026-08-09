@@ -8,8 +8,8 @@ class MultiPassSinterDecoder(sinter.Decoder):
     Wraps the native C++ MultiPassTesseractDecoder.
     """
     def __init__(self, num_passes: int = 2, detector_classifier=None, **base_config_kwargs):
-        if num_passes < 1:
-            raise ValueError("num_passes must be at least 1.")
+        if num_passes not in (1, 2):
+            raise ValueError("num_passes must be 1 or 2.")
         self.num_passes = num_passes
         self.detector_classifier = detector_classifier
         self.base_config_kwargs = base_config_kwargs
@@ -71,17 +71,6 @@ def get_sinter_decoders():
         ),
         "tesseract_multipass_2pass": MultiPassSinterDecoder(
             num_passes=2,
-            strategy=_core.Causal,
-            det_beam=20,
-            beam_climbing=True,
-            no_revisit_dets=True,
-            merge_errors=True,
-            pqlimit=1000000,
-            num_det_orders=21,
-            seed=2384753
-        ),
-        "tesseract_multipass_3pass": MultiPassSinterDecoder(
-            num_passes=3,
             strategy=_core.Causal,
             det_beam=20,
             beam_climbing=True,

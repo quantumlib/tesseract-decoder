@@ -136,8 +136,8 @@ struct Args {
     if (num_threads == 0) {
       throw std::invalid_argument("--threads must be at least 1.");
     }
-    if (num_passes == 0) {
-      throw std::invalid_argument("--num-passes must be at least 1.");
+    if (num_passes < 1 || num_passes > 2) {
+      throw std::invalid_argument("--num-passes must be 1 or 2.");
     }
     if (num_threads > 1000) {
       throw std::invalid_argument(
@@ -532,8 +532,7 @@ int main(int argc, char* argv[]) {
   program.add_argument("--num-passes", "--num_passes")
       .help(
           "Number of prior propagation passes: 1 (uncorrelated independent CSS decoding) or 2 "
-          "(standard causally reweighted decoding, default = 2). Note: values > 2 are experimental "
-          "and were never systematically benchmarked.")
+          "(standard causally reweighted decoding, default = 2).")
       .default_value(size_t(2))
       .store_into(args.num_passes);
 

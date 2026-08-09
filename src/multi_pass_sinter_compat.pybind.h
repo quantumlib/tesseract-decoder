@@ -86,8 +86,8 @@ struct MultiPassSinterDecoder {
         det_order_method(::DetOrder::DetBFS),
         seed(0),
         strategy(SchedulingStrategy::Static) {
-    if (num_passes == 0) {
-      throw std::invalid_argument("num_passes must be at least 1.");
+    if (num_passes < 1 || num_passes > 2) {
+      throw std::invalid_argument("num_passes must be 1 or 2.");
     }
   }
 

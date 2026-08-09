@@ -34,14 +34,28 @@ auto chromobius_classifier = [](int index, const std::vector<double>& coords,
   return -1;
 };
 
-TEST(MultiPassTesseractDecoderTest, RejectsZeroPasses) {
-  stim::DetectorErrorModel dem;
-  auto classifier = [](int, const std::vector<double>&, const std::string&) -> int { return 0; };
+TEST(MultiPassTesseractDecoderTest, AcceptsOnlyOneOrTwoPasses) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0
+        error(0.1) D1 L0
+        detector D0
+        detector D1
+        logical_observable L0
+    )DEM");
+  auto classifier = [](int index, const std::vector<double>&, const std::string&) -> int {
+    return index;
+  };
 
   for (auto strategy : {SchedulingStrategy::Static, SchedulingStrategy::Causal}) {
-    EXPECT_THROW(MultiPassTesseractDecoder(dem, 0, classifier, TesseractConfig(), 1,
-                                           DetOrder::DetBFS, 0, strategy),
-                 std::invalid_argument);
+    for (size_t num_passes : {1, 2}) {
+      EXPECT_NO_THROW(MultiPassTesseractDecoder(dem, num_passes, classifier, TesseractConfig(), 1,
+                                                DetOrder::DetBFS, 0, strategy));
+    }
+    for (size_t num_passes : {0, 3, 4}) {
+      EXPECT_THROW(MultiPassTesseractDecoder(dem, num_passes, classifier, TesseractConfig(), 1,
+                                             DetOrder::DetBFS, 0, strategy),
+                   std::invalid_argument);
+    }
   }
 }
 
@@ -190,20 +204,6 @@ TEST(MultiPassTesseractDecoderTest, SurfaceCodeCausalScheduling) {
       ASSERT_EQ(schedule[1].size(), 1);
       ASSERT_EQ(schedule[1][0], 0) << "2-pass P1 failed for d=" << d;
     }
-
-    // 3-Pass: Should schedule X (0) then Z (1) then X (0)
-    {
-      MultiPassTesseractDecoder decoder(dem, 3, chromobius_classifier, TesseractConfig(), 1,
-                                        DetOrder::DetBFS, 0, SchedulingStrategy::Causal);
-      const auto& schedule = MultiPassDebugger::get_pass_schedule(decoder);
-      ASSERT_EQ(schedule.size(), 3);
-      ASSERT_EQ(schedule[0].size(), 1);
-      ASSERT_EQ(schedule[0][0], 0) << "3-pass P0 failed for d=" << d;
-      ASSERT_EQ(schedule[1].size(), 1);
-      ASSERT_EQ(schedule[1][0], 1) << "3-pass P1 failed for d=" << d;
-      ASSERT_EQ(schedule[2].size(), 1);
-      ASSERT_EQ(schedule[2][0], 0) << "3-pass P2 failed for d=" << d;
-    }
   }
 }
 
@@ -295,7 +295,7 @@ TEST(MultiPassTesseractDecoderTest, BoundaryConditionAndCappingTest) {
   ASSERT_NO_THROW(decoder.decode(hits));
 }
 
-TEST(MultiPassTesseractDecoderTest, IntermediatePassLeakageTest) {
+TEST(MultiPassTesseractDecoderTest, PriorReweightingOccurs) {
   stim::DetectorErrorModel dem(R"DEM(
         error(0.1) D0 D1 L0
         error(0.01) D0
@@ -311,7 +311,7 @@ TEST(MultiPassTesseractDecoderTest, IntermediatePassLeakageTest) {
   TesseractConfig config;
   config.dem = dem;
 
-  MultiPassTesseractDecoder decoder(dem, 3, classifier, config, 1, DetOrder::DetIndex, 12345,
+  MultiPassTesseractDecoder decoder(dem, 2, classifier, config, 1, DetOrder::DetIndex, 12345,
                                     SchedulingStrategy::Causal);
 
   std::vector<uint64_t> hits = {0};

@@ -22,8 +22,8 @@ MultiPassTesseractDecoder::MultiPassTesseractDecoder(
       num_det_orders(num_det_orders),
       det_order_method(det_order_method),
       seed(seed) {
-  if (num_passes == 0) {
-    throw std::invalid_argument("num_passes must be at least 1.");
+  if (num_passes < 1 || num_passes > 2) {
+    throw std::invalid_argument("num_passes must be 1 or 2.");
   }
   initialize(dem, classifier);
 }
