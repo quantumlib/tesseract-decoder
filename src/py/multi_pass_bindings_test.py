@@ -29,18 +29,19 @@ def test_multi_pass_sinter_bindings():
     print(f"Predictions: {predictions}", flush=True)
     assert (predictions[0, 0] & 1) == 1
 
-    # 2. Test with Full Decomposer
-    print("Testing with full decomposer...", flush=True)
+    # 2. A decomposer does not replace the required detector classification.
+    print("Testing missing classifier rejection...", flush=True)
     def my_decomposer(input_dem):
         print("Full decomposer called!", flush=True)
         return input_dem
         
     decoder.detector_classifier = None
     decoder.full_decomposer = my_decomposer
-    compiled = decoder.compile_decoder_for_dem(dem=dem)
-    predictions = compiled.decode_shots_bit_packed(bit_packed_detection_event_data=dets)
-    print(f"Predictions: {predictions}", flush=True)
-    assert (predictions[0, 0] & 1) == 1
+    try:
+        decoder.compile_decoder_for_dem(dem=dem)
+        raise AssertionError("Expected detector_classifier to be required")
+    except ValueError as error:
+        assert "detector_classifier" in str(error)
 
 if __name__ == "__main__":
     try:

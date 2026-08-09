@@ -33,7 +33,7 @@ class MultiPassSinterDecoder(sinter.Decoder):
                         return 0
                     if 3 <= c3 <= 5:
                         return 1
-                return 0
+                return -1
             cpp_decoder.detector_classifier = default_classifier
 
         # 3. Apply base configuration (pqlimit, det_beam, etc.)

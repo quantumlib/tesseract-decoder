@@ -11,6 +11,53 @@
 
 namespace tesseract {
 
+namespace {
+
+struct DetectorMetadata {
+  std::map<uint64_t, std::vector<double>> coordinates;
+  std::map<uint64_t, std::string> tags;
+};
+
+DetectorMetadata collect_detector_metadata(const stim::DetectorErrorModel& flattened) {
+  std::set<uint64_t> detector_ids;
+  for (uint64_t d = 0; d < flattened.count_detectors(); ++d) {
+    detector_ids.insert(d);
+  }
+
+  DetectorMetadata metadata;
+  metadata.coordinates = flattened.get_detector_coordinates(detector_ids);
+  for (const auto& instruction : flattened.instructions) {
+    if (instruction.type == stim::DemInstructionType::DEM_DETECTOR) {
+      metadata.tags[instruction.target_data[0].val()] = instruction.tag;
+    }
+  }
+  return metadata;
+}
+
+void validate_detector_classes(const std::vector<int>& detector_classes, size_t num_detectors) {
+  if (detector_classes.size() != num_detectors) {
+    throw std::invalid_argument("Detector classification count does not match the DEM.");
+  }
+
+  std::set<int> unique_classes;
+  for (size_t d = 0; d < detector_classes.size(); ++d) {
+    int classifier_label = detector_classes[d];
+    if (classifier_label < 0) {
+      throw std::invalid_argument(
+          "Detector D" + std::to_string(d) +
+          " could not be classified (missing basis annotation or valid coordinates).");
+    }
+    unique_classes.insert(classifier_label);
+  }
+
+  if (unique_classes.size() != 2) {
+    throw std::invalid_argument("Multi-pass decoding requires exactly 2 detector components; got " +
+                                std::to_string(unique_classes.size()) + ".");
+  }
+}
+
+}  // namespace
+
 MultiPassTesseractDecoder::MultiPassTesseractDecoder(
     const stim::DetectorErrorModel& dem, size_t num_passes, const DetectorClassifier& classifier,
     const TesseractConfig& base_config, size_t num_det_orders, DetOrder det_order_method,
@@ -25,106 +72,80 @@ MultiPassTesseractDecoder::MultiPassTesseractDecoder(
   if (num_passes < 1 || num_passes > 2) {
     throw std::invalid_argument("num_passes must be 1 or 2.");
   }
-  initialize(dem, classifier);
+  initialize(dem, classify_detectors(dem, classifier));
 }
 
-void MultiPassTesseractDecoder::validate_annotations(const stim::DetectorErrorModel& dem,
-                                                     const DetectorClassifier& classifier) {
+MultiPassTesseractDecoder::MultiPassTesseractDecoder(
+    const stim::DetectorErrorModel& dem, size_t num_passes,
+    const std::vector<int>& detector_classes, const TesseractConfig& base_config,
+    size_t num_det_orders, DetOrder det_order_method, uint64_t seed, SchedulingStrategy strategy)
+    : num_passes(num_passes),
+      strategy(strategy),
+      total_global_detectors(dem.count_detectors()),
+      base_config(base_config),
+      num_det_orders(num_det_orders),
+      det_order_method(det_order_method),
+      seed(seed) {
+  if (num_passes < 1 || num_passes > 2) {
+    throw std::invalid_argument("num_passes must be 1 or 2.");
+  }
+  initialize(dem, detector_classes);
+}
+
+std::vector<int> MultiPassTesseractDecoder::classify_detectors(
+    const stim::DetectorErrorModel& dem, const DetectorClassifier& classifier) {
   stim::DetectorErrorModel flattened = dem.flattened();
-  size_t total_global_detectors = (size_t)flattened.count_detectors();
-
-  std::set<uint64_t> all_ids;
-  std::map<uint64_t, std::string> tags;
-  for (const auto& inst : flattened.instructions) {
-    if (inst.type == stim::DemInstructionType::DEM_DETECTOR) {
-      uint64_t d = inst.target_data[0].val();
-      all_ids.insert(d);
-      tags[d] = inst.tag;
-    }
+  DetectorMetadata metadata = collect_detector_metadata(flattened);
+  std::vector<int> detector_classes(flattened.count_detectors());
+  for (size_t d = 0; d < detector_classes.size(); ++d) {
+    const std::vector<double>& coordinates = metadata.coordinates[d];
+    const std::string& tag = metadata.tags[d];
+    detector_classes[d] = classifier((int)d, coordinates, tag);
   }
-  auto coords_map = flattened.get_detector_coordinates(all_ids);
-
-  std::set<int> unique_classes;
-  for (size_t i = 0; i < total_global_detectors; ++i) {
-    std::vector<double> c = coords_map.count(i) ? coords_map.at(i) : std::vector<double>{};
-    std::string t = tags.count(i) ? tags.at(i) : "";
-    int cls = classifier((int)i, c, t);
-    if (cls < 0) {
-      throw std::invalid_argument(
-          "Detector D" + std::to_string(i) +
-          " could not be classified (missing basis annotation or valid coordinates).");
-    }
-    unique_classes.insert(cls);
-  }
-  if (unique_classes.size() < 2) {
-    throw std::invalid_argument(
-        "Multi-pass decoding requires an annotated Stim circuit/DEM with at "
-        "least "
-        "2 stabilizer components.");
-  }
+  validate_detector_classes(detector_classes, flattened.count_detectors());
+  return detector_classes;
 }
 
 void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
-                                           const DetectorClassifier& classifier) {
+                                           const std::vector<int>& detector_classes) {
   stim::DetectorErrorModel flattened = dem.flattened();
-  // std::cout << "DEBUG flattened:\n" << flattened << std::endl;
   total_global_detectors = (size_t)flattened.count_detectors();
-
-  std::vector<int> detector_classes(total_global_detectors, -1);
-  std::set<uint64_t> all_ids;
-  std::map<uint64_t, std::string> tags;
-  for (const auto& inst : flattened.instructions) {
-    if (inst.type == stim::DemInstructionType::DEM_DETECTOR) {
-      uint64_t d = inst.target_data[0].val();
-      all_ids.insert(d);
-      tags[d] = inst.tag;
-    }
-  }
-  auto coords_map = flattened.get_detector_coordinates(all_ids);
-  for (uint64_t i = 0; i < total_global_detectors; ++i) {
-    std::vector<double> c = coords_map.count(i) ? coords_map.at(i) : std::vector<double>{};
-    std::string t = tags.count(i) ? tags.at(i) : "";
-    detector_classes[i] = classifier((int)i, c, t);
-  }
-
-  stim::DetectorErrorModel decomposed =
-      decompose_errors_using_generic_classifier(flattened, classifier, true);
-  // std::cout << "DEBUG decomposed:\n" << decomposed << std::endl;
-  stim::DetectorErrorModel merged = merge_indistinguishable_errors(decomposed);
-  // std::cout << "DEBUG merged:\n" << merged << std::endl;
+  validate_detector_classes(detector_classes, total_global_detectors);
+  DetectorMetadata metadata = collect_detector_metadata(flattened);
 
   std::set<int> unique_classes;
-  for (int c : detector_classes)
-    if (c != -1) unique_classes.insert(c);
+  unique_classes.insert(detector_classes.begin(), detector_classes.end());
 
   std::map<int, int> class_to_comp_id;
   int next_comp_id = 0;
   for (int c : unique_classes) class_to_comp_id[c] = next_comp_id++;
 
-  size_t num_components = unique_classes.size();
-  component_decoders.resize(num_components);
-
-  global_det_to_comp_id.assign(total_global_detectors, -1);
-  for (size_t i = 0; i < total_global_detectors; ++i) {
-    int c = detector_classes[i];
-    if (c != -1 && class_to_comp_id.count(c)) {
-      int cid = class_to_comp_id[c];
-      global_det_to_comp_id[i] = cid;
-      component_decoders[cid].component_detectors.insert((int)i);
-      // std::cout << "DEBUG: Assigned Global Det " << i << " to Component " <<
-      // cid << std::endl;
-    }
+  component_decoders.resize(unique_classes.size());
+  for (const auto& [classifier_label, component_id] : class_to_comp_id) {
+    component_decoders[component_id].classifier_label = classifier_label;
   }
+
+  global_det_to_comp_id.resize(total_global_detectors);
+  for (size_t i = 0; i < total_global_detectors; ++i) {
+    int component_id = class_to_comp_id.at(detector_classes[i]);
+    global_det_to_comp_id[i] = component_id;
+    component_decoders[component_id].component_detectors.insert((int)i);
+  }
+
+  auto detector_component = [&](int detector) {
+    if (detector < 0 || (size_t)detector >= global_det_to_comp_id.size()) {
+      throw std::invalid_argument("Detector D" + std::to_string(detector) + " is out of range.");
+    }
+    return global_det_to_comp_id[detector];
+  };
+
+  stim::DetectorErrorModel decomposed =
+      decompose_errors_using_detector_assignment(flattened, detector_component, true);
+  stim::DetectorErrorModel merged = merge_indistinguishable_errors(decomposed);
 
   ImpliedProbsMap raw_correlations = process_dem_correlations(flattened, global_det_to_comp_id);
 
-  auto component_dems_raw = split_dem_by_component(merged, [&](int d) {
-    return (d >= 0 && (size_t)d < total_global_detectors) ? global_det_to_comp_id[d] : -1;
-  });
-
-  // std::cout << "DEBUG component_dems_raw[0]:\n" << component_dems_raw[0] <<
-  // std::endl; std::cout << "DEBUG component_dems_raw[1]:\n" <<
-  // component_dems_raw[1] << std::endl;
+  auto component_dems_raw = split_dem_by_component(merged, detector_component);
 
   for (size_t i = 0; i < component_decoders.size(); ++i) {
     auto& cd = component_decoders[i];
@@ -135,10 +156,9 @@ void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
 
     stim::DetectorErrorModel local_dem;
     for (size_t global_d = 0; global_d < total_global_detectors; ++global_d) {
-      std::vector<double> c =
-          coords_map.count(global_d) ? coords_map.at(global_d) : std::vector<double>{};
-      std::string t = tags.count(global_d) ? tags.at(global_d) : "";
-      local_dem.append_detector_instruction(c, stim::DemTarget::relative_detector_id(global_d), t);
+      local_dem.append_detector_instruction(metadata.coordinates[global_d],
+                                            stim::DemTarget::relative_detector_id(global_d),
+                                            metadata.tags[global_d]);
     }
 
     for (const auto& inst : component_dems_raw[i].instructions) {

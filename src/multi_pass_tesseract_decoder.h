@@ -33,15 +33,21 @@ class MultiPassTesseractDecoder {
                             size_t num_det_orders = 1, DetOrder det_order_method = DetOrder::DetBFS,
                             uint64_t seed = 0,
                             SchedulingStrategy strategy = SchedulingStrategy::Static);
+  MultiPassTesseractDecoder(const stim::DetectorErrorModel& dem, size_t num_passes,
+                            const std::vector<int>& detector_classes,
+                            const TesseractConfig& base_config = TesseractConfig(),
+                            size_t num_det_orders = 1, DetOrder det_order_method = DetOrder::DetBFS,
+                            uint64_t seed = 0,
+                            SchedulingStrategy strategy = SchedulingStrategy::Static);
+
+  static std::vector<int> classify_detectors(const stim::DetectorErrorModel& dem,
+                                             const DetectorClassifier& classifier);
 
   std::vector<int> decode(const std::vector<uint64_t>& detections);
   MultiPassDecodeResult decode_result(const std::vector<uint64_t>& detections);
 
   void decode_shots(std::vector<stim::SparseShot>& shots,
                     std::vector<std::vector<int>>& obs_predicted);
-
-  static void validate_annotations(const stim::DetectorErrorModel& dem,
-                                   const DetectorClassifier& classifier);
 
   size_t get_last_shot_num_reweights() const {
     return last_shot_num_reweights;
@@ -59,6 +65,7 @@ class MultiPassTesseractDecoder {
 
   struct ComponentDecoder {
     std::unique_ptr<TesseractDecoder> decoder;
+    int classifier_label = -1;
     std::set<int> component_detectors;  // Global indices
     std::map<int, int> global_to_local_det;
     std::vector<double> original_costs;
@@ -84,7 +91,7 @@ class MultiPassTesseractDecoder {
   std::vector<std::vector<size_t>> pass_schedule;
   std::vector<int> global_det_to_comp_id;
 
-  void initialize(const stim::DetectorErrorModel& dem, const DetectorClassifier& classifier);
+  void initialize(const stim::DetectorErrorModel& dem, const std::vector<int>& detector_classes);
   void build_static_schedule();
   void build_causal_schedule();
 

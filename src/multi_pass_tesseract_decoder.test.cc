@@ -59,6 +59,40 @@ TEST(MultiPassTesseractDecoderTest, AcceptsOnlyOneOrTwoPasses) {
   }
 }
 
+TEST(MultiPassTesseractDecoderTest, RequiresTwoFullyClassifiedComponents) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0
+        error(0.1) D1 L0
+        error(0.1) D2
+        detector D0
+        detector D1
+        detector D2
+        logical_observable L0
+    )DEM");
+
+  std::vector<int> calls(3);
+  std::vector<int> labels = {4, 4, 9};
+  auto classifier = [&](int index, const std::vector<double>&, const std::string&) -> int {
+    calls[index]++;
+    return labels[index];
+  };
+  MultiPassTesseractDecoder decoder(dem, 1, classifier);
+  EXPECT_EQ(decoder.num_components(), 2);
+  EXPECT_EQ(calls, std::vector<int>({1, 1, 1}));
+
+  EXPECT_THROW(MultiPassTesseractDecoder(dem, 1, std::vector<int>({4, 4, 4})),
+               std::invalid_argument);
+  EXPECT_THROW(MultiPassTesseractDecoder(dem, 1, std::vector<int>({4, 9, 12})),
+               std::invalid_argument);
+
+  try {
+    MultiPassTesseractDecoder(dem, 1, std::vector<int>({4, -1, 9}));
+    FAIL() << "Expected an unclassified detector to be rejected.";
+  } catch (const std::invalid_argument& error) {
+    EXPECT_NE(std::string(error.what()).find("D1"), std::string::npos);
+  }
+}
+
 TEST(MultiPassTesseractDecoderTest, TwoPassCorrelationBenefit) {
   // Component 0: D0 (Causal)
   // Component 1: D1 (Affected) -> Observable L0
@@ -374,13 +408,15 @@ TEST(MultiPassTesseractDecoderTest, OverlappingSymptomsDistinctObservables) {
   stim::DetectorErrorModel dem(R"DEM(
         error(0.1) D0 L0
         error(0.05) D0 L1
+        error(0.01) D1
         detector D0
+        detector D1
         logical_observable L0
         logical_observable L1
     )DEM");
 
   auto classifier = [](int index, const std::vector<double>& coords,
-                       const std::string& tag) -> int { return 0; };
+                       const std::string& tag) -> int { return index; };
 
   TesseractConfig config;
   config.dem = dem;

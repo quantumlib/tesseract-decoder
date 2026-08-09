@@ -92,6 +92,10 @@ struct MultiPassSinterDecoder {
   }
 
   MultiPassSinterCompiledDecoder compile_decoder_for_dem(const py::object& dem) {
+    if (detector_classifier.is_none()) {
+      throw std::invalid_argument("detector_classifier is required for multi-pass decoding.");
+    }
+
     stim::DetectorErrorModel stim_dem;
 
     if (!full_decomposer.is_none()) {
@@ -103,38 +107,18 @@ struct MultiPassSinterDecoder {
       stim_dem = stim::DetectorErrorModel(py::cast<std::string>(py::str(dem)).c_str());
     }
 
-    std::vector<int> classification;
-    if (!detector_classifier.is_none()) {
-      uint64_t num_dets = stim_dem.count_detectors();
-
-      std::set<uint64_t> detector_ids;
-      std::map<uint64_t, std::string> tags;
-      for (const auto& inst : stim_dem.flattened().instructions) {
-        if (inst.type == stim::DemInstructionType::DEM_DETECTOR) {
-          uint64_t d = inst.target_data[0].val();
-          detector_ids.insert(d);
-          tags[d] = inst.tag;
-        }
-      }
-      auto coords_map = stim_dem.get_detector_coordinates(detector_ids);
-
-      for (uint64_t i = 0; i < num_dets; ++i) {
-        std::vector<double> c = coords_map.count(i) ? coords_map.at(i) : std::vector<double>{};
-        std::string t = tags.count(i) ? tags.at(i) : "";
-        py::gil_scoped_acquire acquire;
-        classification.push_back(py::cast<int>(detector_classifier((int)i, c, t)));
-      }
-    }
-
-    tesseract::DetectorClassifier classifier = [classification](int index,
-                                                                const std::vector<double>& coords,
-                                                                const std::string& tag) -> int {
-      if (index >= 0 && (size_t)index < classification.size()) return classification[index];
-      return 0;
+    py::object python_classifier = detector_classifier;
+    tesseract::DetectorClassifier classifier =
+        [python_classifier](int index, const std::vector<double>& coordinates,
+                            const std::string& tag) -> int {
+      py::gil_scoped_acquire acquire;
+      return py::cast<int>(python_classifier(index, coordinates, tag));
     };
+    std::vector<int> classification =
+        tesseract::MultiPassTesseractDecoder::classify_detectors(stim_dem, classifier);
 
     auto decoder = std::make_unique<tesseract::MultiPassTesseractDecoder>(
-        stim_dem, num_passes, classifier, base_config, num_det_orders, det_order_method, seed,
+        stim_dem, num_passes, classification, base_config, num_det_orders, det_order_method, seed,
         strategy);
 
     return MultiPassSinterCompiledDecoder(std::move(decoder), stim_dem.count_detectors(),

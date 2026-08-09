@@ -225,33 +225,38 @@ stim::DetectorErrorModel decompose_errors_using_detector_assignment(
 stim::DetectorErrorModel decompose_errors_using_generic_classifier(
     const stim::DetectorErrorModel& dem, const DetectorClassifier& classifier,
     bool allow_remnant_errors) {
-  // 1. Collect all detectors and their metadata
+  stim::DetectorErrorModel flattened = dem.flattened();
+
   std::set<uint64_t> all_detector_indices;
   std::map<int, std::string> detector_tags;
-  for (const auto& inst : dem.flattened().instructions) {
+  for (uint64_t d = 0; d < flattened.count_detectors(); ++d) {
+    all_detector_indices.insert(d);
+  }
+  for (const auto& inst : flattened.instructions) {
     if (inst.type == stim::DemInstructionType::DEM_DETECTOR) {
       int d = inst.target_data[0].val();
-      all_detector_indices.insert(d);
       detector_tags[d] = inst.tag;
     }
   }
 
-  auto detector_coords = dem.get_detector_coordinates(all_detector_indices);
+  auto detector_coords = flattened.get_detector_coordinates(all_detector_indices);
 
-  // 2. Pre-classify detectors using the generic classifier
-  std::map<int, int> classification_cache;
+  std::vector<int> classification_cache(flattened.count_detectors());
   for (uint64_t d : all_detector_indices) {
     std::vector<double> coords =
         detector_coords.count(d) ? detector_coords.at(d) : std::vector<double>{};
     classification_cache[d] = classifier((int)d, coords, detector_tags[d]);
   }
 
-  // 3. Decompose using the cached classification
   auto component_func = [&](int d) {
-    return classification_cache.count(d) ? classification_cache.at(d) : 0;
+    if (d < 0 || (size_t)d >= classification_cache.size()) {
+      throw std::invalid_argument("Detector D" + std::to_string(d) + " is out of range.");
+    }
+    return classification_cache[d];
   };
 
-  return decompose_errors_using_detector_assignment(dem, component_func, allow_remnant_errors);
+  return decompose_errors_using_detector_assignment(flattened, component_func,
+                                                    allow_remnant_errors);
 }
 
 std::map<int, stim::DetectorErrorModel> split_dem_by_component(
