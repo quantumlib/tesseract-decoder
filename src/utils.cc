@@ -331,16 +331,15 @@ std::vector<std::vector<size_t>> build_gari_detector_orders(const stim::Circuit&
     if (source_order.size() != layout.source_detector_count()) {
       throw gari_layout_error(layout.path, "source detector order has the wrong size.");
     }
-    std::vector<size_t> gari_order;
-    gari_order.reserve(layout.gari_detector_count);
-    // Existing orders contain source detector IDs. Map those IDs to physical
-    // GARI rows, then visit the virtual rows in their natural order.
-    for (size_t source : source_order) {
-      gari_order.push_back(layout.source_to_gari.at(source));
+    std::vector<size_t> gari_order(layout.gari_detector_count);
+    // Source orders map each detector to its rank. Relabel the physical rows
+    // while converting those ranks to the sequence consumed by Tesseract.
+    for (size_t source = 0; source < source_order.size(); ++source) {
+      gari_order.at(source_order[source]) = layout.source_to_gari.at(source);
     }
     for (size_t detector = layout.source_detector_count(); detector < layout.gari_detector_count;
          ++detector) {
-      gari_order.push_back(detector);
+      gari_order[detector] = detector;
     }
     gari_orders.push_back(std::move(gari_order));
   }

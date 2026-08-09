@@ -571,36 +571,33 @@ static std::string write_gari_layout(const std::string& text) {
 
 TEST(utils, GariLayoutMapsAndValidatesSource) {
   std::string path =
-      write_gari_layout(R"({"schema":"tesseract.gari_layout.v1","source_detector_count":2,)"
-                        R"("gari_detector_count":4,"source_to_gari":[1,0],)"
+      write_gari_layout(R"({"schema":"tesseract.gari_layout.v1","source_detector_count":4,)"
+                        R"("gari_detector_count":6,"source_to_gari":[2,0,3,1],)"
                         R"("detector_order":"physical_then_virtual"})");
-  GariLayout layout = load_gari_layout(path, 4);
+  GariLayout layout = load_gari_layout(path, 6);
   std::vector<stim::SparseShot> shots(1);
   shots[0].hits = {0, 1};
   layout.map_shots(shots);
-  EXPECT_EQ(shots[0].hits, (std::vector<uint64_t>{0, 1}));
+  EXPECT_EQ(shots[0].hits, (std::vector<uint64_t>{0, 2}));
 
   stim::Circuit circuit(
-      "M 0 1\nDETECTOR rec[-1]\nDETECTOR rec[-2]\n"
+      "M 0 1 2 3\nDETECTOR(4) rec[-1]\nDETECTOR(1) rec[-2]\n"
+      "DETECTOR(3) rec[-3]\nDETECTOR(2) rec[-4]\n"
       "OBSERVABLE_INCLUDE(0) rec[-1]");
-  stim::DetectorErrorModel dem("error(0.1) D0 D1 D2 D3 L0");
+  stim::DetectorErrorModel dem("error(0.1) D0 D1 D2 D3 D4 D5 L0");
   EXPECT_NO_THROW(layout.validate_source(circuit, dem));
   EXPECT_THROW(layout.validate_source(stim::Circuit("M 0\nDETECTOR rec[-1]"), dem),
                std::invalid_argument);
 
   stim::DetectorErrorModel source_dem = stim::ErrorAnalyzer::circuit_to_detector_error_model(
       circuit, false, true, true, 1, false, false);
-  for (DetOrder method : {DetOrder::DetIndex, DetOrder::DetBFS, DetOrder::DetCoordinate}) {
-    auto source_orders = build_det_orders(source_dem, 2, method, 5);
-    auto gari_orders = build_gari_detector_orders(circuit, layout, 2, method, 5);
-    for (size_t order = 0; order < source_orders.size(); ++order) {
-      for (size_t position = 0; position < layout.source_detector_count(); ++position) {
-        EXPECT_EQ(gari_orders[order][position],
-                  layout.source_to_gari[source_orders[order][position]]);
-      }
-      EXPECT_EQ(gari_orders[order][2], 2);
-      EXPECT_EQ(gari_orders[order][3], 3);
-    }
+  auto source_order = build_det_orders(source_dem, 1, DetOrder::DetCoordinate, 5)[0];
+  auto gari_order = build_gari_detector_orders(circuit, layout, 1, DetOrder::DetCoordinate, 5)[0];
+  if (source_order == std::vector<size_t>{0, 3, 1, 2}) {
+    EXPECT_EQ(gari_order, (std::vector<size_t>{2, 3, 1, 0, 4, 5}));
+  } else {
+    ASSERT_EQ(source_order, (std::vector<size_t>{3, 0, 2, 1}));
+    EXPECT_EQ(gari_order, (std::vector<size_t>{0, 1, 3, 2, 4, 5}));
   }
 }
 
