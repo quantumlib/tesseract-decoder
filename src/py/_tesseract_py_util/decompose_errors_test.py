@@ -15,23 +15,22 @@ from _tesseract_py_util.decompose_errors import (
 )
 
 
-def _demo_dem() -> stim.DetectorErrorModel:
-    return stim.DetectorErrorModel("""
-        detector(0, 0, 0) D0
-        detector(2, 0, 1) D1
-        error(0.1) D0
-        error(0.2) D1
-        error(0.3) D0 D1
-        """)
+DEMO_DEM = stim.DetectorErrorModel("""
+    detector(0, 0, 0) D0
+    detector(2, 0, 1) D1
+    error(0.1) D0
+    error(0.2) D1
+    error(0.3) D0 D1
+    """)
 
 
 def test_decompose_errors_rejects_unknown_method():
     with pytest.raises(ValueError, match="Unknown decomposition method"):
-        decompose_errors(_demo_dem(), method="bad-method")
+        decompose_errors(DEMO_DEM, method="bad-method")
 
 
 def test_decompose_errors_default_method():
-    actual = decompose_errors(_demo_dem())
+    actual = decompose_errors(DEMO_DEM)
     expected = stim.DetectorErrorModel("""
         detector(0, 0, 0) D0
         detector(2, 0, 1) D1
