@@ -56,13 +56,13 @@ class MultiPassTesseractDecoder {
                             const TesseractConfig& base_config = TesseractConfig(),
                             size_t num_det_orders = 1, DetOrder det_order_method = DetOrder::DetBFS,
                             uint64_t seed = 0,
-                            SchedulingStrategy strategy = SchedulingStrategy::Static);
+                            SchedulingStrategy strategy = SchedulingStrategy::Causal);
   MultiPassTesseractDecoder(const stim::DetectorErrorModel& dem, size_t num_passes,
                             const std::vector<int>& detector_classes,
                             const TesseractConfig& base_config = TesseractConfig(),
                             size_t num_det_orders = 1, DetOrder det_order_method = DetOrder::DetBFS,
                             uint64_t seed = 0,
-                            SchedulingStrategy strategy = SchedulingStrategy::Static);
+                            SchedulingStrategy strategy = SchedulingStrategy::Causal);
 
   static std::vector<int> classify_detectors(const stim::DetectorErrorModel& dem,
                                              const DetectorClassifier& classifier);

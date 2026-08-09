@@ -116,8 +116,7 @@ TEST(MultiPassTesseractDecoderTest, TwoPassCorrelationBenefit) {
 
   TesseractConfig config;
   config.verbose = true;
-  MultiPassTesseractDecoder decoder(dem, 2, classifier, config, 1, DetOrder::DetBFS, 0,
-                                    SchedulingStrategy::Causal);
+  MultiPassTesseractDecoder decoder(dem, 2, classifier, config);
 
   // Shot 1: D0 and D1 both fire.
   // Pass 1: Decode Comp 0. D0 is explained by the bridging error (implicit).
@@ -209,9 +208,10 @@ TEST(MultiPassTesseractDecoderTest, ExecutionPlanReflectsDecoderState) {
     )DEM");
 
   MultiPassTesseractDecoder decoder(dem, 2, std::vector<int>({4, 9}), TesseractConfig(), 1,
-                                    DetOrder::DetIndex, 0, SchedulingStrategy::Causal);
+                                    DetOrder::DetIndex);
   MultiPassExecutionPlan plan = decoder.get_execution_plan();
 
+  EXPECT_EQ(plan.strategy, SchedulingStrategy::Causal);
   ASSERT_EQ(plan.components.size(), 2);
   EXPECT_EQ(plan.components[0].classifier_label, 4);
   EXPECT_EQ(plan.components[1].classifier_label, 9);

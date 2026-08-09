@@ -7,16 +7,19 @@ class MultiPassSinterDecoder(sinter.Decoder):
     A sinter-compatible Multi-Pass Tesseract Decoder.
     Wraps the native C++ MultiPassTesseractDecoder.
     """
-    def __init__(self, num_passes: int = 2, detector_classifier=None, **base_config_kwargs):
+    def __init__(self, num_passes: int = 2, detector_classifier=None,
+                 strategy=_core.Causal, **base_config_kwargs):
         if num_passes not in (1, 2):
             raise ValueError("num_passes must be 1 or 2.")
         self.num_passes = num_passes
         self.detector_classifier = detector_classifier
+        self.strategy = strategy
         self.base_config_kwargs = base_config_kwargs
 
     def compile_decoder_for_dem(self, *, dem: stim.DetectorErrorModel) -> sinter.CompiledDecoder:
         # 1. Access the native C++ class
         cpp_decoder = _core.MultiPassSinterDecoder(num_passes=self.num_passes)
+        cpp_decoder.strategy = self.strategy
 
         # 2. Attach the classifier if provided
         if self.detector_classifier is not None:

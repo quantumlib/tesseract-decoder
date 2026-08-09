@@ -114,6 +114,7 @@ py_test(
         "@pypi//stim",
         "@pypi//numpy",
         "//src:lib_tesseract_decoder",
+        ":multi_pass_sinter_decoders",
     ],
     imports = ["..", "."],
 )

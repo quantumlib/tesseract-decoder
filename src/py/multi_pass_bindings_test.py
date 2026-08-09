@@ -2,6 +2,7 @@ import tesseract_decoder
 import stim
 import numpy as np
 import sys
+from multi_pass_sinter_decoders import MultiPassSinterDecoder as PythonMultiPassSinterDecoder
 
 def test_multi_pass_sinter_bindings():
     print(f"Loaded tesseract_decoder from: {tesseract_decoder.__file__}", flush=True)
@@ -18,7 +19,12 @@ def test_multi_pass_sinter_bindings():
     # 1. Test with Detector Classifier Lambda
     print("Testing MultiPassSinterDecoder with lambda...", flush=True)
     decoder = tesseract_decoder.MultiPassSinterDecoder(num_passes=2)
+    assert decoder.strategy == tesseract_decoder.Causal
     decoder.detector_classifier = lambda index, coords, tag: index
+
+    assert PythonMultiPassSinterDecoder().strategy == tesseract_decoder.Causal
+    python_static_decoder = PythonMultiPassSinterDecoder(strategy=tesseract_decoder.Static)
+    assert python_static_decoder.strategy == tesseract_decoder.Static
     
     compiled = decoder.compile_decoder_for_dem(dem=dem)
     
