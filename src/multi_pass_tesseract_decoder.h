@@ -46,7 +46,7 @@ struct MultiPassExecutionPlan {
 struct MultiPassDecodeResult {
   std::vector<int> predictions;
   bool low_confidence = false;
-  double total_cost = 0.0;
+  double total_cost = 0.0;  // Cost of predictions made during the final pass.
 };
 
 class MultiPassTesseractDecoder {

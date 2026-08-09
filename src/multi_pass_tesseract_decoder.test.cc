@@ -116,21 +116,24 @@ TEST(MultiPassTesseractDecoderTest, TwoPassCorrelationBenefit) {
 
   TesseractConfig config;
   config.verbose = true;
-  MultiPassTesseractDecoder decoder(dem, 2, classifier, config);
+  MultiPassTesseractDecoder decoder(dem, 2, classifier, config, 1, DetOrder::DetBFS, 0,
+                                    SchedulingStrategy::Causal);
 
   // Shot 1: D0 and D1 both fire.
   // Pass 1: Decode Comp 0. D0 is explained by the bridging error (implicit).
   // Reweight: D1 L0 in Comp 1 becomes more likely.
   // Pass 2: Decode Comp 1.
   std::vector<uint64_t> detections = {0, 1};
-  std::vector<int> result = decoder.decode(detections);
+  MultiPassDecodeResult result = decoder.decode_result(detections);
 
   // In this specific model, if D0 and D1 both fire,
   // the most likely explanation is the bridging error (0.1)
   // vs independent (0.01 * 0.2 = 0.002).
   // The bridging error flips L0.
   // So we expect L0 to be flipped.
-  ASSERT_TRUE(std::find(result.begin(), result.end(), 0) != result.end());
+  ASSERT_TRUE(std::find(result.predictions.begin(), result.predictions.end(), 0) !=
+              result.predictions.end());
+  EXPECT_DOUBLE_EQ(result.total_cost, 0.0);
 }
 
 TEST(MultiPassTesseractDecoderTest, DisjointDecoding) {

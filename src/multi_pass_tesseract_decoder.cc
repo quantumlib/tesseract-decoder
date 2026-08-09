@@ -439,7 +439,6 @@ MultiPassDecodeResult MultiPassTesseractDecoder::decode_result(
       aggregate_low_confidence = true;
     }
     if (!preds.empty()) {
-      aggregate_cost += cd.decoder->cost_from_errors(preds);
       std::vector<int> local_flips = cd.decoder->get_flipped_observables(preds);
       for (int obs : local_flips) {
         if (flipped_observables.count(obs))
@@ -448,6 +447,12 @@ MultiPassDecodeResult MultiPassTesseractDecoder::decode_result(
           flipped_observables.insert(obs);
       }
     }
+  }
+
+  for (size_t comp_idx : pass_schedule.back()) {
+    auto& cd = component_decoders[comp_idx];
+    const auto& preds = component_predictions.at(comp_idx);
+    aggregate_cost += cd.decoder->cost_from_errors(preds);
   }
 
   // 3. Surgical Reset: Restore modified costs to leave the internal structures
