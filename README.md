@@ -147,6 +147,43 @@ Using a Detection Event File and Observable Flips:
 Tesseract supports reading and writing from all of Stim's standard [output
 formats](https://github.com/quantumlib/Stim/blob/main/doc/result_formats.md).
 
+### Decoding with GARI
+
+Generate a GARI matrix DEM and its companion detector layout from a source circuit:
+
+```bash
+python src/py/_tesseract_py_util/gari.py \
+    --circuit circuit_file.stim \
+    --prior xor \
+    --out-dir gari_output
+```
+
+This writes `gari_output/circuit_file_gari_xor.dem` and
+`gari_output/circuit_file_gari_xor_layout.json`. Sample from the source circuit and decode with the
+generated pair:
+
+```bash
+./bazel-bin/src/tesseract \
+    --circuit circuit_file.stim \
+    --dem gari_output/circuit_file_gari_xor.dem \
+    --gari-layout gari_output/circuit_file_gari_xor_layout.json \
+    --sample-num-shots 100 \
+    --sample-seed 1234 \
+    --threads 1 \
+    --pqlimit 1000000 \
+    --beam 5 \
+    --beam-climbing \
+    --no-revisit-dets \
+    --print-stats \
+    --stats-out gari-stats.json
+```
+
+The GARI matrix DEM is a decoding representation and must not be sampled. Detection events must
+come from the source circuit, or from an input file in the source circuit's detector order, and the
+layout must be paired with the generated DEM. See
+[GARI transformed matrices](src/py/README.md#gari-transformed-matrices) for supported circuit
+conventions and Python API details.
+
 ### Performance Optimization
 
 Here are some tips for improving performance:
