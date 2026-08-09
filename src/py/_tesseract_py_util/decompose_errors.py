@@ -427,30 +427,7 @@ def undecompose_errors(dem: stim.DetectorErrorModel) -> stim.DetectorErrorModel:
     return undecomposed_dem
 
 
-def call_decompose_errors(
-    input_fname: str,
-    output_fname: str,
-    method: str,
-    strip_undecomposable_errors: bool,
-) -> None:
-    """Reads, decomposes, and writes one detector error model."""
-    if input_fname == "-":
-        dem = stim.DetectorErrorModel(sys.stdin.read())
-    else:
-        dem = stim.DetectorErrorModel.from_file(input_fname)
-
-    output_dem = decompose_errors(
-        dem,
-        method=method,
-        strip_undecomposable_errors=strip_undecomposable_errors,
-    )
-    if output_fname == "-":
-        print(output_dem)
-    else:
-        output_dem.to_file(output_fname)
-
-
-def main() -> None:
+if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -480,13 +457,18 @@ def main() -> None:
         help="Drop errors that cannot be decomposed instead of failing.",
     )
     args = parser.parse_args()
-    call_decompose_errors(
-        args.input,
-        args.out,
+
+    if args.input == "-":
+        dem = stim.DetectorErrorModel(sys.stdin.read())
+    else:
+        dem = stim.DetectorErrorModel.from_file(args.input)
+
+    output_dem = decompose_errors(
+        dem,
         method=args.method,
         strip_undecomposable_errors=args.strip_undecomposable_errors,
     )
-
-
-if __name__ == "__main__":
-    main()
+    if args.out == "-":
+        print(output_dem)
+    else:
+        output_dem.to_file(args.out)
