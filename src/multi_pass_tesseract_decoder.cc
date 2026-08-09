@@ -11,6 +11,35 @@
 
 namespace tesseract {
 
+std::string MultiPassExecutionPlan::str() const {
+  std::stringstream ss;
+  ss << "Multi-pass execution plan\n"
+     << "strategy: " << (strategy == SchedulingStrategy::Static ? "static" : "causal") << '\n'
+     << "passes: " << num_passes << '\n'
+     << "components: " << components.size() << '\n';
+  for (const auto& component : components) {
+    ss << "  component " << component.id << ": label=" << component.classifier_label
+       << " detectors=" << component.detector_count
+       << " observable=" << (component.affects_observable ? "yes" : "no") << '\n';
+  }
+  ss << "dependencies:\n";
+  if (dependencies.empty()) ss << "  none\n";
+  for (const auto& dependency : dependencies) {
+    ss << "  component " << dependency.source_component << " -> component "
+       << dependency.target_component << ": " << dependency.rule_count << " rules\n";
+  }
+  ss << "schedule:\n";
+  for (size_t pass = 0; pass < pass_schedule.size(); ++pass) {
+    ss << "  pass " << pass + 1 << ": [";
+    for (size_t i = 0; i < pass_schedule[pass].size(); ++i) {
+      if (i) ss << ", ";
+      ss << pass_schedule[pass][i];
+    }
+    ss << "]\n";
+  }
+  return ss.str();
+}
+
 namespace {
 
 struct DetectorMetadata {
@@ -276,6 +305,28 @@ void MultiPassTesseractDecoder::build_causal_schedule() {
       pass_schedule[p].push_back(c_idx);
     }
   }
+}
+
+MultiPassExecutionPlan MultiPassTesseractDecoder::get_execution_plan() const {
+  MultiPassExecutionPlan plan{num_passes, strategy, {}, {}, pass_schedule};
+  for (size_t component_id = 0; component_id < component_decoders.size(); ++component_id) {
+    const auto& component = component_decoders[component_id];
+    plan.components.push_back({component_id, component.classifier_label,
+                               component.component_detectors.size(), component.affects_observable});
+  }
+
+  std::map<std::pair<size_t, size_t>, size_t> dependency_counts;
+  for (size_t source = 0; source < component_decoders.size(); ++source) {
+    for (const auto& rules : component_decoders[source].error_index_to_rules) {
+      for (const auto& rule : rules) {
+        dependency_counts[{source, rule.target_comp_idx}]++;
+      }
+    }
+  }
+  for (const auto& [components, rule_count] : dependency_counts) {
+    plan.dependencies.push_back({components.first, components.second, rule_count});
+  }
+  return plan;
 }
 
 std::vector<int> MultiPassTesseractDecoder::decode(const std::vector<uint64_t>& detections) {

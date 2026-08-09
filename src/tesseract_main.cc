@@ -32,6 +32,7 @@
 
 struct Args {
   bool multipass = false;
+  bool print_multipass_plan = false;
   std::string multipass_strategy = "causal";
   size_t num_passes = 2;
   std::string circuit_path;
@@ -138,6 +139,9 @@ struct Args {
     }
     if (num_passes < 1 || num_passes > 2) {
       throw std::invalid_argument("--num-passes must be 1 or 2.");
+    }
+    if (print_multipass_plan && !multipass) {
+      throw std::invalid_argument("--print-multipass-plan requires --multipass.");
     }
     if (num_threads > 1000) {
       throw std::invalid_argument(
@@ -523,6 +527,10 @@ int main(int argc, char* argv[]) {
       .help("Enable multi-pass graph shattering for correlated error decoding")
       .flag()
       .store_into(args.multipass);
+  program.add_argument("--print-multipass-plan")
+      .help("Print the multi-pass components, dependencies, and schedule to stderr")
+      .flag()
+      .store_into(args.print_multipass_plan);
   program.add_argument("--multipass-strategy", "--multipass_strategy")
       .help(
           "Multi-pass scheduling strategy: static or causal (default = causal). Note: static "
@@ -619,6 +627,12 @@ int main(int argc, char* argv[]) {
     try {
       detector_classes =
           tesseract::MultiPassTesseractDecoder::classify_detectors(config.dem, classifier);
+      if (args.print_multipass_plan) {
+        mp_decoders[0] = std::make_unique<tesseract::MultiPassTesseractDecoder>(
+            config.dem, args.num_passes, detector_classes, config, args.num_det_orders,
+            args.det_order_method, args.det_order_seed, strategy_val);
+        std::cerr << mp_decoders[0]->get_execution_plan().str();
+      }
     } catch (const std::invalid_argument& error) {
       std::cerr << "Error: " << error.what() << std::endl;
       return 1;

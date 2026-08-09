@@ -3,6 +3,7 @@
 
 #include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "dem_decomposition.h"
@@ -17,6 +18,29 @@ namespace tesseract {
 enum class SchedulingStrategy {
   Static,  // Current: All components in all passes
   Causal   // Topological: Causal back-propagation
+};
+
+struct MultiPassExecutionPlan {
+  struct Component {
+    size_t id;
+    int classifier_label;
+    size_t detector_count;
+    bool affects_observable;
+  };
+
+  struct Dependency {
+    size_t source_component;
+    size_t target_component;
+    size_t rule_count;
+  };
+
+  size_t num_passes;
+  SchedulingStrategy strategy;
+  std::vector<Component> components;
+  std::vector<Dependency> dependencies;
+  std::vector<std::vector<size_t>> pass_schedule;
+
+  std::string str() const;
 };
 
 struct MultiPassDecodeResult {
@@ -43,6 +67,7 @@ class MultiPassTesseractDecoder {
   static std::vector<int> classify_detectors(const stim::DetectorErrorModel& dem,
                                              const DetectorClassifier& classifier);
 
+  MultiPassExecutionPlan get_execution_plan() const;
   std::vector<int> decode(const std::vector<uint64_t>& detections);
   MultiPassDecodeResult decode_result(const std::vector<uint64_t>& detections);
 

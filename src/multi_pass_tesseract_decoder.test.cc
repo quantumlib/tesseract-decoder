@@ -195,6 +195,32 @@ TEST(MultiPassTesseractDecoderTest, CausalScheduleSurfaceCode) {
   ASSERT_EQ(schedule[1][0], 0);  // Component 0 (Class 0) runs last
 }
 
+TEST(MultiPassTesseractDecoderTest, ExecutionPlanReflectsDecoderState) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 D1 L0
+        error(0.01) D0
+        error(0.2) D1 L0
+        detector D0
+        detector D1
+        logical_observable L0
+    )DEM");
+
+  MultiPassTesseractDecoder decoder(dem, 2, std::vector<int>({4, 9}), TesseractConfig(), 1,
+                                    DetOrder::DetIndex, 0, SchedulingStrategy::Causal);
+  MultiPassExecutionPlan plan = decoder.get_execution_plan();
+
+  ASSERT_EQ(plan.components.size(), 2);
+  EXPECT_EQ(plan.components[0].classifier_label, 4);
+  EXPECT_EQ(plan.components[1].classifier_label, 9);
+  ASSERT_EQ(plan.dependencies.size(), 2);
+  EXPECT_EQ(plan.dependencies[0].source_component, 0);
+  EXPECT_EQ(plan.dependencies[0].target_component, 1);
+  EXPECT_GT(plan.dependencies[0].rule_count, 0);
+  EXPECT_EQ(plan.pass_schedule, std::vector<std::vector<size_t>>({{0}, {1}}));
+  EXPECT_NE(plan.str().find("component 0: label=4"), std::string::npos);
+  EXPECT_NE(plan.str().find("pass 2: [1]"), std::string::npos);
+}
+
 TEST(MultiPassTesseractDecoderTest, SurfaceCodePartitioning) {
   std::vector<int> distances = {3, 5, 7};
   for (int d : distances) {
