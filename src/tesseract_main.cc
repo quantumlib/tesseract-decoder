@@ -639,7 +639,6 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  auto start_global_time = std::chrono::high_resolution_clock::now();
   size_t shot = parallel_for_shots_in_order(
       shots.size(), args.num_threads,
       [&](size_t thread_index, size_t shot_index) {
@@ -721,12 +720,6 @@ int main(int argc, char* argv[]) {
         return !has_obs || num_errors.load() < args.max_errors;
       });
 
-  auto stop_global_time = std::chrono::high_resolution_clock::now();
-  double global_elapsed =
-      std::chrono::duration_cast<std::chrono::microseconds>(stop_global_time - start_global_time)
-          .count() /
-      1e6;
-
   std::vector<size_t> error_use_totals(original_dem.count_errors());
   for (const auto& error_use : error_use_per_thread) {
     for (size_t ei = 0; ei < error_use_totals.size(); ++ei) {
@@ -782,7 +775,6 @@ int main(int argc, char* argv[]) {
         {"num_det_orders", args.num_det_orders},
         {"det_order_seed", args.det_order_seed},
         {"total_time_seconds", total_time_seconds.load()},
-        {"wall_clock_time_seconds", global_elapsed},
         {"num_errors", has_obs ? nlohmann::json(num_errors.load()) : nullptr},
         {"num_low_confidence", num_low_confidence.load()},
         {"num_shots", shot},
