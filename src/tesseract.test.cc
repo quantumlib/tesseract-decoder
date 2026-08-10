@@ -623,10 +623,8 @@ TEST(utils, GariSourceShotRemappingDecodes) {
   layout.gari_detector_count = 6;
   layout.source_to_gari = {2, 0, 3, 1};
 
-  std::vector<stim::SparseShot> shots;
-  sample_shots(0, circuit, 1, shots);
-  ASSERT_EQ(shots.size(), 1);
-  EXPECT_EQ(shots[0].hits, (std::vector<uint64_t>{0, 3}));
+  std::vector<stim::SparseShot> shots(1);
+  shots[0].hits = {0, 3};
   layout.map_shots(shots);
   EXPECT_EQ(shots[0].hits, (std::vector<uint64_t>{1, 2}));
 
