@@ -47,16 +47,19 @@ ctest
 
 ## Building the Python Wheel
 
+Normal local builds remain native. Use `--config=wheel` when building
+distributable Linux wheels.
+
 To build the Python wheel for `tesseract_decoder` locally, you will need to use the `bazel build` command and provide the version and Python target version as command-line arguments. This is because the `py_wheel` rule in the `BUILD` file uses "Make" variable substitution, which expects these values to be defined at build time.
 
 Use the following command:
 
 ```bash
-bazel build --jobs=1 //:tesseract_decoder_wheel --define=VERSION=0.1.1 --define=TARGET_VERSION=py313
+bazel build --jobs=1 --config=wheel //:tesseract_decoder_wheel --define=VERSION=0.1.1 --define=TARGET_VERSION=cp313
 ```
 
 - `--define=VERSION=0.1.1`: Sets the version of the wheel. You should replace `0.1.1` with the current version from the `_version.py` file.
-- `--define=TARGET_VERSION=py313`: Sets the Python version tag for the wheel. Replace `py313` with the appropriate tag for the Python version you are targeting (e.g., `py312` for Python 3.12).
+- `--define=TARGET_VERSION=cp313`: Sets the Python version tag for the wheel. Replace `cp313` with the appropriate tag for the Python version you are targeting (e.g., `cp312` for Python 3.12).
 
 The resulting wheel file will be located in the `bazel-bin/` directory.
 
