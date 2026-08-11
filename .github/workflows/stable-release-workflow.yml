@@ -43,7 +43,7 @@ jobs:
   build_linux_wheels:
     name: Linux wheels (${{ matrix.python-version }})
     runs-on: ubuntu-24.04
-    container: quay.io/pypa/manylinux_2_28_x86_64
+    container: quay.io/pypa/manylinux_2_28_x86_64@sha256:f854c50adf7b7a325bc4794316f3758d387a41d61f9e2ebca0f26c7dc8f761d4
     needs: [create_version]
     strategy:
       fail-fast: true
