@@ -83,3 +83,10 @@ jobs:
 
     - name: Bazel tests
       run: bazel test src/... //docs:tutorial_jupytext_sync_test
+
+    - name: Build Python wheel
+      run: |
+        bazel build --jobs=1 \
+          --define=VERSION="$(python3 _version.py)" \
+          --define=TARGET_VERSION=py313 \
+          //:tesseract_decoder_wheel
