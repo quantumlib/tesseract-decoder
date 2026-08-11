@@ -15,6 +15,7 @@
 name: Pre-release Tesseract
 
 on:
+  pull_request:
   push:
     branches:
     - main
@@ -25,6 +26,8 @@ permissions:
 jobs:
   create_version:
     runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.create_version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -32,24 +35,101 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
-      - name: Create version
+      - id: create_version
+        name: Create version
         run: |
-          mkdir version
-          echo "$(python _version.py).dev$(date '+%Y%m%d%H%M%S')" > version/version.txt
-          cat version/version.txt
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: version-file
-          path: version
+          version="$(python _version.py).dev$(date '+%Y%m%d%H%M%S')"
+          echo "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
-  build_wheels:
-    runs-on: ${{ matrix.os }}
+  build_linux_wheels:
+    name: Linux wheels (${{ matrix.python-version }})
+    runs-on: ubuntu-24.04
+    container: quay.io/pypa/manylinux_2_28_x86_64
     needs: [create_version]
     strategy:
       fail-fast: true
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04, macos-14]
-        python-version: ['3.11', '3.12', '3.13']
+        include:
+          - python-version: '3.11'
+            python-abi: cp311-cp311
+            target-version: py311
+          - python-version: '3.12'
+            python-abi: cp312-cp312
+            target-version: py312
+          - python-version: '3.13'
+            python-abi: cp313-cp313
+            target-version: py313
+    env:
+      PYTHON_BIN: /opt/python/${{ matrix.python-abi }}/bin/python
+      TARGET_PYTHON: ${{ matrix.python-version }}
+      TARGET_VERSION: ${{ matrix.target-version }}
+      VERSION: ${{ needs.create_version.outputs.version }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Set up Bazel
+      uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+      with:
+        bazelisk-cache: true
+        repository-cache: true
+
+    - name: Build, repair, and validate Linux wheel
+      run: |
+        export PATH="$(dirname "$PYTHON_BIN"):$PATH"
+        python _update_bazel_py_version.py "$TARGET_PYTHON"
+        bazel build --jobs=1 --config=wheel \
+          --define TARGET_VERSION="$TARGET_VERSION" \
+          --define VERSION="$VERSION" \
+          :tesseract_decoder_wheel
+        mkdir -p wheelhouse
+        auditwheel repair \
+          --plat manylinux_2_28_x86_64 \
+          bazel-bin/*.whl \
+          --wheel-dir wheelhouse
+        auditwheel show wheelhouse/*.whl
+        "$PYTHON_BIN" -m venv /tmp/tesseract-wheel-test
+        /tmp/tesseract-wheel-test/bin/python -m pip install --upgrade pip
+        /tmp/tesseract-wheel-test/bin/python -m pip install numpy scipy stim
+        /tmp/tesseract-wheel-test/bin/python -m pip install --no-deps wheelhouse/*.whl
+        (
+          cd /tmp
+          /tmp/tesseract-wheel-test/bin/python - <<'PY'
+        import tesseract_decoder
+        from tesseract_decoder import demutil
+
+        print(tesseract_decoder.__file__)
+        print("wheel import passed")
+        PY
+        )
+
+    - name: Upload Linux wheel
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: python-wheels-linux-${{ matrix.python-version }}
+        path: wheelhouse/*.whl
+
+  build_macos_wheels:
+    name: macOS wheels (${{ matrix.python-version }})
+    runs-on: macos-14
+    needs: [create_version]
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - python-version: '3.11'
+            target-version: py311
+          - python-version: '3.12'
+            target-version: py312
+          - python-version: '3.13'
+            target-version: py313
+    env:
+      TARGET_PYTHON: ${{ matrix.python-version }}
+      TARGET_VERSION: ${{ matrix.target-version }}
+      VERSION: ${{ needs.create_version.outputs.version }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -59,44 +139,47 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-      with:
-        name: version-file
-        path: version
-
     - name: Set up Bazel
       uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
       with:
         bazelisk-cache: true
-        disk-cache: ${{ github.workflow }}-${{ matrix.os }}-py${{ matrix.python-version }}
         repository-cache: true
 
-    - name: Set Python Version
-      env:
-        TARGET_PYTHON: ${{ matrix.python-version }}
+    - name: Build and validate macOS wheel
       run: |
-        echo "set version to ${TARGET_PYTHON}"
-        python _update_bazel_py_version.py $TARGET_PYTHON
+        python _update_bazel_py_version.py "$TARGET_PYTHON"
+        bazel build --jobs=1 --config=wheel \
+          --define TARGET_VERSION="$TARGET_VERSION" \
+          --define VERSION="$VERSION" \
+          :tesseract_decoder_wheel
+        mkdir -p wheelhouse
+        cp bazel-bin/*.whl wheelhouse/
+        python -m venv /tmp/tesseract-wheel-test
+        /tmp/tesseract-wheel-test/bin/python -m pip install --upgrade pip
+        /tmp/tesseract-wheel-test/bin/python -m pip install numpy scipy stim
+        /tmp/tesseract-wheel-test/bin/python -m pip install --no-deps wheelhouse/*.whl
+        (
+          cd /tmp
+          /tmp/tesseract-wheel-test/bin/python - <<'PY'
+        import tesseract_decoder
+        from tesseract_decoder import demutil
 
-    - name: Build package
-      env:
-        TARGET_PYTHON: ${{ matrix.python-version }}
-      run: |
-        glibc_version=$(ldd --version | awk '/ldd/{print $NF}')
-        export GLIBC_VERSION="${glibc_version//./_}"
-        echo $GLIBC_VERSION
-        sed "s/^MANYLINUX_VERSION.*/MANYLINUX_VERSION=\"manylinux_${GLIBC_VERSION}_x86_64.manylinux2014_x86_64\"/" BUILD -i || true
-        bazel build --define GLIBC_VERSION=$GLIBC_VERSION --define TARGET_VERSION="$(python -c "print(\"py${TARGET_PYTHON}\".replace(\".\", \"\"))")" --define VERSION="$(cat version/version.txt)"  :tesseract_decoder_wheel
+        print(tesseract_decoder.__file__)
+        print("wheel import passed")
+        PY
+        )
 
-    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+    - name: Upload macOS wheel
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
-        name: python-wheels-${{ matrix.os }}-${{ matrix.python-version }}
-        path: ./bazel-bin/*.whl
-
+        name: python-wheels-macos-${{ matrix.python-version }}
+        path: wheelhouse/*.whl
 
   release-wheels:
     name: Publish all wheels
-    needs: [build_wheels]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build_linux_wheels, build_macos_wheels]
     runs-on: ubuntu-24.04
 
     steps:
@@ -115,7 +198,6 @@ jobs:
         password: ${{ secrets.TEST_PYPI_TOKEN }}
         packages-dir: wheelhouse/
         verbose: true
-
 
     - name: Publish package to pypi
       uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2

@@ -67,7 +67,6 @@ jobs:
       uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
       with:
         bazelisk-cache: true
-        # disk-cache: ${{ github.workflow }}-${{ matrix.os }}
         repository-cache: true
 
     - name: Install clang-format (Linux)
@@ -82,4 +81,4 @@ jobs:
         brew install clang-format
 
     - name: Bazel tests
-      run: bazel test src/... //docs:tutorial_jupytext_sync_test
+      run: bazel test --jobs=1 src/... //docs:tutorial_jupytext_sync_test

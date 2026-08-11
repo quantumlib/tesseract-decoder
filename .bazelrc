@@ -5,6 +5,10 @@ common --enable_platform_specific_config
 
 build --cxxopt='-std=c++20'
 
+# Public Linux wheels use a portable x86-64 baseline. Normal builds retain the
+# native CPU tuning in //src:OPT_COPTS.
+build:wheel --define=tesseract_portable_wheel=true
+
 # Needed to fix issues like this which arose in GCC 15 on Linux:
 # "error: relocation refers to local symbol [...], which is defined in a discarded section"
 # We keep it linux-only so macos does not receive GNU ld flags
