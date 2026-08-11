@@ -29,6 +29,7 @@ py_wheel(
         "stim",
     ],
     python_tag="$(TARGET_VERSION)",
+    abi="$(TARGET_VERSION)",
     platform= select({
         ":macos_arm": "macosx_11_0_arm64",
         ":macos_x86": "macosx_10_13_x86_64",
