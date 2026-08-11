@@ -89,8 +89,8 @@ jobs:
           --wheel-dir wheelhouse
         auditwheel show wheelhouse/*.whl
         "$PYTHON_BIN" -m venv /tmp/tesseract-wheel-test
-        /tmp/tesseract-wheel-test/bin/python -m pip install --upgrade pip
-        /tmp/tesseract-wheel-test/bin/python -m pip install numpy scipy stim
+        /tmp/tesseract-wheel-test/bin/python -m pip install --require-hashes \
+          -r src/py/requirements_lock.txt
         /tmp/tesseract-wheel-test/bin/python -m pip install --no-deps wheelhouse/*.whl
         (
           cd /tmp
@@ -152,8 +152,8 @@ jobs:
         mkdir -p wheelhouse
         cp bazel-bin/*.whl wheelhouse/
         python -m venv /tmp/tesseract-wheel-test
-        /tmp/tesseract-wheel-test/bin/python -m pip install --upgrade pip
-        /tmp/tesseract-wheel-test/bin/python -m pip install numpy scipy stim
+        /tmp/tesseract-wheel-test/bin/python -m pip install --require-hashes \
+          -r src/py/requirements_lock.txt
         /tmp/tesseract-wheel-test/bin/python -m pip install --no-deps wheelhouse/*.whl
         (
           cd /tmp
