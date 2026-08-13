@@ -40,14 +40,6 @@ config_setting(
     ],
 )
 
-config_setting(
-    name = "macos_x86",
-    constraint_values = [
-        "@platforms//os:macos",
-        "@platforms//cpu:x86_64",
-    ],
-)
-
 OPT_COPTS = select({
     "//conditions:default": [
         "-Ofast",
@@ -59,7 +51,6 @@ OPT_COPTS = select({
 }) + select({
     ":portable_linux_wheel": ["-march=x86-64"],
     ":macos_arm": ["-mmacosx-version-min=11.0"],
-    ":macos_x86": ["-mmacosx-version-min=10.15"],
     "//conditions:default": ["-march=native",],
 })
 

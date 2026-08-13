@@ -32,7 +32,6 @@ py_wheel(
     abi="$(TARGET_VERSION)",
     platform= select({
         ":macos_arm": "macosx_11_0_arm64",
-        ":macos_x86": "macosx_10_15_x86_64",
         "@platforms//os:windows": "win32",
         "@platforms//os:linux": "linux_x86_64",
     }),
@@ -50,13 +49,5 @@ config_setting(
     constraint_values = [
         "@platforms//os:macos",
         "@platforms//cpu:arm64",
-    ],
-)
-
-config_setting(
-    name = "macos_x86",
-    constraint_values = [
-        "@platforms//os:macos",
-        "@platforms//cpu:x86_64",
     ],
 )

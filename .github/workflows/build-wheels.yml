@@ -103,50 +103,20 @@ jobs:
         path: wheelhouse/*.whl
 
   build_macos_wheels:
-    name: macOS ${{ matrix.architecture }} wheels (${{ matrix.python-version }})
-    runs-on: ${{ matrix.runner }}
+    name: macOS arm64 wheels (${{ matrix.python-version }})
+    runs-on: macos-14
     strategy:
       fail-fast: true
       matrix:
         include:
           - python-version: '3.11'
             target-version: cp311
-            runner: macos-15
-            architecture: arm64
-            deployment-target: '11.0'
-            bazel-config: macos_arm64_wheel
           - python-version: '3.12'
             target-version: cp312
-            runner: macos-15
-            architecture: arm64
-            deployment-target: '11.0'
-            bazel-config: macos_arm64_wheel
           - python-version: '3.13'
             target-version: cp313
-            runner: macos-15
-            architecture: arm64
-            deployment-target: '11.0'
-            bazel-config: macos_arm64_wheel
-          - python-version: '3.11'
-            target-version: cp311
-            runner: macos-15-intel
-            architecture: x86_64
-            deployment-target: '10.15'
-            bazel-config: macos_x86_64_wheel
-          - python-version: '3.12'
-            target-version: cp312
-            runner: macos-15-intel
-            architecture: x86_64
-            deployment-target: '10.15'
-            bazel-config: macos_x86_64_wheel
-          - python-version: '3.13'
-            target-version: cp313
-            runner: macos-15-intel
-            architecture: x86_64
-            deployment-target: '10.15'
-            bazel-config: macos_x86_64_wheel
     env:
-      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deployment-target }}
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
       TARGET_PYTHON: ${{ matrix.python-version }}
       TARGET_VERSION: ${{ matrix.target-version }}
       VERSION: ${{ inputs.version }}
@@ -156,7 +126,7 @@ jobs:
         persist-credentials: false
 
     - name: Verify runner architecture
-      run: test "$(uname -m)" = "${{ matrix.architecture }}"
+      run: test "$(uname -m)" = "arm64"
 
     - name: Set up Python
       uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -169,91 +139,34 @@ jobs:
         bazelisk-cache: true
         repository-cache: true
 
-    - name: Build and validate macOS wheel
+    - name: Build macOS arm64 wheel
       run: |
         python _update_bazel_py_version.py "$TARGET_PYTHON"
-        bazel build --jobs=1 --config=wheel --config=${{ matrix.bazel-config }} \
+        bazel build --jobs=1 --config=wheel --config=macos_arm64_wheel \
           --define TARGET_VERSION="$TARGET_VERSION" \
           --define VERSION="$VERSION" \
           :tesseract_decoder_wheel
         mkdir -p wheelhouse
         cp bazel-bin/*.whl wheelhouse/
-        python - <<'PY'
-        import pathlib
-        import re
-        import subprocess
-        import zipfile
 
-        wheel = next(pathlib.Path("wheelhouse").glob("*.whl"))
-        match = re.search(
-            r"-macosx_(\d+)_(\d+)_(arm64|x86_64)\.whl$", wheel.name
-        )
-        if match is None:
-            raise SystemExit(f"could not determine macOS tag from {wheel.name}")
-        declared_target = (int(match.group(1)), int(match.group(2)), 0)
+    - name: Check macOS wheel deployment target
+      run: python devtools/check_macos_wheel.py wheelhouse/*.whl
 
-        def parse_version(value):
-            parts = [int(part) for part in value.split(".")]
-            return tuple((parts + [0, 0, 0])[:3])
-
-        inspect_dir = pathlib.Path("wheel-inspect")
-        with zipfile.ZipFile(wheel) as archive:
-            archive.extractall(inspect_dir)
-        extensions = sorted(inspect_dir.rglob("*.so"))
-        if not extensions:
-            raise SystemExit(f"no Mach-O extension found in {wheel.name}")
-
-        for extension in extensions:
-            output = subprocess.check_output(
-                ["otool", "-l", str(extension)], text=True
-            )
-            versions = []
-            for command in re.split(r"\n\s*Load command \d+\n", output):
-                if re.search(r"^\s*cmd LC_BUILD_VERSION$", command, re.MULTILINE):
-                    platform = re.search(
-                        r"^\s*platform\s+(\S+)$", command, re.MULTILINE
-                    )
-                    minos = re.search(
-                        r"^\s*minos\s+(\S+)$", command, re.MULTILINE
-                    )
-                    if platform and platform.group(1) in {"macos", "1"} and minos:
-                        versions.append(("LC_BUILD_VERSION", minos.group(1)))
-                if re.search(
-                    r"^\s*cmd LC_VERSION_MIN_MACOSX$", command, re.MULTILINE
-                ):
-                    version = re.search(
-                        r"^\s*version\s+(\S+)$", command, re.MULTILINE
-                    )
-                    if version:
-                        versions.append(("LC_VERSION_MIN_MACOSX", version.group(1)))
-            if not versions:
-                raise SystemExit(f"no macOS minimum-version load command in {extension}")
-            for command, value in versions:
-                if parse_version(value) > declared_target:
-                    raise SystemExit(
-                        f"{extension}: {command} minimum {value} exceeds "
-                        f"wheel tag macosx_{declared_target[0]}_{declared_target[1]}"
-                    )
-                print(f"{extension}: {command} minimum {value}")
-        PY
+    - name: Install and import-test macOS wheel
+      run: |
         python -m venv /tmp/tesseract-wheel-test
         /tmp/tesseract-wheel-test/bin/python -m pip install \
           --only-binary=:all: \
           wheelhouse/*.whl
         (
           cd /tmp
-          /tmp/tesseract-wheel-test/bin/python - <<'PY'
-        import tesseract_decoder
-        from tesseract_decoder import demutil
-
-        print(tesseract_decoder.__file__)
-        print("wheel import passed")
-        PY
+          /tmp/tesseract-wheel-test/bin/python -c \
+            'import tesseract_decoder; from tesseract_decoder import demutil; print(tesseract_decoder.__file__)'
         )
 
     - name: Upload macOS wheel
       if: inputs.upload_artifacts
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
-        name: python-wheels-macos-${{ matrix.architecture }}-${{ matrix.python-version }}
+        name: python-wheels-macos-arm64-${{ matrix.python-version }}
         path: wheelhouse/*.whl
