@@ -103,20 +103,50 @@ jobs:
         path: wheelhouse/*.whl
 
   build_macos_wheels:
-    name: macOS wheels (${{ matrix.python-version }})
-    runs-on: macos-14
+    name: macOS ${{ matrix.architecture }} wheels (${{ matrix.python-version }})
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: true
       matrix:
         include:
           - python-version: '3.11'
             target-version: cp311
+            runner: macos-15
+            architecture: arm64
+            deployment-target: '11.0'
+            bazel-config: macos_arm64_wheel
           - python-version: '3.12'
             target-version: cp312
+            runner: macos-15
+            architecture: arm64
+            deployment-target: '11.0'
+            bazel-config: macos_arm64_wheel
           - python-version: '3.13'
             target-version: cp313
+            runner: macos-15
+            architecture: arm64
+            deployment-target: '11.0'
+            bazel-config: macos_arm64_wheel
+          - python-version: '3.11'
+            target-version: cp311
+            runner: macos-15-intel
+            architecture: x86_64
+            deployment-target: '10.15'
+            bazel-config: macos_x86_64_wheel
+          - python-version: '3.12'
+            target-version: cp312
+            runner: macos-15-intel
+            architecture: x86_64
+            deployment-target: '10.15'
+            bazel-config: macos_x86_64_wheel
+          - python-version: '3.13'
+            target-version: cp313
+            runner: macos-15-intel
+            architecture: x86_64
+            deployment-target: '10.15'
+            bazel-config: macos_x86_64_wheel
     env:
-      MACOSX_DEPLOYMENT_TARGET: '11.0'
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deployment-target }}
       TARGET_PYTHON: ${{ matrix.python-version }}
       TARGET_VERSION: ${{ matrix.target-version }}
       VERSION: ${{ inputs.version }}
@@ -124,6 +154,9 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
+
+    - name: Verify runner architecture
+      run: test "$(uname -m)" = "${{ matrix.architecture }}"
 
     - name: Set up Python
       uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -139,7 +172,7 @@ jobs:
     - name: Build and validate macOS wheel
       run: |
         python _update_bazel_py_version.py "$TARGET_PYTHON"
-        bazel build --jobs=1 --config=wheel --config=macos_wheel \
+        bazel build --jobs=1 --config=wheel --config=${{ matrix.bazel-config }} \
           --define TARGET_VERSION="$TARGET_VERSION" \
           --define VERSION="$VERSION" \
           :tesseract_decoder_wheel
@@ -222,5 +255,5 @@ jobs:
       if: inputs.upload_artifacts
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
-        name: python-wheels-macos-${{ matrix.python-version }}
+        name: python-wheels-macos-${{ matrix.architecture }}-${{ matrix.python-version }}
         path: wheelhouse/*.whl
