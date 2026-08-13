@@ -32,7 +32,7 @@ py_wheel(
     abi="$(TARGET_VERSION)",
     platform= select({
         ":macos_arm": "macosx_11_0_arm64",
-        ":macos_x86": "macosx_10_13_x86_64",
+        ":macos_x86": "macosx_10_15_x86_64",
         "@platforms//os:windows": "win32",
         "@platforms//os:linux": "linux_x86_64",
     }),

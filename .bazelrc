@@ -9,6 +9,14 @@ build --cxxopt='-std=c++20'
 # native CPU tuning in //src:OPT_COPTS.
 build:wheel --define=tesseract_portable_wheel=true
 
+# macOS arm64 wheels are tagged macosx_11_0. Apply the deployment target to
+# every build action, including external dependencies and final link actions.
+build:macos_wheel --action_env=MACOSX_DEPLOYMENT_TARGET=11.0
+build:macos_wheel --host_action_env=MACOSX_DEPLOYMENT_TARGET=11.0
+build:macos_wheel --repo_env=MACOSX_DEPLOYMENT_TARGET=11.0
+build:macos_wheel --copt=-mmacosx-version-min=11.0
+build:macos_wheel --linkopt=-mmacosx-version-min=11.0
+
 # Needed to fix issues like this which arose in GCC 15 on Linux:
 # "error: relocation refers to local symbol [...], which is defined in a discarded section"
 # We keep it linux-only so macos does not receive GNU ld flags

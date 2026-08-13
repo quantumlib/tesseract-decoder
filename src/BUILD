@@ -32,6 +32,22 @@ config_setting(
     define_values = {"tesseract_portable_wheel": "true"},
 )
 
+config_setting(
+    name = "macos_arm",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:arm64",
+    ],
+)
+
+config_setting(
+    name = "macos_x86",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
 OPT_COPTS = select({
     "//conditions:default": [
         "-Ofast",
@@ -42,7 +58,8 @@ OPT_COPTS = select({
         "//conditions:default": ["-std=c++20"],
 }) + select({
     ":portable_linux_wheel": ["-march=x86-64"],
-    "@platforms//os:macos": ["-mmacosx-version-min=10.15",],
+    ":macos_arm": ["-mmacosx-version-min=11.0"],
+    ":macos_x86": ["-mmacosx-version-min=10.15"],
     "//conditions:default": ["-march=native",],
 })
 

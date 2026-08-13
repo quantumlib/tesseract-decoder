@@ -116,6 +116,7 @@ jobs:
           - python-version: '3.13'
             target-version: cp313
     env:
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
       TARGET_PYTHON: ${{ matrix.python-version }}
       TARGET_VERSION: ${{ matrix.target-version }}
       VERSION: ${{ inputs.version }}
@@ -138,12 +139,70 @@ jobs:
     - name: Build and validate macOS wheel
       run: |
         python _update_bazel_py_version.py "$TARGET_PYTHON"
-        bazel build --jobs=1 --config=wheel \
+        bazel build --jobs=1 --config=wheel --config=macos_wheel \
           --define TARGET_VERSION="$TARGET_VERSION" \
           --define VERSION="$VERSION" \
           :tesseract_decoder_wheel
         mkdir -p wheelhouse
         cp bazel-bin/*.whl wheelhouse/
+        python - <<'PY'
+        import pathlib
+        import re
+        import subprocess
+        import zipfile
+
+        wheel = next(pathlib.Path("wheelhouse").glob("*.whl"))
+        match = re.search(
+            r"-macosx_(\d+)_(\d+)_(arm64|x86_64)\.whl$", wheel.name
+        )
+        if match is None:
+            raise SystemExit(f"could not determine macOS tag from {wheel.name}")
+        declared_target = (int(match.group(1)), int(match.group(2)), 0)
+
+        def parse_version(value):
+            parts = [int(part) for part in value.split(".")]
+            return tuple((parts + [0, 0, 0])[:3])
+
+        inspect_dir = pathlib.Path("wheel-inspect")
+        with zipfile.ZipFile(wheel) as archive:
+            archive.extractall(inspect_dir)
+        extensions = sorted(inspect_dir.rglob("*.so"))
+        if not extensions:
+            raise SystemExit(f"no Mach-O extension found in {wheel.name}")
+
+        for extension in extensions:
+            output = subprocess.check_output(
+                ["otool", "-l", str(extension)], text=True
+            )
+            versions = []
+            for command in re.split(r"\n\s*Load command \d+\n", output):
+                if re.search(r"^\s*cmd LC_BUILD_VERSION$", command, re.MULTILINE):
+                    platform = re.search(
+                        r"^\s*platform\s+(\S+)$", command, re.MULTILINE
+                    )
+                    minos = re.search(
+                        r"^\s*minos\s+(\S+)$", command, re.MULTILINE
+                    )
+                    if platform and platform.group(1) in {"macos", "1"} and minos:
+                        versions.append(("LC_BUILD_VERSION", minos.group(1)))
+                if re.search(
+                    r"^\s*cmd LC_VERSION_MIN_MACOSX$", command, re.MULTILINE
+                ):
+                    version = re.search(
+                        r"^\s*version\s+(\S+)$", command, re.MULTILINE
+                    )
+                    if version:
+                        versions.append(("LC_VERSION_MIN_MACOSX", version.group(1)))
+            if not versions:
+                raise SystemExit(f"no macOS minimum-version load command in {extension}")
+            for command, value in versions:
+                if parse_version(value) > declared_target:
+                    raise SystemExit(
+                        f"{extension}: {command} minimum {value} exceeds "
+                        f"wheel tag macosx_{declared_target[0]}_{declared_target[1]}"
+                    )
+                print(f"{extension}: {command} minimum {value}")
+        PY
         python -m venv /tmp/tesseract-wheel-test
         /tmp/tesseract-wheel-test/bin/python -m pip install \
           --only-binary=:all: \
