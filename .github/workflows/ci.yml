@@ -67,7 +67,9 @@ jobs:
       uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
       with:
         bazelisk-cache: true
-        disk-cache: ${{ github.workflow }}-${{ matrix.os }}
+        # Deliberately omit setup-bazel's compiled disk cache. Linux CI uses
+        # -march=native, so cached outputs may be invalid on a hosted runner
+        # exposing a different CPU feature set.
         repository-cache: true
 
     - name: Install clang-format (Linux)
@@ -83,3 +85,15 @@ jobs:
 
     - name: Bazel tests
       run: bazel test src/... //docs:tutorial_jupytext_sync_test
+
+  # PRs run the same wheel build and import checks used by releases, but do
+  # not upload artifacts. Pushes to main are handled by prerelease.yml.
+  build-wheels:
+    name: Build and validate distribution wheels
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/build-wheels.yml
+    with:
+      version: 0.0.0.dev0
+      upload_artifacts: false
+    permissions:
+      contents: read
