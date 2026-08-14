@@ -21,6 +21,7 @@ import sinter
 import stim
 import tesseract_decoder
 from sinter._decoding._decoding import sample_decode
+from sinter._decoding._stim_then_decode_sampler import StimThenDecodeSampler
 from tesseract_decoder import (TesseractSinterDecoder,
                                make_tesseract_sinter_decoders_dict)
 
@@ -104,7 +105,7 @@ def test_decode_shots_bit_packed():
 
     # Extract the expected predictions from the DEM
     expected_predictions = np.zeros(
-        (num_shots, (dem.num_observables + 7) // 8), dtype=np.uint8
+        (num_shots, (dem.num_observables + 7) // 8 + 1), dtype=np.uint8
     )
     expected_predictions[0][0] |= 1 << 0  # Logical observable L0 is flipped
 
@@ -149,7 +150,7 @@ def test_decode_shots_bit_packed_multi_shot():
     )
 
     expected_predictions = np.zeros(
-        (num_shots, (dem.num_observables + 7) // 8), dtype=np.uint8
+        (num_shots, (dem.num_observables + 7) // 8 + 1), dtype=np.uint8
     )
     # Expected flip for shot 0 is L0
     expected_predictions[0][0] |= 1 << 0
@@ -160,6 +161,59 @@ def test_decode_shots_bit_packed_multi_shot():
     expected_predictions[2][0] |= 1 << 1
 
     assert np.array_equal(predictions, expected_predictions)
+
+
+def test_decode_shots_bit_packed_marks_low_confidence_shots_for_discard():
+    dem = stim.DetectorErrorModel("""
+        error(0.1) D0 L0
+        detector(0, 0, 0) D0
+        detector(0, 0, 1) D1
+    """)
+    compiled_decoder = TesseractSinterDecoder().compile_decoder_for_dem(dem=dem)
+    detections = np.array([[0b01], [0b10]], dtype=np.uint8)
+
+    predictions = compiled_decoder.decode_shots_bit_packed(
+        bit_packed_detection_event_data=detections
+    )
+
+    expected_predictions = np.array(
+        [
+            [0b1, 0],
+            [0, 1],
+        ],
+        dtype=np.uint8,
+    )
+    assert np.array_equal(predictions, expected_predictions)
+
+
+def test_sinter_discards_low_confidence_shots():
+    circuit = stim.Circuit("""
+        R 0 1
+        X_ERROR(1) 0
+        M 0 1
+        DETECTOR rec[-2]
+        DETECTOR rec[-1]
+        OBSERVABLE_INCLUDE(0) rec[-2]
+    """)
+    dem = stim.DetectorErrorModel("""
+        error(0.1) D1 L0
+        detector D0
+        detector D1
+    """)
+
+    sampler = StimThenDecodeSampler(
+        decoder=TesseractSinterDecoder(),
+        count_observable_error_combos=False,
+        count_detection_events=False,
+        tmp_dir=None,
+    ).compiled_sampler_for_task(
+        sinter.Task(circuit=circuit, detector_error_model=dem)
+    )
+    result = sampler.sample(5)
+
+    assert result.shots == 5
+    assert result.discards == 5
+    assert result.errors == 0
 
 
 def test_decode_via_files_sanity_check():
