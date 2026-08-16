@@ -3,7 +3,6 @@ project(tesseract_decoder LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include cstdint")
 
 include(FetchContent)
 find_package(Threads REQUIRED)
@@ -74,13 +73,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 
-option(TESSERACT_NATIVE_ARCH "Enable -march=native host CPU optimizations" OFF)
-
-if(TESSERACT_NATIVE_ARCH)
-  set(OPT_COPTS -Ofast -fno-fast-math -march=native -include cstdint)
-else()
-  set(OPT_COPTS -Ofast -fno-fast-math -march=x86-64-v3 -include cstdint)
-endif()
+set(OPT_COPTS -Ofast -fno-fast-math -march=native)
 
 set(TESSERACT_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
@@ -201,3 +194,4 @@ add_test(NAME error_correlations_test COMMAND error_correlations_test)
 add_executable(multi_pass_tesseract_decoder_test ${TESSERACT_SRC_DIR}/multi_pass_tesseract_decoder.test.cc)
 target_link_libraries(multi_pass_tesseract_decoder_test PRIVATE multi_pass_tesseract_decoder GTest::gtest_main libstim)
 add_test(NAME multi_pass_tesseract_decoder_test COMMAND multi_pass_tesseract_decoder_test)
+set_tests_properties(multi_pass_tesseract_decoder_test PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})

@@ -13,8 +13,6 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
-MANYLINUX_VERSION="manylinux_2_17_x86_64.manylinux2014_x86_64"
-
 py_wheel(
     name="tesseract_decoder_wheel",
     distribution = "tesseract_decoder",
@@ -33,11 +31,11 @@ py_wheel(
         "stim",
     ],
     python_tag="$(TARGET_VERSION)",
+    abi="$(TARGET_VERSION)",
     platform= select({
         ":macos_arm": "macosx_11_0_arm64",
-        ":macos_x86": "macosx_10_13_x86_64",
         "@platforms//os:windows": "win32",
-        "@platforms//os:linux": MANYLINUX_VERSION,
+        "@platforms//os:linux": "linux_x86_64",
     }),
     strip_path_prefixes = ["src/py", "src"],
     description_file=":package_description",
@@ -56,13 +54,6 @@ config_setting(
     ],
 )
 
-config_setting(
-    name = "macos_x86",
-    constraint_values = [
-        "@platforms//os:macos",
-        "@platforms//cpu:x86_64",
-    ],
-)
 filegroup(
     name = "testdata",
     srcs = glob(["testdata/**/*"]),

@@ -3,13 +3,61 @@ from collections.abc import Iterable
 import pytest
 import stim
 from _tesseract_py_util.decompose_errors import (
+    decompose_errors,
     decompose_errors_for_stim_surface_code_coords,
     decompose_errors_using_detector_coordinate_assignment,
     decompose_errors_using_last_coordinate_index,
     detector_coord_to_basis_for_stim_surface_code_convention,
     get_component_obs_matching_undecomposed_obs,
-    reduce_set_symmetric_difference, reduce_symmetric_difference,
-    undecompose_errors)
+    reduce_set_symmetric_difference,
+    reduce_symmetric_difference,
+    undecompose_errors,
+)
+
+
+DEMO_DEM = stim.DetectorErrorModel("""
+    detector(0, 0, 0) D0
+    detector(2, 0, 1) D1
+    error(0.1) D0
+    error(0.2) D1
+    error(0.3) D0 D1
+    """)
+
+
+def test_decompose_errors_rejects_unknown_method():
+    with pytest.raises(ValueError, match="Unknown decomposition method"):
+        decompose_errors(DEMO_DEM, method="bad-method")
+
+
+def test_decompose_errors_default_method():
+    actual = decompose_errors(DEMO_DEM)
+    expected = stim.DetectorErrorModel("""
+        detector(0, 0, 0) D0
+        detector(2, 0, 1) D1
+        error(0.1) D0
+        error(0.2) D1
+        error(0.3) D1 ^ D0
+        """)
+    assert actual == expected
+
+
+def test_decompose_errors_strip_undecomposable_errors():
+    dem = stim.DetectorErrorModel("""
+detector(0) D0
+detector(1) D1
+error(0.1) D0 D1
+error(0.1) D0
+""")
+
+    actual = decompose_errors(
+        dem, method="last-coordinate-index", strip_undecomposable_errors=True
+    )
+    expected = stim.DetectorErrorModel("""
+detector(0) D0
+detector(1) D1
+error(0.1) D0
+""")
+    assert actual == expected
 
 
 @pytest.mark.parametrize(

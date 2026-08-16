@@ -23,6 +23,23 @@ config_setting(
     values = {"compilation_mode": "dbg"},
 )
 
+config_setting(
+    name = "portable_linux_wheel",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    define_values = {"tesseract_portable_wheel": "true"},
+)
+
+config_setting(
+    name = "macos_arm",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:arm64",
+    ],
+)
+
 OPT_COPTS = select({
     "//conditions:default": [
         "-Ofast",
@@ -32,8 +49,9 @@ OPT_COPTS = select({
 }) + select({
         "//conditions:default": ["-std=c++20"],
 }) + select({
-    "@platforms//os:macos": ["-mmacosx-version-min=10.15",],
-    "//conditions:default": ["-march=x86-64-v3",],
+    ":portable_linux_wheel": ["-march=x86-64"],
+    ":macos_arm": ["-mmacosx-version-min=11.0"],
+    "//conditions:default": ["-march=native",],
 })
 
 OPT_LINKOPTS = select({
