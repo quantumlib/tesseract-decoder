@@ -26,10 +26,34 @@ class MultiPassSinterDecoder(sinter.Decoder):
             cpp_decoder.detector_classifier = self.detector_classifier
         else:
             def default_classifier(index: int, coords: list[float], tag: str) -> int:
-                if '"basis": "X"' in tag:
-                    return 0
-                if '"basis": "Z"' in tag:
-                    return 1
+                import json
+                # Priority 1: Parse JSON tag for "measure_basis" then "basis".
+                # Supports both top-level keys and keys nested under "md".
+                if tag:
+                    try:
+                        tag_data = json.loads(tag)
+                        def basis_to_component(basis: str) -> int:
+                            b = basis.upper()
+                            if b == "X":
+                                return 0
+                            if b == "Z":
+                                return 1
+                            return -1
+                        # Priority 1a/1b: "measure_basis" at top level or under "md"
+                        if "measure_basis" in tag_data:
+                            return basis_to_component(tag_data["measure_basis"])
+                        if "md" in tag_data and isinstance(tag_data["md"], dict):
+                            if "measure_basis" in tag_data["md"]:
+                                return basis_to_component(tag_data["md"]["measure_basis"])
+                        # Priority 2a/2b: "basis" at top level or under "md"
+                        if "basis" in tag_data:
+                            return basis_to_component(tag_data["basis"])
+                        if "md" in tag_data and isinstance(tag_data["md"], dict):
+                            if "basis" in tag_data["md"]:
+                                return basis_to_component(tag_data["md"]["basis"])
+                    except (json.JSONDecodeError, TypeError, KeyError):
+                        pass
+                # Priority 3: Chromobius-style coordinate convention.
                 if len(coords) >= 4:
                     c3 = int(coords[3])
                     if 0 <= c3 <= 2:

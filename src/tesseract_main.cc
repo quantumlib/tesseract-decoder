@@ -609,8 +609,49 @@ int main(int argc, char* argv[]) {
 
   auto classifier = [](int index, const std::vector<double>& coords,
                        const std::string& tag) -> int {
-    if (tag.find("\"basis\": \"X\"") != std::string::npos) return 0;
-    if (tag.find("\"basis\": \"Z\"") != std::string::npos) return 1;
+    // Priority 1: Parse JSON tag for "measure_basis" then "basis".
+    // Supports both top-level keys and keys nested under "md".
+    if (!tag.empty()) {
+      try {
+        auto tag_data = nlohmann::json::parse(tag);
+
+        // Helper to map a basis string to a component ID.
+        auto basis_to_component = [](const std::string& basis) -> int {
+          if (basis == "X" || basis == "x") return 0;
+          if (basis == "Z" || basis == "z") return 1;
+          return -1;
+        };
+
+        // Priority 1a: "measure_basis" at top level
+        if (tag_data.contains("measure_basis") && tag_data["measure_basis"].is_string()) {
+          return basis_to_component(tag_data["measure_basis"].get<std::string>());
+        }
+        // Priority 1b: "measure_basis" nested under "md"
+        if (tag_data.contains("md") && tag_data["md"].is_object()) {
+          auto& md = tag_data["md"];
+          if (md.contains("measure_basis") && md["measure_basis"].is_string()) {
+            return basis_to_component(md["measure_basis"].get<std::string>());
+          }
+        }
+
+        // Priority 2a: "basis" at top level
+        if (tag_data.contains("basis") && tag_data["basis"].is_string()) {
+          return basis_to_component(tag_data["basis"].get<std::string>());
+        }
+        // Priority 2b: "basis" nested under "md"
+        if (tag_data.contains("md") && tag_data["md"].is_object()) {
+          auto& md = tag_data["md"];
+          if (md.contains("basis") && md["basis"].is_string()) {
+            return basis_to_component(md["basis"].get<std::string>());
+          }
+        }
+      } catch (const nlohmann::json::parse_error&) {
+        // Tag is not valid JSON; fall through to coordinate-based classification.
+      }
+    }
+
+    // Priority 3: Chromobius-style coordinate convention.
+    // 4th coordinate encodes color + 3*basis: 0-2 => X (component 0), 3-5 => Z (component 1).
     if (coords.size() >= 4) {
       int c3 = (int)coords[3];
       if (c3 >= 0 && c3 <= 2) return 0;

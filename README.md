@@ -204,9 +204,10 @@ For loopy 3D syndrome hypergraphs (such as circuit-level color codes under circu
 Priors (LLRs) are dynamically updated and propagated between passes using conditional probabilities to preserve physical logical accuracy while delivering up to **$1,000\times$ decoding speedups**.
 
 ### ⚠️ Strict Annotation Requirements (Limitations)
-To decode using graph shattering, Tesseract **must** be able to classify detectors into basis components. The input Stim circuit or Detector Error Model (DEM) **MUST** be annotated using one of the following conventions:
-1. **Basis Tags**: Detector instructions must contain standard basis metadata tags (e.g. `detector(0, 0) D0 {"basis": "X"}` or `detector(0, 0) D1 {"basis": "Z"}`).
-2. **Coordinate Conventions (Chromobius Style)**: Detector coordinates must contain at least 4 dimensions, where the 4th coordinate represents `color + 3 * basis` (Component 0: `0 <= coords[3] <= 2`, Component 1: `3 <= coords[3] <= 5`).
+To decode using graph shattering, Tesseract **must** be able to classify detectors into basis components. The input Stim circuit or Detector Error Model (DEM) **MUST** be annotated using one of the following conventions (checked in priority order):
+1. **Measure Basis Tags** (highest priority): Detector instructions contain a `"measure_basis"` field in their JSON metadata tag, either at the top level (e.g. `DETECTOR[{"measure_basis": "X"}]`) or nested under `"md"` (e.g. `DETECTOR[{"md": {"measure_basis": "Z"}}]`).
+2. **Basis Tags**: Detector instructions contain a `"basis"` field in their JSON metadata tag, either at the top level (e.g. `DETECTOR[{"basis": "X"}]`) or nested under `"md"` (e.g. `DETECTOR[{"md": {"basis": "Z"}}]`).
+3. **Coordinate Conventions (Chromobius Style)**: Detector coordinates must contain at least 4 dimensions, where the 4th coordinate represents `color + 3 * basis` (Component 0: `0 <= coords[3] <= 2`, Component 1: `3 <= coords[3] <= 5`).
 
 If an unannotated circuit/DEM is supplied with `--multipass` enabled, Tesseract will fail fast and throw a clear `std::invalid_argument` exception.
 
