@@ -21,7 +21,7 @@ enum class SchedulingStrategy {
 };
 
 struct MultiPassExecutionPlan {
-  struct ModelStatistics {
+  struct DemStatistics {
     size_t detector_count;
     size_t error_mechanism_count;
     double average_detector_row_weight;
@@ -30,7 +30,9 @@ struct MultiPassExecutionPlan {
   struct Component {
     size_t id;
     int classifier_label;
-    ModelStatistics statistics;
+    size_t detector_count;
+    size_t error_mechanism_count;
+    double average_detector_row_weight;
     bool affects_observable;
   };
 
@@ -42,7 +44,7 @@ struct MultiPassExecutionPlan {
 
   size_t num_passes;
   SchedulingStrategy strategy;
-  ModelStatistics monolithic_statistics;
+  DemStatistics monolithic_statistics;
   std::vector<Component> components;
   std::vector<Dependency> dependencies;
   std::vector<std::vector<size_t>> pass_schedule;
@@ -113,7 +115,7 @@ class MultiPassTesseractDecoder {
   ::DetOrder det_order_method;
   uint64_t seed;
   size_t last_shot_num_reweights = 0;
-  MultiPassExecutionPlan::ModelStatistics monolithic_statistics;
+  MultiPassExecutionPlan::DemStatistics monolithic_statistics;
   std::map<size_t, std::vector<size_t>> component_predictions;
   std::vector<size_t> modified_component_indices;
   std::vector<size_t> final_pass_active_components;

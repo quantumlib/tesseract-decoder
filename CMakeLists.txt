@@ -115,7 +115,7 @@ target_link_libraries(dem_decomposition PUBLIC bern_utils libstim)
 add_library(multi_pass_tesseract_decoder ${TESSERACT_SRC_DIR}/multi_pass_tesseract_decoder.cc ${TESSERACT_SRC_DIR}/multi_pass_tesseract_decoder.h)
 target_include_directories(multi_pass_tesseract_decoder PUBLIC ${TESSERACT_SRC_DIR})
 target_compile_options(multi_pass_tesseract_decoder PRIVATE ${OPT_COPTS})
-target_link_libraries(multi_pass_tesseract_decoder PUBLIC common tesseract_lib tanner_graph error_correlations dem_decomposition libstim)
+target_link_libraries(multi_pass_tesseract_decoder PUBLIC tesseract_lib tanner_graph error_correlations dem_decomposition libstim)
 
 add_library(tesseract_lib ${TESSERACT_SRC_DIR}/tesseract.cc ${TESSERACT_SRC_DIR}/tesseract.h)
 target_include_directories(tesseract_lib PUBLIC ${TESSERACT_SRC_DIR})
