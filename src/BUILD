@@ -180,6 +180,7 @@ cc_library(
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
     deps = [
+        ":libcommon",
         ":libtesseract",
         ":libtanner_graph",
         ":liberror_correlations",

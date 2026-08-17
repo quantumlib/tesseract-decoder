@@ -7,6 +7,7 @@
 #include <set>
 #include <sstream>
 
+#include "common.h"
 #include "dem_decomposition.h"
 
 namespace tesseract {
@@ -16,10 +17,15 @@ std::string MultiPassExecutionPlan::str() const {
   ss << "Multi-pass execution plan\n"
      << "strategy: " << (strategy == SchedulingStrategy::Static ? "static" : "causal") << '\n'
      << "passes: " << num_passes << '\n'
+     << "monolithic DEM: detectors=" << monolithic_statistics.detector_count
+     << " error_mechanisms=" << monolithic_statistics.error_mechanism_count
+     << " average_detector_row_weight=" << monolithic_statistics.average_detector_row_weight << '\n'
      << "components: " << components.size() << '\n';
   for (const auto& component : components) {
     ss << "  component " << component.id << ": label=" << component.classifier_label
-       << " detectors=" << component.detector_count
+       << " active_detectors=" << component.statistics.detector_count
+       << " error_mechanisms=" << component.statistics.error_mechanism_count
+       << " average_detector_row_weight=" << component.statistics.average_detector_row_weight
        << " observable=" << (component.affects_observable ? "yes" : "no") << '\n';
   }
   ss << "dependencies:\n";
@@ -46,6 +52,17 @@ struct DetectorMetadata {
   std::map<uint64_t, std::vector<double>> coordinates;
   std::map<uint64_t, std::string> tags;
 };
+
+MultiPassExecutionPlan::ModelStatistics model_statistics(size_t detector_count,
+                                                         const std::vector<common::Error>& errors) {
+  size_t detector_incidences = 0;
+  for (const auto& error : errors) {
+    detector_incidences += error.symptom.detectors.size();
+  }
+  double average_row_weight =
+      detector_count == 0 ? 0.0 : (double)detector_incidences / detector_count;
+  return {detector_count, errors.size(), average_row_weight};
+}
 
 DetectorMetadata collect_detector_metadata(const stim::DetectorErrorModel& flattened) {
   std::set<uint64_t> detector_ids;
@@ -141,6 +158,13 @@ void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
   total_global_detectors = (size_t)flattened.count_detectors();
   validate_detector_classes(detector_classes, total_global_detectors);
   DetectorMetadata metadata = collect_detector_metadata(flattened);
+
+  std::vector<size_t> ignored_error_index_map;
+  stim::DetectorErrorModel monolithic_dem =
+      common::merge_indistinguishable_errors(flattened, ignored_error_index_map);
+  monolithic_dem = common::remove_zero_probability_errors(monolithic_dem, ignored_error_index_map);
+  monolithic_statistics =
+      model_statistics(total_global_detectors, get_errors_from_dem(monolithic_dem));
 
   std::set<int> unique_classes;
   unique_classes.insert(detector_classes.begin(), detector_classes.end());
@@ -308,11 +332,13 @@ void MultiPassTesseractDecoder::build_causal_schedule() {
 }
 
 MultiPassExecutionPlan MultiPassTesseractDecoder::get_execution_plan() const {
-  MultiPassExecutionPlan plan{num_passes, strategy, {}, {}, pass_schedule};
+  MultiPassExecutionPlan plan{num_passes, strategy, monolithic_statistics, {}, {}, pass_schedule};
   for (size_t component_id = 0; component_id < component_decoders.size(); ++component_id) {
     const auto& component = component_decoders[component_id];
-    plan.components.push_back({component_id, component.classifier_label,
-                               component.component_detectors.size(), component.affects_observable});
+    plan.components.push_back(
+        {component_id, component.classifier_label,
+         model_statistics(component.component_detectors.size(), component.decoder->errors),
+         component.affects_observable});
   }
 
   std::map<std::pair<size_t, size_t>, size_t> dependency_counts;
