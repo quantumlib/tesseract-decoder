@@ -32,25 +32,26 @@ class MultiPassSinterDecoder(sinter.Decoder):
                 if tag:
                     try:
                         tag_data = json.loads(tag)
-                        def basis_to_component(basis: str) -> int:
-                            b = basis.upper()
-                            if b == "X":
-                                return 0
-                            if b == "Z":
-                                return 1
-                            return -1
-                        # Priority 1a/1b: "measure_basis" at top level or under "md"
-                        if "measure_basis" in tag_data:
-                            return basis_to_component(tag_data["measure_basis"])
-                        if "md" in tag_data and isinstance(tag_data["md"], dict):
-                            if "measure_basis" in tag_data["md"]:
-                                return basis_to_component(tag_data["md"]["measure_basis"])
-                        # Priority 2a/2b: "basis" at top level or under "md"
-                        if "basis" in tag_data:
-                            return basis_to_component(tag_data["basis"])
-                        if "md" in tag_data and isinstance(tag_data["md"], dict):
-                            if "basis" in tag_data["md"]:
-                                return basis_to_component(tag_data["md"]["basis"])
+                        if isinstance(tag_data, dict):
+                            md = tag_data.get("md", {})
+                            if not isinstance(md, dict):
+                                md = {}
+
+                            def basis_to_component(basis) -> int | None:
+                                if not isinstance(basis, str):
+                                    return None
+                                return {"X": 0, "Z": 1}.get(basis.upper())
+
+                            basis_values = (
+                                tag_data.get("measure_basis"),
+                                md.get("measure_basis"),
+                                tag_data.get("basis"),
+                                md.get("basis"),
+                            )
+                            for basis in basis_values:
+                                component = basis_to_component(basis)
+                                if component is not None:
+                                    return component
                     except (json.JSONDecodeError, TypeError, KeyError):
                         pass
                 # Priority 3: Chromobius-style coordinate convention.

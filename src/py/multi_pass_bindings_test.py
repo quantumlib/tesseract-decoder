@@ -25,6 +25,15 @@ def test_multi_pass_sinter_bindings():
     assert PythonMultiPassSinterDecoder().strategy == tesseract_decoder.Causal
     python_static_decoder = PythonMultiPassSinterDecoder(strategy=tesseract_decoder.Static)
     assert python_static_decoder.strategy == tesseract_decoder.Static
+
+    fallback_dem = stim.DetectorErrorModel(R"""
+        error(0.1) D0
+        error(0.2) D1 L0
+        detector[{"measure_basis": 0, "basis": "X"}] D0
+        detector[{"measure_basis": "Y"}](0, 0, 0, 3) D1
+        logical_observable L0
+    """)
+    PythonMultiPassSinterDecoder().compile_decoder_for_dem(dem=fallback_dem)
     
     compiled = decoder.compile_decoder_for_dem(dem=dem)
     
