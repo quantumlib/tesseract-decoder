@@ -559,3 +559,19 @@ TEST(tesseract, MoreThan64Observables) {
     ASSERT_EQ(flipped[i], i);
   }
 }
+
+TEST(utils, DuplicateDetectorCoords) {
+  std::string dem_str = "detector(0, 0, 1) D0\ndetector(0, 0, 2) D0\nerror(0.1) D0\n";
+  stim::DetectorErrorModel dem(dem_str.c_str());
+  auto coords = get_detector_coords(dem);
+  ASSERT_EQ(coords.size(), 1);
+  ASSERT_EQ(coords[0].size(), 3);
+  ASSERT_EQ(coords[0][2], 2.0);
+}
+
+TEST(simplex, DuplicateDetectorCoords) {
+  std::string dem_str = "detector(0, 0, 1) D0\ndetector(0, 0, 2) D0\nerror(0.1) D0\n";
+  stim::DetectorErrorModel dem(dem_str.c_str());
+  SimplexConfig config{dem};
+  EXPECT_NO_THROW({ SimplexDecoder decoder(config); });
+}

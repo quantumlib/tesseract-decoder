@@ -56,7 +56,8 @@ SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
 
   std::vector<double> detector_t_coords(config.dem.count_detectors(), 0);
   std::vector<std::vector<double>> detector_coords = get_detector_coords(config.dem);
-  for (size_t d = 0; d < detector_coords.size(); ++d) {
+  size_t num_dets = std::min(detector_coords.size(), detector_t_coords.size());
+  for (size_t d = 0; d < num_dets; ++d) {
     if (detector_coords[d].size() > T_COORD) {
       detector_t_coords[d] = detector_coords[d][T_COORD];
     }
