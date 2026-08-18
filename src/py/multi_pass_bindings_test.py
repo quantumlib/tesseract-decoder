@@ -26,14 +26,27 @@ def test_multi_pass_sinter_bindings():
     python_static_decoder = PythonMultiPassSinterDecoder(strategy=tesseract_decoder.Static)
     assert python_static_decoder.strategy == tesseract_decoder.Static
 
-    fallback_dem = stim.DetectorErrorModel(R"""
+    strict_dem = stim.DetectorErrorModel(R"""
         error(0.1) D0
         error(0.2) D1 L0
-        detector[{"measure_basis": 0, "basis": "X"}] D0
-        detector[{"measure_basis": "Y"}](0, 0, 0, 3) D1
+        detector[{"measure_basis": "X"}] D0
+        detector[{"md": {"basis": "Z"}}] D1
         logical_observable L0
     """)
-    PythonMultiPassSinterDecoder().compile_decoder_for_dem(dem=fallback_dem)
+    PythonMultiPassSinterDecoder().compile_decoder_for_dem(dem=strict_dem)
+
+    invalid_dem = stim.DetectorErrorModel(R"""
+        error(0.1) D0
+        error(0.2) D1 L0
+        detector[{"measure_basis": 0, "basis": "X"}](0, 0, 0, 0) D0
+        detector[{"measure_basis": "Z"}] D1
+        logical_observable L0
+    """)
+    try:
+        PythonMultiPassSinterDecoder().compile_decoder_for_dem(dem=invalid_dem)
+        raise AssertionError("Expected invalid measure_basis to be rejected")
+    except ValueError as error:
+        assert "could not be classified" in str(error)
     
     compiled = decoder.compile_decoder_for_dem(dem=dem)
     

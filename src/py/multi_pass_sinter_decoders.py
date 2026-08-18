@@ -37,22 +37,21 @@ class MultiPassSinterDecoder(sinter.Decoder):
                             if not isinstance(md, dict):
                                 md = {}
 
-                            def basis_to_component(basis) -> int | None:
-                                if not isinstance(basis, str):
-                                    return None
-                                return {"X": 0, "Z": 1}.get(basis.upper())
-
-                            basis_values = (
-                                tag_data.get("measure_basis"),
-                                md.get("measure_basis"),
-                                tag_data.get("basis"),
-                                md.get("basis"),
+                            basis_fields = (
+                                (tag_data, "measure_basis"),
+                                (md, "measure_basis"),
+                                (tag_data, "basis"),
+                                (md, "basis"),
                             )
-                            for basis in basis_values:
-                                component = basis_to_component(basis)
-                                if component is not None:
-                                    return component
-                    except (json.JSONDecodeError, TypeError, KeyError):
+                            for metadata, key in basis_fields:
+                                if key not in metadata:
+                                    continue
+                                if metadata[key] == "X":
+                                    return 0
+                                if metadata[key] == "Z":
+                                    return 1
+                                return -1
+                    except json.JSONDecodeError:
                         pass
                 # Priority 3: Chromobius-style coordinate convention.
                 if len(coords) >= 4:

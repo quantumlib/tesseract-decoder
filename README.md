@@ -209,6 +209,8 @@ To decode using graph shattering, Tesseract **must** be able to classify detecto
 2. **Basis Tags**: Detector instructions contain a `"basis"` field in their JSON metadata tag, either at the top level (e.g. `DETECTOR[{"basis": "X"}]`) or nested under `"md"` (e.g. `DETECTOR[{"md": {"basis": "Z"}}]`).
 3. **Coordinate Conventions (Chromobius Style)**: Detector coordinates must contain at least 4 dimensions, where the 4th coordinate represents `color + 3 * basis` (Component 0: `0 <= coords[3] <= 2`, Component 1: `3 <= coords[3] <= 5`).
 
+Metadata basis values must be JSON strings exactly equal to `"X"` or `"Z"`. Values such as `0`, `1`, `"Y"`, or lowercase variants are invalid. If a metadata basis field is present with an invalid value, detector classification fails instead of falling back to another field or to detector coordinates.
+
 If an unannotated circuit/DEM is supplied with `--multipass` enabled, Tesseract will fail fast and throw a clear `std::invalid_argument` exception.
 
 ### CLI Options

@@ -615,26 +615,20 @@ int main(int argc, char* argv[]) {
       try {
         auto tag_data = nlohmann::json::parse(tag);
 
-        auto basis_to_component = [](const nlohmann::json& value) -> int {
-          if (!value.is_string()) return -1;
-          const std::string basis = value.get<std::string>();
-          if (basis == "X" || basis == "x") return 0;
-          if (basis == "Z" || basis == "z") return 1;
-          return -1;
-        };
-
-        auto classify_tag = [&](const nlohmann::json& metadata, const char* key) {
-          return metadata.is_object() && metadata.contains(key) ? basis_to_component(metadata[key])
-                                                                : -1;
+        auto classify_tag = [](const nlohmann::json& metadata, const char* key, int& component) {
+          if (!metadata.is_object() || !metadata.contains(key)) return false;
+          const auto& value = metadata[key];
+          component = value == "X" ? 0 : value == "Z" ? 1 : -1;
+          return true;
         };
         const nlohmann::json empty_metadata;
         const auto& md =
             tag_data.is_object() && tag_data.contains("md") ? tag_data["md"] : empty_metadata;
-        for (int component :
-             {classify_tag(tag_data, "measure_basis"), classify_tag(md, "measure_basis"),
-              classify_tag(tag_data, "basis"), classify_tag(md, "basis")}) {
-          if (component >= 0) return component;
-        }
+        int component;
+        if (classify_tag(tag_data, "measure_basis", component)) return component;
+        if (classify_tag(md, "measure_basis", component)) return component;
+        if (classify_tag(tag_data, "basis", component)) return component;
+        if (classify_tag(md, "basis", component)) return component;
       } catch (const nlohmann::json::parse_error&) {
         // Tag is not valid JSON; fall through to coordinate-based classification.
       }
