@@ -24,7 +24,7 @@ struct MultiPassExecutionPlan {
   struct DemStatistics {
     size_t detector_count;
     size_t error_mechanism_count;
-    double average_detector_row_weight;
+    double average_detector_degree;
   };
 
   struct Component {
@@ -32,7 +32,7 @@ struct MultiPassExecutionPlan {
     int classifier_label;
     size_t detector_count;
     size_t error_mechanism_count;
-    double average_detector_row_weight;
+    double average_detector_degree;
     bool affects_observable;
   };
 
@@ -65,13 +65,15 @@ class MultiPassTesseractDecoder {
                             const TesseractConfig& base_config = TesseractConfig(),
                             size_t num_det_orders = 1, DetOrder det_order_method = DetOrder::DetBFS,
                             uint64_t seed = 0,
-                            SchedulingStrategy strategy = SchedulingStrategy::Causal);
+                            SchedulingStrategy strategy = SchedulingStrategy::Causal,
+                            bool collect_plan_statistics = false);
   MultiPassTesseractDecoder(const stim::DetectorErrorModel& dem, size_t num_passes,
                             const std::vector<int>& detector_classes,
                             const TesseractConfig& base_config = TesseractConfig(),
                             size_t num_det_orders = 1, DetOrder det_order_method = DetOrder::DetBFS,
                             uint64_t seed = 0,
-                            SchedulingStrategy strategy = SchedulingStrategy::Causal);
+                            SchedulingStrategy strategy = SchedulingStrategy::Causal,
+                            bool collect_plan_statistics = false);
 
   static std::vector<int> classify_detectors(const stim::DetectorErrorModel& dem,
                                              const DetectorClassifier& classifier);
@@ -114,8 +116,9 @@ class MultiPassTesseractDecoder {
   size_t num_det_orders;
   ::DetOrder det_order_method;
   uint64_t seed;
+  bool collect_plan_statistics;
   size_t last_shot_num_reweights = 0;
-  MultiPassExecutionPlan::DemStatistics monolithic_statistics;
+  MultiPassExecutionPlan::DemStatistics monolithic_statistics{};
   std::map<size_t, std::vector<size_t>> component_predictions;
   std::vector<size_t> modified_component_indices;
   std::vector<size_t> final_pass_active_components;

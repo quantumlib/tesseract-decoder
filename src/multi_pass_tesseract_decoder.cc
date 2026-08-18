@@ -17,15 +17,15 @@ std::string MultiPassExecutionPlan::str() const {
      << "strategy: " << (strategy == SchedulingStrategy::Static ? "static" : "causal") << '\n'
      << "passes: " << num_passes << '\n'
      << "monolithic DEM: detectors=" << monolithic_statistics.detector_count
-     << " error_mechanisms=" << monolithic_statistics.error_mechanism_count
-     << " average_detector_row_weight=" << monolithic_statistics.average_detector_row_weight << '\n'
+     << ", error_mechanisms=" << monolithic_statistics.error_mechanism_count
+     << ", average_detector_degree=" << monolithic_statistics.average_detector_degree << '\n'
      << "components: " << components.size() << '\n';
   for (const auto& component : components) {
     ss << "  component " << component.id << ": label=" << component.classifier_label
-       << " detectors=" << component.detector_count
-       << " observable=" << (component.affects_observable ? "yes" : "no")
-       << " error_mechanisms=" << component.error_mechanism_count
-       << " average_detector_row_weight=" << component.average_detector_row_weight << '\n';
+       << ", detectors=" << component.detector_count
+       << ", observable=" << (component.affects_observable ? "yes" : "no")
+       << ", error_mechanisms=" << component.error_mechanism_count
+       << ", average_detector_degree=" << component.average_detector_degree << '\n';
   }
   ss << "dependencies:\n";
   if (dependencies.empty()) ss << "  none\n";
@@ -53,15 +53,14 @@ struct DetectorMetadata {
 };
 
 MultiPassExecutionPlan::DemStatistics dem_statistics(size_t detector_count,
-                                                     const stim::DetectorErrorModel& dem) {
-  const auto errors = get_errors_from_dem(dem);
+                                                     const std::vector<common::Error>& errors) {
   size_t detector_incidences = 0;
   for (const auto& error : errors) {
     detector_incidences += error.symptom.detectors.size();
   }
-  double average_row_weight =
+  double average_detector_degree =
       detector_count == 0 ? 0.0 : (double)detector_incidences / detector_count;
-  return {detector_count, errors.size(), average_row_weight};
+  return {detector_count, errors.size(), average_detector_degree};
 }
 
 DetectorMetadata collect_detector_metadata(const stim::DetectorErrorModel& flattened) {
@@ -107,14 +106,15 @@ void validate_detector_classes(const std::vector<int>& detector_classes, size_t 
 MultiPassTesseractDecoder::MultiPassTesseractDecoder(
     const stim::DetectorErrorModel& dem, size_t num_passes, const DetectorClassifier& classifier,
     const TesseractConfig& base_config, size_t num_det_orders, DetOrder det_order_method,
-    uint64_t seed, SchedulingStrategy strategy)
+    uint64_t seed, SchedulingStrategy strategy, bool collect_plan_statistics)
     : num_passes(num_passes),
       strategy(strategy),
       total_global_detectors(dem.count_detectors()),
       base_config(base_config),
       num_det_orders(num_det_orders),
       det_order_method(det_order_method),
-      seed(seed) {
+      seed(seed),
+      collect_plan_statistics(collect_plan_statistics) {
   if (num_passes < 1 || num_passes > 2) {
     throw std::invalid_argument("num_passes must be 1 or 2.");
   }
@@ -124,14 +124,16 @@ MultiPassTesseractDecoder::MultiPassTesseractDecoder(
 MultiPassTesseractDecoder::MultiPassTesseractDecoder(
     const stim::DetectorErrorModel& dem, size_t num_passes,
     const std::vector<int>& detector_classes, const TesseractConfig& base_config,
-    size_t num_det_orders, DetOrder det_order_method, uint64_t seed, SchedulingStrategy strategy)
+    size_t num_det_orders, DetOrder det_order_method, uint64_t seed, SchedulingStrategy strategy,
+    bool collect_plan_statistics)
     : num_passes(num_passes),
       strategy(strategy),
       total_global_detectors(dem.count_detectors()),
       base_config(base_config),
       num_det_orders(num_det_orders),
       det_order_method(det_order_method),
-      seed(seed) {
+      seed(seed),
+      collect_plan_statistics(collect_plan_statistics) {
   if (num_passes < 1 || num_passes > 2) {
     throw std::invalid_argument("num_passes must be 1 or 2.");
   }
@@ -188,7 +190,9 @@ void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
   stim::DetectorErrorModel decomposed =
       decompose_errors_using_detector_assignment(flattened, detector_component, true);
   stim::DetectorErrorModel merged = merge_indistinguishable_errors(decomposed);
-  monolithic_statistics = dem_statistics(total_global_detectors, merged);
+  if (collect_plan_statistics) {
+    monolithic_statistics = dem_statistics(total_global_detectors, get_errors_from_dem(merged));
+  }
 
   ImpliedProbsMap raw_correlations = process_dem_correlations(decomposed, global_det_to_comp_id);
 
@@ -326,14 +330,16 @@ void MultiPassTesseractDecoder::build_causal_schedule() {
 }
 
 MultiPassExecutionPlan MultiPassTesseractDecoder::get_execution_plan() const {
+  if (!collect_plan_statistics) {
+    throw std::logic_error("Execution plan statistics were not collected.");
+  }
   MultiPassExecutionPlan plan{num_passes, strategy, monolithic_statistics, {}, {}, pass_schedule};
   for (size_t component_id = 0; component_id < component_decoders.size(); ++component_id) {
     const auto& component = component_decoders[component_id];
     auto statistics =
-        dem_statistics(component.component_detectors.size(), component.decoder->config.dem);
+        dem_statistics(component.component_detectors.size(), component.decoder->errors);
     plan.components.push_back({component_id, component.classifier_label, statistics.detector_count,
-                               statistics.error_mechanism_count,
-                               statistics.average_detector_row_weight,
+                               statistics.error_mechanism_count, statistics.average_detector_degree,
                                component.affects_observable});
   }
 

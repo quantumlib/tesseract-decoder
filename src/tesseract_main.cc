@@ -655,7 +655,7 @@ int main(int argc, char* argv[]) {
       if (args.print_multipass_plan) {
         mp_decoders[0] = std::make_unique<tesseract::MultiPassTesseractDecoder>(
             config.dem, args.num_passes, detector_classes, config, args.num_det_orders,
-            args.det_order_method, args.det_order_seed, strategy_val);
+            args.det_order_method, args.det_order_seed, strategy_val, true);
         std::cerr << mp_decoders[0]->get_execution_plan().str();
       }
     } catch (const std::invalid_argument& error) {
