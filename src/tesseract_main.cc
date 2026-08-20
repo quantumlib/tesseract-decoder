@@ -45,7 +45,7 @@ struct Args {
   bool det_order_bfs = false;
   bool det_order_index = false;
   bool det_order_coordinate = false;
-  DetOrder det_order_method = DetOrder::DetBFS;
+  DetOrder det_order_method = DetOrder::DetIndex;
 
   // Sampling options
   size_t sample_num_shots = 0;
@@ -237,7 +237,7 @@ struct Args {
           std::cout << ")" << std::endl;
         }
       }
-      DetOrder order = DetOrder::DetIndex;
+      DetOrder order = det_order_method;
       if (det_order_bfs) {
         order = DetOrder::DetBFS;
       } else if (det_order_index) {

@@ -83,6 +83,7 @@ def get_sinter_decoders():
             merge_errors=True,
             pqlimit=1000000,
             num_det_orders=21,
+            det_order_method=_core.utils.DetOrder.DetIndex,
             seed=2384753
         ),
         "tesseract_multipass_1pass": MultiPassSinterDecoder(
@@ -94,6 +95,7 @@ def get_sinter_decoders():
             merge_errors=True,
             pqlimit=1000000,
             num_det_orders=21,
+            det_order_method=_core.utils.DetOrder.DetIndex,
             seed=2384753
         ),
         "tesseract_multipass_2pass": MultiPassSinterDecoder(
@@ -105,6 +107,7 @@ def get_sinter_decoders():
             merge_errors=True,
             pqlimit=1000000,
             num_det_orders=21,
+            det_order_method=_core.utils.DetOrder.DetIndex,
             seed=2384753
         ),
     }

@@ -2,7 +2,10 @@ import tesseract_decoder
 import stim
 import numpy as np
 import sys
-from multi_pass_sinter_decoders import MultiPassSinterDecoder as PythonMultiPassSinterDecoder
+from multi_pass_sinter_decoders import (
+    MultiPassSinterDecoder as PythonMultiPassSinterDecoder,
+    get_sinter_decoders,
+)
 
 def test_multi_pass_sinter_bindings():
     print(f"Loaded tesseract_decoder from: {tesseract_decoder.__file__}", flush=True)
@@ -20,11 +23,24 @@ def test_multi_pass_sinter_bindings():
     print("Testing MultiPassSinterDecoder with lambda...", flush=True)
     decoder = tesseract_decoder.MultiPassSinterDecoder(num_passes=2)
     assert decoder.strategy == tesseract_decoder.Causal
+    det_index = tesseract_decoder.utils.DetOrder.DetIndex
+    assert decoder.det_order_method == det_index
     decoder.detector_classifier = lambda index, coords, tag: index
 
     assert PythonMultiPassSinterDecoder().strategy == tesseract_decoder.Causal
     python_static_decoder = PythonMultiPassSinterDecoder(strategy=tesseract_decoder.Static)
     assert python_static_decoder.strategy == tesseract_decoder.Static
+
+    registered_decoders = get_sinter_decoders()
+    assert registered_decoders["tesseract_mono"].det_order_method == det_index
+    assert (
+        registered_decoders["tesseract_multipass_1pass"].base_config_kwargs["det_order_method"]
+        == det_index
+    )
+    assert (
+        registered_decoders["tesseract_multipass_2pass"].base_config_kwargs["det_order_method"]
+        == det_index
+    )
 
     strict_dem = stim.DetectorErrorModel(R"""
         error(0.1) D0

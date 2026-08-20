@@ -83,7 +83,7 @@ struct MultiPassSinterDecoder {
         full_decomposer(py::none()),
         detector_classifier(py::none()),
         num_det_orders(1),
-        det_order_method(::DetOrder::DetBFS),
+        det_order_method(::DetOrder::DetIndex),
         seed(0),
         strategy(SchedulingStrategy::Causal) {
     if (num_passes < 1 || num_passes > 2) {
