@@ -219,17 +219,19 @@ TEST(MultiPassTesseractDecoderTest, ExecutionPlanReflectsDecoderState) {
   EXPECT_EQ(plan.components[0].classifier_label, 4);
   EXPECT_EQ(plan.components[1].classifier_label, 9);
   for (const auto& component : plan.components) {
-    EXPECT_EQ(component.detector_count, 1);
+    EXPECT_EQ(component.active_detector_count, 1);
+    EXPECT_EQ(component.decoder_detector_count, 2);
     EXPECT_EQ(component.error_mechanism_count, 1);
-    EXPECT_DOUBLE_EQ(component.average_detector_degree, 1.0);
+    EXPECT_DOUBLE_EQ(component.average_active_detector_degree, 1.0);
   }
   ASSERT_EQ(plan.dependencies.size(), 2);
   EXPECT_EQ(plan.dependencies[0].source_component, 0);
   EXPECT_EQ(plan.dependencies[0].target_component, 1);
   EXPECT_GT(plan.dependencies[0].rule_count, 0);
   EXPECT_EQ(plan.pass_schedule, std::vector<std::vector<size_t>>({{0}, {1}}));
-  EXPECT_NE(plan.str().find("monolithic DEM: detectors=2, error_mechanisms=3"), std::string::npos);
-  EXPECT_NE(plan.str().find("component 0: label=4, detectors=1, observable=no, error_mechanisms=1"),
+  EXPECT_NE(plan.str().find("monolithic input DEM: detectors=2, error_mechanisms=3"),
+            std::string::npos);
+  EXPECT_NE(plan.str().find("component 0: label=4, active_detectors=1, decoder_detectors=2"),
             std::string::npos);
   EXPECT_NE(plan.str().find("pass 2: [1]"), std::string::npos);
 }

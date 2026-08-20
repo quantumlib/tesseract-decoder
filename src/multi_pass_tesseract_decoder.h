@@ -30,9 +30,10 @@ struct MultiPassExecutionPlan {
   struct Component {
     size_t id;
     int classifier_label;
-    size_t detector_count;
+    size_t active_detector_count;
+    size_t decoder_detector_count;
     size_t error_mechanism_count;
-    double average_detector_degree;
+    double average_active_detector_degree;
     bool affects_observable;
   };
 
