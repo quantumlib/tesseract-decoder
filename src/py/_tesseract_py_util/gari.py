@@ -707,6 +707,34 @@ def circuit_to_gari(
     )
 
 
+def build_detector_orders(
+    circuit: stim.Circuit,
+    gari_dem: stim.DetectorErrorModel,
+    num_det_orders: int,
+    *,
+    method: object | None = None,
+    seed: int = 0,
+) -> list[list[int]]:
+    """Builds orders for a source-aligned GARI DEM, with virtual IDs last."""
+    from tesseract_decoder import utils
+
+    source_dem = _circuit_to_gari_source_dem(circuit)
+    source_detector_count = source_dem.num_detectors
+    if gari_dem.num_detectors < source_detector_count:
+        raise ValueError("The GARI DEM has fewer detectors than the source circuit.")
+    if method is None:
+        method = utils.DetOrder.DetIndex
+    virtual_detectors = list(
+        range(source_detector_count, gari_dem.num_detectors)
+    )
+    return [
+        order + virtual_detectors
+        for order in utils.build_det_orders(
+            source_dem, num_det_orders, method=method, seed=seed
+        )
+    ]
+
+
 def call_gari(
     circuit_fname: str,
     prior_name: str,

@@ -23,6 +23,7 @@
 #include <queue>
 #include <random>
 #include <string>
+#include <utility>
 
 #include "common.h"
 #include "stim.h"
@@ -121,11 +122,7 @@ static std::vector<std::vector<size_t>> build_det_orders_bfs(const stim::Detecto
         } while (visited[start]);
       }
     }
-    std::vector<size_t> inv_perm(graph.size());
-    for (size_t i = 0; i < perm.size(); ++i) {
-      inv_perm[perm[i]] = i;
-    }
-    det_orders[det_order] = inv_perm;
+    det_orders[det_order] = std::move(perm);
   }
   return det_orders;
 }
@@ -159,11 +156,7 @@ static std::vector<std::vector<size_t>> build_det_orders_coordinate(
     std::sort(perm.begin(), perm.end(), [&](const size_t& i, const size_t& j) {
       return inner_products[i] > inner_products[j];
     });
-    std::vector<size_t> inv_perm(dem.count_detectors());
-    for (size_t i = 0; i < perm.size(); ++i) {
-      inv_perm[perm[i]] = i;
-    }
-    det_orders[det_order] = inv_perm;
+    det_orders[det_order] = std::move(perm);
   }
   return det_orders;
 }

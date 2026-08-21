@@ -40,6 +40,7 @@ struct Args {
   bool det_order_bfs = false;
   bool det_order_index = false;
   bool det_order_coordinate = false;
+  std::string detector_orders_path;
 
   // Sampling options
   size_t sample_num_shots = 0;
@@ -102,6 +103,12 @@ struct Args {
     if (det_order_flags > 1) {
       throw std::invalid_argument(
           "Only one of --det-order-bfs, --det-order-index, or --det-order-coordinate may be set.");
+    }
+    if (!detector_orders_path.empty() &&
+        (det_order_flags > 0 || program.is_used("--num-det-orders") ||
+         program.is_used("--det-order-seed"))) {
+      throw std::invalid_argument(
+          "--detector-orders cannot be combined with generated detector-order options.");
     }
 
     int num_data_sources = int(sample_num_shots > 0) + int(!in_fname.empty());
@@ -222,7 +229,7 @@ struct Args {
       }
     }
 
-    // Sample orientations of the error model to use for the det priority
+    // Choose the detector traversal orders.
     {
       if (verbose) {
         auto detector_coords = get_detector_coords(config.dem);
@@ -236,15 +243,37 @@ struct Args {
           std::cout << ")" << std::endl;
         }
       }
-      DetOrder order = DetOrder::DetIndex;
-      if (det_order_bfs) {
-        order = DetOrder::DetBFS;
-      } else if (det_order_index) {
-        order = DetOrder::DetIndex;
-      } else if (det_order_coordinate) {
-        order = DetOrder::DetCoordinate;
+      if (!detector_orders_path.empty()) {
+        std::ifstream input(detector_orders_path);
+        if (!input.is_open()) {
+          throw std::invalid_argument("Could not open the file: " + detector_orders_path);
+        }
+        try {
+          nlohmann::json orders = nlohmann::json::parse(input);
+          if (!orders.is_array() || orders.empty()) {
+            throw std::invalid_argument("Detector orders file must contain at least one order.");
+          }
+          for (const auto& order : orders) {
+            if (!order.is_array() ||
+                !std::all_of(order.begin(), order.end(),
+                             [](const auto& detector) { return detector.is_number_unsigned(); })) {
+              throw std::invalid_argument(
+                  "Detector orders file must contain arrays of nonnegative integers.");
+            }
+          }
+          config.det_orders = orders.get<std::vector<std::vector<size_t>>>();
+        } catch (const nlohmann::json::exception& ex) {
+          throw std::invalid_argument("Invalid detector orders file: " + std::string(ex.what()));
+        }
+      } else {
+        DetOrder order = DetOrder::DetIndex;
+        if (det_order_bfs) {
+          order = DetOrder::DetBFS;
+        } else if (det_order_coordinate) {
+          order = DetOrder::DetCoordinate;
+        }
+        config.det_orders = build_det_orders(config.dem, num_det_orders, order, det_order_seed);
       }
-      config.det_orders = build_det_orders(config.dem, num_det_orders, order, det_order_seed);
     }
 
     if (sample_num_shots > 0) {
@@ -387,6 +416,12 @@ int main(int argc, char* argv[]) {
       .metavar("N")
       .default_value(static_cast<uint64_t>(518278944))
       .store_into(args.det_order_seed);
+  program.add_argument("--detector-orders")
+      .help(
+          "JSON file containing one or more detector-ID permutations, in the same format as "
+          "TesseractConfig.det_orders")
+      .metavar("FILE")
+      .store_into(args.detector_orders_path);
   program.add_argument("--sample-num-shots")
       .help(
           "If provided, will sample the requested number of shots from the "
@@ -678,6 +713,7 @@ int main(int argc, char* argv[]) {
         {"pqlimit", args.pqlimit},
         {"num_det_orders", config.det_orders.empty() ? 1 : config.det_orders.size()},
         {"det_order_seed", args.det_order_seed},
+        {"detector_orders_path", args.detector_orders_path},
         {"total_time_seconds", total_time_seconds},
         {"num_errors", has_obs ? nlohmann::json(num_errors) : nullptr},
         {"num_low_confidence", num_low_confidence},

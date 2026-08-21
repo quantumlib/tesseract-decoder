@@ -17,7 +17,7 @@ import pytest
 import stim
 
 from _tesseract_py_util import gari
-from tesseract_decoder import demutil
+from tesseract_decoder import demutil, utils
 
 
 def _tiny_circuit():
@@ -170,6 +170,19 @@ def test_public_circuit_conversion_and_file_output(tmp_path):
     np.testing.assert_array_equal(
         checks.toarray(), transform.checks[[2, 0, 3, 1, 4, 5], :].toarray()
     )
+    source_orders = utils.build_det_orders(
+        gari._circuit_to_gari_source_dem(circuit),
+        2,
+        method=utils.DetOrder.DetCoordinate,
+        seed=0,
+    )
+    assert public_gari.build_detector_orders(
+        circuit,
+        gari_dem,
+        2,
+        method=utils.DetOrder.DetCoordinate,
+        seed=0,
+    ) == [order + [4, 5] for order in source_orders]
 
     block_dem = public_gari.circuit_to_gari(
         circuit,
