@@ -32,13 +32,17 @@ def test_multi_pass_sinter_bindings():
     assert python_static_decoder.strategy == tesseract_decoder.Static
 
     registered_decoders = get_sinter_decoders()
-    assert registered_decoders["tesseract_mono"].det_order_method == det_index
+    assert registered_decoders["tesseract-long-beam-mono"].det_order_method == det_index
     assert (
-        registered_decoders["tesseract_multipass_1pass"].base_config_kwargs["det_order_method"]
+        registered_decoders["tesseract-long-beam-multipass-1pass"].base_config_kwargs[
+            "det_order_method"
+        ]
         == det_index
     )
     assert (
-        registered_decoders["tesseract_multipass_2pass"].base_config_kwargs["det_order_method"]
+        registered_decoders["tesseract-long-beam-multipass-2pass"].base_config_kwargs[
+            "det_order_method"
+        ]
         == det_index
     )
 

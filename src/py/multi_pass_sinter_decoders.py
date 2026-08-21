@@ -3,9 +3,10 @@ import stim
 import tesseract_decoder as _core
 
 class MultiPassSinterDecoder(sinter.Decoder):
-    """
-    A sinter-compatible Multi-Pass Tesseract Decoder.
-    Wraps the native C++ MultiPassTesseractDecoder.
+    """A Sinter-compatible wrapper around the native multi-pass Tesseract decoder.
+
+    Standard Tesseract configuration arguments can be passed through
+    ``**base_config_kwargs``.
     """
     def __init__(self, num_passes: int = 2, detector_classifier=None,
                  strategy=_core.Causal, **base_config_kwargs):
@@ -76,7 +77,7 @@ class MultiPassSinterDecoder(sinter.Decoder):
 def get_sinter_decoders():
     TesseractSinterDecoder = _core.TesseractSinterDecoder
     return {
-        "tesseract_mono": TesseractSinterDecoder(
+        "tesseract-long-beam-mono": TesseractSinterDecoder(
             det_beam=20,
             beam_climbing=True,
             no_revisit_dets=True,
@@ -86,7 +87,7 @@ def get_sinter_decoders():
             det_order_method=_core.utils.DetOrder.DetIndex,
             seed=2384753
         ),
-        "tesseract_multipass_1pass": MultiPassSinterDecoder(
+        "tesseract-long-beam-multipass-1pass": MultiPassSinterDecoder(
             num_passes=1,
             strategy=_core.Causal,
             det_beam=20,
@@ -98,7 +99,7 @@ def get_sinter_decoders():
             det_order_method=_core.utils.DetOrder.DetIndex,
             seed=2384753
         ),
-        "tesseract_multipass_2pass": MultiPassSinterDecoder(
+        "tesseract-long-beam-multipass-2pass": MultiPassSinterDecoder(
             num_passes=2,
             strategy=_core.Causal,
             det_beam=20,
