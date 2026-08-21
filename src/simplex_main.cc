@@ -83,6 +83,7 @@ struct Args {
     if (circuit_path.empty() and dem_path.empty()) {
       throw std::invalid_argument("Must provide at least one of --circuit or --dem");
     }
+
     int num_data_sources = int(sample_num_shots > 0) + int(!in_fname.empty());
     if (num_data_sources != 1) {
       throw std::invalid_argument("Requires exactly 1 source of shots.");
