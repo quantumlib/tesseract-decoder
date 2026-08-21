@@ -61,9 +61,17 @@ source matrix column. Instructions containing Stim's ``^`` decomposition
 separator are not supported. Repeated detector or logical targets are reduced
 modulo two, following Stim's GF(2) parity semantics.
 
-For certain single-basis CSS memory experiments, the paper instead evaluates
-the logical observable on ``bar(e)_X`` or ``bar(e)_Z``. That placement is
-experiment-specific and is not implemented by this generic transform.
+For a single-basis CSS memory experiment, the paper's message-passing decoder
+evaluates the logical result using the barred variable aligned with the
+relevant component matrix. For logical-Z memory it uses ``bar(e)_X`` and tests
+convergence with ``D_Z bar(e)_X = s_Z``; for logical-X memory it analogously
+uses ``bar(e)_Z`` and ``D_X bar(e)_Z = s_X``. This convention can also be
+useful for downstream BP-style decoders.
+
+This module does not select a BP/message-passing convergence rule or move
+logical targets to the barred variables. It emits the generic logical map
+``[L_eZ, L_eX, L_eY, 0, 0]``, keeping logical targets on the original error
+variables.
 
 Every pure ``e_Z`` and ``e_X`` column receives a barred counterpart, including
 columns that are not the projection of any ``e_Y`` column. Such an unused pure
@@ -395,6 +403,8 @@ def _gari_transform(
         dtype=np.uint8,
     )
 
+    # Emit the generic [L_eZ, L_eX, L_eY, 0, 0] map. Barred-variable logical
+    # output and component convergence are choices for a downstream decoder.
     augmented_logicals = scipy.sparse.hstack(
         [
             source_logicals[:, e_z_columns],
