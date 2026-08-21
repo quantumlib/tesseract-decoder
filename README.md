@@ -147,28 +147,9 @@ Using a Detection Event File and Observable Flips:
 Tesseract supports reading and writing from all of Stim's standard [output
 formats](https://github.com/quantumlib/Stim/blob/main/doc/result_formats.md).
 
-### Detector Layouts
-
-Both command-line decoders accept a `tesseract.detector_layout.v1` JSON file through
-`--detector-layout`. A basic Tesseract layout can provide explicit detector traversal sequences:
-
-```json
-{
-  "schema": "tesseract.detector_layout.v1",
-  "dem_detector_count": 4,
-  "detector_orders": [[0, 2, 1, 3]]
-}
-```
-
-For data whose detector IDs differ from the DEM, add `source_detector_count` and a unique
-`source_to_dem` entry for each source detector. These fields default to an identity mapping, and
-unmapped DEM detectors stay zero. If `detector_orders` is omitted, Tesseract uses its existing
-detector-order options; if it is present, do not also pass detector-order generation options.
-Simplex uses the same source mapping but does not use detector orders.
-
 ### Decoding with GARI
 
-Generate a GARI matrix DEM and its companion detector layout from a source circuit:
+Generate a GARI matrix DEM from a source circuit:
 
 ```bash
 python src/py/_tesseract_py_util/gari.py \
@@ -177,16 +158,14 @@ python src/py/_tesseract_py_util/gari.py \
     --out-dir gari_output
 ```
 
-This writes `gari_output/circuit_file_gari_xor.dem` and
-`gari_output/circuit_file_gari_xor_detector_layout.json`. The layout uses the generic
-`tesseract.detector_layout.v1` schema to map source shots into the GARI matrix DEM and provide its
-detector traversal order. Sample from the source circuit and decode with the generated pair:
+This writes `gari_output/circuit_file_gari_xor.dem`. Its physical detector rows preserve the
+source detector IDs, and its added virtual rows form a suffix. Sample from the source circuit and
+decode with the generated DEM:
 
 ```bash
 ./bazel-bin/src/tesseract \
     --circuit circuit_file.stim \
     --dem gari_output/circuit_file_gari_xor.dem \
-    --detector-layout gari_output/circuit_file_gari_xor_detector_layout.json \
     --sample-num-shots 100 \
     --sample-seed 1234 \
     --threads 1 \
@@ -198,9 +177,15 @@ detector traversal order. Sample from the source circuit and decode with the gen
     --stats-out gari-stats.json
 ```
 
-The GARI matrix DEM is a decoding representation and must not be sampled. Detection events must
-come from the source circuit, or from an input file in the source circuit's detector order, and the
-layout must be paired with the generated DEM. See
+The GARI matrix DEM is a decoding representation and must not be sampled. When a circuit and a
+larger DEM are supplied together, both command-line decoders read or sample the circuit's detector
+prefix and leave the DEM's virtual suffix zero. Their observable counts must agree. When reading a
+source-width event file, pass both `--circuit` and `--dem`; with `--dem` alone the input width is the
+full DEM width.
+
+For matrix analysis, `gari.py --row-order block` writes a `_block.dem` file in the internal
+physical-X, physical-Z, virtual-Z, virtual-X row order. This research form does not accept source
+syndromes as a direct prefix. See
 [GARI transformed matrices](src/py/README.md#gari-transformed-matrices) for supported circuit
 conventions and Python API details.
 
