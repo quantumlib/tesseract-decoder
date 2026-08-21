@@ -586,8 +586,9 @@ TEST(utils, DetectorLayoutMapsAndValidatesSource) {
       "DETECTOR(3) rec[-3]\nDETECTOR(2) rec[-4]\n"
       "OBSERVABLE_INCLUDE(0) rec[-1]");
   stim::DetectorErrorModel dem("error(0.1) D0 D1 D2 D3 D4 D5 L0");
-  EXPECT_NO_THROW(layout.validate_source(circuit, dem));
-  EXPECT_THROW(layout.validate_source(stim::Circuit("M 0\nDETECTOR rec[-1]"), dem),
+  EXPECT_NO_THROW(layout.validate_source(circuit, dem, false));
+  EXPECT_THROW(layout.validate_source(circuit, dem, true), std::invalid_argument);
+  EXPECT_THROW(layout.validate_source(stim::Circuit("M 0\nDETECTOR rec[-1]"), dem, false),
                std::invalid_argument);
 
   DetectorLayout defaults = load_detector_layout(

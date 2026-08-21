@@ -175,7 +175,7 @@ struct Args {
     if (!detector_layout_path.empty()) {
       detector_layout = load_detector_layout(detector_layout_path, config.dem.count_detectors());
       if (!circuit_path.empty()) {
-        detector_layout->validate_source(circuit, config.dem);
+        detector_layout->validate_source(circuit, config.dem, dem_path.empty());
       }
     } else if (sample_num_shots > 0 and !dem_path.empty() and
                circuit.count_detectors() != config.dem.count_detectors()) {

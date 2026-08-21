@@ -218,7 +218,7 @@ struct Args {
     if (!detector_layout_path.empty()) {
       detector_layout = load_detector_layout(detector_layout_path, config.dem.count_detectors());
       if (!circuit_path.empty()) {
-        detector_layout->validate_source(circuit, config.dem);
+        detector_layout->validate_source(circuit, config.dem, dem_path.empty());
       }
       if (!detector_layout->detector_orders.empty() && explicit_det_order) {
         throw std::invalid_argument(

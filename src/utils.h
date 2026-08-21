@@ -55,7 +55,8 @@ struct DetectorLayout {
   }
   void map_hits(std::vector<uint64_t>& hits) const;
   void map_shots(std::vector<stim::SparseShot>& shots) const;
-  void validate_source(const stim::Circuit& circuit, const stim::DetectorErrorModel& dem) const;
+  void validate_source(const stim::Circuit& circuit, const stim::DetectorErrorModel& dem,
+                       bool dem_from_circuit) const;
 };
 
 DetectorLayout load_detector_layout(const std::string& path, size_t expected_dem_detector_count);

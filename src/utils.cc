@@ -146,12 +146,20 @@ void DetectorLayout::map_shots(std::vector<stim::SparseShot>& shots) const {
 }
 
 void DetectorLayout::validate_source(const stim::Circuit& circuit,
-                                     const stim::DetectorErrorModel& dem) const {
+                                     const stim::DetectorErrorModel& dem,
+                                     bool dem_from_circuit) const {
   if (circuit.count_detectors() != source_detector_count()) {
     throw detector_layout_error(path, "source_detector_count does not match the circuit.");
   }
   if (circuit.count_observables() != dem.count_observables()) {
     throw detector_layout_error(path, "the circuit and DEM observable counts differ.");
+  }
+  if (dem_from_circuit) {
+    for (size_t source = 0; source < source_to_dem.size(); source++) {
+      if (source_to_dem[source] != source) {
+        throw detector_layout_error(path, "non-identity source_to_dem requires an explicit DEM.");
+      }
+    }
   }
 }
 
