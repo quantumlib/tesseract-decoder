@@ -331,61 +331,6 @@ std::vector<std::vector<size_t>> build_det_orders(const stim::DetectorErrorModel
   throw std::invalid_argument("Unknown det order method");
 }
 
-std::vector<std::vector<size_t>> build_gari_detector_orders(const stim::Circuit& source_circuit,
-                                                            const DetectorLayout& layout,
-                                                            size_t num_det_orders, DetOrder method,
-                                                            uint64_t seed) {
-  if (num_det_orders == 0) {
-    return {};
-  }
-  if (source_circuit.count_detectors() != layout.source_detector_count()) {
-    throw detector_layout_error(layout.path,
-                                "source_detector_count does not match the ordering circuit.");
-  }
-  if (layout.source_detector_count() > layout.dem_detector_count) {
-    throw detector_layout_error(layout.path, "source detector count exceeds DEM detector count.");
-  }
-
-  std::vector<std::vector<size_t>> source_orders;
-  if (layout.source_detector_count() == 0) {
-    source_orders.resize(num_det_orders);
-  } else {
-    stim::DetectorErrorModel source_dem = stim::ErrorAnalyzer::circuit_to_detector_error_model(
-        source_circuit, /*decompose_errors=*/false, /*fold_loops=*/true,
-        /*allow_gauge_detectors=*/true,
-        /*approximate_disjoint_errors_threshold=*/1,
-        /*ignore_decomposition_failures=*/false,
-        /*block_decomposition_from_introducing_remnant_edges=*/false);
-    source_orders = build_det_orders(source_dem, num_det_orders, method, seed);
-  }
-
-  std::vector<std::vector<size_t>> gari_orders;
-  gari_orders.reserve(source_orders.size());
-  for (const auto& source_order : source_orders) {
-    if (source_order.size() != layout.source_detector_count()) {
-      throw detector_layout_error(layout.path, "source detector order has the wrong size.");
-    }
-    std::vector<size_t> gari_order(layout.dem_detector_count);
-    // Source orders map each detector to its rank. Relabel the physical rows
-    // while converting those ranks to the sequence consumed by Tesseract.
-    for (size_t source = 0; source < source_order.size(); ++source) {
-      gari_order.at(source_order[source]) = layout.source_to_dem.at(source);
-    }
-    std::vector<bool> mapped(layout.dem_detector_count);
-    for (size_t detector : layout.source_to_dem) {
-      mapped[detector] = true;
-    }
-    size_t position = layout.source_detector_count();
-    for (size_t detector = 0; detector < layout.dem_detector_count; ++detector) {
-      if (!mapped[detector]) {
-        gari_order[position++] = detector;
-      }
-    }
-    gari_orders.push_back(std::move(gari_order));
-  }
-  return gari_orders;
-}
-
 bool sampling_from_dem(uint64_t seed, size_t num_shots, stim::DetectorErrorModel dem,
                        std::vector<stim::SparseShot>& shots) {
   stim::DemSampler<stim::MAX_BITWORD_WIDTH> sampler(dem, std::mt19937_64{seed}, num_shots);

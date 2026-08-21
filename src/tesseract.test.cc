@@ -591,17 +591,6 @@ TEST(utils, DetectorLayoutMapsAndValidatesSource) {
   EXPECT_THROW(layout.validate_source(stim::Circuit("M 0\nDETECTOR rec[-1]"), dem),
                std::invalid_argument);
 
-  stim::DetectorErrorModel source_dem = stim::ErrorAnalyzer::circuit_to_detector_error_model(
-      circuit, false, true, true, 1, false, false);
-  auto source_order = build_det_orders(source_dem, 1, DetOrder::DetCoordinate, 5)[0];
-  auto gari_order = build_gari_detector_orders(circuit, layout, 1, DetOrder::DetCoordinate, 5)[0];
-  if (source_order == std::vector<size_t>{0, 3, 1, 2}) {
-    EXPECT_EQ(gari_order, (std::vector<size_t>{2, 5, 1, 0, 3, 4}));
-  } else {
-    ASSERT_EQ(source_order, (std::vector<size_t>{3, 0, 2, 1}));
-    EXPECT_EQ(gari_order, (std::vector<size_t>{0, 1, 5, 2, 3, 4}));
-  }
-
   DetectorLayout defaults = load_detector_layout(
       write_detector_layout(
           R"({"schema":"tesseract.detector_layout.v1","dem_detector_count":3})"),

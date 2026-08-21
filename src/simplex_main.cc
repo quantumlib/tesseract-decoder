@@ -28,7 +28,7 @@
 struct Args {
   std::string circuit_path;
   std::string dem_path;
-  std::string gari_layout_path;
+  std::string detector_layout_path;
   bool no_merge_errors = false;
 
   // Sampling options
@@ -85,10 +85,6 @@ struct Args {
     if (circuit_path.empty() and dem_path.empty()) {
       throw std::invalid_argument("Must provide at least one of --circuit or --dem");
     }
-    if (!gari_layout_path.empty() and dem_path.empty()) {
-      throw std::invalid_argument("--gari-layout requires --dem.");
-    }
-
     int num_data_sources = int(sample_num_shots > 0) + int(!in_fname.empty());
     if (num_data_sources != 1) {
       throw std::invalid_argument("Requires exactly 1 source of shots.");
@@ -175,15 +171,16 @@ struct Args {
 
     config.merge_errors = !no_merge_errors;
 
-    std::optional<DetectorLayout> gari_layout;
-    if (!gari_layout_path.empty()) {
-      gari_layout = load_detector_layout(gari_layout_path, config.dem.count_detectors());
+    std::optional<DetectorLayout> detector_layout;
+    if (!detector_layout_path.empty()) {
+      detector_layout = load_detector_layout(detector_layout_path, config.dem.count_detectors());
       if (!circuit_path.empty()) {
-        gari_layout->validate_source(circuit, config.dem);
+        detector_layout->validate_source(circuit, config.dem);
       }
     } else if (sample_num_shots > 0 and !dem_path.empty() and
                circuit.count_detectors() != config.dem.count_detectors()) {
-      throw std::invalid_argument("Circuit and DEM detector counts differ; supply --gari-layout.");
+      throw std::invalid_argument(
+          "Circuit and DEM detector counts differ; supply --detector-layout.");
     }
 
     if (sample_num_shots > 0) {
@@ -212,7 +209,8 @@ struct Args {
       }
       stim::FileFormatData shots_in_format = stim::format_name_to_enum_map().at(in_format);
       size_t source_detector_count =
-          gari_layout ? gari_layout->source_detector_count() : config.dem.count_detectors();
+          detector_layout ? detector_layout->source_detector_count()
+                          : config.dem.count_detectors();
       auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
           shots_file, shots_in_format.id, 0, source_detector_count,
           append_observables * config.dem.count_observables());
@@ -227,8 +225,8 @@ struct Args {
       fclose(shots_file);
     }
 
-    if (gari_layout) {
-      gari_layout->map_shots(shots);
+    if (detector_layout) {
+      detector_layout->map_shots(shots);
     }
 
     // Load observable flips, if applicable
@@ -296,13 +294,12 @@ int main(int argc, char* argv[]) {
   Args args;
   program.add_argument("--circuit").help("Stim circuit file path").store_into(args.circuit_path);
   program.add_argument("--dem").help("Stim dem file path").store_into(args.dem_path);
-  program.add_argument("--gari-layout")
+  program.add_argument("--detector-layout")
       .help(
-          "Companion JSON layout for a GARI matrix file. Maps source detector data into GARI "
-          "rows; virtual rows remain zero.")
+          "JSON detector layout. Optionally maps source detector data into DEM detector rows.")
       .metavar("FILE")
       .default_value(std::string(""))
-      .store_into(args.gari_layout_path);
+      .store_into(args.detector_layout_path);
   program.add_argument("--no-merge-errors")
       .help("If provided, will not merge identical error mechanisms.")
       .store_into(args.no_merge_errors);
@@ -544,8 +541,8 @@ int main(int argc, char* argv[]) {
                                  {"num_errors", has_obs ? nlohmann::json(num_errors) : nullptr},
                                  {"num_shots", shot},
                                  {"sample_num_shots", args.sample_num_shots}};
-    if (!args.gari_layout_path.empty()) {
-      stats_json["gari_layout_path"] = args.gari_layout_path;
+    if (!args.detector_layout_path.empty()) {
+      stats_json["detector_layout_path"] = args.detector_layout_path;
     }
 
     if (args.stats_out_fname == "-") {

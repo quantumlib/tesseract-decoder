@@ -60,12 +60,6 @@ struct DetectorLayout {
 
 DetectorLayout load_detector_layout(const std::string& path, size_t expected_dem_detector_count);
 
-std::vector<std::vector<size_t>> build_gari_detector_orders(const stim::Circuit& source_circuit,
-                                                            const DetectorLayout& layout,
-                                                            size_t num_det_orders,
-                                                            DetOrder method = DetOrder::DetIndex,
-                                                            uint64_t seed = 0);
-
 const double INF = std::numeric_limits<double>::infinity();
 
 bool sampling_from_dem(uint64_t seed, size_t num_shots, stim::DetectorErrorModel dem,
