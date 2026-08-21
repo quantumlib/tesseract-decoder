@@ -717,7 +717,7 @@ import stim
 from tesseract_decoder import demutil
 
 circuit = stim.Circuit.from_file("circuitFile.stim")
-gari_dem, gari_layout = demutil.gari.circuit_to_gari(
+gari_dem, detector_layout = demutil.gari.circuit_to_gari(
     circuit,
     prior_function=demutil.gari.tesseract_xor_prior_probabilities,
 )
@@ -727,14 +727,19 @@ gari_dem, gari_layout = demutil.gari.circuit_to_gari(
 
 * `gari_dem`: the augmented detector and logical matrices stored using Stim
   DEM syntax.
-* `gari_layout`: a `tesseract.gari_layout.v1` dictionary containing the source
-  and GARI detector counts, the `source_to_gari` detector mapping, and the
-  `physical_then_virtual` detector order.
+* `detector_layout`: a `tesseract.detector_layout.v1` dictionary containing the
+  DEM and source detector counts, the `source_to_dem` mapping, one or more
+  `detector_orders`, and optional generator metadata. Tesseract accepts the
+  same dictionary when serialized as JSON through `--detector-layout`.
 
 Related public APIs:
 
 * `demutil.gari.dem_to_matrices(dem)` returns the sparse detector matrix,
   sparse logical matrix, and one probability per source error column.
+* `demutil.gari.build_detector_orders(circuit, detector_layout, num_det_orders, ...)`
+  generates source-circuit-aware Tesseract traversal orders for the GARI DEM.
+  Assign its result to `detector_layout["detector_orders"]` before saving the
+  layout or pass it directly to `TesseractConfig(det_orders=...)`.
 * `demutil.gari.GariTransform` is passed to prior-policy callbacks. It exposes
   the transformed detector and logical matrices, the `U` and `V` projection
   matrices, the source `e_Z`, `e_X`, and `e_Y` column indices, and the source
