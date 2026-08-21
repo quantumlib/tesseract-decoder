@@ -650,7 +650,7 @@ def circuit_to_gari(
     *,
     prior_function: Callable[[GariTransform, np.ndarray], np.ndarray],
 ) -> tuple[stim.DetectorErrorModel, dict[str, object]]:
-    """Converts a supported CSS circuit into a GARI matrix DEM and v1 layout.
+    """Converts a supported CSS circuit into a GARI matrix DEM and layout.
 
     The source DEM is generated undecomposed (``decompose_errors=False``) and
     flattened. Every detector must follow the repository's fourth-coordinate
@@ -673,13 +673,46 @@ def circuit_to_gari(
         transform, probabilities, prior_function=prior_function
     )
     layout = {
-        "schema": "tesseract.gari_layout.v1",
+        "schema": "tesseract.detector_layout.v1",
         "source_detector_count": len(transform.source_to_gari_detectors),
-        "gari_detector_count": transform.checks.shape[0],
-        "source_to_gari": transform.source_to_gari_detectors.tolist(),
-        "detector_order": "physical_then_virtual",
+        "dem_detector_count": transform.checks.shape[0],
+        "source_to_dem": transform.source_to_gari_detectors.tolist(),
+        "detector_orders": [list(range(transform.checks.shape[0]))],
+        "metadata": {"generator": "gari"},
     }
     return gari_dem, layout
+
+
+def build_detector_orders(
+    circuit: stim.Circuit,
+    detector_layout: dict[str, object],
+    num_det_orders: int,
+    *,
+    method: object | None = None,
+    seed: int = 0,
+) -> list[list[int]]:
+    """Builds source-circuit detector orders for a GARI matrix DEM."""
+    from tesseract_decoder import utils
+
+    if method is None:
+        method = utils.DetOrder.DetIndex
+    source_dem = _circuit_to_gari_source_dem(circuit)
+    source_orders = (
+        utils.build_det_orders(source_dem, num_det_orders, method, seed)
+        if source_dem.num_detectors
+        else [[] for _ in range(num_det_orders)]
+    )
+    source_to_dem = np.asarray(
+        detector_layout["source_to_dem"], dtype=np.int64
+    )
+    dem_detector_count = int(detector_layout["dem_detector_count"])
+    virtual_detectors = sorted(
+        set(range(dem_detector_count)).difference(source_to_dem.tolist())
+    )
+    return [
+        source_to_dem[np.argsort(order)].tolist() + virtual_detectors
+        for order in source_orders
+    ]
 
 
 def call_gari(circuit_fname: str, prior_name: str, output_dir: str) -> None:
@@ -697,7 +730,7 @@ def call_gari(circuit_fname: str, prior_name: str, output_dir: str) -> None:
     output_path.mkdir(parents=True, exist_ok=True)
     output_name = f"{Path(circuit_fname).stem}_gari_{prior_name.replace('-', '_')}"
     gari_dem.to_file(output_path / f"{output_name}.dem")
-    (output_path / f"{output_name}_layout.json").write_text(
+    (output_path / f"{output_name}_detector_layout.json").write_text(
         json.dumps(layout, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
@@ -727,7 +760,7 @@ def main() -> None:
         help=(
             "Output directory, created if needed. Files are named "
             "<circuit>_gari_<prior>.dem and "
-            "<circuit>_gari_<prior>_layout.json."
+            "<circuit>_gari_<prior>_detector_layout.json."
         ),
     )
     args = parser.parse_args()

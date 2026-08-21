@@ -19,7 +19,7 @@ import pytest
 import stim
 
 from _tesseract_py_util import gari
-from tesseract_decoder import demutil
+from tesseract_decoder import demutil, tesseract, utils
 
 
 def _tiny_circuit():
@@ -165,14 +165,38 @@ def test_public_circuit_conversion_and_file_output(tmp_path):
         prior_function=public_gari.tesseract_xor_prior_probabilities,
     )
     assert layout == {
-        "schema": "tesseract.gari_layout.v1",
+        "schema": "tesseract.detector_layout.v1",
         "source_detector_count": 4,
-        "gari_detector_count": 6,
-        "source_to_gari": [0, 2, 1, 3],
-        "detector_order": "physical_then_virtual",
+        "dem_detector_count": 6,
+        "source_to_dem": [0, 2, 1, 3],
+        "detector_orders": [[0, 1, 2, 3, 4, 5]],
+        "metadata": {"generator": "gari"},
     }
     assert gari_dem.num_detectors == 6
     assert gari_dem.num_observables == 2
+
+    source_order = utils.build_det_orders(
+        gari._circuit_to_gari_source_dem(circuit),
+        1,
+        utils.DetOrder.DetCoordinate,
+        5,
+    )[0]
+    detector_orders = public_gari.build_detector_orders(
+        circuit,
+        layout,
+        1,
+        method=utils.DetOrder.DetCoordinate,
+        seed=5,
+    )
+    assert detector_orders == [
+        np.asarray(layout["source_to_dem"])[
+            np.argsort(source_order)
+        ].tolist()
+        + [4, 5]
+    ]
+    assert tesseract.TesseractConfig(
+        dem=gari_dem, det_orders=detector_orders
+    ).det_orders == detector_orders
 
     circuit_path = tmp_path / "tiny.stim"
     circuit.to_file(circuit_path)
@@ -183,7 +207,7 @@ def test_public_circuit_conversion_and_file_output(tmp_path):
         output_dir / f"{output_name}.dem"
     )
     written_layout = json.loads(
-        (output_dir / f"{output_name}_layout.json").read_text(
+        (output_dir / f"{output_name}_detector_layout.json").read_text(
             encoding="utf-8"
         )
     )
