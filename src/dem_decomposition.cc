@@ -8,7 +8,6 @@
 #include <utility>
 #include <vector>
 
-#include "bern_utils.h"
 #include "stim.h"
 
 namespace tesseract {
@@ -295,58 +294,6 @@ stim::DetectorErrorModel undecompose_errors(const stim::DetectorErrorModel& dem)
     undecomposed_dem.append_error_instruction(instruction.arg_data[0], targets, instruction.tag);
   }
   return undecomposed_dem;
-}
-
-stim::DetectorErrorModel merge_indistinguishable_errors(const stim::DetectorErrorModel& dem) {
-  // Key is a set of (sorted_detectors, sorted_observables) components
-  typedef std::pair<std::vector<int>, std::vector<int>> ComponentSymptom;
-  std::map<std::set<ComponentSymptom>, double> symptom_to_prob;
-  stim::DetectorErrorModel merged_dem;
-
-  for (const auto& instruction : dem.flattened().instructions) {
-    if (instruction.type != stim::DemInstructionType::DEM_ERROR) {
-      merged_dem.append_dem_instruction(instruction);
-      continue;
-    }
-
-    double prob = instruction.arg_data[0];
-    std::set<ComponentSymptom> decomposed_symptom;
-
-    instruction.for_separated_targets([&](std::span<const stim::DemTarget> group) {
-      std::vector<int> dets;
-      std::vector<int> obs;
-      for (const auto& t : group) {
-        if (t.is_relative_detector_id())
-          dets.push_back(t.val());
-        else if (t.is_observable_id())
-          obs.push_back(t.val());
-      }
-      std::sort(dets.begin(), dets.end());
-      std::sort(obs.begin(), obs.end());
-      decomposed_symptom.insert({dets, obs});
-    });
-
-    if (symptom_to_prob.find(decomposed_symptom) == symptom_to_prob.end()) {
-      symptom_to_prob[decomposed_symptom] = 0.0;
-    }
-    symptom_to_prob[decomposed_symptom] =
-        tesseract::bernoulli_xor(symptom_to_prob[decomposed_symptom], prob);
-  }
-
-  for (auto const& [decomposed_symptom, prob] : symptom_to_prob) {
-    if (prob > 0) {
-      std::vector<stim::DemTarget> targets;
-      size_t i = 0;
-      for (const auto& comp : decomposed_symptom) {
-        for (int d : comp.first) targets.push_back(stim::DemTarget::relative_detector_id(d));
-        for (int o : comp.second) targets.push_back(stim::DemTarget::observable_id(o));
-        if (i < decomposed_symptom.size() - 1) targets.push_back(stim::DemTarget::separator());
-        i++;
-      }
-      merged_dem.append_error_instruction(prob, targets, "");
-    }
-  }
-  return merged_dem;
 }
 
 }  // namespace tesseract

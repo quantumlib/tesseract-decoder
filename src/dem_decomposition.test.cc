@@ -199,17 +199,3 @@ TEST(DemDecompositionTest, UndecomposeErrorsWithRepeatBlock) {
     )DEM");
   ASSERT_EQ(undecompose_errors(dem).str(), expected_undecomposed_dem.str());
 }
-
-TEST(DemDecompositionTest, MergeIndistinguishableErrors) {
-  stim::DetectorErrorModel dem(R"DEM(
-        error(0.1) D0 D1
-        error(0.2) D0 D1
-        error(0.05) D2
-        error(0.05) D2
-        detector D0
-        detector D1
-        detector D2
-    )DEM");
-  stim::DetectorErrorModel merged = merge_indistinguishable_errors(dem);
-  ASSERT_EQ(merged.count_errors(), 2);
-}

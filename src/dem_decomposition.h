@@ -76,9 +76,6 @@ std::map<int, stim::DetectorErrorModel> split_dem_by_component(
 // Returns a detector error model with any error decompositions removed.
 stim::DetectorErrorModel undecompose_errors(const stim::DetectorErrorModel& dem);
 
-// Merges error instructions in a DEM that have the same symptom.
-stim::DetectorErrorModel merge_indistinguishable_errors(const stim::DetectorErrorModel& dem);
-
 }  // namespace tesseract
 
 #endif  // DEM_DECOMPOSITION_H

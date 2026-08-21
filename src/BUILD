@@ -252,21 +252,12 @@ cc_test(
 )
 
 cc_library(
-    name = "libbern_utils",
-    srcs = ["bern_utils.cc"],
-    hdrs = ["bern_utils.h"],
-    copts = OPT_COPTS,
-    linkopts = OPT_LINKOPTS,
-)
-
-cc_library(
     name = "libdem_decomposition",
     srcs = ["dem_decomposition.cc"],
     hdrs = ["dem_decomposition.h"],
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
     deps = [
-        ":libbern_utils",
         "@stim//:stim_lib",
     ],
 )

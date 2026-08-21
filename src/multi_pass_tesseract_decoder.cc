@@ -200,14 +200,18 @@ void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
 
   stim::DetectorErrorModel decomposed =
       decompose_errors_using_detector_assignment(flattened, detector_component, true);
-  stim::DetectorErrorModel merged = merge_indistinguishable_errors(decomposed);
 
   ImpliedProbsMap raw_correlations = process_dem_correlations(decomposed, global_det_to_comp_id);
 
-  auto component_dems_raw = split_dem_by_component(merged, detector_component);
+  auto component_dems = split_dem_by_component(decomposed, detector_component);
 
   for (size_t i = 0; i < component_decoders.size(); ++i) {
     auto& cd = component_decoders[i];
+
+    std::vector<size_t> error_index_map;
+    stim::DetectorErrorModel component_dem =
+        common::merge_indistinguishable_errors(component_dems[i], error_index_map);
+    component_dem = common::remove_zero_probability_errors(component_dem, error_index_map);
 
     for (size_t global_d = 0; global_d < total_global_detectors; ++global_d) {
       cd.global_to_local_det[global_d] = (int)global_d;
@@ -220,7 +224,7 @@ void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
                                             metadata.tags[global_d]);
     }
 
-    for (const auto& inst : component_dems_raw[i].instructions) {
+    for (const auto& inst : component_dem.instructions) {
       if (inst.type == stim::DemInstructionType::DEM_ERROR) {
         bool has_obs = false;
         for (const auto& t : inst.target_data) {
