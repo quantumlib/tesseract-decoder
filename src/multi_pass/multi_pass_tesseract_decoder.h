@@ -6,12 +6,12 @@
 #include <string>
 #include <vector>
 
+#include "../tesseract.h"
+#include "../utils.h"
 #include "dem_decomposition.h"
 #include "error_correlations.h"
 #include "stim.h"
 #include "tanner_graph.h"
-#include "tesseract.h"
-#include "utils.h"
 
 namespace tesseract {
 

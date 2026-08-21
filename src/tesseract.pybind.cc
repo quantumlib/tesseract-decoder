@@ -18,7 +18,7 @@
 #include <pybind11/pybind11.h>
 
 #include "common.pybind.h"
-#include "multi_pass_sinter_compat.pybind.h"
+#include "multi_pass/multi_pass_sinter_compat.pybind.h"
 #include "pybind11/detail/common.h"
 #include "simplex.pybind.h"
 #include "tesseract_sinter_compat.pybind.h"

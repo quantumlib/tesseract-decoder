@@ -7,7 +7,7 @@
 #include <set>
 #include <sstream>
 
-#include "common.h"
+#include "../common.h"
 #include "dem_decomposition.h"
 
 namespace tesseract {

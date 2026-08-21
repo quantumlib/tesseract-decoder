@@ -89,7 +89,7 @@ pybind_library(
         "visualization.pybind.h",
         "tesseract.pybind.h",
         "tesseract_sinter_compat.pybind.h",
-        "multi_pass_sinter_compat.pybind.h",
+        "multi_pass/multi_pass_sinter_compat.pybind.h",
     ],
     copts = OPT_COPTS,
     deps = [
@@ -175,8 +175,8 @@ cc_library(
 
 cc_library(
     name = "libmulti_pass_tesseract_decoder",
-    srcs = ["multi_pass_tesseract_decoder.cc"],
-    hdrs = ["multi_pass_tesseract_decoder.h"],
+    srcs = ["multi_pass/multi_pass_tesseract_decoder.cc"],
+    hdrs = ["multi_pass/multi_pass_tesseract_decoder.h"],
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
     deps = [
@@ -191,7 +191,7 @@ cc_library(
 
 cc_test(
     name = "multi_pass_tesseract_decoder_tests",
-    srcs = ["multi_pass_tesseract_decoder.test.cc"],
+    srcs = ["multi_pass/multi_pass_tesseract_decoder.test.cc"],
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
     data = ["//:testdata"],
@@ -205,8 +205,8 @@ cc_test(
 
 cc_library(
     name = "liberror_correlations",
-    srcs = ["error_correlations.cc"],
-    hdrs = ["error_correlations.h"],
+    srcs = ["multi_pass/error_correlations.cc"],
+    hdrs = ["multi_pass/error_correlations.h"],
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
     deps = [
@@ -216,7 +216,7 @@ cc_library(
 
 cc_test(
     name = "error_correlations_tests",
-    srcs = ["error_correlations.test.cc"],
+    srcs = ["multi_pass/error_correlations.test.cc"],
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
     deps = [
@@ -229,8 +229,8 @@ cc_test(
 
 cc_library(
     name = "libtanner_graph",
-    srcs = ["tanner_graph.cc"],
-    hdrs = ["tanner_graph.h"],
+    srcs = ["multi_pass/tanner_graph.cc"],
+    hdrs = ["multi_pass/tanner_graph.h"],
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
     deps = [
@@ -240,7 +240,7 @@ cc_library(
 
 cc_test(
     name = "tanner_graph_tests",
-    srcs = ["tanner_graph.test.cc"],
+    srcs = ["multi_pass/tanner_graph.test.cc"],
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
     deps = [
@@ -253,8 +253,8 @@ cc_test(
 
 cc_library(
     name = "libdem_decomposition",
-    srcs = ["dem_decomposition.cc"],
-    hdrs = ["dem_decomposition.h"],
+    srcs = ["multi_pass/dem_decomposition.cc"],
+    hdrs = ["multi_pass/dem_decomposition.h"],
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
     deps = [
@@ -264,7 +264,7 @@ cc_library(
 
 cc_test(
     name = "dem_decomposition_tests",
-    srcs = ["dem_decomposition.test.cc"],
+    srcs = ["multi_pass/dem_decomposition.test.cc"],
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
     deps = [

@@ -9,9 +9,9 @@
 
 #include <iostream>
 
+#include "../utils.h"
 #include "dem_decomposition.h"
 #include "multi_pass_tesseract_decoder.h"
-#include "utils.h"
 
 namespace py = pybind11;
 

@@ -25,7 +25,7 @@
 #include <thread>
 
 #include "common.h"
-#include "multi_pass_tesseract_decoder.h"
+#include "multi_pass/multi_pass_tesseract_decoder.h"
 #include "stim.h"
 #include "tesseract.h"
 #include "utils.h"
