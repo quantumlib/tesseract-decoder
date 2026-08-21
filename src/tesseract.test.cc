@@ -563,18 +563,20 @@ TEST(tesseract, MoreThan64Observables) {
   }
 }
 
-static std::string write_gari_layout(const std::string& text) {
-  std::string path = testing::TempDir() + "gari_layout_test.json";
+static std::string write_detector_layout(const std::string& text) {
+  std::string path = testing::TempDir() + "detector_layout_test.json";
   std::ofstream(path) << text;
   return path;
 }
 
-TEST(utils, GariLayoutMapsAndValidatesSource) {
+TEST(utils, DetectorLayoutMapsAndValidatesSource) {
   std::string path =
-      write_gari_layout(R"({"schema":"tesseract.gari_layout.v1","source_detector_count":4,)"
-                        R"("gari_detector_count":6,"source_to_gari":[2,0,3,1],)"
-                        R"("detector_order":"physical_then_virtual"})");
-  GariLayout layout = load_gari_layout(path, 6);
+      write_detector_layout(R"({"schema":"tesseract.detector_layout.v1",)"
+                            R"("source_detector_count":4,"dem_detector_count":6,)"
+                            R"("source_to_dem":[2,0,5,1],)"
+                            R"("detector_orders":[[2,0,5,1,3,4]]})");
+  DetectorLayout layout = load_detector_layout(path, 6);
+  EXPECT_EQ(layout.detector_orders, (std::vector<std::vector<size_t>>{{2, 0, 5, 1, 3, 4}}));
   std::vector<stim::SparseShot> shots(1);
   shots[0].hits = {0, 1};
   layout.map_shots(shots);
@@ -594,11 +596,18 @@ TEST(utils, GariLayoutMapsAndValidatesSource) {
   auto source_order = build_det_orders(source_dem, 1, DetOrder::DetCoordinate, 5)[0];
   auto gari_order = build_gari_detector_orders(circuit, layout, 1, DetOrder::DetCoordinate, 5)[0];
   if (source_order == std::vector<size_t>{0, 3, 1, 2}) {
-    EXPECT_EQ(gari_order, (std::vector<size_t>{2, 3, 1, 0, 4, 5}));
+    EXPECT_EQ(gari_order, (std::vector<size_t>{2, 5, 1, 0, 3, 4}));
   } else {
     ASSERT_EQ(source_order, (std::vector<size_t>{3, 0, 2, 1}));
-    EXPECT_EQ(gari_order, (std::vector<size_t>{0, 1, 3, 2, 4, 5}));
+    EXPECT_EQ(gari_order, (std::vector<size_t>{0, 1, 5, 2, 3, 4}));
   }
+
+  DetectorLayout defaults = load_detector_layout(
+      write_detector_layout(
+          R"({"schema":"tesseract.detector_layout.v1","dem_detector_count":3})"),
+      3);
+  EXPECT_EQ(defaults.source_to_dem, (std::vector<size_t>{0, 1, 2}));
+  EXPECT_TRUE(defaults.detector_orders.empty());
 }
 
 TEST(utils, GariSourceShotRemappingDecodes) {
@@ -619,9 +628,9 @@ TEST(utils, GariSourceShotRemappingDecodes) {
     error(0.1) D4 L1
     error(0.1) D5 L2
   )DEM");
-  GariLayout layout;
-  layout.gari_detector_count = 6;
-  layout.source_to_gari = {2, 0, 3, 1};
+  DetectorLayout layout;
+  layout.dem_detector_count = 6;
+  layout.source_to_dem = {2, 0, 3, 1};
 
   std::vector<stim::SparseShot> shots(1);
   shots[0].hits = {0, 3};
@@ -640,10 +649,10 @@ TEST(utils, GariB8SourceWidthPreservesShotRecords) {
     error(0.1) D0 D5 L1
     detector D9
   )DEM");
-  GariLayout layout = load_gari_layout(
-      write_gari_layout(R"({"schema":"tesseract.gari_layout.v1","source_detector_count":7,)"
-                        R"("gari_detector_count":10,"source_to_gari":[2,0,4,1,6,3,5],)"
-                        R"("detector_order":"physical_then_virtual"})"),
+  DetectorLayout layout = load_detector_layout(
+      write_detector_layout(R"({"schema":"tesseract.detector_layout.v1",)"
+                            R"("source_detector_count":7,"dem_detector_count":10,)"
+                            R"("source_to_dem":[2,0,4,1,6,3,5]})"),
       gari_dem.count_detectors());
 
   std::string path = testing::TempDir() + "gari_source_shots.b8";
@@ -681,20 +690,23 @@ TEST(utils, GariB8SourceWidthPreservesShotRecords) {
   EXPECT_EQ(simplex.decode(shots[1].hits), (std::vector<int>{1}));
 }
 
-TEST(utils, GariLayoutRejectsInvalidV1) {
-  const std::string valid = R"({"schema":"tesseract.gari_layout.v1","source_detector_count":2,)"
-                            R"("gari_detector_count":4,"source_to_gari":[1,0],)"
-                            R"("detector_order":"physical_then_virtual"})";
+TEST(utils, DetectorLayoutRejectsInvalidV1) {
+  const std::string valid =
+      R"({"schema":"tesseract.detector_layout.v1","source_detector_count":2,)"
+      R"("dem_detector_count":4,"source_to_dem":[1,0],)"
+      R"("detector_orders":[[1,0,2,3]]})";
   auto replacing = [&](const std::string& from, const std::string& to) {
     std::string result = valid;
     result.replace(result.find(from), from.size(), to);
     return result;
   };
   for (const std::string& text :
-       {replacing("[1,0]", "[0,3]"), replacing("[1,0]", "[0,0]"), std::string("{")}) {
-    std::string path = write_gari_layout(text);
+       {replacing("[1,0]", "[0,4]"), replacing("[1,0]", "[0,0]"),
+        replacing("[1,0,2,3]", "[0,1,2,2]"), replacing("[[1,0,2,3]]", "[]"),
+        std::string("{")}) {
+    std::string path = write_detector_layout(text);
     try {
-      load_gari_layout(path, 4);
+      load_detector_layout(path, 4);
       FAIL() << "Invalid layout was accepted.";
     } catch (const std::invalid_argument& ex) {
       EXPECT_NE(std::string(ex.what()).find(path), std::string::npos);

@@ -29,96 +29,130 @@
 #include "common.h"
 #include "stim.h"
 
-static std::invalid_argument gari_layout_error(const std::string& path, const std::string& detail) {
-  return std::invalid_argument("Invalid GARI layout '" + path + "': " + detail);
+static std::invalid_argument detector_layout_error(const std::string& path,
+                                                   const std::string& detail) {
+  return std::invalid_argument("Invalid detector layout '" + path + "': " + detail);
 }
 
-static size_t read_gari_layout_size(const nlohmann::json& value, const std::string& path) {
+static size_t read_detector_layout_size(const nlohmann::json& value, const std::string& path) {
   if (!value.is_number_integer()) {
-    throw gari_layout_error(path, "detector counts and mapping entries must be integers.");
+    throw detector_layout_error(path, "detector counts and indices must be integers.");
   }
   if (value.is_number_unsigned()) {
     uint64_t result = value.get<uint64_t>();
     if (result > std::numeric_limits<size_t>::max()) {
-      throw gari_layout_error(path, "integer is too large.");
+      throw detector_layout_error(path, "integer is too large.");
     }
     return static_cast<size_t>(result);
   }
   int64_t result = value.get<int64_t>();
   if (result < 0) {
-    throw gari_layout_error(path, "detector counts and mapping entries must be nonnegative.");
+    throw detector_layout_error(path, "detector counts and indices must be nonnegative.");
   }
   return static_cast<size_t>(result);
 }
 
-GariLayout load_gari_layout(const std::string& path, size_t expected_gari_detector_count) {
+DetectorLayout load_detector_layout(const std::string& path, size_t expected_dem_detector_count) {
   std::ifstream input(path);
   if (!input.is_open()) {
-    throw std::invalid_argument("Could not open GARI layout: " + path);
+    throw std::invalid_argument("Could not open detector layout: " + path);
   }
 
   try {
     nlohmann::json document;
     input >> document;
-    if (document.at("schema").get<std::string>() != "tesseract.gari_layout.v1") {
-      throw gari_layout_error(path, "unsupported schema.");
-    }
-    if (document.at("detector_order").get<std::string>() != "physical_then_virtual") {
-      throw gari_layout_error(path, "unsupported detector order.");
+    if (document.at("schema").get<std::string>() != "tesseract.detector_layout.v1") {
+      throw detector_layout_error(path, "unsupported schema.");
     }
 
+    size_t dem_detector_count =
+        read_detector_layout_size(document.at("dem_detector_count"), path);
+    if (dem_detector_count != expected_dem_detector_count) {
+      throw detector_layout_error(path, "dem_detector_count does not match the DEM.");
+    }
     size_t source_detector_count =
-        read_gari_layout_size(document.at("source_detector_count"), path);
-    size_t gari_detector_count = read_gari_layout_size(document.at("gari_detector_count"), path);
-    const auto& mapping = document.at("source_to_gari");
-    if (gari_detector_count != expected_gari_detector_count ||
-        source_detector_count > gari_detector_count || !mapping.is_array() ||
-        mapping.size() != source_detector_count) {
-      throw gari_layout_error(path, "detector counts do not agree with the mapping.");
+        document.contains("source_detector_count")
+            ? read_detector_layout_size(document.at("source_detector_count"), path)
+            : dem_detector_count;
+    if (source_detector_count > dem_detector_count) {
+      throw detector_layout_error(path, "source detector count exceeds DEM detector count.");
     }
 
-    GariLayout layout;
+    DetectorLayout layout;
     layout.path = path;
-    layout.gari_detector_count = gari_detector_count;
-    std::vector<bool> used(source_detector_count);
-    layout.source_to_gari.reserve(source_detector_count);
-    for (const auto& entry : mapping) {
-      size_t target = read_gari_layout_size(entry, path);
-      if (target >= source_detector_count || used[target]) {
-        throw gari_layout_error(path, "source_to_gari must permute the physical detector rows.");
+    layout.dem_detector_count = dem_detector_count;
+    if (document.contains("source_to_dem")) {
+      const auto& mapping = document.at("source_to_dem");
+      if (!mapping.is_array() || mapping.size() != source_detector_count) {
+        throw detector_layout_error(path, "source_to_dem has the wrong size.");
       }
-      used[target] = true;
-      layout.source_to_gari.push_back(target);
+      std::vector<bool> used(dem_detector_count);
+      layout.source_to_dem.reserve(source_detector_count);
+      for (const auto& entry : mapping) {
+        size_t target = read_detector_layout_size(entry, path);
+        if (target >= dem_detector_count || used[target]) {
+          throw detector_layout_error(path, "source_to_dem must contain unique DEM detector IDs.");
+        }
+        used[target] = true;
+        layout.source_to_dem.push_back(target);
+      }
+    } else {
+      layout.source_to_dem.resize(source_detector_count);
+      std::iota(layout.source_to_dem.begin(), layout.source_to_dem.end(), 0);
+    }
+
+    if (document.contains("detector_orders")) {
+      const auto& orders = document.at("detector_orders");
+      if (!orders.is_array() || orders.empty()) {
+        throw detector_layout_error(path, "detector_orders must be a nonempty array.");
+      }
+      for (const auto& order : orders) {
+        if (!order.is_array() || order.size() != dem_detector_count) {
+          throw detector_layout_error(path, "each detector order must include every DEM detector.");
+        }
+        std::vector<bool> used(dem_detector_count);
+        std::vector<size_t> parsed_order;
+        parsed_order.reserve(dem_detector_count);
+        for (const auto& entry : order) {
+          size_t detector = read_detector_layout_size(entry, path);
+          if (detector >= dem_detector_count || used[detector]) {
+            throw detector_layout_error(path, "each detector order must be a permutation.");
+          }
+          used[detector] = true;
+          parsed_order.push_back(detector);
+        }
+        layout.detector_orders.push_back(std::move(parsed_order));
+      }
     }
     return layout;
   } catch (const nlohmann::json::exception& ex) {
-    throw gari_layout_error(path, ex.what());
+    throw detector_layout_error(path, ex.what());
   }
 }
 
-void GariLayout::map_hits(std::vector<uint64_t>& hits) const {
+void DetectorLayout::map_hits(std::vector<uint64_t>& hits) const {
   for (uint64_t& source : hits) {
-    if (source >= source_to_gari.size()) {
-      throw gari_layout_error(path, "source detector index is out of range.");
+    if (source >= source_to_dem.size()) {
+      throw detector_layout_error(path, "source detector index is out of range.");
     }
-    source = source_to_gari[source];
+    source = source_to_dem[source];
   }
   std::sort(hits.begin(), hits.end());
 }
 
-void GariLayout::map_shots(std::vector<stim::SparseShot>& shots) const {
+void DetectorLayout::map_shots(std::vector<stim::SparseShot>& shots) const {
   for (auto& shot : shots) {
     map_hits(shot.hits);
   }
 }
 
-void GariLayout::validate_source(const stim::Circuit& circuit,
-                                 const stim::DetectorErrorModel& gari_dem) const {
+void DetectorLayout::validate_source(const stim::Circuit& circuit,
+                                     const stim::DetectorErrorModel& dem) const {
   if (circuit.count_detectors() != source_detector_count()) {
-    throw gari_layout_error(path, "source_detector_count does not match the circuit.");
+    throw detector_layout_error(path, "source_detector_count does not match the circuit.");
   }
-  if (circuit.count_observables() != gari_dem.count_observables()) {
-    throw gari_layout_error(path, "the circuit and DEM observable counts differ.");
+  if (circuit.count_observables() != dem.count_observables()) {
+    throw detector_layout_error(path, "the circuit and DEM observable counts differ.");
   }
 }
 
@@ -298,18 +332,18 @@ std::vector<std::vector<size_t>> build_det_orders(const stim::DetectorErrorModel
 }
 
 std::vector<std::vector<size_t>> build_gari_detector_orders(const stim::Circuit& source_circuit,
-                                                            const GariLayout& layout,
+                                                            const DetectorLayout& layout,
                                                             size_t num_det_orders, DetOrder method,
                                                             uint64_t seed) {
   if (num_det_orders == 0) {
     return {};
   }
   if (source_circuit.count_detectors() != layout.source_detector_count()) {
-    throw gari_layout_error(layout.path,
-                            "source_detector_count does not match the ordering circuit.");
+    throw detector_layout_error(layout.path,
+                                "source_detector_count does not match the ordering circuit.");
   }
-  if (layout.source_detector_count() > layout.gari_detector_count) {
-    throw gari_layout_error(layout.path, "source detector count exceeds GARI detector count.");
+  if (layout.source_detector_count() > layout.dem_detector_count) {
+    throw detector_layout_error(layout.path, "source detector count exceeds DEM detector count.");
   }
 
   std::vector<std::vector<size_t>> source_orders;
@@ -329,17 +363,23 @@ std::vector<std::vector<size_t>> build_gari_detector_orders(const stim::Circuit&
   gari_orders.reserve(source_orders.size());
   for (const auto& source_order : source_orders) {
     if (source_order.size() != layout.source_detector_count()) {
-      throw gari_layout_error(layout.path, "source detector order has the wrong size.");
+      throw detector_layout_error(layout.path, "source detector order has the wrong size.");
     }
-    std::vector<size_t> gari_order(layout.gari_detector_count);
+    std::vector<size_t> gari_order(layout.dem_detector_count);
     // Source orders map each detector to its rank. Relabel the physical rows
     // while converting those ranks to the sequence consumed by Tesseract.
     for (size_t source = 0; source < source_order.size(); ++source) {
-      gari_order.at(source_order[source]) = layout.source_to_gari.at(source);
+      gari_order.at(source_order[source]) = layout.source_to_dem.at(source);
     }
-    for (size_t detector = layout.source_detector_count(); detector < layout.gari_detector_count;
-         ++detector) {
-      gari_order[detector] = detector;
+    std::vector<bool> mapped(layout.dem_detector_count);
+    for (size_t detector : layout.source_to_dem) {
+      mapped[detector] = true;
+    }
+    size_t position = layout.source_detector_count();
+    for (size_t detector = 0; detector < layout.dem_detector_count; ++detector) {
+      if (!mapped[detector]) {
+        gari_order[position++] = detector;
+      }
     }
     gari_orders.push_back(std::move(gari_order));
   }

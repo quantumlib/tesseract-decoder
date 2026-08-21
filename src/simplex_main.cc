@@ -175,9 +175,9 @@ struct Args {
 
     config.merge_errors = !no_merge_errors;
 
-    std::optional<GariLayout> gari_layout;
+    std::optional<DetectorLayout> gari_layout;
     if (!gari_layout_path.empty()) {
-      gari_layout = load_gari_layout(gari_layout_path, config.dem.count_detectors());
+      gari_layout = load_detector_layout(gari_layout_path, config.dem.count_detectors());
       if (!circuit_path.empty()) {
         gari_layout->validate_source(circuit, config.dem);
       }
