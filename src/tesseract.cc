@@ -23,6 +23,7 @@
 #include <iostream>
 #include <limits>
 #include <numeric>
+#include <utility>
 
 namespace {
 
@@ -150,8 +151,10 @@ double TesseractDecoder::get_detcost(size_t d,
   return (min_cost / min_det_cost_det_count) + config.det_penalty;
 }
 
-TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
-  std::vector<size_t> dem_error_map(config.dem.flattened().count_errors());
+TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(std::move(config_)) {
+  config.dem = common::flatten(config.dem);
+
+  std::vector<size_t> dem_error_map(config.dem.count_errors());
   std::iota(dem_error_map.begin(), dem_error_map.end(), 0);
 
   if (config.merge_errors) {
@@ -181,7 +184,7 @@ TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(config_) {
   if (config.det_orders.empty()) {
     throw std::runtime_error("After initialization, detector orders list must not be empty.");
   }
-  errors = get_errors_from_dem(config.dem.flattened());
+  errors = get_errors_from_dem(config.dem);
   if (config.verbose) {
     for (auto& error : errors) {
       std::cout << error.str() << "\n";
