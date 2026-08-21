@@ -539,6 +539,60 @@ def get_tesseract_decoder_for_sinter():
     return tesseract_module.make_tesseract_sinter_decoders_dict()
 ```
 
+#### Multi-pass Tesseract decoding
+
+`MultiPassSinterDecoder` partitions a detector error model into exactly two detector components. It
+accepts one or two passes (default: 2) and uses causal scheduling by default. Its built-in classifier
+checks strict `"X"`/`"Z"` `measure_basis` metadata, then `basis` metadata, then the fourth detector
+coordinate (`0`–`2` or `3`–`5`). Every detector must be classified, and exactly two distinct labels
+must result.
+
+Standard Tesseract options and multi-pass wrapper options can be passed directly as keyword
+arguments:
+
+```python
+import stim
+import tesseract_decoder
+from multi_pass_sinter_decoders import MultiPassSinterDecoder
+
+dem = stim.DetectorErrorModel("""
+    error(0.1) D0 ^ D1 L0
+    error(0.01) D0
+    error(0.2) D1 L0
+    detector[{"measure_basis": "X"}] D0
+    detector[{"measure_basis": "Z"}] D1
+    logical_observable L0
+""")
+
+decoder = MultiPassSinterDecoder(
+    num_passes=2,
+    det_beam=20,
+    beam_climbing=True,
+    pqlimit=1_000_000,
+    num_det_orders=21,
+    det_order_method=tesseract_decoder.utils.DetOrder.DetIndex,
+)
+compiled_decoder = decoder.compile_decoder_for_dem(dem=dem)
+```
+
+For other annotation conventions, supply a callable with signature
+`(detector_index, coordinates, tag) -> component_label`. Returning a negative label rejects a
+detector that the callable cannot classify. For example, the built-in coordinate convention can be
+expressed as:
+
+```python
+coordinate_classifier = lambda _index, coordinates, _tag: (
+    0 if len(coordinates) >= 4 and 0 <= coordinates[3] <= 2
+    else 1 if len(coordinates) >= 4 and 3 <= coordinates[3] <= 5
+    else -1
+)
+decoder = MultiPassSinterDecoder(detector_classifier=coordinate_classifier)
+```
+
+`get_sinter_decoders()` provides long-beam monolithic, one-pass, and two-pass configurations using
+the same Tesseract settings; they differ only in whether multi-pass decoding is enabled and in the
+number of passes.
+
 #### Decoding with `sinter.collect`
 `sinter.collect` is a powerful function for running many decoding jobs in parallel and collecting the results for large-scale benchmarking.
 

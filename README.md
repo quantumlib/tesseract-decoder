@@ -199,49 +199,45 @@ errors are not capped by degree.
 
 ## Multi-Pass Graph Shattering
 
-For loopy 3D syndrome hypergraphs (such as circuit-level color codes under circuit noise), monolithic MWPM/beam search scales exponentially slow. Tesseract implements **Multi-Pass Graph Shattering** to sever physical error correlation edges, breaking the monolithic graph into independent, planar-like CSS stabilizer components. 
+Multi-pass graph shattering partitions a correlated detector error model into two detector
+components and decodes the smaller component models separately. With two passes, predictions from
+the first pass update error priors used during the final pass. The current implementation requires
+exactly two components and accepts one or two passes.
 
-Priors (LLRs) are dynamically updated and propagated between passes using conditional probabilities to preserve physical logical accuracy while delivering up to **$1,000\times$ decoding speedups**.
+### Detector classification
 
-### ⚠️ Strict Annotation Requirements (Limitations)
-To decode using graph shattering, Tesseract **must** be able to classify detectors into basis components. The input Stim circuit or Detector Error Model (DEM) **MUST** be annotated using one of the following conventions (checked in priority order):
-1. **Measure Basis Tags** (highest priority): Detector instructions contain a `"measure_basis"` field in their JSON metadata tag, either at the top level (e.g. `DETECTOR[{"measure_basis": "X"}]`) or nested under `"md"` (e.g. `DETECTOR[{"md": {"measure_basis": "Z"}}]`).
-2. **Basis Tags**: Detector instructions contain a `"basis"` field in their JSON metadata tag, either at the top level (e.g. `DETECTOR[{"basis": "X"}]`) or nested under `"md"` (e.g. `DETECTOR[{"md": {"basis": "Z"}}]`).
-3. **Coordinate Conventions (Chromobius Style)**: Detector coordinates must contain at least 4 dimensions, where the 4th coordinate represents `color + 3 * basis` (Component 0: `0 <= coords[3] <= 2`, Component 1: `3 <= coords[3] <= 5`).
+The CLI classifier checks the following detector annotations in order:
 
-Metadata basis values must be JSON strings exactly equal to `"X"` or `"Z"`. Values such as `0`, `1`, `"Y"`, or lowercase variants are invalid. If a metadata basis field is present with an invalid value, detector classification fails instead of falling back to another field or to detector coordinates.
+1. A `"measure_basis"` field in the detector's JSON metadata tag, first at the top level and then
+   under `"md"`.
+2. A `"basis"` field in the same locations.
+3. A fourth detector coordinate using the Chromobius-style `color + 3 * basis` convention:
+   values `0`–`2` select component 0 and values `3`–`5` select component 1.
 
-If an unannotated circuit/DEM is supplied with `--multipass` enabled, Tesseract will fail fast and throw a clear `std::invalid_argument` exception.
+Metadata basis values must be strings exactly equal to `"X"` or `"Z"`. An invalid metadata value
+does not fall back to another field or to coordinates. Multi-pass decoding fails if any detector
+cannot be classified or if the resulting classification does not contain exactly two components.
+The Python wrapper can instead be given a custom detector classifier.
 
-### CLI Options
-*   `--multipass`: Enable multi-pass graph shattering (default = false).
-*   `--num-passes`, `--num_passes`: Number of prior propagation passes (default = 2).
-    *   `1`: Uncorrelated independent CSS decoding (planar speedup, no reweighting).
-    *   `2`: Standard causally reweighted prior propagation decoding.
-    *   *Note: values > 2 are experimental and were never systematically benchmarked.*
-*   `--multipass-strategy`, `--multipass_strategy`: Causal or static pass scheduling (default = causal).
-    *   `causal` (Recommended): Dynamically schedules stabilizer components sequentially based on physical prior causal flow (Component 0 decodes first, updates prior edge weights, Component 1 decodes using those LLRs).
-    *   `static`: Decodes all components in parallel without dynamic pass-to-pass LLR updates.
+### CLI options
 
-### CLI Examples
+* `--multipass`: Enables multi-pass graph shattering.
+* `--num-passes`, `--num_passes`: Selects one or two passes (default: 2). One pass performs no
+  inter-pass prior update; two passes perform one round of prior propagation. Other values are
+  rejected.
+* `--multipass-strategy`, `--multipass_strategy`: Selects `causal` (default), which derives the pass
+  schedule from component dependencies, or experimental `static`, which schedules both components
+  in every pass.
+* `--print-multipass-plan`: Prints the monolithic and component model statistics, dependencies, and
+  pass schedule to standard error. It requires `--multipass`; these statistics are calculated only
+  when this flag is present.
 
-**1. Running Multi-Pass on Basis-Tag Annotated Surface Codes (using Long-Beam Settings):**
-```bash
-./bazel-bin/src/tesseract \
-    --circuit testdata/annotated_surface_codes/style=surface_code,d=5,basis=X,num_rounds=10,max_qubits_per_module=49,total_qubits=64,k=1,noise=SI1000,p=0.00100.stim \
-    --sample-num-shots 1000 \
-    --multipass \
-    --num-passes 2 \
-    --multipass-strategy causal \
-    --pqlimit 1000000 \
-    --beam 20 \
-    --beam-climbing \
-    --no-revisit-dets \
-    --num-det-orders 21 \
-    --print-stats
-```
+`--dem-out` is not supported with `--multipass`.
 
-**2. Running Multi-Pass on Coordinate-Annotated Color Codes (using Long-Beam Settings):**
+### CLI example
+
+This example uses a coordinate-annotated color-code circuit and the long-beam settings:
+
 ```bash
 ./bazel-bin/src/tesseract \
     --circuit testdata/colorcodes/r=5,d=5,p=0.003,noise=si1000,c=midout_color_code_X,q=23,gates=cz.stim \
@@ -254,6 +250,7 @@ If an unannotated circuit/DEM is supplied with `--multipass` enabled, Tesseract 
     --beam-climbing \
     --no-revisit-dets \
     --num-det-orders 21 \
+    --print-multipass-plan \
     --print-stats
 ```
 

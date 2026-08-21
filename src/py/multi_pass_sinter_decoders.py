@@ -5,8 +5,16 @@ import tesseract_decoder as _core
 class MultiPassSinterDecoder(sinter.Decoder):
     """A Sinter-compatible wrapper around the native multi-pass Tesseract decoder.
 
-    Standard Tesseract configuration arguments can be passed through
-    ``**base_config_kwargs``.
+    Args:
+        num_passes: Number of passes. Only 1 or 2 are supported.
+        detector_classifier: Optional ``(index, coordinates, tag) -> int`` callable. It must
+            assign every detector a nonnegative label and produce exactly two distinct labels.
+            By default, X/Z metadata tags and then Chromobius-style coordinates are used.
+        strategy: Pass scheduling strategy. Defaults to causal scheduling.
+        **base_config_kwargs: Standard Tesseract options such as ``det_beam``, ``pqlimit``,
+            ``beam_climbing``, ``no_revisit_dets``, and ``merge_errors``. Multi-pass wrapper
+            options such as ``num_det_orders``, ``det_order_method``, and ``seed`` are also
+            accepted.
     """
     def __init__(self, num_passes: int = 2, detector_classifier=None,
                  strategy=_core.Causal, **base_config_kwargs):

@@ -132,13 +132,18 @@ void pybind_multi_pass_sinter_compat(py::module& m) {
       .value("Causal", SchedulingStrategy::Causal)
       .export_values();
 
-  py::class_<MultiPassSinterCompiledDecoder>(m, "MultiPassSinterCompiledDecoder")
+  py::class_<MultiPassSinterCompiledDecoder>(
+      m, "MultiPassSinterCompiledDecoder",
+      "A compiled Sinter decoder backed by the native multi-pass Tesseract decoder.")
       .def_property_readonly("num_components", &MultiPassSinterCompiledDecoder::num_components)
       .def("decode_shots_bit_packed", &MultiPassSinterCompiledDecoder::decode_shots_bit_packed,
            py::kw_only(), py::arg("bit_packed_detection_event_data"),
            py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>());
 
-  py::class_<MultiPassSinterDecoder>(m, "MultiPassSinterDecoder")
+  py::class_<MultiPassSinterDecoder>(
+      m, "MultiPassSinterDecoder",
+      "Low-level multi-pass Sinter decoder. Supports one or two passes and requires a "
+      "detector_classifier before compilation.")
       .def(py::init<size_t>(), py::arg("num_passes") = 2)
       .def_readwrite("full_decomposer", &MultiPassSinterDecoder::full_decomposer)
       .def_readwrite("detector_classifier", &MultiPassSinterDecoder::detector_classifier)
@@ -148,7 +153,8 @@ void pybind_multi_pass_sinter_compat(py::module& m) {
       .def_readwrite("seed", &MultiPassSinterDecoder::seed)
       .def_readwrite("strategy", &MultiPassSinterDecoder::strategy)
       .def("compile_decoder_for_dem", &MultiPassSinterDecoder::compile_decoder_for_dem,
-           py::kw_only(), py::arg("dem"));
+           py::kw_only(), py::arg("dem"),
+           "Compiles a DEM after classifying every detector into exactly two components.");
 }
 
 }  // namespace tesseract
