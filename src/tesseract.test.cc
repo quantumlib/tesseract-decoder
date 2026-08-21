@@ -574,8 +574,7 @@ TEST(utils, GariSourcePrefixB8Decodes) {
   std::fputc('\x42', file);  // D1 D6.
   std::rewind(file);
   auto format = stim::format_name_to_enum_map().at("b8");
-  auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
-      file, format.id, 0, 7, 0);
+  auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(file, format.id, 0, 7, 0);
   std::vector<stim::SparseShot> shots;
   stim::SparseShot shot;
   while (reader->start_and_read_entire_record(shot)) {
