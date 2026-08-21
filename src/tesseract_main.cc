@@ -225,7 +225,7 @@ struct Args {
             "Detector-order options cannot be used when --detector-layout provides "
             "detector_orders.");
       }
-    } else if (sample_num_shots > 0 and !dem_path.empty() and
+    } else if (!circuit_path.empty() and !dem_path.empty() and
                circuit.count_detectors() != config.dem.count_detectors()) {
       throw std::invalid_argument(
           "Circuit and DEM detector counts differ; supply --detector-layout.");

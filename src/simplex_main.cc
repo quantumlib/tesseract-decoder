@@ -177,7 +177,7 @@ struct Args {
       if (!circuit_path.empty()) {
         detector_layout->validate_source(circuit, config.dem, dem_path.empty());
       }
-    } else if (sample_num_shots > 0 and !dem_path.empty() and
+    } else if (!circuit_path.empty() and !dem_path.empty() and
                circuit.count_detectors() != config.dem.count_detectors()) {
       throw std::invalid_argument(
           "Circuit and DEM detector counts differ; supply --detector-layout.");
