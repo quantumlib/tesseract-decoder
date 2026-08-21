@@ -286,8 +286,7 @@ struct Args {
       }
       stim::FileFormatData shots_in_format = stim::format_name_to_enum_map().at(in_format);
       size_t source_detector_count =
-          detector_layout ? detector_layout->source_detector_count()
-                          : config.dem.count_detectors();
+          detector_layout ? detector_layout->source_detector_count() : config.dem.count_detectors();
       auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
           shots_file, shots_in_format.id, 0, source_detector_count,
           append_observables * config.dem.count_observables());
@@ -703,8 +702,7 @@ int main(int argc, char* argv[]) {
         {"beam_climbing", args.beam_climbing},
         {"no_revisit_dets", args.no_revisit_dets},
         {"pqlimit", args.pqlimit},
-        {"num_det_orders",
-         config.det_orders.empty() ? 1 : config.det_orders.size()},
+        {"num_det_orders", config.det_orders.empty() ? 1 : config.det_orders.size()},
         {"det_order_seed", args.det_order_seed},
         {"total_time_seconds", total_time_seconds},
         {"num_errors", has_obs ? nlohmann::json(num_errors) : nullptr},

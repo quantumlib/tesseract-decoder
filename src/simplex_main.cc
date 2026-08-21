@@ -209,8 +209,7 @@ struct Args {
       }
       stim::FileFormatData shots_in_format = stim::format_name_to_enum_map().at(in_format);
       size_t source_detector_count =
-          detector_layout ? detector_layout->source_detector_count()
-                          : config.dem.count_detectors();
+          detector_layout ? detector_layout->source_detector_count() : config.dem.count_detectors();
       auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
           shots_file, shots_in_format.id, 0, source_detector_count,
           append_observables * config.dem.count_observables());
@@ -295,8 +294,7 @@ int main(int argc, char* argv[]) {
   program.add_argument("--circuit").help("Stim circuit file path").store_into(args.circuit_path);
   program.add_argument("--dem").help("Stim dem file path").store_into(args.dem_path);
   program.add_argument("--detector-layout")
-      .help(
-          "JSON detector layout. Optionally maps source detector data into DEM detector rows.")
+      .help("JSON detector layout. Optionally maps source detector data into DEM detector rows.")
       .metavar("FILE")
       .default_value(std::string(""))
       .store_into(args.detector_layout_path);

@@ -570,11 +570,10 @@ static std::string write_detector_layout(const std::string& text) {
 }
 
 TEST(utils, DetectorLayoutMapsAndValidatesSource) {
-  std::string path =
-      write_detector_layout(R"({"schema":"tesseract.detector_layout.v1",)"
-                            R"("source_detector_count":4,"dem_detector_count":6,)"
-                            R"("source_to_dem":[2,0,5,1],)"
-                            R"("detector_orders":[[2,0,5,1,3,4]]})");
+  std::string path = write_detector_layout(R"({"schema":"tesseract.detector_layout.v1",)"
+                                           R"("source_detector_count":4,"dem_detector_count":6,)"
+                                           R"("source_to_dem":[2,0,5,1],)"
+                                           R"("detector_orders":[[2,0,5,1,3,4]]})");
   DetectorLayout layout = load_detector_layout(path, 6);
   EXPECT_EQ(layout.detector_orders, (std::vector<std::vector<size_t>>{{2, 0, 5, 1, 3, 4}}));
   std::vector<stim::SparseShot> shots(1);
@@ -592,8 +591,7 @@ TEST(utils, DetectorLayoutMapsAndValidatesSource) {
                std::invalid_argument);
 
   DetectorLayout defaults = load_detector_layout(
-      write_detector_layout(
-          R"({"schema":"tesseract.detector_layout.v1","dem_detector_count":3})"),
+      write_detector_layout(R"({"schema":"tesseract.detector_layout.v1","dem_detector_count":3})"),
       3);
   EXPECT_EQ(defaults.source_to_dem, (std::vector<size_t>{0, 1, 2}));
   EXPECT_TRUE(defaults.detector_orders.empty());
@@ -680,10 +678,9 @@ TEST(utils, GariB8SourceWidthPreservesShotRecords) {
 }
 
 TEST(utils, DetectorLayoutRejectsInvalidV1) {
-  const std::string valid =
-      R"({"schema":"tesseract.detector_layout.v1","source_detector_count":2,)"
-      R"("dem_detector_count":4,"source_to_dem":[1,0],)"
-      R"("detector_orders":[[1,0,2,3]]})";
+  const std::string valid = R"({"schema":"tesseract.detector_layout.v1","source_detector_count":2,)"
+                            R"("dem_detector_count":4,"source_to_dem":[1,0],)"
+                            R"("detector_orders":[[1,0,2,3]]})";
   auto replacing = [&](const std::string& from, const std::string& to) {
     std::string result = valid;
     result.replace(result.find(from), from.size(), to);
@@ -691,8 +688,7 @@ TEST(utils, DetectorLayoutRejectsInvalidV1) {
   };
   for (const std::string& text :
        {replacing("[1,0]", "[0,4]"), replacing("[1,0]", "[0,0]"),
-        replacing("[1,0,2,3]", "[0,1,2,2]"), replacing("[[1,0,2,3]]", "[]"),
-        std::string("{")}) {
+        replacing("[1,0,2,3]", "[0,1,2,2]"), replacing("[[1,0,2,3]]", "[]"), std::string("{")}) {
     std::string path = write_detector_layout(text);
     try {
       load_detector_layout(path, 4);

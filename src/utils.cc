@@ -65,8 +65,7 @@ DetectorLayout load_detector_layout(const std::string& path, size_t expected_dem
       throw detector_layout_error(path, "unsupported schema.");
     }
 
-    size_t dem_detector_count =
-        read_detector_layout_size(document.at("dem_detector_count"), path);
+    size_t dem_detector_count = read_detector_layout_size(document.at("dem_detector_count"), path);
     if (dem_detector_count != expected_dem_detector_count) {
       throw detector_layout_error(path, "dem_detector_count does not match the DEM.");
     }
