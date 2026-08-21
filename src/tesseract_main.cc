@@ -21,7 +21,6 @@
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <numeric>
-#include <optional>
 #include <queue>
 #include <thread>
 
@@ -33,7 +32,6 @@
 struct Args {
   std::string circuit_path;
   std::string dem_path;
-  std::string detector_layout_path;
   bool no_merge_errors = false;
 
   // Manifold orientation options
@@ -42,7 +40,6 @@ struct Args {
   bool det_order_bfs = false;
   bool det_order_index = false;
   bool det_order_coordinate = false;
-  bool explicit_det_order = false;
 
   // Sampling options
   size_t sample_num_shots = 0;
@@ -105,8 +102,6 @@ struct Args {
       throw std::invalid_argument(
           "Only one of --det-order-bfs, --det-order-index, or --det-order-coordinate may be set.");
     }
-    explicit_det_order = det_order_flags > 0 || program.is_used("--num-det-orders") ||
-                         program.is_used("--det-order-seed");
     int num_data_sources = int(sample_num_shots > 0) + int(!in_fname.empty());
     if (num_data_sources != 1) {
       throw std::invalid_argument("Requires exactly 1 source of shots.");
@@ -214,21 +209,15 @@ struct Args {
 
     config.merge_errors = !no_merge_errors;
 
-    std::optional<DetectorLayout> detector_layout;
-    if (!detector_layout_path.empty()) {
-      detector_layout = load_detector_layout(detector_layout_path, config.dem.count_detectors());
-      if (!circuit_path.empty()) {
-        detector_layout->validate_source(circuit, config.dem, dem_path.empty());
+    size_t shot_detector_count = config.dem.count_detectors();
+    if (!circuit_path.empty()) {
+      shot_detector_count = circuit.count_detectors();
+      if (shot_detector_count > config.dem.count_detectors()) {
+        throw std::invalid_argument("Circuit detector count exceeds DEM detector count.");
       }
-      if (!detector_layout->detector_orders.empty() && explicit_det_order) {
-        throw std::invalid_argument(
-            "Detector-order options cannot be used when --detector-layout provides "
-            "detector_orders.");
+      if (circuit.count_observables() != config.dem.count_observables()) {
+        throw std::invalid_argument("Circuit and DEM observable counts differ.");
       }
-    } else if (!circuit_path.empty() and !dem_path.empty() and
-               circuit.count_detectors() != config.dem.count_detectors()) {
-      throw std::invalid_argument(
-          "Circuit and DEM detector counts differ; supply --detector-layout.");
     }
 
     // Sample orientations of the error model to use for the det priority
@@ -253,11 +242,7 @@ struct Args {
       } else if (det_order_coordinate) {
         order = DetOrder::DetCoordinate;
       }
-      if (detector_layout && !detector_layout->detector_orders.empty()) {
-        config.det_orders = detector_layout->detector_orders;
-      } else {
-        config.det_orders = build_det_orders(config.dem, num_det_orders, order, det_order_seed);
-      }
+      config.det_orders = build_det_orders(config.dem, num_det_orders, order, det_order_seed);
     }
 
     if (sample_num_shots > 0) {
@@ -285,10 +270,8 @@ struct Args {
         throw std::invalid_argument("Could not open the file: " + in_fname);
       }
       stim::FileFormatData shots_in_format = stim::format_name_to_enum_map().at(in_format);
-      size_t source_detector_count =
-          detector_layout ? detector_layout->source_detector_count() : config.dem.count_detectors();
       auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
-          shots_file, shots_in_format.id, 0, source_detector_count,
+          shots_file, shots_in_format.id, 0, shot_detector_count,
           append_observables * config.dem.count_observables());
 
       // Load the shots from a file
@@ -299,10 +282,6 @@ struct Args {
         sparse_shot.clear();
       }
       fclose(shots_file);
-    }
-
-    if (detector_layout) {
-      detector_layout->map_shots(shots);
     }
 
     // Load observable flips, if applicable
@@ -377,13 +356,6 @@ int main(int argc, char* argv[]) {
   Args args;
   program.add_argument("--circuit").help("Stim circuit file path").store_into(args.circuit_path);
   program.add_argument("--dem").help("Stim dem file path").store_into(args.dem_path);
-  program.add_argument("--detector-layout")
-      .help(
-          "JSON detector layout. Optionally maps source detector data into DEM rows and supplies "
-          "detector traversal orders.")
-      .metavar("FILE")
-      .default_value(std::string(""))
-      .store_into(args.detector_layout_path);
   program.add_argument("--no-merge-errors")
       .help("If provided, will not merge identical error mechanisms.")
       .store_into(args.no_merge_errors);
@@ -714,9 +686,6 @@ int main(int argc, char* argv[]) {
         {"sparsify_base_degree", args.sparsify_base_degree},
         {"sparsify_max_degree", args.sparsify_max_degree},
         {"sparsify_reactivate_limit", effective_sparsify_reactivate_limit}};
-    if (!args.detector_layout_path.empty()) {
-      stats_json["detector_layout_path"] = args.detector_layout_path;
-    }
 
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;

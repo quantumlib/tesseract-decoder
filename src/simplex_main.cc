@@ -17,7 +17,6 @@
 #include <fstream>
 #include <memory>
 #include <nlohmann/json.hpp>
-#include <optional>
 #include <thread>
 
 #include "common.h"
@@ -28,7 +27,6 @@
 struct Args {
   std::string circuit_path;
   std::string dem_path;
-  std::string detector_layout_path;
   bool no_merge_errors = false;
 
   // Sampling options
@@ -171,16 +169,15 @@ struct Args {
 
     config.merge_errors = !no_merge_errors;
 
-    std::optional<DetectorLayout> detector_layout;
-    if (!detector_layout_path.empty()) {
-      detector_layout = load_detector_layout(detector_layout_path, config.dem.count_detectors());
-      if (!circuit_path.empty()) {
-        detector_layout->validate_source(circuit, config.dem, dem_path.empty());
+    size_t shot_detector_count = config.dem.count_detectors();
+    if (!circuit_path.empty()) {
+      shot_detector_count = circuit.count_detectors();
+      if (shot_detector_count > config.dem.count_detectors()) {
+        throw std::invalid_argument("Circuit detector count exceeds DEM detector count.");
       }
-    } else if (!circuit_path.empty() and !dem_path.empty() and
-               circuit.count_detectors() != config.dem.count_detectors()) {
-      throw std::invalid_argument(
-          "Circuit and DEM detector counts differ; supply --detector-layout.");
+      if (circuit.count_observables() != config.dem.count_observables()) {
+        throw std::invalid_argument("Circuit and DEM observable counts differ.");
+      }
     }
 
     if (sample_num_shots > 0) {
@@ -208,10 +205,8 @@ struct Args {
         throw std::invalid_argument("Could not open the file: " + in_fname);
       }
       stim::FileFormatData shots_in_format = stim::format_name_to_enum_map().at(in_format);
-      size_t source_detector_count =
-          detector_layout ? detector_layout->source_detector_count() : config.dem.count_detectors();
       auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
-          shots_file, shots_in_format.id, 0, source_detector_count,
+          shots_file, shots_in_format.id, 0, shot_detector_count,
           append_observables * config.dem.count_observables());
 
       // Load the shots from a file
@@ -222,10 +217,6 @@ struct Args {
         sparse_shot.clear();
       }
       fclose(shots_file);
-    }
-
-    if (detector_layout) {
-      detector_layout->map_shots(shots);
     }
 
     // Load observable flips, if applicable
@@ -293,11 +284,6 @@ int main(int argc, char* argv[]) {
   Args args;
   program.add_argument("--circuit").help("Stim circuit file path").store_into(args.circuit_path);
   program.add_argument("--dem").help("Stim dem file path").store_into(args.dem_path);
-  program.add_argument("--detector-layout")
-      .help("JSON detector layout. Optionally maps source detector data into DEM detector rows.")
-      .metavar("FILE")
-      .default_value(std::string(""))
-      .store_into(args.detector_layout_path);
   program.add_argument("--no-merge-errors")
       .help("If provided, will not merge identical error mechanisms.")
       .store_into(args.no_merge_errors);
@@ -539,9 +525,6 @@ int main(int argc, char* argv[]) {
                                  {"num_errors", has_obs ? nlohmann::json(num_errors) : nullptr},
                                  {"num_shots", shot},
                                  {"sample_num_shots", args.sample_num_shots}};
-    if (!args.detector_layout_path.empty()) {
-      stats_json["detector_layout_path"] = args.detector_layout_path;
-    }
 
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;

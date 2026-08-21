@@ -44,23 +44,6 @@ std::vector<std::vector<size_t>> build_det_orders(const stim::DetectorErrorModel
                                                   DetOrder method = DetOrder::DetIndex,
                                                   uint64_t seed = 0);
 
-struct DetectorLayout {
-  std::string path;
-  size_t dem_detector_count = 0;
-  std::vector<size_t> source_to_dem;
-  std::vector<std::vector<size_t>> detector_orders;
-
-  size_t source_detector_count() const {
-    return source_to_dem.size();
-  }
-  void map_hits(std::vector<uint64_t>& hits) const;
-  void map_shots(std::vector<stim::SparseShot>& shots) const;
-  void validate_source(const stim::Circuit& circuit, const stim::DetectorErrorModel& dem,
-                       bool dem_from_circuit) const;
-};
-
-DetectorLayout load_detector_layout(const std::string& path, size_t expected_dem_detector_count);
-
 const double INF = std::numeric_limits<double>::infinity();
 
 bool sampling_from_dem(uint64_t seed, size_t num_shots, stim::DetectorErrorModel dem,
