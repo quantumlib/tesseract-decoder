@@ -34,7 +34,8 @@ over GF(2). GARI substitutes
 
 ``bar(e)_Z = e_Z XOR U e_Y`` and ``bar(e)_X = e_X XOR V e_Y``.
 
-Columns are emitted as ``[e_Z, e_X, e_Y, bar(e)_Z, bar(e)_X]`` and rows as
+Internally, columns are ordered as
+``[e_Z, e_X, e_Y, bar(e)_Z, bar(e)_X]`` and rows as
 ``[physical X, physical Z, virtual Z, virtual X]``:
 
 ::
@@ -47,8 +48,12 @@ Columns are emitted as ``[e_Z, e_X, e_Y, bar(e)_Z, bar(e)_X]`` and rows as
     virtual X constraint |  0 |  I |  V |    0    |    I    |
                          +----+----+----+---------+---------+
 
-The corresponding decoder syndrome is ``[s_X, s_Z, 0, 0]``. The logical map
-stays on the original physical variables:
+By default, serialized GARI DEMs restore the physical rows to the source
+detector order and append the virtual rows. A source syndrome can therefore be
+copied into the beginning of a zero-filled GARI syndrome. The block row order
+above remains available for research use.
+
+The logical map stays on the original physical variables:
 ``[L_eZ, L_eX, L_eY, 0, 0]``. These are the GARI transformed matrices. They can
 be stored using Stim's DEM syntax, but the resulting GARI DEM is only a matrix
 storage and decoding representation. It is not a physical detector error model
@@ -83,7 +88,6 @@ five-block structure uniform and the physical top-left blocks zero.
 from __future__ import annotations
 
 import dataclasses
-import json
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -614,6 +618,7 @@ def _build_gari_dem(
     source_probabilities: np.ndarray,
     *,
     prior_function: Callable[[GariTransform, np.ndarray], np.ndarray],
+    row_order: str,
 ) -> stim.DetectorErrorModel:
     """Builds a GARI DEM using an explicit prior policy.
 
@@ -650,23 +655,38 @@ def _build_gari_dem(
         transform.checks.shape[1],
         "prior_function probabilities",
     )
-    return _matrices_to_gari_dem(
-        transform.checks, transform.logicals, gari_probabilities
-    )
+    if row_order == "source":
+        source_detector_count = len(transform.source_to_gari_detectors)
+        rows = np.concatenate(
+            [
+                transform.source_to_gari_detectors,
+                np.arange(source_detector_count, transform.checks.shape[0]),
+            ]
+        )
+        checks = transform.checks[rows, :]
+    elif row_order == "block":
+        checks = transform.checks
+    else:
+        raise ValueError("row_order must be 'source' or 'block'.")
+    return _matrices_to_gari_dem(checks, transform.logicals, gari_probabilities)
 
 
 def circuit_to_gari(
     circuit: stim.Circuit,
     *,
     prior_function: Callable[[GariTransform, np.ndarray], np.ndarray],
-) -> tuple[stim.DetectorErrorModel, dict[str, object]]:
-    """Converts a supported CSS circuit into a GARI matrix DEM and layout.
+    row_order: str = "source",
+) -> stim.DetectorErrorModel:
+    """Converts a supported CSS circuit into a GARI matrix DEM.
 
     The source DEM is generated undecomposed (``decompose_errors=False``) and
     flattened. Every detector must follow the repository's fourth-coordinate
     convention: integer values 0–2 identify X detectors and 3–5 identify Z
-    detectors. The returned DEM stores transformed matrices for decoding and
-    must not be sampled.
+    detectors. By default, source detector IDs are preserved and virtual
+    detector rows are appended. ``row_order="block"`` instead emits physical
+    X, physical Z, virtual Z, and virtual X row blocks for research use. The
+    returned DEM stores transformed matrices for decoding and must not be
+    sampled.
     """
     source_dem = _circuit_to_gari_source_dem(circuit)
     checks, logicals, probabilities = dem_to_matrices(source_dem)
@@ -679,81 +699,45 @@ def circuit_to_gari(
         x_detectors=x_detectors,
         z_detectors=z_detectors,
     )
-    gari_dem = _build_gari_dem(
-        transform, probabilities, prior_function=prior_function
+    return _build_gari_dem(
+        transform,
+        probabilities,
+        prior_function=prior_function,
+        row_order=row_order,
     )
-    layout = {
-        "schema": "tesseract.detector_layout.v1",
-        "source_detector_count": len(transform.source_to_gari_detectors),
-        "dem_detector_count": transform.checks.shape[0],
-        "source_to_dem": transform.source_to_gari_detectors.tolist(),
-        "detector_orders": [list(range(transform.checks.shape[0]))],
-        "metadata": {"generator": "gari"},
-    }
-    return gari_dem, layout
 
 
-def build_detector_orders(
-    circuit: stim.Circuit,
-    detector_layout: dict[str, object],
-    num_det_orders: int,
+def call_gari(
+    circuit_fname: str,
+    prior_name: str,
+    output_dir: str,
     *,
-    method: object | None = None,
-    seed: int = 0,
-) -> list[list[int]]:
-    """Builds source-circuit detector orders for a GARI matrix DEM."""
-    from tesseract_decoder import utils
-
-    if method is None:
-        method = utils.DetOrder.DetIndex
-    source_dem = _circuit_to_gari_source_dem(circuit)
-    source_orders = (
-        utils.build_det_orders(source_dem, num_det_orders, method, seed)
-        if source_dem.num_detectors
-        else [[] for _ in range(num_det_orders)]
-    )
-    source_to_dem = np.asarray(
-        detector_layout["source_to_dem"], dtype=np.int64
-    )
-    dem_detector_count = int(detector_layout["dem_detector_count"])
-    virtual_detectors = sorted(
-        set(range(dem_detector_count)).difference(source_to_dem.tolist())
-    )
-    return [
-        source_to_dem[np.argsort(order)].tolist() + virtual_detectors
-        for order in source_orders
-    ]
-
-
-def call_gari(circuit_fname: str, prior_name: str, output_dir: str) -> None:
-    """Converts one circuit and writes its GARI DEM and layout files."""
+    row_order: str = "source",
+) -> None:
+    """Converts one circuit and writes its GARI matrix DEM."""
     prior_function = {
         "paper": paper_prior_probabilities,
         "xor": tesseract_xor_prior_probabilities,
         "lp-max-barred-cost": tesseract_lp_max_barred_cost_prior_probabilities,
     }[prior_name]
-    gari_dem, layout = circuit_to_gari(
+    gari_dem = circuit_to_gari(
         stim.Circuit.from_file(circuit_fname),
         prior_function=prior_function,
+        row_order=row_order,
     )
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     output_name = f"{Path(circuit_fname).stem}_gari_{prior_name.replace('-', '_')}"
+    if row_order == "block":
+        output_name += "_block"
     gari_dem.to_file(output_path / f"{output_name}.dem")
-    (output_path / f"{output_name}_detector_layout.json").write_text(
-        json.dumps(layout, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
 
 
 def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(
-        description=(
-            "Convert one Stim circuit into a GARI matrix DEM and "
-            "detector-layout JSON file."
-        )
+        description="Convert one Stim circuit into a GARI matrix DEM."
     )
     parser.add_argument(
         "--circuit", required=True, help="Input Stim circuit file."
@@ -769,12 +753,25 @@ def main() -> None:
         required=True,
         help=(
             "Output directory, created if needed. Files are named "
-            "<circuit>_gari_<prior>.dem and "
-            "<circuit>_gari_<prior>_detector_layout.json."
+            "<circuit>_gari_<prior>.dem."
+        ),
+    )
+    parser.add_argument(
+        "--row-order",
+        choices=("source", "block"),
+        default="source",
+        help=(
+            "Use source detector IDs followed by virtual rows (default), or "
+            "emit research-only GARI row blocks with a _block.dem suffix."
         ),
     )
     args = parser.parse_args()
-    call_gari(args.circuit, args.prior, args.out_dir)
+    call_gari(
+        args.circuit,
+        args.prior,
+        args.out_dir,
+        row_order=args.row_order,
+    )
 
 
 if __name__ == "__main__":

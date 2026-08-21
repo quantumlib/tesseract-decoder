@@ -707,49 +707,43 @@ nice_calibrated_dem = demutil.regeneralize_spatial_dem(
 #### GARI transformed matrices
 
 `demutil.gari.circuit_to_gari` converts a supported correlated CSS Stim
-circuit into a GARI matrix DEM and companion layout for Tesseract. It
-generates a flattened source DEM with `decompose_errors=False`. Detectors must
-follow the repository's fourth-coordinate convention: values `0`–`2` identify
-X detectors and `3`–`5` identify Z detectors.
+circuit into a GARI matrix DEM. It generates a flattened source DEM with
+`decompose_errors=False`. Detectors must follow the repository's
+fourth-coordinate convention: values `0`–`2` identify X detectors and `3`–`5`
+identify Z detectors.
 
 ```python
 import stim
 from tesseract_decoder import demutil
 
 circuit = stim.Circuit.from_file("circuitFile.stim")
-gari_dem, detector_layout = demutil.gari.circuit_to_gari(
+gari_dem = demutil.gari.circuit_to_gari(
     circuit,
     prior_function=demutil.gari.tesseract_xor_prior_probabilities,
 )
 ```
 
-`circuit_to_gari` returns:
-
-* `gari_dem`: the augmented detector and logical matrices stored using Stim
-  DEM syntax.
-* `detector_layout`: a `tesseract.detector_layout.v1` dictionary containing the
-  DEM and source detector counts, the `source_to_dem` mapping, one or more
-  `detector_orders`, and optional generator metadata. Tesseract accepts the
-  same dictionary when serialized as JSON through `--detector-layout`.
+The returned DEM preserves the source detector IDs as a prefix and appends the
+virtual detector rows. For matrix analysis,
+`circuit_to_gari(..., row_order="block")` instead emits the internal
+`[physical X, physical Z, virtual Z, virtual X]` row order. This research form
+does not accept source syndromes as a direct prefix.
 
 Related public APIs:
 
 * `demutil.gari.dem_to_matrices(dem)` returns the sparse detector matrix,
   sparse logical matrix, and one probability per source error column.
-* `demutil.gari.build_detector_orders(circuit, detector_layout, num_det_orders, ...)`
-  generates source-circuit-aware Tesseract traversal orders for the GARI DEM.
-  Assign its result to `detector_layout["detector_orders"]` before saving the
-  layout or pass it directly to `TesseractConfig(det_orders=...)`.
 * `demutil.gari.GariTransform` is passed to prior-policy callbacks. It exposes
   the transformed detector and logical matrices, the `U` and `V` projection
   matrices, the source `e_Z`, `e_X`, and `e_Y` column indices, and the source
-  detector mapping.
+  detector mapping into the internal block rows.
 * `paper_prior_probabilities`, `tesseract_xor_prior_probabilities`, and
   `tesseract_lp_max_barred_cost_prior_probabilities` return one probability for
   each transformed GARI column. A user-defined prior can follow the same
   callable interface.
 
 The returned GARI matrix DEM stores transformed matrices for decoding and must
-not be sampled. Sample from the original circuit and use the companion layout
-to place its physical syndrome. See the
+not be sampled. Sample from the original circuit, copy its syndrome into the
+beginning of a zero-filled GARI syndrome, and leave the virtual suffix zero.
+See the
 [GARI tutorial](../../docs/tutorial.ipynb) for a complete decoding example.

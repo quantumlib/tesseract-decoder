@@ -358,7 +358,7 @@ print_results(results)
 # %% id="gari-transform-example"
 gari = tesseract_decoder.demutil.gari
 
-gari_dem, detector_layout = gari.circuit_to_gari(
+gari_dem = gari.circuit_to_gari(
     circuit,
     prior_function=gari.tesseract_xor_prior_probabilities,
 )
@@ -366,16 +366,13 @@ gari_dem, detector_layout = gari.circuit_to_gari(
 # %% [markdown] id="gari-syndrome-layout"
 # Sample detection events only from the original circuit. The GARI matrix DEM
 # stores the transformed matrices for decoding and is not sampled. Copy the
-# source syndrome into its physical rows; the added virtual entries stay zero.
+# source syndrome into the detector prefix; the added virtual entries stay
+# zero.
 
 # %% id="gari-sample-example"
 num_shots = 10
 gari_dets = np.zeros((num_shots, gari_dem.num_detectors), dtype=bool)
-gari_dets[:, detector_layout["source_to_dem"]] = dets[:num_shots]
-
-# %% [markdown] id="gari-detector-order"
-# Pass the detector order stored in the layout directly to Tesseract. The
-# remaining parameters are the standard short-beam configuration.
+gari_dets[:, :dets.shape[1]] = dets[:num_shots]
 
 # %% id="gari-decode-example"
 gari_config = tesseract.TesseractConfig(
@@ -384,7 +381,6 @@ gari_config = tesseract.TesseractConfig(
     beam_climbing=True,
     no_revisit_dets=True,
     pqlimit=200_000,
-    det_orders=detector_layout["detector_orders"],
 )
 gari_decoder = gari_config.compile_decoder()
 predicted_observables = gari_decoder.decode_batch(gari_dets)
