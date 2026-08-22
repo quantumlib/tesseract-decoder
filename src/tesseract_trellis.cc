@@ -33,6 +33,8 @@
 
 #include "utils.h"
 
+namespace tesseract_decoder {
+
 struct TesseractTrellisWideKernelBase {
   virtual ~TesseractTrellisWideKernelBase() = default;
   virtual void decode_shot(TesseractTrellisDecoder* decoder,
@@ -1288,3 +1290,5 @@ void TesseractTrellisDecoder::decode_shots(std::vector<stim::SparseShot>& shots,
     obs_predicted[i] = decode(shots[i].hits);
   }
 }
+
+}  // namespace tesseract_decoder
