@@ -195,6 +195,67 @@ errors are not capped by degree.
 *   *DEM usage frequency output*: if `--dem-out` is specified, outputs estimated error frequencies.
 *   *Statistics output*: includes number of shots, errors, low confidence shots, and processing time.
 
+---
+
+## Multi-Pass Graph Shattering
+
+Multi-pass graph shattering partitions a correlated detector error model into two detector
+components and decodes the smaller component models separately. With two passes, predictions from
+the first pass update error priors used during the final pass. The current implementation requires
+exactly two components and accepts one or two passes.
+
+### Detector classification
+
+The CLI classifier checks the following detector annotations in order:
+
+1. A `"measure_basis"` field in the detector's JSON metadata tag, first at the top level and then
+   under `"md"`.
+2. A `"basis"` field in the same locations.
+3. A fourth detector coordinate using the Chromobius-style `color + 3 * basis` convention:
+   values `0`–`2` select component 0 and values `3`–`5` select component 1.
+
+Metadata basis values must be strings exactly equal to `"X"` or `"Z"`. An invalid metadata value
+does not fall back to another field or to coordinates. Multi-pass decoding fails if any detector
+cannot be classified or if the resulting classification does not contain exactly two components.
+The Python wrapper can instead be given a custom detector classifier.
+
+### CLI options
+
+* `--multipass`: Enables multi-pass graph shattering.
+* `--num-passes`, `--num_passes`: Selects one or two passes (default: 2). One pass performs no
+  inter-pass prior update; two passes perform one round of prior propagation. Other values are
+  rejected.
+* `--multipass-strategy`, `--multipass_strategy`: Selects `causal` (default), which derives the pass
+  schedule from component dependencies, or experimental `static`, which schedules both components
+  in every pass.
+* `--print-multipass-plan`: Prints the monolithic and component model statistics, dependencies, and
+  pass schedule to standard error. It requires `--multipass`; these statistics are calculated only
+  when this flag is present.
+
+`--dem-out` is not supported with `--multipass`.
+
+### CLI example
+
+This example uses a coordinate-annotated color-code circuit and the long-beam settings:
+
+```bash
+./bazel-bin/src/tesseract \
+    --circuit testdata/colorcodes/r=5,d=5,p=0.003,noise=si1000,c=midout_color_code_X,q=23,gates=cz.stim \
+    --sample-num-shots 1000 \
+    --multipass \
+    --num-passes 2 \
+    --multipass-strategy causal \
+    --pqlimit 1000000 \
+    --beam 20 \
+    --beam-climbing \
+    --no-revisit-dets \
+    --num-det-orders 21 \
+    --print-multipass-plan \
+    --print-stats
+```
+
+---
+
 ## Python Interface
 
 [Full Python wrapper documentation](src/py/README.md)

@@ -202,6 +202,32 @@ TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(std::move(c
   }
 }
 
+void TesseractDecoder::update_internal_costs(const std::vector<size_t>& modified_error_indices) {
+  std::unordered_set<int> affected_detectors;
+
+  for (size_t ei : modified_error_indices) {
+    if (ei >= errors.size()) continue;
+    double min_cost = errors[ei].symptom.detectors.empty()
+                          ? errors[ei].likelihood_cost
+                          : errors[ei].likelihood_cost / errors[ei].symptom.detectors.size();
+    error_costs[ei] = {errors[ei].likelihood_cost, min_cost};
+
+    // Collect all detectors affected by this error to re-sort their d2e lists
+    for (int d : edets[ei]) {
+      affected_detectors.insert(d);
+    }
+  }
+
+  // Re-sort d2e lists only for affected detectors
+  for (int d : affected_detectors) {
+    if (d >= 0 && (size_t)d < d2e.size()) {
+      std::sort(d2e[d].begin(), d2e[d].end(), [this](size_t idx_a, size_t idx_b) {
+        return error_costs[idx_a].min_cost < error_costs[idx_b].min_cost;
+      });
+    }
+  }
+}
+
 void TesseractDecoder::initialize_structures(size_t num_detectors) {
   d2e.resize(num_detectors);
   edets.resize(num_errors);
@@ -213,6 +239,8 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
     }
   }
 
+  // Initial fill of error_costs and sorting of d2e for all errors
+  error_costs.reserve(errors.size());
   for (size_t i = 0; i < errors.size(); ++i) {
     error_costs.push_back({errors[i].likelihood_cost,
                            errors[i].likelihood_cost / errors[i].symptom.detectors.size()});
@@ -291,6 +319,11 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
 }
 
 void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
+  predicted_errors_buffer.clear();
+  low_confidence_flag = false;
+  if (detections.empty()) {
+    return;
+  }
   if (config.sparsify_errors) {
     build_sparse_d2e(detections);
   }

@@ -100,6 +100,15 @@ struct TesseractDecoder {
   // flattened DEM error indices.
   double cost_from_errors(const std::vector<size_t>& predicted_errors) const;
 
+  // Resynchronizes the internal state of the decoder after the public `errors`
+  // vector has been modified. This is necessary to ensure that the internal
+  // cost structures used by the decoding algorithm are consistent with the
+  // current error likelihoods.
+  // This is necessary to ensure that the internal
+  // cost structures used by the decoding algorithm are consistent with the
+  // current error likelihoods.
+  void update_internal_costs(const std::vector<size_t>& modified_error_indices);
+
   std::vector<int> decode(const std::vector<uint64_t>& detections);
   void decode_shots(std::vector<stim::SparseShot>& shots,
                     std::vector<std::vector<int>>& obs_predicted);
@@ -142,6 +151,18 @@ struct TesseractDecoder {
   void decode_to_errors_with_graph(const std::vector<uint64_t>& detections, size_t detector_order,
                                    size_t detector_beam,
                                    const std::vector<std::vector<int>>& active_d2e);
+
+  friend class TesseractDebugger;
+};
+
+class TesseractDebugger {
+ public:
+  static const std::vector<ErrorCost>& get_error_costs(const TesseractDecoder& decoder) {
+    return decoder.error_costs;
+  }
+  static const std::vector<std::vector<int>>& get_d2e(const TesseractDecoder& decoder) {
+    return decoder.d2e;
+  }
 };
 
 #endif  // TESSERACT_DECODER_H
