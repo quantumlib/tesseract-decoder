@@ -17,7 +17,7 @@ Explanation of configuration arguments:
 * `verbose` - A boolean flag that, when `True`, enables verbose logging. This is useful for debugging and understanding the decoder's internal behavior, as it will print information about the search process.
 * `merge_errors` - A boolean flag that, when `True`, merges error channels with identical syndrome patterns before decoding. This is enabled by default.
 * `pqlimit` - An integer that sets a limit on the number of nodes in the priority queue. This can be used to constrain the memory usage of the decoder. The default value is `200000`.
-* `det_orders` - A list of lists of integers, where each inner list represents an ordering of the detectors. This is used for "ensemble reordering," an optimization that tries different detector orderings to improve the search's convergence. The default is an empty list, meaning a single, fixed ordering is used.
+* `det_orders` - A list of complete detector-ID permutations in traversal order. This is used for "ensemble reordering," an optimization that tries different detector orderings to improve the search's convergence. The default is an empty list, meaning a single, fixed ordering is used.
 * `det_penalty` - A floating-point value that adds a cost for each residual detection event. This encourages the decoder to prioritize paths that resolve more detection events, steering the search towards more complete solutions. The default value is `0.0`, meaning no penalty is applied.
 * `create_visualization` - A boolean flag that enables decoder visualization output when set to `True`. The default value is `False`.
 * `sparsify_errors` - Enables per-shot sparse error activation. When enabled, all errors up to `sparsify_base_degree` are always active, and selected higher-degree errors are reactivated per shot.
@@ -707,29 +707,34 @@ nice_calibrated_dem = demutil.regeneralize_spatial_dem(
 #### GARI transformed matrices
 
 `demutil.gari.circuit_to_gari` converts a supported correlated CSS Stim
-circuit into a GARI matrix DEM and companion layout for Tesseract. It
-generates a flattened source DEM with `decompose_errors=False`. Detectors must
-follow the repository's fourth-coordinate convention: values `0`–`2` identify
-X detectors and `3`–`5` identify Z detectors.
+circuit into a GARI matrix DEM. It generates a flattened source DEM with
+`decompose_errors=False`. Detectors must follow the repository's
+fourth-coordinate convention: values `0`–`2` identify X detectors and `3`–`5`
+identify Z detectors.
 
 ```python
 import stim
 from tesseract_decoder import demutil
 
 circuit = stim.Circuit.from_file("circuitFile.stim")
-gari_dem, gari_layout = demutil.gari.circuit_to_gari(
+gari_dem = demutil.gari.circuit_to_gari(
     circuit,
     prior_function=demutil.gari.tesseract_xor_prior_probabilities,
 )
 ```
 
-`circuit_to_gari` returns:
+The returned DEM preserves the source detector IDs as a prefix and appends the
+virtual detector rows. For matrix analysis,
+`circuit_to_gari(..., row_order="block")` instead emits the internal
+`[physical X, physical Z, virtual Z, virtual X]` row order. This research form
+does not accept source syndromes as a direct prefix.
 
-* `gari_dem`: the augmented detector and logical matrices stored using Stim
-  DEM syntax.
-* `gari_layout`: a `tesseract.gari_layout.v1` dictionary containing the source
-  and GARI detector counts, the `source_to_gari` detector mapping, and the
-  `physical_then_virtual` detector order.
+`demutil.gari.build_detector_orders(circuit, gari_dem, num_det_orders, ...)`
+uses the source circuit to build BFS, coordinate, or index orders and then
+appends the virtual detector IDs. The resulting list has the same format as
+`TesseractConfig.det_orders` and the Tesseract CLI's `--detector-orders` JSON
+file. It applies to the default source-aligned GARI DEM, not the research-only
+block form.
 
 Related public APIs:
 
@@ -738,13 +743,14 @@ Related public APIs:
 * `demutil.gari.GariTransform` is passed to prior-policy callbacks. It exposes
   the transformed detector and logical matrices, the `U` and `V` projection
   matrices, the source `e_Z`, `e_X`, and `e_Y` column indices, and the source
-  detector mapping.
+  detector mapping into the internal block rows.
 * `paper_prior_probabilities`, `tesseract_xor_prior_probabilities`, and
   `tesseract_lp_max_barred_cost_prior_probabilities` return one probability for
   each transformed GARI column. A user-defined prior can follow the same
   callable interface.
 
 The returned GARI matrix DEM stores transformed matrices for decoding and must
-not be sampled. Sample from the original circuit and use the companion layout
-to place its physical syndrome. See the
+not be sampled. Sample from the original circuit, copy its syndrome into the
+beginning of a zero-filled GARI syndrome, and leave the virtual suffix zero.
+See the
 [GARI tutorial](../../docs/tutorial.ipynb) for a complete decoding example.

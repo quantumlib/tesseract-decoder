@@ -174,10 +174,19 @@ TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(std::move(c
     config.det_orders.emplace_back(config.dem.count_detectors());
     std::iota(config.det_orders[0].begin(), config.det_orders[0].end(), 0);
   } else {
-    for (size_t i = 0; i < config.det_orders.size(); ++i) {
-      if (config.det_orders[i].size() != config.dem.count_detectors()) {
+    const size_t num_detectors = config.dem.count_detectors();
+    for (const auto& order : config.det_orders) {
+      if (order.size() != num_detectors) {
         throw std::invalid_argument(
-            "Each detector order list must have a size equal to the number of detectors.");
+            "Each detector order must be a complete permutation of the detector IDs.");
+      }
+      std::vector<bool> seen(num_detectors);
+      for (size_t detector : order) {
+        if (detector >= num_detectors || seen[detector]) {
+          throw std::invalid_argument(
+              "Each detector order must be a complete permutation of the detector IDs.");
+        }
+        seen[detector] = true;
       }
     }
   }

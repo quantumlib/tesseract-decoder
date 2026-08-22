@@ -116,8 +116,8 @@ void add_tesseract_module(py::module& root) {
               pqlimit : int, default=max_size_t
                  The maximum size of the priority queue.
               det_orders : list[list[int]], default=empty
-                 A list of detector orderings to use for decoding. If empty, the decoder
-                 will generate its own orderings.
+                 Detector IDs in traversal order. Each inner list must be a complete
+                 permutation. If empty, the decoder generates its own orderings.
               det_penalty : float, default=0.0
                  A penalty value added to the cost of each detector visited.
               create_visualization: bool, defualt=False
@@ -159,8 +159,8 @@ void add_tesseract_module(py::module& root) {
             pqlimit : int, default=max_size_t
                 The maximum size of the priority queue.
             det_orders : list[list[int]], default=empty
-                A list of detector orderings to use for decoding. If empty, the decoder
-                will generate its own orderings.
+                Detector IDs in traversal order. Each inner list must be a complete
+                permutation. If empty, the decoder generates its own orderings.
             det_penalty : float, default=0.0
                 A penalty value added to the cost of each detector visited.
             create_visualization: bool, defualt=False
@@ -190,7 +190,7 @@ void add_tesseract_module(py::module& root) {
       .def_readwrite("pqlimit", &TesseractConfig::pqlimit,
                      "The maximum size of the priority queue.")
       .def_readwrite("det_orders", &TesseractConfig::det_orders,
-                     "A list of pre-specified detector orderings.")
+                     "Complete detector-ID permutations in traversal order.")
       .def_readwrite("det_penalty", &TesseractConfig::det_penalty,
                      "The penalty cost added for each detector.")
       .def_readwrite("create_visualization", &TesseractConfig::create_visualization,
