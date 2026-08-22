@@ -126,8 +126,9 @@ void add_tesseract_module(py::module& root) {
               pqlimit : int, default=max_size_t
                  The maximum size of the priority queue.
               det_orders : list[list[int]], default=empty
-                 A list of detector orderings to use for decoding. If empty, the decoder
-                 will generate its own orderings.
+                 Detector traversal permutations to use for decoding. Each inner list
+                 gives detector IDs in traversal order and must contain every detector
+                 exactly once. If empty, the decoder generates its own ordering.
               det_penalty : float, default=0.0
                  A penalty value added to the cost of each detector visited.
               create_visualization: bool, defualt=False
@@ -169,8 +170,9 @@ void add_tesseract_module(py::module& root) {
             pqlimit : int, default=max_size_t
                 The maximum size of the priority queue.
             det_orders : list[list[int]], default=empty
-                A list of detector orderings to use for decoding. If empty, the decoder
-                will generate its own orderings.
+                Detector traversal permutations to use for decoding. Each inner list
+                gives detector IDs in traversal order and must contain every detector
+                exactly once. If empty, the decoder generates its own ordering.
             det_penalty : float, default=0.0
                 A penalty value added to the cost of each detector visited.
             create_visualization: bool, defualt=False
@@ -200,7 +202,7 @@ void add_tesseract_module(py::module& root) {
       .def_readwrite("pqlimit", &TesseractConfig::pqlimit,
                      "The maximum size of the priority queue.")
       .def_readwrite("det_orders", &TesseractConfig::det_orders,
-                     "A list of pre-specified detector orderings.")
+                     "Detector-ID permutations in traversal order: order[position] = detector_id.")
       .def_readwrite("det_penalty", &TesseractConfig::det_penalty,
                      "The penalty cost added for each detector.")
       .def_readwrite("create_visualization", &TesseractConfig::create_visualization,
