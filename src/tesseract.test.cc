@@ -16,6 +16,7 @@
 
 #include <cstdlib>
 #include <limits>
+#include <queue>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -561,6 +562,133 @@ TEST(tesseract, MoreThan64Observables) {
   for (int i = 0; i < 70; i++) {
     ASSERT_EQ(flipped[i], i);
   }
+}
+
+TEST(utils, DetectorGraphUsesPositiveParityReducedSymptoms) {
+  stim::DetectorErrorModel dem(R"DEM(
+    error(0) D0 D1
+    error(0.1) D0 D0 D1
+    error(0.2) D1 D2 D3
+  )DEM");
+
+  EXPECT_EQ(build_detector_graph(dem),
+            (std::vector<std::vector<size_t>>{{}, {2, 3}, {1, 3}, {1, 2}}));
+}
+
+TEST(utils, EmptyDemHasEmptyBfsOrders) {
+  stim::DetectorErrorModel dem;
+  EXPECT_EQ(build_det_orders(dem, 3, DetOrder::DetBFS, 0), std::vector<std::vector<size_t>>(3));
+}
+
+TEST(utils, PreprocessingPreservesAllDetectorOrderEntries) {
+  stim::DetectorErrorModel dem("error(0) D2\nerror(0.1) D3 D3");
+  TesseractConfig config{dem};
+  config.det_orders = build_det_orders(dem, 1, DetOrder::DetBFS, 0);
+
+  TesseractDecoder decoder(config);
+  EXPECT_EQ(decoder.num_detectors, 4);
+  EXPECT_EQ(decoder.config.det_orders[0].size(), 4);
+}
+
+TEST(utils, BfsOrdersContainDetectorsInTraversalOrder) {
+  // A path with scrambled detector IDs: D0--D4--D1--D3--D2. The inverse of a
+  // traversal of this path is not itself a BFS traversal.
+  stim::DetectorErrorModel dem(R"DEM(
+    error(0.1) D0 D4
+    error(0.1) D4 D1
+    error(0.1) D1 D3
+    error(0.1) D3 D2
+  )DEM");
+  const auto graph = build_detector_graph(dem);
+  const auto orders = build_det_orders(dem, 16, DetOrder::DetBFS, 0);
+
+  for (const auto& detector_at_position : orders) {
+    ASSERT_EQ(detector_at_position.size(), graph.size());
+    std::vector<size_t> sorted_order = detector_at_position;
+    std::sort(sorted_order.begin(), sorted_order.end());
+    EXPECT_EQ(sorted_order, (std::vector<size_t>{0, 1, 2, 3, 4}));
+
+    std::vector<size_t> distance(graph.size(), std::numeric_limits<size_t>::max());
+    std::queue<size_t> queue;
+    distance[detector_at_position[0]] = 0;
+    queue.push(detector_at_position[0]);
+    while (!queue.empty()) {
+      const size_t detector = queue.front();
+      queue.pop();
+      for (size_t neighbor : graph[detector]) {
+        if (distance[neighbor] == std::numeric_limits<size_t>::max()) {
+          distance[neighbor] = distance[detector] + 1;
+          queue.push(neighbor);
+        }
+      }
+    }
+    for (size_t position = 1; position < detector_at_position.size(); ++position) {
+      EXPECT_LE(distance[detector_at_position[position - 1]],
+                distance[detector_at_position[position]]);
+    }
+  }
+}
+
+TEST(utils, CoordinateOrdersContainDetectorsInProjectionOrder) {
+  // Coordinates are intentionally declared out of detector-ID order. A 1D
+  // projection can only produce the coordinate-sorted order or its reverse.
+  stim::DetectorErrorModel dem(R"DEM(
+    detector(2) D3
+    detector(0) D0
+    detector(3) D1
+    detector(1) D2
+  )DEM");
+
+  const auto order = build_det_orders(dem, 1, DetOrder::DetCoordinate, 0)[0];
+  EXPECT_TRUE(order == (std::vector<size_t>{0, 2, 3, 1}) ||
+              order == (std::vector<size_t>{1, 3, 2, 0}));
+}
+
+TEST(utils, DetectorCoordinatesAreKeyedAndAllowMissingOrShortCoordinates) {
+  stim::DetectorErrorModel dem(R"DEM(
+    detector(2, 20) D2
+    detector(0) D0
+    detector(99) D2
+    error(0.1) D3
+  )DEM");
+
+  const auto coords = get_detector_coords(dem);
+  ASSERT_EQ(coords.size(), 4);
+  EXPECT_EQ(coords[0], (std::vector<double>{0}));
+  EXPECT_TRUE(coords[1].empty());
+  EXPECT_EQ(coords[2], (std::vector<double>{2, 20}));
+  EXPECT_TRUE(coords[3].empty());
+
+  const auto order = build_det_orders(dem, 1, DetOrder::DetCoordinate, 0)[0];
+  ASSERT_EQ(order.size(), 4);
+  EXPECT_EQ(order[2], 1);
+  EXPECT_EQ(order[3], 3);
+}
+
+TEST(tesseract, DetectorOrdersMustBePermutations) {
+  stim::DetectorErrorModel dem("error(0.1) D0 D1 D2");
+
+  TesseractConfig valid_config{dem};
+  valid_config.det_orders = {{2, 0, 1}};
+  EXPECT_NO_THROW({ TesseractDecoder decoder(valid_config); });
+
+  TesseractConfig wrong_size_config{dem};
+  wrong_size_config.det_orders = {{0, 1}};
+  EXPECT_THROW({ TesseractDecoder decoder(wrong_size_config); }, std::invalid_argument);
+
+  TesseractConfig duplicate_config{dem};
+  duplicate_config.det_orders = {{0, 0, 2}};
+  EXPECT_THROW({ TesseractDecoder decoder(duplicate_config); }, std::invalid_argument);
+
+  TesseractConfig out_of_range_config{dem};
+  out_of_range_config.det_orders = {{0, 1, 3}};
+  EXPECT_THROW({ TesseractDecoder decoder(out_of_range_config); }, std::invalid_argument);
+}
+
+TEST(tesseract, SelectedDetectorOrderIndexMustBeInRange) {
+  stim::DetectorErrorModel dem("error(0.1) D0");
+  TesseractDecoder decoder(TesseractConfig{dem});
+  EXPECT_THROW(decoder.decode_to_errors({}, 1, 0), std::out_of_range);
 }
 
 }  // namespace

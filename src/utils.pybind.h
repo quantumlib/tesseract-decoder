@@ -57,8 +57,10 @@ void add_utils_module(py::module& root) {
         Returns
         -------
         list[list[float]]
-            A list where each inner list contains the 3D coordinates
-            [x, y, z] of a detector.
+            If any detector coordinates are declared, returns one entry per
+            detector, indexed by detector ID. Missing coordinates are empty
+            lists and coordinate vectors may have any dimensionality. Returns
+            an empty list if the model declares no detector coordinates.
     )pbdoc");
   m.def(
       "build_detector_graph",
@@ -82,8 +84,8 @@ void add_utils_module(py::module& root) {
             An adjacency list representation of the detector graph.
             Each inner list contains the indices of detectors connected
             to the detector at the corresponding index.
-            Here we say that two detectors are connected if there exists at
-            least one error in the DEM which flips both detectors.
+            Each positive-probability error's parity-reduced detector symptom
+            induces a clique in the graph.
     )pbdoc");
   m.def(
       "build_det_orders",
@@ -104,16 +106,19 @@ void add_utils_module(py::module& root) {
         method : tesseract_decoder.utils.DetOrder, default=tesseract_decoder.utils.DetOrder.DetIndex
             Strategy for ordering detectors. ``DetIndex`` chooses either increasing
             or decreasing detector index order at random, ``DetBFS`` performs a
-            breadth-first traversal, and ``DetCoordinate`` uses randomized
-            geometric orientations.
+            breadth-first traversal, and ``DetCoordinate`` projects every declared
+            coordinate dimension onto randomized orientations and places detectors
+            without coordinates last.
         seed : int, default=0
-            A seed for the random number generator.
+            A seed for the random number generator. Exact randomized orders
+            are reproducible only with a fixed C++ standard library and
+            toolchain.
 
         Returns
         -------
         list[list[int]]
-            A list of detector orderings. Each inner list maps a detector index
-            to its position in the ordering.
+            A list of detector traversal permutations. Each inner list gives
+            detector IDs in traversal order: ``order[position] = detector_id``.
     )pbdoc");
   m.def(
       "get_errors_from_dem",

@@ -33,14 +33,24 @@ namespace tesseract_decoder {
 
 constexpr const double EPSILON = 1e-7;
 
+// Returns detector coordinates keyed by detector ID. If the DEM contains any
+// detector coordinate instructions, the returned vector has one entry per
+// detector and an empty entry for each detector without declared coordinates.
+// Returns an empty vector if the DEM has no detector coordinate instructions.
 std::vector<std::vector<double>> get_detector_coords(const stim::DetectorErrorModel& dem);
 
-// Builds an adjacency list graph where two detectors share an edge iff an error
-// in the model activates them both.
+// Builds an adjacency list graph where each positive-probability error's
+// parity-reduced detector symptom induces a clique.
 std::vector<std::vector<size_t>> build_detector_graph(const stim::DetectorErrorModel& dem);
 
 enum class DetOrder { DetBFS, DetIndex, DetCoordinate };
 
+// Builds detector traversal orders. Each inner vector uses the convention
+// detector_at_position[position] = detector_id and is a permutation of all
+// detector IDs in the DEM. Coordinate ordering projects all declared
+// coordinate dimensions, treating missing trailing dimensions as zero and
+// placing detectors without coordinates last. Seeded randomized orders are
+// reproducible only within a fixed C++ standard-library implementation.
 std::vector<std::vector<size_t>> build_det_orders(const stim::DetectorErrorModel& dem,
                                                   size_t num_det_orders,
                                                   DetOrder method = DetOrder::DetIndex,

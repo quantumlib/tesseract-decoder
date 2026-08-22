@@ -36,6 +36,19 @@ std::string vector_to_string(const std::vector<int>& vec) {
   return ss.str();
 }
 
+void preserve_dem_index_spaces(stim::DetectorErrorModel& dem, size_t num_detectors,
+                               size_t num_observables) {
+  if (dem.count_detectors() < num_detectors) {
+    const std::vector<double> no_coordinates;
+    dem.append_detector_instruction(
+        no_coordinates, stim::DemTarget::relative_detector_id(num_detectors - 1), /*tag=*/"");
+  }
+  if (dem.count_observables() < num_observables) {
+    dem.append_logical_observable_instruction(stim::DemTarget::observable_id(num_observables - 1),
+                                              /*tag=*/"");
+  }
+}
+
 }  // namespace
 
 namespace tesseract_decoder {
@@ -138,6 +151,9 @@ stim::DetectorErrorModel common::flatten(const stim::DetectorErrorModel& dem) {
 
 stim::DetectorErrorModel common::merge_indistinguishable_errors(
     const stim::DetectorErrorModel& dem, std::vector<size_t>& error_index_map) {
+  const stim::DetectorErrorModel flat_dem = flatten(dem);
+  const size_t num_detectors = flat_dem.count_detectors();
+  const size_t num_observables = flat_dem.count_observables();
   stim::DetectorErrorModel out_dem;
 
   error_index_map.clear();
@@ -146,7 +162,7 @@ stim::DetectorErrorModel common::merge_indistinguishable_errors(
   std::unordered_map<Symptom, size_t, Symptom::hash> merged_index_by_symptom;
   std::vector<Error> merged_errors;
 
-  for (const stim::DemInstruction& instruction : flatten(dem).instructions) {
+  for (const stim::DemInstruction& instruction : flat_dem.instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_ERROR: {
         Error error(instruction);
@@ -186,15 +202,19 @@ stim::DetectorErrorModel common::merge_indistinguishable_errors(
                                      error.symptom.as_dem_instruction_targets(),
                                      /*tag=*/"");
   }
+  preserve_dem_index_spaces(out_dem, num_detectors, num_observables);
   return out_dem;
 }
 
 stim::DetectorErrorModel common::remove_zero_probability_errors(
     const stim::DetectorErrorModel& dem, std::vector<size_t>& error_index_map) {
+  const stim::DetectorErrorModel flat_dem = flatten(dem);
+  const size_t num_detectors = flat_dem.count_detectors();
+  const size_t num_observables = flat_dem.count_observables();
   stim::DetectorErrorModel out_dem;
   error_index_map.clear();
   size_t output_error_index = 0;
-  for (const stim::DemInstruction& instruction : flatten(dem).instructions) {
+  for (const stim::DemInstruction& instruction : flat_dem.instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_ERROR:
         if (instruction.arg_data[0] > 0) {
@@ -214,6 +234,7 @@ stim::DetectorErrorModel common::remove_zero_probability_errors(
         throw std::invalid_argument("Unrecognized instruction type: " + instruction.str());
     }
   }
+  preserve_dem_index_spaces(out_dem, num_detectors, num_observables);
   return out_dem;
 }
 
