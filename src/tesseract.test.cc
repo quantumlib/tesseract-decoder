@@ -644,6 +644,57 @@ TEST(utils, CoordinateOrdersContainDetectorsInProjectionOrder) {
               order == (std::vector<size_t>{1, 3, 2, 0}));
 }
 
+TEST(tesseract, CoordinateOrderBuilderAndDecoderUseSameTraversalConvention) {
+  // Sorting by coordinate produces either [D0, D2, D3, D1] or its reverse.
+  // At beam 0, both traversals find the lower-cost correction {E1, E3}, which
+  // generated this symptom and flips L0. Before the representation fix,
+  // build_det_orders returned the inverse rank map instead; interpreted as a
+  // traversal, either inverse confidently chooses {E0, E2} and misses L0.
+  stim::DetectorErrorModel dem(R"DEM(
+    detector(0) D0
+    detector(3) D1
+    detector(1) D2
+    detector(2) D3
+    error(0.10) D1
+    error(0.30) D0 D1 D2 L0
+    error(0.12) D2 D3
+    error(0.08) D0 D3
+  )DEM");
+
+  const auto detector_at_position =
+      build_det_orders(dem, 1, DetOrder::DetCoordinate, 0)[0];
+  std::vector<size_t> legacy_position_of_detector(detector_at_position.size());
+  for (size_t position = 0; position < detector_at_position.size(); ++position) {
+    legacy_position_of_detector[detector_at_position[position]] = position;
+  }
+
+  TesseractConfig corrected_config{dem};
+  corrected_config.det_beam = 0;
+  corrected_config.merge_errors = false;
+  corrected_config.det_orders = {detector_at_position};
+  TesseractDecoder corrected_decoder(corrected_config);
+  corrected_decoder.decode_to_errors({1, 2, 3});
+  EXPECT_FALSE(corrected_decoder.low_confidence_flag);
+  auto corrected_errors = corrected_decoder.predicted_errors_buffer;
+  std::sort(corrected_errors.begin(), corrected_errors.end());
+  EXPECT_EQ(corrected_errors, (std::vector<size_t>{1, 3}));
+  EXPECT_EQ(corrected_decoder.get_flipped_observables(corrected_decoder.predicted_errors_buffer),
+            (std::vector<int>{0}));
+
+  TesseractConfig legacy_config = corrected_config;
+  legacy_config.det_orders = {legacy_position_of_detector};
+  TesseractDecoder legacy_decoder(legacy_config);
+  legacy_decoder.decode_to_errors({1, 2, 3});
+  EXPECT_FALSE(legacy_decoder.low_confidence_flag);
+  auto legacy_errors = legacy_decoder.predicted_errors_buffer;
+  std::sort(legacy_errors.begin(), legacy_errors.end());
+  EXPECT_EQ(legacy_errors, (std::vector<size_t>{0, 2}));
+  EXPECT_TRUE(
+      legacy_decoder.get_flipped_observables(legacy_decoder.predicted_errors_buffer).empty());
+  EXPECT_LT(corrected_decoder.cost_from_errors(corrected_decoder.predicted_errors_buffer),
+            legacy_decoder.cost_from_errors(legacy_decoder.predicted_errors_buffer));
+}
+
 TEST(utils, DetectorCoordinatesAreKeyedAndAllowMissingOrShortCoordinates) {
   stim::DetectorErrorModel dem(R"DEM(
     detector(2, 20) D2
