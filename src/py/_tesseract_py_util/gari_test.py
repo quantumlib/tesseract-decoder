@@ -170,7 +170,7 @@ def test_public_circuit_conversion_and_file_output(tmp_path):
     np.testing.assert_array_equal(
         checks.toarray(), transform.checks[[2, 0, 3, 1, 4, 5], :].toarray()
     )
-    source_orders = utils.build_det_orders(
+    source_positions = utils.build_det_orders(
         gari._circuit_to_gari_source_dem(circuit),
         2,
         method=utils.DetOrder.DetCoordinate,
@@ -182,7 +182,10 @@ def test_public_circuit_conversion_and_file_output(tmp_path):
         2,
         method=utils.DetOrder.DetCoordinate,
         seed=0,
-    ) == [order + [4, 5] for order in source_orders]
+    ) == [
+        sorted(range(4), key=positions.__getitem__) + [4, 5]
+        for positions in source_positions
+    ]
 
     block_dem = public_gari.circuit_to_gari(
         circuit,

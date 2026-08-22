@@ -110,8 +110,8 @@ void add_utils_module(py::module& root) {
         Returns
         -------
         list[list[int]]
-            A list of detector orderings. Each inner list gives the detector
-            IDs in traversal order.
+            A list of detector orderings. Each inner list maps a detector index
+            to its position in the ordering.
     )pbdoc");
   m.def(
       "get_errors_from_dem",

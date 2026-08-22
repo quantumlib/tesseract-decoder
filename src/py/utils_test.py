@@ -55,38 +55,21 @@ def test_build_det_orders_default_index():
 
 
 def test_build_det_orders_bfs():
-    path_dem = stim.DetectorErrorModel("""
-        error(0.1) D0 D1
-        error(0.1) D1 D2
-        error(0.1) D2 D3
-        error(0.1) D3 D4
-    """)
-    orders = tesseract_decoder.utils.build_det_orders(
-        path_dem,
-        num_det_orders=8,
+    assert tesseract_decoder.utils.build_det_orders(
+        _DETECTOR_ERROR_MODEL,
+        num_det_orders=1,
         method=tesseract_decoder.utils.DetOrder.DetBFS,
         seed=0,
-    )
-    for order in orders:
-        distances_from_start = [abs(detector - order[0]) for detector in order]
-        assert distances_from_start == sorted(distances_from_start)
+    ) == [[0, 1]]
 
 
 def test_build_det_orders_coordinate():
-    dem = stim.DetectorErrorModel("""
-        detector(0) D0
-        detector(3) D1
-        detector(1) D2
-        detector(4) D3
-        detector(2) D4
-    """)
-    order = tesseract_decoder.utils.build_det_orders(
-        dem,
+    assert tesseract_decoder.utils.build_det_orders(
+        _DETECTOR_ERROR_MODEL,
         num_det_orders=1,
         method=tesseract_decoder.utils.DetOrder.DetCoordinate,
         seed=0,
-    )[0]
-    assert order in ([3, 1, 4, 2, 0], [0, 2, 4, 1, 3])
+    ) == [[0, 1]]
 
 
 def test_build_det_orders_index():

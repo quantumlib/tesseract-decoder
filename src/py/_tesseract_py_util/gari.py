@@ -715,7 +715,7 @@ def build_detector_orders(
     method: object | None = None,
     seed: int = 0,
 ) -> list[list[int]]:
-    """Builds orders for a source-aligned GARI DEM, with virtual IDs last."""
+    """Builds traversal orders for a source-aligned GARI DEM."""
     from tesseract_decoder import utils
 
     source_dem = _circuit_to_gari_source_dem(circuit)
@@ -727,11 +727,13 @@ def build_detector_orders(
     virtual_detectors = list(
         range(source_detector_count, gari_dem.num_detectors)
     )
+    source_positions = utils.build_det_orders(
+        source_dem, num_det_orders, method=method, seed=seed
+    )
     return [
-        order + virtual_detectors
-        for order in utils.build_det_orders(
-            source_dem, num_det_orders, method=method, seed=seed
-        )
+        sorted(range(source_detector_count), key=positions.__getitem__)
+        + virtual_detectors
+        for positions in source_positions
     ]
 
 
