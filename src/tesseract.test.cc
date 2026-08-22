@@ -14,6 +14,7 @@
 
 #include "tesseract.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <limits>
 #include <queue>
@@ -784,6 +785,40 @@ TEST(tesseract, SelectedDetectorOrderIndexMustBeInRange) {
   stim::DetectorErrorModel dem("error(0.1) D0");
   TesseractDecoder decoder(TesseractConfig{dem});
   EXPECT_THROW(decoder.decode_to_errors({}, 1, 0), std::out_of_range);
+}
+
+TEST(utils, GariSourcePrefixB8Decodes) {
+  stim::DetectorErrorModel gari_dem(R"DEM(
+    error(0.1) D0 D3 L0
+    error(0.1) D1 D6 L1
+    detector D9
+  )DEM");
+
+  FILE* file = std::tmpfile();
+  ASSERT_NE(file, nullptr);
+  std::fputc('\x09', file);  // D0 D3.
+  std::fputc('\x42', file);  // D1 D6.
+  std::rewind(file);
+  auto format = stim::format_name_to_enum_map().at("b8");
+  auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(file, format.id, 0, 7, 0);
+  std::vector<stim::SparseShot> shots;
+  stim::SparseShot shot;
+  while (reader->start_and_read_entire_record(shot)) {
+    shots.push_back(shot);
+    shot.clear();
+  }
+  fclose(file);
+
+  ASSERT_EQ(shots.size(), 2);
+  EXPECT_EQ(shots[0].hits, (std::vector<uint64_t>{0, 3}));
+  EXPECT_EQ(shots[1].hits, (std::vector<uint64_t>{1, 6}));
+
+  TesseractDecoder tesseract(TesseractConfig{gari_dem});
+  SimplexDecoder simplex(SimplexConfig{gari_dem});
+  EXPECT_EQ(tesseract.decode(shots[0].hits), (std::vector<int>{0}));
+  EXPECT_EQ(tesseract.decode(shots[1].hits), (std::vector<int>{1}));
+  EXPECT_EQ(simplex.decode(shots[0].hits), (std::vector<int>{0}));
+  EXPECT_EQ(simplex.decode(shots[1].hits), (std::vector<int>{1}));
 }
 
 }  // namespace

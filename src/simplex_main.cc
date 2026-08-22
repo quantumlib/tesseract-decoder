@@ -172,6 +172,17 @@ struct Args {
 
     config.merge_errors = !no_merge_errors;
 
+    size_t shot_detector_count = config.dem.count_detectors();
+    if (!circuit_path.empty()) {
+      shot_detector_count = circuit.count_detectors();
+      if (shot_detector_count > config.dem.count_detectors()) {
+        throw std::invalid_argument("Circuit detector count exceeds DEM detector count.");
+      }
+      if (circuit.count_observables() != config.dem.count_observables()) {
+        throw std::invalid_argument("Circuit and DEM observable counts differ.");
+      }
+    }
+
     if (sample_num_shots > 0) {
       assert(!circuit_path.empty());
       std::mt19937_64 rng(sample_seed);
@@ -198,7 +209,7 @@ struct Args {
       }
       stim::FileFormatData shots_in_format = stim::format_name_to_enum_map().at(in_format);
       auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
-          shots_file, shots_in_format.id, 0, config.dem.count_detectors(),
+          shots_file, shots_in_format.id, 0, shot_detector_count,
           append_observables * config.dem.count_observables());
 
       // Load the shots from a file
