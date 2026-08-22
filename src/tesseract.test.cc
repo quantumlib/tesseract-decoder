@@ -706,8 +706,7 @@ TEST(tesseract, CoordinateOrderBuilderAndDecoderUseSameTraversalConvention) {
     error(0.08) D0 D3
   )DEM");
 
-  const auto detector_at_position =
-      build_det_orders(dem, 1, DetOrder::DetCoordinate, 0)[0];
+  const auto detector_at_position = build_det_orders(dem, 1, DetOrder::DetCoordinate, 0)[0];
   std::vector<size_t> legacy_position_of_detector(detector_at_position.size());
   for (size_t position = 0; position < detector_at_position.size(); ++position) {
     legacy_position_of_detector[detector_at_position[position]] = position;
