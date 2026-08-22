@@ -508,6 +508,9 @@ print(estimated_dem)
 ### Sinter Integration
 The Tesseract Python interface is compatible with the Sinter framework, which is a powerful tool for large-scale decoding, benchmarking, and error-rate estimation.
 
+The compiled Sinter integration reports low-confidence decoding outcomes as discards. Use
+`errors + discards` when calculating a conservative logical failure count.
+
 #### The TesseractSinterDecoder Object
 All Sinter examples rely on this utility function to provide the Sinter-compatible Tesseract decoder.
 The default decoder dictionary also includes sparsified variants:
