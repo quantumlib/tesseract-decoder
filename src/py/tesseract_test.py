@@ -35,6 +35,31 @@ error(0.25) D1
 """)
 
 
+@pytest.mark.parametrize(
+    "detector_order, message",
+    [
+        ([0], "has size"),
+        ([0, 0], "more than once"),
+        ([0, 2], "out-of-range detector ID"),
+    ],
+)
+def test_detector_orders_must_be_permutations(detector_order, message):
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        _DETECTOR_ERROR_MODEL, det_orders=[detector_order]
+    )
+    with pytest.raises(ValueError, match=message):
+        config.compile_decoder()
+
+
+def test_selected_detector_order_index_must_be_in_range():
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        _DETECTOR_ERROR_MODEL, det_orders=[[1, 0]]
+    )
+    decoder = config.compile_decoder()
+    with pytest.raises(IndexError, match="Detector order index 1"):
+        decoder.decode_to_errors(np.zeros(2, dtype=bool), 1, 0)
+
+
 def test_create_tesseract_config():
     config = tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL)
     assert config.dem == _DETECTOR_ERROR_MODEL

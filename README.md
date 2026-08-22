@@ -404,6 +404,8 @@ tesseract_config = tesseract.TesseractConfig(
 ```
 `DetIndex` is the default detector ordering. You can also pass `DetBFS` or `DetCoordinate`
 explicitly.
+Detector orders are complete detector-ID permutations in traversal order:
+`order[position] = detector_id`.
 These values balance decoding speed and accuracy across the benchmarks reported in the paper and can be adjusted for specific use cases.
 
 The Sinter decoder dictionary also provides sparsified variants:
