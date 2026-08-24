@@ -20,6 +20,8 @@
 #include <string>
 #include <vector>
 
+namespace {
+
 std::string vector_to_string(const std::vector<int>& vec) {
   std::stringstream ss;
   ss << "[";
@@ -33,6 +35,10 @@ std::string vector_to_string(const std::vector<int>& vec) {
   ss << "]";
   return ss.str();
 }
+
+}  // namespace
+
+namespace tesseract_decoder {
 
 std::string common::Symptom::str() const {
   std::string s = "Symptom{detectors=";
@@ -116,6 +122,20 @@ double common::merge_weights(double a, double b) {
          std::log(1 + std::exp(-std::abs(a - b)));
 }
 
+bool common::is_flat(const stim::DetectorErrorModel& dem) {
+  for (const stim::DemInstruction& instruction : dem.instructions) {
+    if (instruction.type == stim::DemInstructionType::DEM_REPEAT_BLOCK ||
+        instruction.type == stim::DemInstructionType::DEM_SHIFT_DETECTORS) {
+      return false;
+    }
+  }
+  return true;
+}
+
+stim::DetectorErrorModel common::flatten(const stim::DetectorErrorModel& dem) {
+  return is_flat(dem) ? dem : dem.flattened();
+}
+
 stim::DetectorErrorModel common::merge_indistinguishable_errors(
     const stim::DetectorErrorModel& dem, std::vector<size_t>& error_index_map) {
   stim::DetectorErrorModel out_dem;
@@ -126,7 +146,7 @@ stim::DetectorErrorModel common::merge_indistinguishable_errors(
   std::unordered_map<Symptom, size_t, Symptom::hash> merged_index_by_symptom;
   std::vector<Error> merged_errors;
 
-  for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
+  for (const stim::DemInstruction& instruction : flatten(dem).instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_ERROR: {
         Error error(instruction);
@@ -174,7 +194,7 @@ stim::DetectorErrorModel common::remove_zero_probability_errors(
   stim::DetectorErrorModel out_dem;
   error_index_map.clear();
   size_t output_error_index = 0;
-  for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
+  for (const stim::DemInstruction& instruction : flatten(dem).instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_ERROR:
         if (instruction.arg_data[0] > 0) {
@@ -221,7 +241,7 @@ std::vector<size_t> common::invert_error_map(const std::vector<size_t>& error_ma
 stim::DetectorErrorModel common::dem_from_counts(const stim::DetectorErrorModel& orig_dem,
                                                  const std::vector<size_t>& error_counts,
                                                  size_t num_shots) {
-  stim::DetectorErrorModel flat_dem = orig_dem.flattened();
+  stim::DetectorErrorModel flat_dem = flatten(orig_dem);
   if (flat_dem.count_errors() != error_counts.size()) {
     throw std::invalid_argument(
         "Error hits array must be the same size as the number of errors in the "
@@ -241,3 +261,5 @@ stim::DetectorErrorModel common::dem_from_counts(const stim::DetectorErrorModel&
   }
   return out_dem;
 }
+
+}  // namespace tesseract_decoder

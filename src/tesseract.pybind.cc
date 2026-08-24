@@ -25,6 +25,7 @@
 #include "visualization.pybind.h"
 
 PYBIND11_MODULE(tesseract_decoder, tesseract) {
+  using namespace tesseract_decoder;
   py::module::import("stim");
 
   add_common_module(tesseract);

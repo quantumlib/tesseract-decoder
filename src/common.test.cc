@@ -17,6 +17,9 @@
 #include "gtest/gtest.h"
 #include "stim.h"
 
+namespace tesseract_decoder {
+namespace {
+
 TEST(common, ErrorsStructFromDemInstruction) {
   // Test a pathological DEM error instruction
   stim::DetectorErrorModel dem("error(0.1) D0 ^  D0 D1  L0 L1 L1");
@@ -194,3 +197,6 @@ TEST(CommonTest, merge_indistinguishable_errors_two_errors) {
   auto merged_dem4 = common::merge_indistinguishable_errors(dem4, error_index_map);
   ASSERT_NEAR(get_merged_probability(merged_dem4), expected_merged_p, 1e-9);
 }
+
+}  // namespace
+}  // namespace tesseract_decoder

@@ -27,7 +27,9 @@
 
 namespace py = pybind11;
 
+namespace tesseract_decoder {
 namespace {
+
 // Helper function to compile the decoder.
 std::unique_ptr<TesseractDecoder> _compile_tesseract_decoder_helper(const TesseractConfig& self) {
   return std::make_unique<TesseractDecoder>(self);
@@ -79,12 +81,20 @@ void add_tesseract_module(py::module& root) {
         py::arg("num_detectors"), py::arg("sparsify_base_degree"),
         "Returns the suggested number of optional high-degree errors to reactivate per shot.");
 
-  py::class_<TesseractConfig>(m, "TesseractConfig", R"pbdoc(
+  auto py_tesseract_config = py::class_<TesseractConfig>(m, "TesseractConfig", R"pbdoc(
         Configuration object for the `TesseractDecoder`.
 
         This class holds all the parameters needed to initialize and configure a
         Tesseract decoder instance.
-    )pbdoc")
+    )pbdoc");
+  auto py_tesseract_decoder = py::class_<TesseractDecoder>(m, "TesseractDecoder", R"pbdoc(
+        A class that implements the Tesseract decoding algorithm.
+
+        It can decode syndromes from a `stim.DetectorErrorModel` to predict
+        which observables have been flipped.
+    )pbdoc");
+
+  py_tesseract_config
       .def(py::init<>(), R"pbdoc(
         Default constructor for TesseractConfig.
         Creates a new instance with default parameter values.
@@ -239,12 +249,7 @@ void add_tesseract_module(py::module& root) {
                 `TesseractConfig` object.
             )pbdoc");
 
-  py::class_<TesseractDecoder>(m, "TesseractDecoder", R"pbdoc(
-        A class that implements the Tesseract decoding algorithm.
-
-        It can decode syndromes from a `stim.DetectorErrorModel` to predict
-        which observables have been flipped.
-    )pbdoc")
+  py_tesseract_decoder
       .def(py::init<TesseractConfig>(), py::arg("config"), R"pbdoc(
         The constructor for the `TesseractDecoder` class.
 
@@ -521,5 +526,7 @@ void add_tesseract_module(py::module& root) {
                     "An object that can (if config.create_visualization=True) be used to generate "
                     "visualization of the algorithm");
 }
+
+}  // namespace tesseract_decoder
 
 #endif

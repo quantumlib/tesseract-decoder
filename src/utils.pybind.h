@@ -23,6 +23,8 @@
 
 namespace py = pybind11;
 
+namespace tesseract_decoder {
+
 void add_utils_module(py::module& root) {
   auto m = root.def_submodule("utils", "utility methods");
 
@@ -137,4 +139,7 @@ void add_utils_module(py::module& root) {
   // Not exposing sampling_from_dem and sample_shots because they depend on
   // stim::SparseShot which stim doesn't expose to python.
 }
+
+}  // namespace tesseract_decoder
+
 #endif

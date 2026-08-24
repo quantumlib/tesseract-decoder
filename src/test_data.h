@@ -19,6 +19,8 @@
 
 #include "stim.h"
 
+namespace tesseract_decoder {
+
 std::vector<std::string> get_small_test_circuits() {
   return {};
 }
@@ -26,5 +28,7 @@ std::vector<std::string> get_small_test_circuits() {
 std::vector<std::string> get_large_test_circuits() {
   return {};
 }
+
+}  // namespace tesseract_decoder
 
 #endif  // TESSERACT_TEST_DATA_H
