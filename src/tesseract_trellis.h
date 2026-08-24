@@ -22,6 +22,8 @@
 #include "common.h"
 #include "stim.h"
 
+namespace tesseract_decoder {
+
 struct TesseractTrellisWideKernelBase;
 
 enum class TesseractTrellisRankingMode {
@@ -101,5 +103,7 @@ struct TesseractTrellisDecoder {
   std::unique_ptr<TesseractTrellisWideKernelBase> wide_kernel;
   std::vector<uint32_t> kept_state_histogram_scratch;
 };
+
+}  // namespace tesseract_decoder
 
 #endif  // TESSERACT_TRELLIS_DECODER_H

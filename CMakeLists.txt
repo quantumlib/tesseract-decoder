@@ -152,6 +152,16 @@ pybind11_add_module(tesseract_decoder MODULE ${TESSERACT_SRC_DIR}/tesseract.pybi
 target_compile_options(tesseract_decoder PRIVATE ${OPT_COPTS})
 target_include_directories(tesseract_decoder PRIVATE ${TESSERACT_SRC_DIR})
 target_link_libraries(tesseract_decoder PRIVATE common utils simplex tesseract_lib multi_pass_tesseract_decoder)
+# Keep statically linked HiGHS symbols private to this extension on every
+# supported Unix platform. Mach-O uses an explicit export list because it has
+# no ELF-style --exclude-libs option; otherwise highspy can resolve symbols to
+# Tesseract's private HiGHS copy when both extensions share a process.
+if(APPLE)
+  target_link_options(tesseract_decoder PRIVATE
+    "-Wl,-exported_symbols_list,${TESSERACT_SRC_DIR}/tesseract_decoder.exports")
+elseif(UNIX)
+  target_link_options(tesseract_decoder PRIVATE "-Wl,--exclude-libs,ALL")
+endif()
 set_target_properties(tesseract_decoder PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/src
     LIBRARY_OUTPUT_DIRECTORY_DEBUG ${PROJECT_SOURCE_DIR}/src

@@ -7,7 +7,7 @@
 
 #include "stim.h"
 
-namespace tesseract {
+namespace tesseract_decoder {
 
 /**
  * Represents an independent connected component of the Tanner graph.
@@ -51,6 +51,6 @@ class TannerGraph {
   };
 };
 
-}  // namespace tesseract
+}  // namespace tesseract_decoder
 
 #endif  // TANNER_GRAPH_H

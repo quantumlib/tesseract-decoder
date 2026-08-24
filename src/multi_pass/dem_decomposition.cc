@@ -10,7 +10,7 @@
 
 #include "stim.h"
 
-namespace tesseract {
+namespace tesseract_decoder {
 
 // Helper function to generate all combinations of observables
 void generate_obs_combinations(
@@ -296,4 +296,4 @@ stim::DetectorErrorModel undecompose_errors(const stim::DetectorErrorModel& dem)
   return undecomposed_dem;
 }
 
-}  // namespace tesseract
+}  // namespace tesseract_decoder

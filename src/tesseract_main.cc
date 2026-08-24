@@ -30,6 +30,8 @@
 #include "tesseract.h"
 #include "utils.h"
 
+using namespace tesseract_decoder;
+
 struct Args {
   bool multipass = false;
   bool print_multipass_plan = false;
@@ -588,7 +590,8 @@ int main(int argc, char* argv[]) {
   std::vector<std::atomic<bool>> low_confidence(shots.size());
   const stim::DetectorErrorModel original_dem = config.dem.flattened();
   std::vector<std::unique_ptr<TesseractDecoder>> decoders(args.num_threads);
-  std::vector<std::unique_ptr<tesseract::MultiPassTesseractDecoder>> mp_decoders(args.num_threads);
+  std::vector<std::unique_ptr<tesseract_decoder::MultiPassTesseractDecoder>> mp_decoders(
+      args.num_threads);
   std::vector<std::vector<size_t>> error_use_per_thread(
       args.num_threads, std::vector<size_t>(original_dem.count_errors()));
   bool has_obs = args.has_observables();
@@ -643,17 +646,17 @@ int main(int argc, char* argv[]) {
     }
     return -1;
   };
-  tesseract::SchedulingStrategy strategy_val = (args.multipass_strategy == "static")
-                                                   ? tesseract::SchedulingStrategy::Static
-                                                   : tesseract::SchedulingStrategy::Causal;
+  tesseract_decoder::SchedulingStrategy strategy_val =
+      (args.multipass_strategy == "static") ? tesseract_decoder::SchedulingStrategy::Static
+                                            : tesseract_decoder::SchedulingStrategy::Causal;
 
   std::vector<int> detector_classes;
   if (args.multipass) {
     try {
       detector_classes =
-          tesseract::MultiPassTesseractDecoder::classify_detectors(config.dem, classifier);
+          tesseract_decoder::MultiPassTesseractDecoder::classify_detectors(config.dem, classifier);
       if (args.print_multipass_plan) {
-        mp_decoders[0] = std::make_unique<tesseract::MultiPassTesseractDecoder>(
+        mp_decoders[0] = std::make_unique<tesseract_decoder::MultiPassTesseractDecoder>(
             config.dem, args.num_passes, detector_classes, config, args.num_det_orders,
             args.det_order_method, args.det_order_seed, strategy_val, true);
         std::cerr << mp_decoders[0]->get_execution_plan().str();
@@ -671,9 +674,10 @@ int main(int argc, char* argv[]) {
 
         if (args.multipass) {
           if (!mp_decoders[thread_index]) {
-            mp_decoders[thread_index] = std::make_unique<tesseract::MultiPassTesseractDecoder>(
-                config.dem, args.num_passes, detector_classes, config, args.num_det_orders,
-                args.det_order_method, args.det_order_seed, strategy_val);
+            mp_decoders[thread_index] =
+                std::make_unique<tesseract_decoder::MultiPassTesseractDecoder>(
+                    config.dem, args.num_passes, detector_classes, config, args.num_det_orders,
+                    args.det_order_method, args.det_order_seed, strategy_val);
           }
           auto start_time = std::chrono::high_resolution_clock::now();
           auto res = mp_decoders[thread_index]->decode_result(shots[shot_index].hits);

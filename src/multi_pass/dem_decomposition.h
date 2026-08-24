@@ -12,7 +12,7 @@
 
 #include "stim.h"
 
-namespace tesseract {
+namespace tesseract_decoder {
 
 // Calculates the symmetric difference of a multiset of items.
 // Returns items that appear an odd number of times in the input.
@@ -76,6 +76,6 @@ std::map<int, stim::DetectorErrorModel> split_dem_by_component(
 // Returns a detector error model with any error decompositions removed.
 stim::DetectorErrorModel undecompose_errors(const stim::DetectorErrorModel& dem);
 
-}  // namespace tesseract
+}  // namespace tesseract_decoder
 
 #endif  // DEM_DECOMPOSITION_H

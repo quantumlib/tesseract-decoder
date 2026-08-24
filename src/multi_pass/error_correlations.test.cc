@@ -4,7 +4,8 @@
 
 #include "gtest/gtest.h"
 
-using namespace tesseract;
+namespace tesseract_decoder {
+namespace {
 
 TEST(TwoPassCorrelationsTest, JointProbabilities) {
   stim::DetectorErrorModel dem(R"DEM(
@@ -63,3 +64,6 @@ TEST(TwoPassCorrelationsTest, ImpliedProbabilities) {
   }
   EXPECT_TRUE(found);
 }
+
+}  // namespace
+}  // namespace tesseract_decoder

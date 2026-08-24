@@ -4,7 +4,8 @@
 
 #include "gtest/gtest.h"
 
-using namespace tesseract;
+namespace tesseract_decoder {
+namespace {
 
 TEST(TannerGraphTest, SingleComponent) {
   stim::DetectorErrorModel dem(R"DEM(
@@ -81,3 +82,6 @@ TEST(TannerGraphTest, PureLogicalErrorComponent) {
   ASSERT_EQ(components[0].observables.size(), 1);
   ASSERT_TRUE(components[0].affects_observable);
 }
+
+}  // namespace
+}  // namespace tesseract_decoder

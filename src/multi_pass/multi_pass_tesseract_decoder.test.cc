@@ -7,7 +7,8 @@
 
 #include "gtest/gtest.h"
 
-using namespace tesseract;
+namespace tesseract_decoder {
+namespace {
 
 stim::DetectorErrorModel load_test_dem(const std::string& filename) {
   std::string path = "testdata/surfacecodes/" + filename;
@@ -469,3 +470,6 @@ TEST(MultiPassTesseractDecoderTest, CorrelationRulesDistinguishObservables) {
   decoder.decode({0});
   EXPECT_EQ(decoder.get_last_shot_num_reweights(), 1);
 }
+
+}  // namespace
+}  // namespace tesseract_decoder

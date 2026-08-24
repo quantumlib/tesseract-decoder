@@ -15,15 +15,15 @@
 
 namespace py = pybind11;
 
-namespace tesseract {
+namespace tesseract_decoder {
 
 struct MultiPassSinterCompiledDecoder {
-  std::unique_ptr<tesseract::MultiPassTesseractDecoder> decoder;
+  std::unique_ptr<MultiPassTesseractDecoder> decoder;
   uint64_t num_detectors;
   uint64_t num_observables;
 
-  MultiPassSinterCompiledDecoder(std::unique_ptr<tesseract::MultiPassTesseractDecoder> d,
-                                 uint64_t nd, uint64_t no)
+  MultiPassSinterCompiledDecoder(std::unique_ptr<MultiPassTesseractDecoder> d, uint64_t nd,
+                                 uint64_t no)
       : decoder(std::move(d)), num_detectors(nd), num_observables(no) {}
 
   size_t num_components() const {
@@ -74,7 +74,7 @@ struct MultiPassSinterDecoder {
   py::object detector_classifier;
   TesseractConfig base_config;
   size_t num_det_orders;
-  ::DetOrder det_order_method;
+  DetOrder det_order_method;
   uint64_t seed;
   SchedulingStrategy strategy;
 
@@ -83,7 +83,7 @@ struct MultiPassSinterDecoder {
         full_decomposer(py::none()),
         detector_classifier(py::none()),
         num_det_orders(1),
-        det_order_method(::DetOrder::DetIndex),
+        det_order_method(DetOrder::DetIndex),
         seed(0),
         strategy(SchedulingStrategy::Causal) {
     if (num_passes < 1 || num_passes > 2) {
@@ -108,18 +108,18 @@ struct MultiPassSinterDecoder {
     }
 
     py::object python_classifier = detector_classifier;
-    tesseract::DetectorClassifier classifier =
-        [python_classifier](int index, const std::vector<double>& coordinates,
-                            const std::string& tag) -> int {
+    DetectorClassifier classifier = [python_classifier](int index,
+                                                        const std::vector<double>& coordinates,
+                                                        const std::string& tag) -> int {
       py::gil_scoped_acquire acquire;
       return py::cast<int>(python_classifier(index, coordinates, tag));
     };
     std::vector<int> classification =
-        tesseract::MultiPassTesseractDecoder::classify_detectors(stim_dem, classifier);
+        MultiPassTesseractDecoder::classify_detectors(stim_dem, classifier);
 
-    auto decoder = std::make_unique<tesseract::MultiPassTesseractDecoder>(
-        stim_dem, num_passes, classification, base_config, num_det_orders, det_order_method, seed,
-        strategy);
+    auto decoder = std::make_unique<MultiPassTesseractDecoder>(stim_dem, num_passes, classification,
+                                                               base_config, num_det_orders,
+                                                               det_order_method, seed, strategy);
 
     return MultiPassSinterCompiledDecoder(std::move(decoder), stim_dem.count_detectors(),
                                           stim_dem.count_observables());
@@ -157,6 +157,6 @@ void pybind_multi_pass_sinter_compat(py::module& m) {
            "Compiles a DEM after classifying every detector into exactly two components.");
 }
 
-}  // namespace tesseract
+}  // namespace tesseract_decoder
 
 #endif  // MULTI_PASS_SINTER_COMPAT_PYBIND_H

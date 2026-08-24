@@ -81,6 +81,8 @@ struct hash<boost::dynamic_bitset<>> {
 };
 }  // namespace std
 
+namespace tesseract_decoder {
+
 std::string TesseractConfig::str() {
   auto& config = *this;
   std::stringstream ss;
@@ -766,3 +768,5 @@ void TesseractDecoder::build_sparse_d2e(const std::vector<uint64_t>& detections)
     }
   }
 }
+
+}  // namespace tesseract_decoder

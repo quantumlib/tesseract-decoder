@@ -23,6 +23,9 @@
 #include "stim.h"
 #include "utils.h"
 
+namespace tesseract_decoder {
+namespace {
+
 constexpr uint64_t test_data_seed = 752024;
 
 bool simplex_test_compare(stim::DetectorErrorModel& dem, std::vector<stim::SparseShot>& shots) {
@@ -596,3 +599,6 @@ TEST(tesseract, UpdateInternalCostsBehavior) {
   ASSERT_EQ(decoder.predicted_errors_buffer.size(), 1);
   ASSERT_EQ(decoder.predicted_errors_buffer[0], 1);  // Should now pick Error 1 (index 1)
 }
+
+}  // namespace
+}  // namespace tesseract_decoder

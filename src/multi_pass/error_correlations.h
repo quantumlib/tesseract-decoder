@@ -10,7 +10,7 @@
 
 #include "stim.h"
 
-namespace tesseract {
+namespace tesseract_decoder {
 
 struct ComponentSymptom {
   std::vector<int> detectors;
@@ -53,6 +53,6 @@ ImpliedProbsMap get_implied_hyperedge_probabilities(const JointProbsMap& joint_p
 ImpliedProbsMap process_dem_correlations(const stim::DetectorErrorModel& dem,
                                          const std::vector<int>& global_det_to_comp_id);
 
-}  // namespace tesseract
+}  // namespace tesseract_decoder
 
 #endif  // ERROR_CORRELATIONS_H

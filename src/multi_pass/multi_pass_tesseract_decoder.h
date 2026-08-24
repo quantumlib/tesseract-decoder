@@ -13,7 +13,7 @@
 #include "stim.h"
 #include "tanner_graph.h"
 
-namespace tesseract {
+namespace tesseract_decoder {
 
 enum class SchedulingStrategy {
   Static,  // Schedules both components in every pass.
@@ -122,7 +122,7 @@ class MultiPassTesseractDecoder {
   size_t total_global_detectors;
   TesseractConfig base_config;
   size_t num_det_orders;
-  ::DetOrder det_order_method;
+  DetOrder det_order_method;
   uint64_t seed;
   bool collect_plan_statistics;
   size_t last_shot_num_reweights = 0;
@@ -165,6 +165,6 @@ class MultiPassDebugger {
   }
 };
 
-}  // namespace tesseract
+}  // namespace tesseract_decoder
 
 #endif  // MULTI_PASS_TESSERACT_DECODER_H

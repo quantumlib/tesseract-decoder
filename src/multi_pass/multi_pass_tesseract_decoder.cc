@@ -10,7 +10,7 @@
 #include "../common.h"
 #include "dem_decomposition.h"
 
-namespace tesseract {
+namespace tesseract_decoder {
 
 std::string MultiPassExecutionPlan::str() const {
   std::stringstream ss;
@@ -526,4 +526,4 @@ MultiPassDecodeResult MultiPassTesseractDecoder::decode_result(
   return res;
 }
 
-}  // namespace tesseract
+}  // namespace tesseract_decoder

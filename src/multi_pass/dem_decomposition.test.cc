@@ -6,7 +6,8 @@
 
 #include "gtest/gtest.h"
 
-using namespace tesseract;
+namespace tesseract_decoder {
+namespace {
 
 TEST(DemDecompositionTest, ReduceSymmetricDifference) {
   ASSERT_EQ(reduce_symmetric_difference({1, 2, 3}), std::vector<int>({1, 2, 3}));
@@ -199,3 +200,6 @@ TEST(DemDecompositionTest, UndecomposeErrorsWithRepeatBlock) {
     )DEM");
   ASSERT_EQ(undecompose_errors(dem).str(), expected_undecomposed_dem.str());
 }
+
+}  // namespace
+}  // namespace tesseract_decoder

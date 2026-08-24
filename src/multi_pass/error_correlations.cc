@@ -3,7 +3,7 @@
 #include <sstream>
 #include <stdexcept>
 
-namespace tesseract {
+namespace tesseract_decoder {
 
 bool ComponentSymptom::operator==(const ComponentSymptom& other) const {
   return detectors == other.detectors && observables == other.observables;
@@ -148,4 +148,4 @@ ImpliedProbsMap process_dem_correlations(const stim::DetectorErrorModel& dem,
   return get_implied_hyperedge_probabilities(joint);
 }
 
-}  // namespace tesseract
+}  // namespace tesseract_decoder

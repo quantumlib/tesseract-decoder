@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <unordered_map>
 
-namespace tesseract {
+namespace tesseract_decoder {
 
 std::vector<TannerComponent> TannerGraph::find_components(const stim::DetectorErrorModel& dem) {
   int num_detectors = (int)dem.count_detectors();
@@ -96,4 +96,4 @@ std::vector<TannerComponent> TannerGraph::find_components(const stim::DetectorEr
   return components;
 }
 
-}  // namespace tesseract
+}  // namespace tesseract_decoder
