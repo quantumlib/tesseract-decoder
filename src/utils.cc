@@ -146,7 +146,11 @@ static std::vector<std::vector<size_t>> build_det_orders_coordinate(
   auto detector_coords = get_detector_coords(dem);
   std::vector<double> inner_products(dem.count_detectors());
   std::normal_distribution<double> dist(0, 1);
-  if (detector_coords.empty() || detector_coords.at(0).empty()) {
+  size_t max_coord_dim = 0;
+  for (const auto& coords : detector_coords) {
+    max_coord_dim = std::max(max_coord_dim, coords.size());
+  }
+  if (max_coord_dim == 0) {
     for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
       det_orders[det_order].resize(dem.count_detectors());
       std::iota(det_orders[det_order].begin(), det_orders[det_order].end(), 0);
@@ -154,17 +158,15 @@ static std::vector<std::vector<size_t>> build_det_orders_coordinate(
     return det_orders;
   }
   for (size_t det_order = 0; det_order < num_det_orders; ++det_order) {
-    std::vector<double> orientation_vector;
-    for (size_t i = 0; i < detector_coords.at(0).size(); ++i) {
-      orientation_vector.push_back(dist(rng));
+    std::vector<double> orientation_vector(max_coord_dim);
+    for (size_t i = 0; i < max_coord_dim; ++i) {
+      orientation_vector[i] = dist(rng);
     }
     size_t num_dets = std::min(detector_coords.size(), inner_products.size());
     for (size_t i = 0; i < num_dets; ++i) {
       inner_products[i] = 0;
-      for (size_t j = 0; j < orientation_vector.size(); ++j) {
-        if (j < detector_coords[i].size()) {
-          inner_products[i] += detector_coords[i][j] * orientation_vector[j];
-        }
+      for (size_t j = 0; j < detector_coords[i].size(); ++j) {
+        inner_products[i] += detector_coords[i][j] * orientation_vector[j];
       }
     }
     std::vector<size_t> perm(dem.count_detectors());
