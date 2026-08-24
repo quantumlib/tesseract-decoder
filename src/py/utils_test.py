@@ -38,6 +38,11 @@ def test_get_detector_coords():
     assert tesseract_decoder.utils.get_detector_coords(_DETECTOR_ERROR_MODEL) == []
 
 
+def test_get_detector_coords_sparse():
+    dem = stim.DetectorErrorModel("detector(1, 2, 3) D1\nerror(0.1) D0 D1\n")
+    assert tesseract_decoder.utils.get_detector_coords(dem) == [[], [1.0, 2.0, 3.0]]
+
+
 def test_build_detector_graph():
     assert tesseract_decoder.utils.build_detector_graph(_DETECTOR_ERROR_MODEL) == [
         [1],
@@ -70,6 +75,18 @@ def test_build_det_orders_coordinate():
         method=tesseract_decoder.utils.DetOrder.DetCoordinate,
         seed=0,
     ) == [[0, 1]]
+
+
+def test_build_det_orders_coordinate_sparse():
+    dem = stim.DetectorErrorModel("detector(1, 2, 3) D1\nerror(0.1) D0 D1\n")
+    orders = tesseract_decoder.utils.build_det_orders(
+        dem,
+        num_det_orders=1,
+        method=tesseract_decoder.utils.DetOrder.DetCoordinate,
+        seed=0,
+    )
+    assert len(orders) == 1
+    assert len(orders[0]) == 2
 
 
 def test_build_det_orders_index():
