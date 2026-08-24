@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Pre-release Tesseract
+name: Dry Run Releasing Tesseract
 
 on:
-  push:
-    branches:
-    - main
+  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -107,19 +106,4 @@ jobs:
         merge-multiple: true
         path: wheelhouse/
 
-    - name: Publish package to testpypi
-      uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
-      with:
-        repository-url: https://test.pypi.org/legacy/
-        user: __token__
-        password: ${{ secrets.TEST_PYPI_TOKEN }}
-        packages-dir: wheelhouse/
-        verbose: true
-
-
-    - name: Publish package to pypi
-      uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
-      with:
-        user: __token__
-        password: ${{ secrets.PYPI_TOKEN }}
-        packages-dir: wheelhouse/
+ 
