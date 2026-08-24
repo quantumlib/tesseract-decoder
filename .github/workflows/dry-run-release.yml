@@ -109,7 +109,7 @@ jobs:
     - name: Test Wheels
       run: |
         pip install build twine
-        twine check dist/*
+        twine check wheelhouse/*
 
     - name: Publish package to testpypi
       uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
