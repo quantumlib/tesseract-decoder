@@ -29,6 +29,8 @@
 #include "common.h"
 #include "stim.h"
 
+namespace tesseract_decoder {
+
 constexpr const double EPSILON = 1e-7;
 
 std::vector<std::vector<double>> get_detector_coords(const stim::DetectorErrorModel& dem);
@@ -111,5 +113,7 @@ size_t parallel_for_shots_in_order(size_t num_shots, size_t num_threads, Process
   }
   return shot;
 }
+
+}  // namespace tesseract_decoder
 
 #endif  // __TESSERACT_UTILS_H__

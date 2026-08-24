@@ -18,6 +18,7 @@
 
 #include "stim.h"
 
+namespace tesseract_decoder {
 namespace common {
 
 // Represents the effect of an error
@@ -71,6 +72,12 @@ struct Error {
   void set_with_probability(double p);
 };
 
+// True if the DEM has no repeat or shift_detectors instructions.
+bool is_flat(const stim::DetectorErrorModel& dem);
+
+// Flatten the DEM, skipping rebuilds if already flat.
+stim::DetectorErrorModel flatten(const stim::DetectorErrorModel& dem);
+
 // Makes a new (flattened) dem where identical error mechanisms have been
 // merged.
 // `error_index_map[old_error_index]` gives the corresponding merged DEM error
@@ -107,5 +114,6 @@ stim::DetectorErrorModel dem_from_counts(const stim::DetectorErrorModel& orig_de
 double merge_weights(double a, double b);
 
 }  // namespace common
+}  // namespace tesseract_decoder
 
 #endif

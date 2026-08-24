@@ -24,6 +24,8 @@ struct HighsModel;
 struct Highs;
 enum class HighsStatus;
 
+namespace tesseract_decoder {
+
 struct SimplexConfig {
   stim::DetectorErrorModel dem;
   bool parallelize = false;
@@ -80,5 +82,7 @@ struct SimplexDecoder {
 
   void init_ilp();
 };
+
+}  // namespace tesseract_decoder
 
 #endif  // SIMPLEX_HPP

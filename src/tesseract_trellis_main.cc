@@ -26,6 +26,8 @@
 #include "tesseract_trellis.h"
 #include "utils.h"
 
+using namespace tesseract_decoder;
+
 namespace {
 
 TesseractTrellisRankingMode parse_ranking_mode(const std::string& value) {

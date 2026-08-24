@@ -23,6 +23,23 @@ config_setting(
     values = {"compilation_mode": "dbg"},
 )
 
+config_setting(
+    name = "portable_linux_wheel",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    define_values = {"tesseract_portable_wheel": "true"},
+)
+
+config_setting(
+    name = "macos_arm",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:arm64",
+    ],
+)
+
 OPT_COPTS = select({
     "//conditions:default": [
         "-Ofast",
@@ -32,7 +49,8 @@ OPT_COPTS = select({
 }) + select({
         "//conditions:default": ["-std=c++20"],
 }) + select({
-    "@platforms//os:macos": ["-mmacosx-version-min=10.15",],
+    ":portable_linux_wheel": ["-march=x86-64"],
+    ":macos_arm": ["-mmacosx-version-min=11.0"],
     "//conditions:default": ["-march=native",],
 })
 
@@ -87,6 +105,19 @@ pybind_extension(
         "tesseract.pybind.cc",
     ],
     copts = OPT_COPTS,
+    # Keep static-library symbols (notably HiGHS) private to this extension.
+    # Mach-O has no equivalent to ELF's --exclude-libs, so it needs an explicit
+    # export list; without it, highspy can see the linked HiGHS symbols.
+    additional_linker_inputs = ["tesseract_decoder.exports"],
+    linkopts = select({
+        "@platforms//os:osx": [
+            "-Wl,-exported_symbols_list,$(location :tesseract_decoder.exports)",
+        ],
+        # The ELF equivalent also hides symbols pulled from static archives.
+        "@platforms//os:linux": ["-Wl,--exclude-libs,ALL"],
+        # The default also covers Windows and non-ELF toolchains.
+        "//conditions:default": [],
+    }),
     deps = [
         ":tesseract_decoder_pybind",
     ],

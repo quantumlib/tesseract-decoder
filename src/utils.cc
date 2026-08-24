@@ -27,11 +27,13 @@
 #include "common.h"
 #include "stim.h"
 
+namespace tesseract_decoder {
+
 std::vector<std::vector<double>> get_detector_coords(const stim::DetectorErrorModel& dem) {
   size_t num_detectors = dem.count_detectors();
   std::vector<std::vector<double>> detector_coords(num_detectors);
   bool has_any_coords = false;
-  for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
+  for (const stim::DemInstruction& instruction : common::flatten(dem).instructions) {
     switch (instruction.type) {
       case stim::DemInstructionType::DEM_SHIFT_DETECTORS:
         throw std::invalid_argument("DEM_SHIFT_DETECTORS is not supported by this function.");
@@ -68,7 +70,7 @@ std::vector<std::vector<double>> get_detector_coords(const stim::DetectorErrorMo
 std::vector<std::vector<size_t>> build_detector_graph(const stim::DetectorErrorModel& dem) {
   size_t num_detectors = dem.count_detectors();
   std::vector<std::vector<size_t>> neighbors(num_detectors);
-  for (const stim::DemInstruction& instruction : dem.flattened().instructions) {
+  for (const stim::DemInstruction& instruction : common::flatten(dem).instructions) {
     if (instruction.type != stim::DemInstructionType::DEM_ERROR) {
       continue;
     }
@@ -294,3 +296,5 @@ uint64_t vector_to_u64_mask(const std::vector<int>& v) {
   }
   return mask;
 }
+
+}  // namespace tesseract_decoder

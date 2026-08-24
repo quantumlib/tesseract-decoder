@@ -12,12 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-This module is a dispatcher for DEMfunctionality such as decomposition and re-generalization,
-and related utilities, in `decompose_errors.py` and `generalize_dem.py`.
-"""
+"""Utilities exported through the public ``tesseract_decoder.demutil`` facade."""
 
 from _tesseract_py_util import gari as gari
-from _tesseract_py_util.demutil import decompose_errors
-from _tesseract_py_util.generalize_dem import \
-    generalize as regeneralize_spatial_dem
+from _tesseract_py_util.decompose_errors import decompose_errors as decompose_errors
+from _tesseract_py_util.generalize_dem import generalize as regeneralize_spatial_dem
+
+__all__ = ["decompose_errors", "gari", "regeneralize_spatial_dem"]
