@@ -20,6 +20,8 @@
 #include "io/HMPSIO.h"
 #include "utils.h"
 
+namespace tesseract_decoder {
+
 constexpr size_t T_COORD = 2;
 
 std::string SimplexConfig::str() {
@@ -34,9 +36,11 @@ std::string SimplexConfig::str() {
   return ss.str();
 }
 
-SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
+SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(std::move(_config)) {
+  config.dem = common::flatten(config.dem);
+
   // Maps original flattened DEM error indices to currently preprocessed indices.
-  std::vector<size_t> dem_error_map(config.dem.flattened().count_errors());
+  std::vector<size_t> dem_error_map(config.dem.count_errors());
   std::iota(dem_error_map.begin(), dem_error_map.end(), 0);
 
   if (config.merge_errors) {
@@ -52,7 +56,7 @@ SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
   dem_error_to_error = std::move(dem_error_map);
   error_to_dem_error = common::invert_error_map(dem_error_to_error, config.dem.count_errors());
 
-  errors = get_errors_from_dem(config.dem.flattened());
+  errors = get_errors_from_dem(config.dem);
 
   std::vector<double> detector_t_coords(config.dem.count_detectors(), 0);
   std::vector<std::vector<double>> detector_coords = get_detector_coords(config.dem);
@@ -399,3 +403,5 @@ void SimplexDecoder::decode_shots(std::vector<stim::SparseShot>& shots,
 }
 
 SimplexDecoder::~SimplexDecoder() {}
+
+}  // namespace tesseract_decoder

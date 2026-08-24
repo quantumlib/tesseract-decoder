@@ -27,7 +27,9 @@
 
 namespace py = pybind11;
 
+namespace tesseract_decoder {
 namespace {
+
 // Helper function to compile the decoder.
 std::unique_ptr<SimplexDecoder> _compile_simplex_decoder_helper(const SimplexConfig& self) {
   return std::make_unique<SimplexDecoder>(self);
@@ -41,19 +43,27 @@ SimplexConfig simplex_config_maker(py::object dem, bool parallelize = false,
       {input_dem, parallelize, window_length, window_slide_length, verbose, merge_errors});
 }
 
-};  // namespace
+}  // namespace
 
 void add_simplex_module(py::module& root) {
   auto m =
       root.def_submodule("simplex", "Module containing the SimplexDecoder and related methods");
 
-  py::class_<SimplexConfig>(m, "SimplexConfig", R"pbdoc(
+  auto py_simplex_config = py::class_<SimplexConfig>(m, "SimplexConfig", R"pbdoc(
         Configuration object for the `SimplexDecoder`.
 
         This class holds all the parameters needed to initialize and configure a
         Simplex decoder instance, including the detector error model and
         decoding options.
-    )pbdoc")
+    )pbdoc");
+  auto py_simplex_decoder = py::class_<SimplexDecoder>(m, "SimplexDecoder", R"pbdoc(
+        A class that implements the Simplex decoding algorithm.
+
+        It can decode syndromes from a `stim.DetectorErrorModel` to predict
+        which observables have been flipped.
+    )pbdoc");
+
+  py_simplex_config
       .def(py::init(&simplex_config_maker), py::arg("dem"), py::arg("parallelize") = false,
            py::arg("window_length") = 0, py::arg("window_slide_length") = 0,
            py::arg("verbose") = false, py::arg("merge_errors") = true, R"pbdoc(
@@ -101,12 +111,7 @@ void add_simplex_module(py::module& root) {
                 settings.
            )pbdoc");
 
-  py::class_<SimplexDecoder>(m, "SimplexDecoder", R"pbdoc(
-        A class that implements the Simplex decoding algorithm.
-
-        It can decode syndromes from a `stim.DetectorErrorModel` to predict
-        which observables have been flipped.
-    )pbdoc")
+  py_simplex_decoder
       .def(py::init<SimplexConfig>(), py::arg("config"), R"pbdoc(
         The constructor for the `SimplexDecoder` class.
 
@@ -351,4 +356,7 @@ void add_simplex_module(py::module& root) {
             (num_shots, num_observables).
     )pbdoc");
 }
+
+}  // namespace tesseract_decoder
+
 #endif
