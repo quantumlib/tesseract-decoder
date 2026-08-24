@@ -49,6 +49,9 @@ jobs:
           - python-version: '3.13'
             python-abi: cp313-cp313
             target-version: cp313
+          - python-version: '3.14'
+            python-abi: cp314-cp314
+            target-version: cp314
     env:
       PYTHON_BIN: /opt/python/${{ matrix.python-abi }}/bin/python
       TARGET_PYTHON: ${{ matrix.python-version }}
@@ -84,15 +87,13 @@ jobs:
         /tmp/tesseract-wheel-test/bin/python -m pip install \
           --only-binary=:all: \
           wheelhouse/*.whl
+        /tmp/tesseract-wheel-test/bin/python -m pip check
         (
           cd /tmp
-          /tmp/tesseract-wheel-test/bin/python - <<'PY'
-        import tesseract_decoder
-        from tesseract_decoder import demutil
-
-        print(tesseract_decoder.__file__)
-        print("wheel import passed")
-        PY
+          /tmp/tesseract-wheel-test/bin/python \
+            "$GITHUB_WORKSPACE/devtools/check_installed_wheel.py" \
+            "$TARGET_VERSION" \
+            "$GITHUB_WORKSPACE"/wheelhouse/*.whl
         )
 
     - name: Upload Linux wheel
@@ -115,6 +116,8 @@ jobs:
             target-version: cp312
           - python-version: '3.13'
             target-version: cp313
+          - python-version: '3.14'
+            target-version: cp314
     env:
       MACOSX_DEPLOYMENT_TARGET: '11.0'
       TARGET_PYTHON: ${{ matrix.python-version }}
@@ -152,16 +155,19 @@ jobs:
     - name: Check macOS wheel deployment target
       run: python devtools/check_macos_wheel.py wheelhouse/*.whl
 
-    - name: Install and import-test macOS wheel
+    - name: Install and validate macOS wheel
       run: |
         python -m venv /tmp/tesseract-wheel-test
         /tmp/tesseract-wheel-test/bin/python -m pip install \
           --only-binary=:all: \
           wheelhouse/*.whl
+        /tmp/tesseract-wheel-test/bin/python -m pip check
         (
           cd /tmp
-          /tmp/tesseract-wheel-test/bin/python -c \
-            'import tesseract_decoder; from tesseract_decoder import demutil; print(tesseract_decoder.__file__)'
+          /tmp/tesseract-wheel-test/bin/python \
+            "$GITHUB_WORKSPACE/devtools/check_installed_wheel.py" \
+            "$TARGET_VERSION" \
+            "$GITHUB_WORKSPACE"/wheelhouse/*.whl
         )
 
     - name: Upload macOS wheel

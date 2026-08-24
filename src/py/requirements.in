@@ -2,6 +2,8 @@
 # list in ../../.github/dependabot.yaml.
 
 stim
+# NumPy 2.3.2 adds CPython 3.14 wheels; 2.5 drops Python 3.11.
+numpy>=2.3.2,<2.5
 pytest
 sinter
 pybind11-stubgen
