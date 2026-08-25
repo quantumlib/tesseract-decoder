@@ -15,7 +15,6 @@
 name: Pre-release Tesseract
 
 on:
-  pull_request:
   push:
     branches:
     - main
@@ -108,19 +107,19 @@ jobs:
         merge-multiple: true
         path: wheelhouse/
 
-    # - name: Publish package to testpypi
-    #   uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
-    #   with:
-    #     repository-url: https://test.pypi.org/legacy/
-    #     user: __token__
-    #     password: ${{ secrets.TEST_PYPI_TOKEN }}
-    #     packages-dir: wheelhouse/
-    #     verbose: true
+    - name: Publish package to testpypi
+      uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+      with:
+        repository-url: https://test.pypi.org/legacy/
+        user: __token__
+        password: ${{ secrets.TEST_PYPI_TOKEN }}
+        packages-dir: wheelhouse/
+        verbose: true
 
 
-    # - name: Publish package to pypi
-    #   uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
-    #   with:
-    #     user: __token__
-    #     password: ${{ secrets.PYPI_TOKEN }}
-    #     packages-dir: wheelhouse/
+    - name: Publish package to pypi
+      uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+      with:
+        user: __token__
+        password: ${{ secrets.PYPI_TOKEN }}
+        packages-dir: wheelhouse/

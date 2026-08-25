@@ -25,7 +25,6 @@ py_wheel(
         ":package_data",
     ],
     version = "$(VERSION)",
-    abi = "$(VERSION)",
     requires=[
         "numpy",
         "scipy",
