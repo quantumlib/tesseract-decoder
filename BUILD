@@ -30,7 +30,7 @@ py_wheel(
         "scipy",
         "stim",
     ],
-    python_tag="$(TARGET_VERSION)",
+    python_tag="$(ABI_TAG)",
     abi="$(ABI_TAG)",
     platform= select({
         ":macos_arm": "macosx_11_0_arm64",
