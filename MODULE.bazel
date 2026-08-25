@@ -42,6 +42,11 @@ git_repository(
     commit = "bd60b73525fd5a9b30839020eb7554ad369e4337",
     remote = "https://github.com/quantumlib/stim.git",
     shallow_since = "1741128853 +0000",
+    patch_cmds = [
+        "echo 'load(\"@rules_cc//cc:defs.bzl\", \"cc_library\", \"cc_binary\", \"cc_test\")\n' > _tmp",
+        "cat BUILD >> _tmp",
+        "mv _tmp BUILD",
+    ],
 )
 
 http_archive(
