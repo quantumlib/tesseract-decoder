@@ -2,7 +2,7 @@ module(name = "tesseract", version = "1.0")
 
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "platforms", version = "1.0.0")
-bazel_dep(name = "rules_python", version = "1.9.0")
+bazel_dep(name = "rules_python", version = "2.3.2")
 bazel_dep(name = "rules_cc", version = "0.2.17")
 bazel_dep(name = "pybind11_bazel", version = "3.0.1")
 
@@ -42,6 +42,11 @@ git_repository(
     commit = "bd60b73525fd5a9b30839020eb7554ad369e4337",
     remote = "https://github.com/quantumlib/stim.git",
     shallow_since = "1741128853 +0000",
+    patch_cmds = [
+        "echo 'load(\"@rules_cc//cc:defs.bzl\", \"cc_library\", \"cc_binary\", \"cc_test\")\n' > _tmp",
+        "cat BUILD >> _tmp",
+        "mv _tmp BUILD",
+    ],
 )
 
 http_archive(
