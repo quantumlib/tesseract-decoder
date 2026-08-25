@@ -20,10 +20,30 @@ import pytest
 import sinter
 import stim
 import tesseract_decoder
-from sinter._decoding._decoding import sample_decode
 from sinter._decoding._stim_then_decode_sampler import StimThenDecodeSampler
 from tesseract_decoder import (TesseractSinterDecoder,
                                make_tesseract_sinter_decoders_dict)
+
+
+def sample_decode_with_discards(
+    *,
+    circuit,
+    num_shots,
+    dem=None,
+    decoder="tesseract",
+    count_detection_events=False,
+):
+    if dem is None:
+        dem = circuit.detector_error_model(decompose_errors=True)
+    sampler = StimThenDecodeSampler(
+        decoder=make_tesseract_sinter_decoders_dict()[decoder],
+        count_observable_error_combos=False,
+        count_detection_events=count_detection_events,
+        tmp_dir=None,
+    ).compiled_sampler_for_task(
+        sinter.Task(circuit=circuit, detector_error_model=dem)
+    )
+    return sampler.sample(num_shots)
 
 
 def test_tesseract_sinter_obj_exists():
@@ -201,15 +221,11 @@ def test_sinter_discards_low_confidence_shots():
         detector D1
     """)
 
-    sampler = StimThenDecodeSampler(
-        decoder=TesseractSinterDecoder(),
-        count_observable_error_combos=False,
-        count_detection_events=False,
-        tmp_dir=None,
-    ).compiled_sampler_for_task(
-        sinter.Task(circuit=circuit, detector_error_model=dem)
+    result = sample_decode_with_discards(
+        circuit=circuit,
+        dem=dem,
+        num_shots=5,
     )
-    result = sampler.sample(5)
 
     assert result.shots == 5
     assert result.discards == 5
@@ -437,14 +453,9 @@ def test_sinter_decode_repetition_code():
         after_clifford_depolarization=0.05,
     )
 
-    result = sample_decode(
-        circuit_obj=circuit,
-        circuit_path=None,
-        dem_obj=circuit.detector_error_model(decompose_errors=True),
-        dem_path=None,
+    result = sample_decode_with_discards(
+        circuit=circuit,
         num_shots=1000,
-        decoder="tesseract",
-        custom_decoders=make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert 0 <= result.errors <= 100
@@ -461,14 +472,9 @@ def test_sinter_decode_surface_code():
         rounds=15,
         after_clifford_depolarization=0.001,
     )
-    result = sample_decode(
+    result = sample_decode_with_discards(
+        circuit=circuit,
         num_shots=1000,
-        circuit_obj=circuit,
-        circuit_path=None,
-        dem_obj=circuit.detector_error_model(decompose_errors=True),
-        dem_path=None,
-        decoder="tesseract",
-        custom_decoders=make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert 0 <= result.errors <= 50
@@ -480,14 +486,9 @@ def test_sinter_empty():
     Tests the 'tesseract' decoder on an empty circuit.
     """
     circuit = stim.Circuit()
-    result = sample_decode(
-        circuit_obj=circuit,
-        circuit_path=None,
-        dem_obj=circuit.detector_error_model(decompose_errors=True),
-        dem_path=None,
+    result = sample_decode_with_discards(
+        circuit=circuit,
         num_shots=1000,
-        decoder="tesseract",
-        custom_decoders=make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert result.shots == 1000
@@ -503,14 +504,9 @@ def test_sinter_no_observables():
         M 0
         DETECTOR rec[-1]
     """)
-    result = sample_decode(
-        circuit_obj=circuit,
-        circuit_path=None,
-        dem_obj=circuit.detector_error_model(decompose_errors=True),
-        dem_path=None,
+    result = sample_decode_with_discards(
+        circuit=circuit,
         num_shots=1000,
-        decoder="tesseract",
-        custom_decoders=make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert result.shots == 1000
@@ -527,14 +523,9 @@ def test_sinter_invincible_observables():
         DETECTOR rec[-2]
         OBSERVABLE_INCLUDE(1) rec[-1]
     """)
-    result = sample_decode(
-        circuit_obj=circuit,
-        circuit_path=None,
-        dem_obj=circuit.detector_error_model(decompose_errors=True),
-        dem_path=None,
+    result = sample_decode_with_discards(
+        circuit=circuit,
         num_shots=1000,
-        decoder="tesseract",
-        custom_decoders=make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert result.shots == 1000
@@ -554,16 +545,10 @@ def test_sinter_detector_counting():
         OBSERVABLE_INCLUDE(0) rec[-1]
         OBSERVABLE_INCLUDE(1) rec[-1] rec[-2]
     """)
-    result = sample_decode(
-        circuit_obj=circuit,
-        circuit_path=None,
-        dem_obj=circuit.detector_error_model(decompose_errors=True),
-        dem_path=None,
-        post_mask=None,
+    result = sample_decode_with_discards(
+        circuit=circuit,
         num_shots=10000,
-        decoder="tesseract",
         count_detection_events=True,
-        custom_decoders=make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert result.custom_counts["detectors_checked"] == 20000
@@ -867,14 +852,10 @@ def test_sinter_decode_with_sparsify_decoders(decoder_name):
         after_clifford_depolarization=0.01,
     )
 
-    result = sample_decode(
-        circuit_obj=circuit,
-        circuit_path=None,
-        dem_obj=circuit.detector_error_model(decompose_errors=True),
-        dem_path=None,
+    result = sample_decode_with_discards(
+        circuit=circuit,
         num_shots=100,
         decoder=decoder_name,
-        custom_decoders=make_tesseract_sinter_decoders_dict(),
     )
     assert result.discards == 0
     assert result.shots == 100
