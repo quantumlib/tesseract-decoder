@@ -113,13 +113,6 @@ jobs:
         pip install build twine
         twine check wheelhouse/*
 
-    - name: Cleanup old packages
-      with:
-        PYPI_CLEANUP_PASSWORD: ${{ secrets.TEST_PYPI_TOKEN }}
-      run: |
-        pip install pypi-cleanup
-        pypi-cleanup -u __token__ -p tesseract-decoder  -t https://test.pypi.org/ -r .*dev2025.* -y
-
     - name: Publish package to testpypi
       uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
       with:
