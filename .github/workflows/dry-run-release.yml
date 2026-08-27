@@ -30,7 +30,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.11'
+          python-version: '3.12'
       - name: Create version
         run: |
           mkdir version
@@ -48,7 +48,7 @@ jobs:
       fail-fast: true
       matrix:
         os: [ubuntu-24.04, macos-14]
-        python-version: ['3.14']
+        python-version: ['3.12', '3.13', '3.14']
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
@@ -85,7 +85,9 @@ jobs:
         export GLIBC_VERSION="${glibc_version//./_}"
         echo $GLIBC_VERSION
         sed "s/^MANYLINUX_VERSION.*/MANYLINUX_VERSION=\"manylinux_${GLIBC_VERSION}_x86_64\"/" BUILD -i || true
-        bazel build --define GLIBC_VERSION=$GLIBC_VERSION --define TARGET_VERSION="$(python -c "print(\"py${TARGET_PYTHON}\".replace(\".\", \"\"))")" --define VERSION="$(cat version/version.txt)"  :tesseract_decoder_wheel
+        ABI_TAG="$(python -c "print(\"cp${TARGET_PYTHON}\".replace(\".\", \"\"))")"
+        echo $ABI_TAG
+        bazel build --define ABI_TAG=$ABI_TAG --define GLIBC_VERSION=$GLIBC_VERSION --define TARGET_VERSION="$(python -c "print(\"py${TARGET_PYTHON}\".replace(\".\", \"\"))")" --define VERSION="$(cat version/version.txt)"  :tesseract_decoder_wheel
 
     - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:

@@ -2,7 +2,7 @@ module(name = "tesseract", version = "1.0")
 
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "platforms", version = "1.0.0")
-bazel_dep(name = "rules_python", version = "1.9.0")
+bazel_dep(name = "rules_python", version = "2.3.2")
 bazel_dep(name = "rules_cc", version = "0.2.17")
 bazel_dep(name = "pybind11_bazel", version = "3.0.1")
 
@@ -42,6 +42,11 @@ git_repository(
     commit = "bd60b73525fd5a9b30839020eb7554ad369e4337",
     remote = "https://github.com/quantumlib/stim.git",
     shallow_since = "1741128853 +0000",
+    patch_cmds = [
+        "echo 'load(\"@rules_cc//cc:defs.bzl\", \"cc_library\", \"cc_binary\", \"cc_test\")\n' > _tmp",
+        "cat BUILD >> _tmp",
+        "mv _tmp BUILD",
+    ],
 )
 
 http_archive(
@@ -61,6 +66,11 @@ http_archive(
     sha256 = GTEST_SHA256,
     strip_prefix = "googletest-%s" % GTEST_VERSION,
     urls = ["https://github.com/google/googletest/archive/refs/tags/v%s.tar.gz" % GTEST_VERSION],
+    patch_cmds = [
+        "echo 'load(\"@rules_cc//cc:defs.bzl\", \"cc_library\", \"cc_binary\", \"cc_test\")\n' > _tmp",
+        "cat BUILD.bazel >> _tmp",
+        "mv _tmp BUILD.bazel",
+    ],
 )
 
 ARGPARSE_SHA_256 = "3e5a59ab7688dcd1f918bc92051a10564113d4f36c3bbed3ef596c25e519a062"
@@ -78,6 +88,11 @@ git_repository(
     commit = "9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03",
     remote = "https://github.com/nlohmann/json.git",
     shallow_since = "1701207391 +0100",
+    patch_cmds = [
+        "echo 'load(\"@rules_cc//cc:defs.bzl\", \"cc_library\", \"cc_binary\", \"cc_test\")\n' > _tmp",
+        "cat BUILD.bazel >> _tmp",
+        "mv _tmp BUILD.bazel",
+    ],
 )
 
 

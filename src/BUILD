@@ -15,6 +15,8 @@
 # load("@benchmark//:benchmark.bzl", "cc_benchmark")
 load("@pybind11_bazel//:build_defs.bzl", "pybind_extension", "pybind_library")
 load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_binary", "cc_test")
+
 
 package(default_visibility = ["//visibility:public"])
 
