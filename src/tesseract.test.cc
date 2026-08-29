@@ -600,5 +600,48 @@ TEST(tesseract, UpdateInternalCostsBehavior) {
   ASSERT_EQ(decoder.predicted_errors_buffer[0], 1);  // Should now pick Error 1 (index 1)
 }
 
+TEST(utils, DuplicateDetectorCoords) {
+  std::string dem_str = "detector(0, 0, 1) D0\ndetector(0, 0, 2) D0\nerror(0.1) D0\n";
+  stim::DetectorErrorModel dem(dem_str.c_str());
+  auto coords = get_detector_coords(dem);
+  ASSERT_EQ(coords.size(), 1);
+  ASSERT_EQ(coords[0].size(), 3);
+  ASSERT_EQ(coords[0][2], 2.0);
+}
+
+TEST(utils, SparseDetectorCoords) {
+  std::string dem_str = "detector(1, 2, 3) D1\nerror(0.1) D0 D1\n";
+  stim::DetectorErrorModel dem(dem_str.c_str());
+  auto coords = get_detector_coords(dem);
+  ASSERT_EQ(coords.size(), 2);
+  EXPECT_TRUE(coords[0].empty());
+  ASSERT_EQ(coords[1].size(), 3);
+  EXPECT_EQ(coords[1][0], 1.0);
+  EXPECT_EQ(coords[1][1], 2.0);
+  EXPECT_EQ(coords[1][2], 3.0);
+}
+
+TEST(utils, BuildDetOrdersCoordinateSparse) {
+  std::string dem_str = "detector(10, 0, 0) D1\nerror(0.1) D0 D1\n";
+  stim::DetectorErrorModel dem(dem_str.c_str());
+  auto orders = build_det_orders(dem, 1, DetOrder::DetCoordinate, 0);
+  ASSERT_EQ(orders.size(), 1);
+  ASSERT_EQ(orders[0].size(), 2);
+}
+
+TEST(simplex, DuplicateDetectorCoords) {
+  std::string dem_str = "detector(0, 0, 1) D0\ndetector(0, 0, 2) D0\nerror(0.1) D0\n";
+  stim::DetectorErrorModel dem(dem_str.c_str());
+  SimplexConfig config{dem};
+  EXPECT_NO_THROW({ SimplexDecoder decoder(config); });
+}
+
+TEST(simplex, SparseDetectorCoords) {
+  std::string dem_str = "detector(1, 2, 3) D1\nerror(0.1) D0 D1\n";
+  stim::DetectorErrorModel dem(dem_str.c_str());
+  SimplexConfig config{dem};
+  EXPECT_NO_THROW({ SimplexDecoder decoder(config); });
+}
+
 }  // namespace
 }  // namespace tesseract_decoder

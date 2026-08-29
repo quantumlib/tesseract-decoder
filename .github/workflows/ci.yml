@@ -85,15 +85,3 @@ jobs:
 
     - name: Bazel tests
       run: bazel test src/... //docs:tutorial_jupytext_sync_test
-
-  # PRs run the same wheel build and import checks used by releases, but do
-  # not upload artifacts. Pushes to main are handled by prerelease.yml.
-  build-wheels:
-    name: Build and validate distribution wheels
-    if: github.event_name == 'pull_request'
-    uses: ./.github/workflows/build-wheels.yml
-    with:
-      version: 0.0.0.dev0
-      upload_artifacts: false
-    permissions:
-      contents: read
