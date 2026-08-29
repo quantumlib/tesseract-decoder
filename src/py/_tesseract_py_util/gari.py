@@ -84,6 +84,21 @@ import scipy.optimize
 import scipy.sparse
 import stim
 
+if __package__:
+    from .detector_basis import (
+        DetectorBasisClassifier,
+        automatic_detector_basis_classifier,
+        chromobius_detector_basis_classifier,
+        classify_detector_bases,
+    )
+else:
+    from detector_basis import (
+        DetectorBasisClassifier,
+        automatic_detector_basis_classifier,
+        chromobius_detector_basis_classifier,
+        classify_detector_bases,
+    )
+
 
 @dataclasses.dataclass
 class GariTransform:
@@ -261,37 +276,30 @@ def _matrices_to_gari_dem(
 def _detector_partition_from_fourth_coordinate(
     dem: stim.DetectorErrorModel,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Partitions detectors using the repository's fourth-coordinate rule.
+    """Compatibility wrapper for the Chromobius fourth-coordinate rule.
 
     This is the color-code-style convention followed by the test-data circuits
     associated with this repository, not a universal Stim convention. The
     fourth-coordinate values ``0``, ``1``, or ``2`` identify X detectors,
     while values ``3``, ``4``, or ``5`` identify Z detectors.
     """
-    coordinates = dem.get_detector_coordinates()
-    x_detectors: list[int] = []
-    z_detectors: list[int] = []
-    for detector in range(dem.num_detectors):
-        coordinate = coordinates.get(detector)
-        if coordinate is None or len(coordinate) < 4:
-            raise ValueError(
-                f"Detector {detector} is missing the fourth coordinate "
-                "required by GARI's color-code-style convention (0, 1, or 2 "
-                "for X detectors; 3, 4, or 5 for Z detectors)."
-            )
-        basis = coordinate[3]
-        if basis in (0, 1, 2):
-            x_detectors.append(detector)
-        elif basis in (3, 4, 5):
-            z_detectors.append(detector)
-        else:
-            raise ValueError(
-                f"Detector {detector} has fourth coordinate {basis}; GARI's "
-                "color-code-style convention requires an integer from 0 to 2 "
-                "for X detectors or 3 to 5 for Z detectors."
-            )
-    return np.asarray(x_detectors, dtype=np.int64), np.asarray(
-        z_detectors, dtype=np.int64
+    return _detector_partition(
+        dem, detector_basis_classifier=chromobius_detector_basis_classifier
+    )
+
+
+def _detector_partition(
+    dem: stim.DetectorErrorModel,
+    *,
+    detector_basis_classifier: DetectorBasisClassifier,
+) -> tuple[np.ndarray, np.ndarray]:
+    detector_bases = np.asarray(
+        classify_detector_bases(
+            dem, detector_basis_classifier=detector_basis_classifier
+        )
+    )
+    return np.flatnonzero(detector_bases == "X"), np.flatnonzero(
+        detector_bases == "Z"
     )
 
 
@@ -649,19 +657,21 @@ def circuit_to_gari(
     circuit: stim.Circuit,
     *,
     prior_function: Callable[[GariTransform, np.ndarray], np.ndarray],
+    detector_basis_classifier: DetectorBasisClassifier = (
+        automatic_detector_basis_classifier
+    ),
 ) -> tuple[stim.DetectorErrorModel, dict[str, object]]:
     """Converts a supported CSS circuit into a GARI matrix DEM and v1 layout.
 
     The source DEM is generated undecomposed (``decompose_errors=False``) and
-    flattened. Every detector must follow the repository's fourth-coordinate
-    convention: integer values 0–2 identify X detectors and 3–5 identify Z
-    detectors. The returned DEM stores transformed matrices for decoding and
-    must not be sampled.
+    flattened. By default, detector basis metadata is checked before the
+    repository's Chromobius fourth-coordinate convention. The returned DEM
+    stores transformed matrices for decoding and must not be sampled.
     """
     source_dem = _circuit_to_gari_source_dem(circuit)
     checks, logicals, probabilities = dem_to_matrices(source_dem)
-    x_detectors, z_detectors = _detector_partition_from_fourth_coordinate(
-        source_dem
+    x_detectors, z_detectors = _detector_partition(
+        source_dem, detector_basis_classifier=detector_basis_classifier
     )
     transform = _gari_transform(
         checks,

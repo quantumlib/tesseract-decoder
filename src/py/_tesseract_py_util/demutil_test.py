@@ -31,6 +31,13 @@ def test_import_exposes_demutil_submodule():
     assert hasattr(tesseract_decoder, "demutil")
     assert hasattr(demutil, "regeneralize_spatial_dem")
     assert hasattr(demutil, "decompose_errors")
+    assert hasattr(demutil, "decompose_errors_using_detector_basis_classifier")
+    assert hasattr(demutil, "automatic_detector_basis_classifier")
+    assert hasattr(demutil, "chromobius_detector_basis_classifier")
+    assert hasattr(demutil, "stim_surface_code_detector_basis_classifier")
+    assert hasattr(demutil, "last_coordinate_component_classifier")
+    assert hasattr(demutil, "classify_detector_bases")
+    assert hasattr(demutil, "annotate_detector_bases")
     assert hasattr(demutil.gari, "circuit_to_gari")
 
 

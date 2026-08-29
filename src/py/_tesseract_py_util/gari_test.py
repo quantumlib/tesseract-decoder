@@ -65,7 +65,7 @@ def test_tiny_transform():
     np.testing.assert_array_equal(logicals.toarray(), [[1, 1]])
     np.testing.assert_allclose(probabilities, [0.1, 0.1])
 
-    with pytest.raises(ValueError, match="integer from 0 to 2"):
+    with pytest.raises(ValueError, match="nonintegral fourth coordinate"):
         gari._detector_partition_from_fourth_coordinate(
             stim.DetectorErrorModel("detector(0, 0, 0, 2.5) D0")
         )
@@ -189,6 +189,36 @@ def test_public_circuit_conversion_and_file_output(tmp_path):
     )
     assert str(written_dem) == str(gari_dem)
     assert written_layout == layout
+
+
+def test_public_circuit_conversion_uses_shared_basis_classifier():
+    tagged_circuit = stim.Circuit("""
+        R 0 1 2 3 4 5
+        CORRELATED_ERROR(0.01) X0 X2 X4
+        CORRELATED_ERROR(0.02) X1 X3 X5
+        CORRELATED_ERROR(0.04) X0 X1 X2 X3 X4
+        M 0 1 2 3 4 5
+        DETECTOR[{"basis":"X"}](0, 0, 0) rec[-6]
+        DETECTOR[{"basis":"Z"}](0, 0, 0) rec[-5]
+        DETECTOR[{"basis":"X"}](0, 0, 0) rec[-4]
+        DETECTOR[{"basis":"Z"}](0, 0, 0) rec[-3]
+        OBSERVABLE_INCLUDE(0) rec[-2]
+        OBSERVABLE_INCLUDE(1) rec[-1]
+    """)
+    _, tagged_layout = gari.circuit_to_gari(
+        tagged_circuit,
+        prior_function=gari.tesseract_xor_prior_probabilities,
+    )
+    assert tagged_layout["source_to_gari"] == [0, 2, 1, 3]
+
+    _, custom_layout = gari.circuit_to_gari(
+        _tiny_circuit(),
+        prior_function=gari.tesseract_xor_prior_probabilities,
+        detector_basis_classifier=lambda index, _coordinates, _tag: (
+            "X" if index % 2 == 0 else "Z"
+        ),
+    )
+    assert custom_layout["source_to_gari"] == [0, 2, 1, 3]
 
 
 if __name__ == "__main__":
