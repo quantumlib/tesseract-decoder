@@ -14,7 +14,6 @@
 
 #include "dem_decomposition.h"
 
-#include <string>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -102,17 +101,29 @@ TEST(DemDecompositionTest, SplitKeepsSameComponentGroupsInOneTaggedMechanism) {
         detector[z](3) D2
         logical_observable L0
         logical_observable L1
-    )DEM");
+  )DEM");
 
   auto components = split_dem_by_component(dem, {7, 7, 9});
-  ASSERT_EQ(components.size(), 2);
-  EXPECT_EQ(components.at(7).count_errors(), 1);
-  EXPECT_EQ(components.at(9).count_errors(), 1);
-  EXPECT_NE(components.at(7).str().find("error[physical mechanism](0.1) D0 L0 ^ D1 L1"),
-            std::string::npos);
-  EXPECT_NE(components.at(9).str().find("error[physical mechanism](0.1) D2"), std::string::npos);
-  EXPECT_NE(components.at(7).str().find("detector[x0](1) D0"), std::string::npos);
-  EXPECT_NE(components.at(9).str().find("logical_observable L1"), std::string::npos);
+  stim::DetectorErrorModel expected_7(R"DEM(
+        error[physical mechanism](0.1) D0 L0 ^ D1 L1
+        detector[x0](1) D0
+        detector[x1](2) D1
+        detector[z](3) D2
+        logical_observable L0
+        logical_observable L1
+    )DEM");
+  stim::DetectorErrorModel expected_9(R"DEM(
+        error[physical mechanism](0.1) D2
+        detector[x0](1) D0
+        detector[x1](2) D1
+        detector[z](3) D2
+        logical_observable L0
+        logical_observable L1
+    )DEM");
+
+  ASSERT_EQ(components.size(), 2u);
+  EXPECT_EQ(components.at(7), expected_7);
+  EXPECT_EQ(components.at(9), expected_9);
 }
 
 TEST(DemDecompositionTest, SplitRejectsCancellationToDetectorlessComponent) {
