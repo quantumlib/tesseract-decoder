@@ -106,9 +106,6 @@ struct TesseractDecoder {
   // vector has been modified. This is necessary to ensure that the internal
   // cost structures used by the decoding algorithm are consistent with the
   // current error likelihoods.
-  // This is necessary to ensure that the internal
-  // cost structures used by the decoding algorithm are consistent with the
-  // current error likelihoods.
   void update_internal_costs(const std::vector<size_t>& modified_error_indices);
 
   std::vector<int> decode(const std::vector<uint64_t>& detections);
@@ -153,18 +150,6 @@ struct TesseractDecoder {
   void decode_to_errors_with_graph(const std::vector<uint64_t>& detections, size_t detector_order,
                                    size_t detector_beam,
                                    const std::vector<std::vector<int>>& active_d2e);
-
-  friend class TesseractDebugger;
-};
-
-class TesseractDebugger {
- public:
-  static const std::vector<ErrorCost>& get_error_costs(const TesseractDecoder& decoder) {
-    return decoder.error_costs;
-  }
-  static const std::vector<std::vector<int>>& get_d2e(const TesseractDecoder& decoder) {
-    return decoder.d2e;
-  }
 };
 
 }  // namespace tesseract_decoder

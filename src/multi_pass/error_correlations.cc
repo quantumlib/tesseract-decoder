@@ -1,151 +1,186 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include "error_correlations.h"
 
+#include <algorithm>
+#include <cmath>
+#include <map>
+#include <set>
 #include <sstream>
 #include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace tesseract_decoder {
+namespace {
+
+void toggle(std::set<int>& values, int value) {
+  if (!values.erase(value)) {
+    values.insert(value);
+  }
+}
+
+void xor_probability(double& accumulated, double probability) {
+  accumulated = accumulated * (1 - probability) + probability * (1 - accumulated);
+}
+
+}  // namespace
 
 bool ComponentSymptom::operator==(const ComponentSymptom& other) const {
   return detectors == other.detectors && observables == other.observables;
 }
 
 bool ComponentSymptom::operator<(const ComponentSymptom& other) const {
-  if (detectors != other.detectors) return detectors < other.detectors;
+  if (detectors != other.detectors) {
+    return detectors < other.detectors;
+  }
   return observables < other.observables;
 }
 
-std::string ImpliedProbability::str() const {
+std::string ReweightProbability::str() const {
   std::stringstream ss;
-  ss << "ImpliedProbability(detectors={";
-  for (size_t i = 0; i < affected_symptom.detectors.size(); ++i) {
-    ss << affected_symptom.detectors[i] << (i == affected_symptom.detectors.size() - 1 ? "" : ",");
+  ss << "ReweightProbability(detectors={";
+  for (size_t k = 0; k < affected_symptom.detectors.size(); ++k) {
+    if (k) ss << ',';
+    ss << affected_symptom.detectors[k];
   }
   ss << "}, observables={";
-  for (size_t i = 0; i < affected_symptom.observables.size(); ++i) {
-    ss << affected_symptom.observables[i]
-       << (i == affected_symptom.observables.size() - 1 ? "" : ",");
+  for (size_t k = 0; k < affected_symptom.observables.size(); ++k) {
+    if (k) ss << ',';
+    ss << affected_symptom.observables[k];
   }
-  ss << "}, prob=" << probability << ")";
+  ss << "}, probability=" << probability << ')';
   return ss.str();
 }
 
-bool ImpliedProbability::operator==(const ImpliedProbability& other) const {
+bool ReweightProbability::operator==(const ReweightProbability& other) const {
   return affected_symptom == other.affected_symptom &&
          std::abs(probability - other.probability) < 1e-12;
 }
 
-bool ImpliedProbability::operator<(const ImpliedProbability& other) const {
+bool ReweightProbability::operator<(const ReweightProbability& other) const {
   if (!(affected_symptom == other.affected_symptom)) {
     return affected_symptom < other.affected_symptom;
   }
   return probability < other.probability;
 }
 
-JointProbsMap get_hyperedge_joint_probabilities(const stim::DetectorErrorModel& dem,
-                                                const std::vector<int>& global_det_to_comp_id) {
-  JointProbsMap joint_probs;
-  auto flattened = dem.flattened();
+CorrelationEvidence collect_correlation_evidence(const stim::DetectorErrorModel& dem,
+                                                 const std::vector<int>& detector_components) {
+  stim::DetectorErrorModel flattened = dem.flattened();
+  if (detector_components.size() != flattened.count_detectors()) {
+    throw std::invalid_argument(
+        "Detector component assignment count does not match the DEM detector count.");
+  }
+  for (size_t detector = 0; detector < detector_components.size(); ++detector) {
+    if (detector_components[detector] < 0) {
+      throw std::invalid_argument("Detector D" + std::to_string(detector) +
+                                  " has an invalid negative component assignment.");
+    }
+  }
 
-  for (const auto& inst : flattened.instructions) {
-    if (inst.type != stim::DemInstructionType::DEM_ERROR) continue;
+  CorrelationEvidence evidence;
+  for (const auto& instruction : flattened.instructions) {
+    if (instruction.type != stim::DemInstructionType::DEM_ERROR) {
+      continue;
+    }
 
-    double p = inst.arg_data[0];
-
-    std::vector<ComponentSymptom> components;
-    inst.for_separated_targets([&](std::span<const stim::DemTarget> group) {
-      ComponentSymptom symptom;
-      int component_id = -1;
+    std::map<int, std::pair<std::set<int>, std::set<int>>> symptom_sets_by_component;
+    instruction.for_separated_targets([&](std::span<const stim::DemTarget> group) {
+      std::set<int> group_detectors;
+      std::set<int> group_observables;
       for (const auto& target : group) {
         if (target.is_relative_detector_id()) {
-          int detector = target.val();
-          if (detector < 0 || (size_t)detector >= global_det_to_comp_id.size() ||
-              global_det_to_comp_id[detector] < 0) {
-            throw std::invalid_argument("Invalid component assignment for detector D" +
-                                        std::to_string(detector) + ".");
-          }
-          int detector_component = global_det_to_comp_id[detector];
-          if (component_id != -1 && component_id != detector_component) {
-            throw std::invalid_argument(
-                "A decomposed error group contains detectors from multiple components.");
-          }
-          component_id = detector_component;
-          symptom.detectors.push_back(detector);
+          toggle(group_detectors, target.val());
         } else if (target.is_observable_id()) {
-          symptom.observables.push_back(target.val());
+          toggle(group_observables, target.val());
         }
       }
+      if (group_detectors.empty()) {
+        throw std::invalid_argument("Error instruction `" + instruction.str() +
+                                    "` contains a detectorless decomposition group.");
+      }
 
-      if (symptom.detectors.empty()) return;
-      std::sort(symptom.detectors.begin(), symptom.detectors.end());
-      std::sort(symptom.observables.begin(), symptom.observables.end());
-      components.push_back(std::move(symptom));
+      std::set<int> components;
+      for (int detector : group_detectors) {
+        if (detector < 0 || static_cast<size_t>(detector) >= detector_components.size() ||
+            detector_components[detector] < 0) {
+          throw std::invalid_argument("Invalid component assignment for detector D" +
+                                      std::to_string(detector) + '.');
+        }
+        components.insert(detector_components[detector]);
+      }
+      if (components.size() != 1) {
+        throw std::invalid_argument("Error instruction `" + instruction.str() +
+                                    "` contains a decomposition group with detectors from multiple "
+                                    "components.");
+      }
+
+      auto& [detectors, observables] = symptom_sets_by_component[*components.begin()];
+      for (int detector : group_detectors) toggle(detectors, detector);
+      for (int observable : group_observables) toggle(observables, observable);
     });
 
-    // 1. Marginal probabilities (diagonal)
-    for (const auto& h : components) {
-      if (joint_probs[h].find(h) == joint_probs[h].end()) {
-        joint_probs[h][h] = 0.0;
+    std::vector<ComponentSymptom> symptoms;
+    for (const auto& entry : symptom_sets_by_component) {
+      const auto& symptom_sets = entry.second;
+      if (symptom_sets.first.empty()) {
+        throw std::invalid_argument("Error instruction `" + instruction.str() +
+                                    "` has a detectorless component symptom after combining its "
+                                    "decomposition groups.");
       }
-      // P(A) = P(A) XOR p
-      joint_probs[h][h] = joint_probs[h][h] * (1 - p) + p * (1 - joint_probs[h][h]);
+      symptoms.push_back({{symptom_sets.first.begin(), symptom_sets.first.end()},
+                          {symptom_sets.second.begin(), symptom_sets.second.end()}});
     }
 
-    // 2. Joint probabilities (off-diagonal)
-    // For a bridging error p connecting A and B, P(A and B) += p (approx)
-    // Actually, the joint probability is accurately tracked via the same XOR logic
-    // if we assume independence of other error mechanisms.
-    if (components.size() > 1) {
-      for (size_t i = 0; i < components.size(); ++i) {
-        for (size_t j = 0; j < components.size(); ++j) {
-          if (i == j) continue;
-          const auto& hi = components[i];
-          const auto& hj = components[j];
-          if (joint_probs[hi].find(hj) == joint_probs[hi].end()) {
-            joint_probs[hi][hj] = 0.0;
-          }
-          // For small p, joint probability P(A and B) is roughly the sum of p's of bridging errors
-          joint_probs[hi][hj] = joint_probs[hi][hj] * (1 - p) + p * (1 - joint_probs[hi][hj]);
+    double probability = instruction.arg_data[0];
+    for (const auto& symptom : symptoms) {
+      xor_probability(evidence.symptom_probabilities[symptom], probability);
+    }
+    for (size_t i = 0; i < symptoms.size(); ++i) {
+      for (size_t j = 0; j < symptoms.size(); ++j) {
+        if (i != j) {
+          xor_probability(evidence.paired_mechanism_probabilities[symptoms[i]][symptoms[j]],
+                          probability);
         }
       }
     }
   }
-
-  return joint_probs;
+  return evidence;
 }
 
-ImpliedProbsMap get_implied_hyperedge_probabilities(const JointProbsMap& joint_probs) {
-  ImpliedProbsMap implied_probs;
-
-  for (const auto& [causal, affected_map] : joint_probs) {
-    double p_causal = 0.0;
-    auto it_self = affected_map.find(causal);
-    if (it_self != affected_map.end()) {
-      p_causal = it_self->second;
+ReweightProbsMap derive_reweight_probabilities(const CorrelationEvidence& evidence) {
+  ReweightProbsMap reweight_probabilities;
+  for (const auto& [causal, affected_probabilities] : evidence.paired_mechanism_probabilities) {
+    auto marginal = evidence.symptom_probabilities.find(causal);
+    if (marginal == evidence.symptom_probabilities.end() || marginal->second <= 0 ||
+        marginal->second >= 1) {
+      continue;
     }
-
-    if (p_causal <= 0 || p_causal >= 1.0) continue;
-
-    for (const auto& [affected, p_joint] : affected_map) {
-      if (causal == affected) continue;
-
-      // Conditional Probability P(affected | causal) = P(affected and causal) / P(causal)
-      double p_conditional = p_joint / p_causal;
-
-      // Cap to 1.0 (numerical precision)
-      if (p_conditional > 1.0) p_conditional = 1.0;
-      if (p_conditional < 0.0) p_conditional = 0.0;
-
-      implied_probs[causal].push_back({affected, p_conditional});
+    for (const auto& [affected, paired_probability] : affected_probabilities) {
+      double probability = std::clamp(paired_probability / marginal->second, 0.0, 1.0);
+      reweight_probabilities[causal].push_back({affected, probability});
     }
   }
-
-  return implied_probs;
+  return reweight_probabilities;
 }
 
-ImpliedProbsMap process_dem_correlations(const stim::DetectorErrorModel& dem,
-                                         const std::vector<int>& global_det_to_comp_id) {
-  auto joint = get_hyperedge_joint_probabilities(dem, global_det_to_comp_id);
-  return get_implied_hyperedge_probabilities(joint);
+ReweightProbsMap process_dem_correlations(const stim::DetectorErrorModel& dem,
+                                          const std::vector<int>& detector_components) {
+  return derive_reweight_probabilities(collect_correlation_evidence(dem, detector_components));
 }
 
 }  // namespace tesseract_decoder

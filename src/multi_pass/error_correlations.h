@@ -1,10 +1,21 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #ifndef ERROR_CORRELATIONS_H
 #define ERROR_CORRELATIONS_H
 
-#include <algorithm>
-#include <cmath>
 #include <map>
-#include <numeric>
 #include <string>
 #include <vector>
 
@@ -20,38 +31,44 @@ struct ComponentSymptom {
   bool operator<(const ComponentSymptom& other) const;
 };
 
-/**
- * Represents a probability adjustment for an affected component symptom.
- */
-struct ImpliedProbability {
+/** A correlated-matching-style probability used to reweight an affected symptom. */
+struct ReweightProbability {
   ComponentSymptom affected_symptom;
-  double probability;  // Represents the conditional probability P(affected | causal)
+  double probability;
 
   std::string str() const;
-  bool operator==(const ImpliedProbability& other) const;
-  bool operator<(const ImpliedProbability& other) const;
+  bool operator==(const ReweightProbability& other) const;
+  bool operator<(const ReweightProbability& other) const;
 };
 
-using JointProbsMap = std::map<ComponentSymptom, std::map<ComponentSymptom, double>>;
-using ImpliedProbsMap = std::map<ComponentSymptom, std::vector<ImpliedProbability>>;
+/**
+ * Evidence used by the multipass reweighting heuristic.
+ *
+ * `symptom_probabilities` tracks the XOR probability of every component
+ * symptom. `paired_mechanism_probabilities[a][b]` tracks only error mechanisms
+ * that contain both symptoms. It deliberately omits combinations of independent
+ * one-sided mechanisms, so it is not generally the joint probability P(a and b).
+ */
+struct CorrelationEvidence {
+  std::map<ComponentSymptom, double> symptom_probabilities;
+  std::map<ComponentSymptom, std::map<ComponentSymptom, double>> paired_mechanism_probabilities;
+};
+
+using ReweightProbsMap = std::map<ComponentSymptom, std::vector<ReweightProbability>>;
+
+CorrelationEvidence collect_correlation_evidence(const stim::DetectorErrorModel& dem,
+                                                 const std::vector<int>& detector_components);
 
 /**
- * Calculates marginal and joint probabilities for component symptoms in a decomposed DEM.
- * Separated groups in one error instruction retain the original physical correlation.
+ * Forms the heuristic ratio paired_mechanism_probability / symptom_probability.
+ *
+ * This ratio is useful for correlated matching-style reweighting but is not, in
+ * general, an exact conditional probability.
  */
-JointProbsMap get_hyperedge_joint_probabilities(const stim::DetectorErrorModel& dem,
-                                                const std::vector<int>& global_det_to_comp_id);
+ReweightProbsMap derive_reweight_probabilities(const CorrelationEvidence& evidence);
 
-/**
- * Calculates conditional probabilities from joint probabilities.
- */
-ImpliedProbsMap get_implied_hyperedge_probabilities(const JointProbsMap& joint_probs);
-
-/**
- * Complete workflow for analyzing correlations within a stim::DetectorErrorModel.
- */
-ImpliedProbsMap process_dem_correlations(const stim::DetectorErrorModel& dem,
-                                         const std::vector<int>& global_det_to_comp_id);
+ReweightProbsMap process_dem_correlations(const stim::DetectorErrorModel& dem,
+                                          const std::vector<int>& detector_components);
 
 }  // namespace tesseract_decoder
 

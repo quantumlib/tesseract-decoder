@@ -197,7 +197,6 @@ cc_library(
     deps = [
         ":libcommon",
         ":libtesseract",
-        ":libtanner_graph",
         ":liberror_correlations",
         ":libdem_decomposition",
         "@stim//:stim_lib",
@@ -236,30 +235,6 @@ cc_test(
     linkopts = OPT_LINKOPTS,
     deps = [
         ":liberror_correlations",
-        "@gtest",
-        "@gtest//:gtest_main",
-        "@stim//:stim_lib",
-    ],
-)
-
-cc_library(
-    name = "libtanner_graph",
-    srcs = ["multi_pass/tanner_graph.cc"],
-    hdrs = ["multi_pass/tanner_graph.h"],
-    copts = OPT_COPTS,
-    linkopts = OPT_LINKOPTS,
-    deps = [
-        "@stim//:stim_lib",
-    ],
-)
-
-cc_test(
-    name = "tanner_graph_tests",
-    srcs = ["multi_pass/tanner_graph.test.cc"],
-    copts = OPT_COPTS,
-    linkopts = OPT_LINKOPTS,
-    deps = [
-        ":libtanner_graph",
         "@gtest",
         "@gtest//:gtest_main",
         "@stim//:stim_lib",

@@ -126,8 +126,6 @@ class TestStubContents:
         "TesseractDecoder",
         "TesseractSinterCompiledDecoder",
         "TesseractSinterDecoder",
-        "MultiPassSinterCompiledDecoder",
-        "MultiPassSinterDecoder",
         "SchedulingStrategy",
         "SimplexConfig",
         "SimplexDecoder",

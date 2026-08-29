@@ -600,6 +600,56 @@ TEST(tesseract, UpdateInternalCostsBehavior) {
   ASSERT_EQ(decoder.predicted_errors_buffer[0], 1);  // Should now pick Error 1 (index 1)
 }
 
+TEST(tesseract, UpdateInternalCostsRejectsInvalidIndicesBeforeMutation) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.2) D0
+        error(0.1) D0
+        detector D0
+    )DEM");
+  TesseractConfig config{dem};
+  config.merge_errors = false;
+  TesseractDecoder decoder(config);
+
+  decoder.errors[1].set_with_probability(0.3);
+  std::vector<ErrorCost> original_error_costs = decoder.error_costs;
+  std::vector<std::vector<int>> original_d2e = decoder.d2e;
+  EXPECT_THROW(decoder.update_internal_costs({1, decoder.errors.size()}), std::out_of_range);
+  EXPECT_EQ(decoder.d2e, original_d2e);
+  ASSERT_EQ(decoder.error_costs.size(), original_error_costs.size());
+  for (size_t error = 0; error < original_error_costs.size(); ++error) {
+    EXPECT_DOUBLE_EQ(decoder.error_costs[error].likelihood_cost,
+                     original_error_costs[error].likelihood_cost);
+    EXPECT_DOUBLE_EQ(decoder.error_costs[error].min_cost, original_error_costs[error].min_cost);
+  }
+}
+
+TEST(tesseract, EqualCostOrderingIsDeterministicAfterUpdates) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 L0
+        error(0.1) D0 L1
+        detector D0
+        logical_observable L0
+        logical_observable L1
+    )DEM");
+  TesseractConfig config{dem};
+  config.merge_errors = false;
+  TesseractDecoder decoder(config);
+
+  ASSERT_EQ(decoder.d2e[0], std::vector<int>({0, 1}));
+  decoder.decode_to_errors({0});
+  EXPECT_EQ(decoder.predicted_errors_buffer, std::vector<size_t>({0}));
+
+  decoder.errors[1].set_with_probability(0.2);
+  decoder.update_internal_costs({1});
+  ASSERT_EQ(decoder.d2e[0], std::vector<int>({1, 0}));
+
+  decoder.errors[1].set_with_probability(0.1);
+  decoder.update_internal_costs({1});
+  ASSERT_EQ(decoder.d2e[0], std::vector<int>({0, 1}));
+  decoder.decode_to_errors({0});
+  EXPECT_EQ(decoder.predicted_errors_buffer, std::vector<size_t>({0}));
+}
+
 TEST(utils, DuplicateDetectorCoords) {
   std::string dem_str = "detector(0, 0, 1) D0\ndetector(0, 0, 2) D0\nerror(0.1) D0\n";
   stim::DetectorErrorModel dem(dem_str.c_str());

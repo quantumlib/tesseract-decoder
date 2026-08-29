@@ -1,16 +1,29 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #ifndef MULTI_PASS_SINTER_COMPAT_PYBIND_H
 #define MULTI_PASS_SINTER_COMPAT_PYBIND_H
 
-#include <pybind11/functional.h>
 #include <pybind11/iostream.h>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include <iostream>
+#include <memory>
+#include <stdexcept>
+#include <vector>
 
-#include "../utils.h"
-#include "dem_decomposition.h"
 #include "multi_pass_tesseract_decoder.h"
 
 namespace py = pybind11;
@@ -22,109 +35,67 @@ struct MultiPassSinterCompiledDecoder {
   uint64_t num_detectors;
   uint64_t num_observables;
 
-  MultiPassSinterCompiledDecoder(std::unique_ptr<MultiPassTesseractDecoder> d, uint64_t nd,
-                                 uint64_t no)
-      : decoder(std::move(d)), num_detectors(nd), num_observables(no) {}
-
   size_t num_components() const {
     return decoder->num_components();
   }
 
   py::array_t<uint8_t> decode_shots_bit_packed(
       const py::array_t<uint8_t>& bit_packed_detection_event_data) {
-    if (bit_packed_detection_event_data.ndim() != 2)
-      throw std::invalid_argument("Input must be 2D.");
+    if (bit_packed_detection_event_data.ndim() != 2) {
+      throw std::invalid_argument("Input `bit_packed_detection_event_data` must be a 2D array.");
+    }
+
     const uint64_t num_detector_bytes = (num_detectors + 7) / 8;
-    if (bit_packed_detection_event_data.shape(1) != (py::ssize_t)num_detector_bytes)
-      throw std::invalid_argument("Wrong shape.");
+    if (bit_packed_detection_event_data.shape(1) != static_cast<py::ssize_t>(num_detector_bytes)) {
+      throw std::invalid_argument(
+          "Input array's second dimension does not match num_detector_bytes.");
+    }
 
-    const size_t num_shots = bit_packed_detection_event_data.shape(0);
-    const uint64_t num_observable_bytes = (num_observables + 7) / 8;
+    const py::ssize_t num_shots = bit_packed_detection_event_data.shape(0);
+    const py::ssize_t num_observable_bytes = (num_observables + 7) / 8;
 
-    auto result_array =
-        py::array_t<uint8_t>({(py::ssize_t)num_shots, (py::ssize_t)num_observable_bytes});
-    auto result_buffer = result_array.mutable_data();
+    // Sinter reserves the final byte for the per-shot discard flag.
+    py::array_t<uint8_t> result_array({num_shots, num_observable_bytes + 1});
+    auto detections = bit_packed_detection_event_data.unchecked<2>();
+    auto results = result_array.mutable_unchecked<2>();
 
-    const uint8_t* detections_data = bit_packed_detection_event_data.data();
-    const size_t detections_stride = bit_packed_detection_event_data.strides(0);
-
-    for (size_t shot = 0; shot < num_shots; ++shot) {
-      const uint8_t* single_shot_data = detections_data + shot * detections_stride;
-      std::vector<uint64_t> detections;
-      for (uint64_t i = 0; i < num_detectors; ++i) {
-        if ((single_shot_data[i / 8] >> (i % 8)) & 1) detections.push_back(i);
-      }
-
-      std::vector<int> predictions = decoder->decode(detections);
-      uint8_t* single_result_buffer = result_buffer + shot * num_observable_bytes;
-      std::fill(single_result_buffer, single_result_buffer + num_observable_bytes, 0);
-      for (int obs_index : predictions) {
-        if (obs_index >= 0 && (uint64_t)obs_index < num_observables) {
-          single_result_buffer[obs_index / 8] ^= (1 << (obs_index % 8));
+    for (py::ssize_t shot = 0; shot < num_shots; ++shot) {
+      std::vector<uint64_t> fired_detectors;
+      for (uint64_t detector = 0; detector < num_detectors; ++detector) {
+        if ((detections(shot, detector / 8) >> (detector % 8)) & 1) {
+          fired_detectors.push_back(detector);
         }
       }
+
+      MultiPassDecodeResult decoded = decoder->decode_result(fired_detectors);
+      for (py::ssize_t byte = 0; byte <= num_observable_bytes; ++byte) {
+        results(shot, byte) = 0;
+      }
+      for (int observable : decoded.predictions) {
+        if (observable >= 0 && static_cast<uint64_t>(observable) < num_observables) {
+          results(shot, observable / 8) ^= static_cast<uint8_t>(1U << (observable % 8));
+        }
+      }
+      results(shot, num_observable_bytes) = decoded.low_confidence;
     }
     return result_array;
   }
 };
 
-struct MultiPassSinterDecoder {
-  size_t num_passes;
-  py::object full_decomposer;
-  py::object detector_classifier;
-  TesseractConfig base_config;
-  size_t num_det_orders;
-  DetOrder det_order_method;
-  uint64_t seed;
-  SchedulingStrategy strategy;
-
-  MultiPassSinterDecoder(size_t n = 2)
-      : num_passes(n),
-        full_decomposer(py::none()),
-        detector_classifier(py::none()),
-        num_det_orders(1),
-        det_order_method(DetOrder::DetIndex),
-        seed(0),
-        strategy(SchedulingStrategy::Causal) {
-    if (num_passes < 1 || num_passes > 2) {
-      throw std::invalid_argument("num_passes must be 1 or 2.");
-    }
-  }
-
-  MultiPassSinterCompiledDecoder compile_decoder_for_dem(const py::object& dem) {
-    if (detector_classifier.is_none()) {
-      throw std::invalid_argument("detector_classifier is required for multi-pass decoding.");
-    }
-
-    stim::DetectorErrorModel stim_dem;
-
-    if (!full_decomposer.is_none()) {
-      py::gil_scoped_acquire acquire;
-      py::object decomposed_py_dem = full_decomposer(dem);
-      stim_dem =
-          stim::DetectorErrorModel(py::cast<std::string>(py::str(decomposed_py_dem)).c_str());
-    } else {
-      stim_dem = stim::DetectorErrorModel(py::cast<std::string>(py::str(dem)).c_str());
-    }
-
-    py::object python_classifier = detector_classifier;
-    DetectorClassifier classifier = [python_classifier](int index,
-                                                        const std::vector<double>& coordinates,
-                                                        const std::string& tag) -> int {
-      py::gil_scoped_acquire acquire;
-      return py::cast<int>(python_classifier(index, coordinates, tag));
-    };
-    std::vector<int> classification =
-        MultiPassTesseractDecoder::classify_detectors(stim_dem, classifier);
-
-    auto decoder = std::make_unique<MultiPassTesseractDecoder>(stim_dem, num_passes, classification,
-                                                               base_config, num_det_orders,
-                                                               det_order_method, seed, strategy);
-
-    return MultiPassSinterCompiledDecoder(std::move(decoder), stim_dem.count_detectors(),
-                                          stim_dem.count_observables());
-  }
-};
+MultiPassSinterCompiledDecoder compile_multi_pass_decoder_for_dem(
+    const py::object& dem, const std::vector<int>& detector_components, size_t num_passes,
+    const TesseractConfig& base_config, size_t num_det_orders, DetOrder det_order_method,
+    uint64_t seed, SchedulingStrategy strategy) {
+  stim::DetectorErrorModel stim_dem(py::cast<std::string>(py::str(dem)).c_str());
+  auto decoder = std::make_unique<MultiPassTesseractDecoder>(
+      stim_dem, num_passes, detector_components, base_config, num_det_orders, det_order_method,
+      seed, strategy);
+  return MultiPassSinterCompiledDecoder{
+      .decoder = std::move(decoder),
+      .num_detectors = stim_dem.count_detectors(),
+      .num_observables = stim_dem.count_observables(),
+  };
+}
 
 void pybind_multi_pass_sinter_compat(py::module& m) {
   py::enum_<SchedulingStrategy>(m, "SchedulingStrategy")
@@ -132,29 +103,18 @@ void pybind_multi_pass_sinter_compat(py::module& m) {
       .value("Causal", SchedulingStrategy::Causal)
       .export_values();
 
-  py::class_<MultiPassSinterCompiledDecoder>(
-      m, "MultiPassSinterCompiledDecoder",
-      "A compiled Sinter decoder backed by the native multi-pass Tesseract decoder.")
+  // This type and its factory are implementation details. The supported Sinter
+  // decoder is the pure-Python `multi_pass_sinter_decoders.MultiPassSinterDecoder`.
+  py::class_<MultiPassSinterCompiledDecoder>(m, "_MultiPassSinterCompiledDecoder")
       .def_property_readonly("num_components", &MultiPassSinterCompiledDecoder::num_components)
       .def("decode_shots_bit_packed", &MultiPassSinterCompiledDecoder::decode_shots_bit_packed,
            py::kw_only(), py::arg("bit_packed_detection_event_data"),
            py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>());
 
-  py::class_<MultiPassSinterDecoder>(
-      m, "MultiPassSinterDecoder",
-      "Low-level multi-pass Sinter decoder. Supports one or two passes and requires a "
-      "detector_classifier before compilation.")
-      .def(py::init<size_t>(), py::arg("num_passes") = 2)
-      .def_readwrite("full_decomposer", &MultiPassSinterDecoder::full_decomposer)
-      .def_readwrite("detector_classifier", &MultiPassSinterDecoder::detector_classifier)
-      .def_readwrite("base_config", &MultiPassSinterDecoder::base_config)
-      .def_readwrite("num_det_orders", &MultiPassSinterDecoder::num_det_orders)
-      .def_readwrite("det_order_method", &MultiPassSinterDecoder::det_order_method)
-      .def_readwrite("seed", &MultiPassSinterDecoder::seed)
-      .def_readwrite("strategy", &MultiPassSinterDecoder::strategy)
-      .def("compile_decoder_for_dem", &MultiPassSinterDecoder::compile_decoder_for_dem,
-           py::kw_only(), py::arg("dem"),
-           "Compiles a DEM after classifying every detector into exactly two components.");
+  m.def("_compile_multi_pass_decoder_for_dem", &compile_multi_pass_decoder_for_dem, py::kw_only(),
+        py::arg("dem"), py::arg("detector_components"), py::arg("num_passes"),
+        py::arg("base_config"), py::arg("num_det_orders"), py::arg("det_order_method"),
+        py::arg("seed"), py::arg("strategy"));
 }
 
 }  // namespace tesseract_decoder

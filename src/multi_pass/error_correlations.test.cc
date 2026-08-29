@@ -1,3 +1,17 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include "error_correlations.h"
 
 #include <vector>
@@ -7,62 +21,74 @@
 namespace tesseract_decoder {
 namespace {
 
-TEST(TwoPassCorrelationsTest, JointProbabilities) {
+TEST(ErrorCorrelationsTest, DocumentsPairedMechanismRatioFormula) {
   stim::DetectorErrorModel dem(R"DEM(
         error(0.1) D0 ^ D1 L0
         error(0.2) D0
         error(0.05) D1 L1
+        detector D0
+        detector D1
     )DEM");
+  ComponentSymptom d0{{0}, {}};
+  ComponentSymptom d1_l0{{1}, {0}};
 
-  std::vector<int> global_det_to_comp_id = {0, 1};
-  auto joint = get_hyperedge_joint_probabilities(dem, global_det_to_comp_id);
+  CorrelationEvidence evidence = collect_correlation_evidence(dem, {0, 1});
+  // XOR(0.1, 0.2) = 0.1 * 0.8 + 0.2 * 0.9 = 0.26.
+  EXPECT_NEAR(evidence.symptom_probabilities.at(d0), 0.26, 1e-12);
+  // Only the shared 0.1 mechanism is paired evidence. Independent one-sided
+  // combinations are deliberately not added as if this were an exact joint.
+  EXPECT_NEAR(evidence.paired_mechanism_probabilities.at(d0).at(d1_l0), 0.1, 1e-12);
 
-  ComponentSymptom h0{{0}, {}};
-  ComponentSymptom h1_l0{{1}, {0}};
-  ComponentSymptom h1_l1{{1}, {1}};
-
-  // P(D0) = 0.1 XOR 0.2 = 0.1*(1-0.2) + 0.2*(1-0.1) = 0.08 + 0.18 = 0.26
-  EXPECT_NEAR(joint[h0][h0], 0.26, 1e-6);
-  // P(D1 L0) = 0.1
-  EXPECT_NEAR(joint[h1_l0][h1_l0], 0.1, 1e-6);
-  EXPECT_NEAR(joint[h1_l1][h1_l1], 0.05, 1e-6);
-  // P(D0 and D1) = 0.1
-  EXPECT_NEAR(joint[h0][h1_l0], 0.1, 1e-6);
-  EXPECT_NEAR(joint[h1_l0][h0], 0.1, 1e-6);
-  EXPECT_EQ(joint[h0].count(h1_l1), 0);
+  ReweightProbsMap probabilities = derive_reweight_probabilities(evidence);
+  ASSERT_EQ(probabilities.at(d0).size(), 1);
+  EXPECT_EQ(probabilities.at(d0)[0].affected_symptom, d1_l0);
+  EXPECT_NEAR(probabilities.at(d0)[0].probability, 0.1 / 0.26, 1e-12);
 }
 
-TEST(TwoPassCorrelationsTest, ImpliedProbabilities) {
-  JointProbsMap joint;
-  ComponentSymptom h0{{0}, {}};
-  ComponentSymptom h1{{1}, {0}};
+TEST(ErrorCorrelationsTest, OneSidedMechanismsDoNotCreatePairedEvidence) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0
+        error(0.2) D1
+        detector D0
+        detector D1
+    )DEM");
+  CorrelationEvidence evidence = collect_correlation_evidence(dem, {0, 1});
+  EXPECT_TRUE(evidence.paired_mechanism_probabilities.empty());
+  EXPECT_TRUE(derive_reweight_probabilities(evidence).empty());
+}
 
-  joint[h0][h0] = 0.2;
-  joint[h1][h1] = 0.1;
-  joint[h0][h1] = 0.05;
-  joint[h1][h0] = 0.05;
+TEST(ErrorCorrelationsTest, CombinesSameComponentGroupsBeforeRecordingEvidence) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 L0 ^ D1 L1 ^ D2
+        detector D0
+        detector D1
+        detector D2
+    )DEM");
+  ComponentSymptom combined{{0, 1}, {0, 1}};
+  ComponentSymptom affected{{2}, {}};
 
-  auto implied = get_implied_hyperedge_probabilities(joint);
+  CorrelationEvidence evidence = collect_correlation_evidence(dem, {0, 0, 1});
+  EXPECT_NEAR(evidence.symptom_probabilities.at(combined), 0.1, 1e-12);
+  EXPECT_NEAR(evidence.paired_mechanism_probabilities.at(combined).at(affected), 0.1, 1e-12);
+}
 
-  // P(D1 | D0) = 0.05 / 0.2 = 0.25
-  bool found = false;
-  for (const auto& imp : implied[h0]) {
-    if (imp.affected_symptom == h1) {
-      EXPECT_NEAR(imp.probability, 0.25, 1e-6);
-      found = true;
-    }
-  }
-  EXPECT_TRUE(found);
+TEST(ErrorCorrelationsTest, RejectsAmbiguousGroupsAndAssignments) {
+  stim::DetectorErrorModel mixed(R"DEM(
+        error(0.1) D0 D1
+        detector D0
+        detector D1
+    )DEM");
+  EXPECT_THROW(collect_correlation_evidence(mixed, {0, 1}), std::invalid_argument);
 
-  // P(D0 | D1) = 0.05 / 0.1 = 0.5
-  found = false;
-  for (const auto& imp : implied[h1]) {
-    if (imp.affected_symptom == h0) {
-      EXPECT_NEAR(imp.probability, 0.5, 1e-6);
-      found = true;
-    }
-  }
-  EXPECT_TRUE(found);
+  stim::DetectorErrorModel logical_only(R"DEM(
+        error(0.1) L0 ^ D0
+        detector D0
+        detector D1
+        logical_observable L0
+    )DEM");
+  EXPECT_THROW(collect_correlation_evidence(logical_only, {0, 1}), std::invalid_argument);
+  EXPECT_THROW(collect_correlation_evidence(mixed, {0}), std::invalid_argument);
+  EXPECT_THROW(collect_correlation_evidence(mixed, {0, -1}), std::invalid_argument);
 }
 
 }  // namespace

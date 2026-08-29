@@ -1,27 +1,132 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include "dem_decomposition.h"
 
 #include <algorithm>
-#include <iostream>
+#include <map>
 #include <set>
 #include <stdexcept>
-#include <unordered_set>
+#include <string>
 #include <utility>
 #include <vector>
 
-#include "stim.h"
-
 namespace tesseract_decoder {
+namespace {
 
-// Helper function to generate all combinations of observables
+struct ErrorGroup {
+  std::vector<stim::DemTarget> targets;
+  std::vector<int> detectors;
+  std::vector<int> observables;
+  int component;
+};
+
+std::vector<int> reduce_symmetric_difference(const std::vector<int>& items) {
+  std::set<int> unpaired;
+  for (int item : items) {
+    if (!unpaired.erase(item)) {
+      unpaired.insert(item);
+    }
+  }
+  return {unpaired.begin(), unpaired.end()};
+}
+
+std::vector<int> reduce_set_symmetric_difference(const std::vector<std::vector<int>>& sets) {
+  std::vector<int> items;
+  for (const auto& set : sets) {
+    items.insert(items.end(), set.begin(), set.end());
+  }
+  return reduce_symmetric_difference(items);
+}
+
+void validate_detector_components(const stim::DetectorErrorModel& dem,
+                                  const std::vector<int>& detector_components) {
+  if (detector_components.size() != dem.count_detectors()) {
+    throw std::invalid_argument(
+        "Detector component assignment count does not match the DEM detector count.");
+  }
+  for (size_t d = 0; d < detector_components.size(); ++d) {
+    if (detector_components[d] < 0) {
+      throw std::invalid_argument("Detector D" + std::to_string(d) +
+                                  " has an invalid negative component assignment.");
+    }
+  }
+}
+
+int component_for_detector(int detector, const std::vector<int>& detector_components) {
+  if (detector < 0 || static_cast<size_t>(detector) >= detector_components.size()) {
+    throw std::invalid_argument("Detector D" + std::to_string(detector) + " is out of range.");
+  }
+  return detector_components[detector];
+}
+
+bool has_separator(const stim::DemInstruction& instruction) {
+  return std::any_of(instruction.target_data.begin(), instruction.target_data.end(),
+                     [](const stim::DemTarget& target) { return target.is_separator(); });
+}
+
+std::vector<ErrorGroup> parse_and_validate_groups(const stim::DemInstruction& instruction,
+                                                  const std::vector<int>& detector_components,
+                                                  bool allow_undecomposed_mixed_group) {
+  if (instruction.type != stim::DemInstructionType::DEM_ERROR) {
+    throw std::invalid_argument("DEM instruction must be an error.");
+  }
+
+  std::vector<ErrorGroup> groups;
+  instruction.for_separated_targets([&](std::span<const stim::DemTarget> raw_targets) {
+    ErrorGroup group;
+    std::vector<int> raw_detectors;
+    std::vector<int> raw_observables;
+    for (const auto& target : raw_targets) {
+      group.targets.push_back(target);
+      if (target.is_relative_detector_id()) {
+        raw_detectors.push_back(target.val());
+      } else if (target.is_observable_id()) {
+        raw_observables.push_back(target.val());
+      }
+    }
+    group.detectors = reduce_symmetric_difference(raw_detectors);
+    group.observables = reduce_symmetric_difference(raw_observables);
+
+    if (group.detectors.empty()) {
+      throw std::invalid_argument("Error instruction `" + instruction.str() +
+                                  "` contains a detectorless decomposition group, which cannot "
+                                  "be assigned to a component.");
+    }
+    std::set<int> components;
+    for (int detector : group.detectors) {
+      components.insert(component_for_detector(detector, detector_components));
+    }
+    if (components.size() != 1 && !allow_undecomposed_mixed_group) {
+      throw std::invalid_argument("Error instruction `" + instruction.str() +
+                                  "` contains a decomposition group with detectors from multiple "
+                                  "components.");
+    }
+    group.component = components.size() == 1 ? *components.begin() : -1;
+    groups.push_back(std::move(group));
+  });
+  return groups;
+}
+
 void generate_obs_combinations(
     const std::vector<std::set<std::vector<int>>>& obs_options_by_component,
     std::vector<std::vector<int>>& current_combination,
-    std::vector<std::vector<std::vector<int>>>& all_combinations, int component_index) {
-  if (component_index == (int)obs_options_by_component.size()) {
+    std::vector<std::vector<std::vector<int>>>& all_combinations, size_t component_index) {
+  if (component_index == obs_options_by_component.size()) {
     all_combinations.push_back(current_combination);
     return;
   }
-
   for (const auto& obs_option : obs_options_by_component[component_index]) {
     current_combination.push_back(obs_option);
     generate_obs_combinations(obs_options_by_component, current_combination, all_combinations,
@@ -30,49 +135,10 @@ void generate_obs_combinations(
   }
 }
 
-std::vector<int> reduce_symmetric_difference(const std::vector<int>& items) {
-  std::set<int> unpaired_set;
-  for (int item : items) {
-    if (unpaired_set.count(item)) {
-      unpaired_set.erase(item);
-    } else {
-      unpaired_set.insert(item);
-    }
-  }
-  return std::vector<int>(unpaired_set.begin(), unpaired_set.end());
-}
-
-std::vector<int> reduce_set_symmetric_difference(const std::vector<std::vector<int>>& sets) {
-  std::vector<int> all_items;
-  for (const auto& s : sets) {
-    all_items.insert(all_items.end(), s.begin(), s.end());
-  }
-  return reduce_symmetric_difference(all_items);
-}
-
-std::pair<std::vector<int>, std::vector<int>> undecomposed_error_detectors_and_observables(
-    const stim::DemInstruction& instruction) {
-  if (instruction.type != stim::DemInstructionType::DEM_ERROR) {
-    throw std::invalid_argument("DEM instruction must be an error");
-  }
-
-  std::vector<int> detectors;
-  std::vector<int> observables;
-  for (const auto& target : instruction.target_data) {
-    if (target.is_relative_detector_id()) {
-      detectors.push_back(target.val());
-    } else if (target.is_observable_id()) {
-      observables.push_back(target.val());
-    }
-  }
-
-  return {reduce_symmetric_difference(detectors), reduce_symmetric_difference(observables)};
-}
-
 std::vector<std::vector<int>> get_component_obs_matching_undecomposed_obs(
     const std::vector<std::set<std::vector<int>>>& obs_options_by_component,
-    const std::vector<int>& error_obs, int num_missing_components, bool allow_remnant_errors) {
-  if (!allow_remnant_errors && num_missing_components > 0) {
+    const std::vector<int>& error_obs, int num_missing_components) {
+  if (num_missing_components > 1) {
     return {};
   }
 
@@ -80,220 +146,166 @@ std::vector<std::vector<int>> get_component_obs_matching_undecomposed_obs(
   std::vector<std::vector<int>> current_combination;
   generate_obs_combinations(obs_options_by_component, current_combination, all_combinations, 0);
 
-  std::vector<int> error_obs_reduced = reduce_symmetric_difference(error_obs);
-  std::set<int> error_obs_set(error_obs_reduced.begin(), error_obs_reduced.end());
-
+  std::vector<int> reduced_error_obs = reduce_symmetric_difference(error_obs);
   for (const auto& combination : all_combinations) {
-    std::vector<int> known_obs_sum = reduce_set_symmetric_difference(combination);
-
-    // Residual = error_obs XOR known_obs_sum
-    std::vector<int> residual_input = error_obs_reduced;
-    residual_input.insert(residual_input.end(), known_obs_sum.begin(), known_obs_sum.end());
+    std::vector<int> residual_input = reduced_error_obs;
+    std::vector<int> known_obs = reduce_set_symmetric_difference(combination);
+    residual_input.insert(residual_input.end(), known_obs.begin(), known_obs.end());
     std::vector<int> residual = reduce_symmetric_difference(residual_input);
 
     if (residual.empty()) {
-      // Case A: Residual is empty. All missing components get no observables.
       std::vector<std::vector<int>> result = combination;
-      for (int i = 0; i < num_missing_components; ++i) result.push_back({});
+      result.resize(result.size() + num_missing_components);
       return result;
     }
-
-    if (num_missing_components == 1 && allow_remnant_errors) {
-      // Case B: Residual is non-empty and one component is missing.
-      // Assign the entire residual to the missing component.
+    if (num_missing_components == 1) {
       std::vector<std::vector<int>> result = combination;
-      result.push_back(residual);
+      result.push_back(std::move(residual));
       return result;
     }
   }
-
   return {};
 }
 
+}  // namespace
+
 stim::DetectorErrorModel decompose_errors_using_detector_assignment(
-    const stim::DetectorErrorModel& dem, const std::function<int(int)>& detector_component_func,
-    bool allow_remnant_errors) {
-  stim::DetectorErrorModel flattened_dem = dem.flattened();
+    const stim::DetectorErrorModel& dem, const std::vector<int>& detector_components) {
+  stim::DetectorErrorModel flattened = dem.flattened();
+  validate_detector_components(flattened, detector_components);
+
   std::map<std::vector<int>, std::set<std::vector<int>>> single_component_dets_to_obs;
-
-  for (const auto& instruction : flattened_dem.instructions) {
-    if (instruction.type != stim::DemInstructionType::DEM_ERROR) continue;
-
-    auto [detectors, observables] = undecomposed_error_detectors_and_observables(instruction);
-
-    std::unordered_set<int> components;
-    for (int d : detectors) components.insert(detector_component_func(d));
-
-    if (components.size() <= 1) {
-      single_component_dets_to_obs[detectors].insert(observables);
+  for (const auto& instruction : flattened.instructions) {
+    if (instruction.type != stim::DemInstructionType::DEM_ERROR) {
+      continue;
+    }
+    bool decomposed = has_separator(instruction);
+    auto groups = parse_and_validate_groups(instruction, detector_components, !decomposed);
+    if (decomposed) {
+      for (const auto& group : groups) {
+        single_component_dets_to_obs[group.detectors].insert(group.observables);
+      }
+    } else if (groups[0].component >= 0) {
+      single_component_dets_to_obs[groups[0].detectors].insert(groups[0].observables);
     }
   }
 
   stim::DetectorErrorModel output_dem;
-  for (const auto& instruction : flattened_dem.instructions) {
+  for (const auto& instruction : flattened.instructions) {
     if (instruction.type != stim::DemInstructionType::DEM_ERROR) {
       output_dem.append_dem_instruction(instruction);
       continue;
     }
 
-    auto [detectors, observables] = undecomposed_error_detectors_and_observables(instruction);
-
-    std::map<int, std::vector<int>> dets_by_comp_id;
-    std::set<int> unique_components;
-    for (int d : detectors) {
-      int c = detector_component_func(d);
-      dets_by_comp_id[c].push_back(d);
-      unique_components.insert(c);
+    bool decomposed = has_separator(instruction);
+    auto groups = parse_and_validate_groups(instruction, detector_components, !decomposed);
+    if (decomposed) {
+      output_dem.append_dem_instruction(instruction);
+      continue;
     }
 
-    std::vector<std::vector<int>> dets_by_component;
-    std::vector<std::set<std::vector<int>>> obs_options_by_known_component;
-    std::vector<std::vector<int>> missing_components_dets;
+    const auto& undecomposed = groups[0];
+    std::map<int, std::vector<int>> dets_by_component_id;
+    for (int detector : undecomposed.detectors) {
+      dets_by_component_id[component_for_detector(detector, detector_components)].push_back(
+          detector);
+    }
+    if (dets_by_component_id.size() == 1) {
+      output_dem.append_dem_instruction(instruction);
+      continue;
+    }
 
-    for (int c : unique_components) {
-      std::vector<int> component_dets = dets_by_comp_id[c];
+    std::vector<std::vector<int>> known_component_dets;
+    std::vector<std::set<std::vector<int>>> known_component_obs_options;
+    std::vector<std::vector<int>> missing_component_dets;
+    for (auto& entry : dets_by_component_id) {
+      auto& component_dets = entry.second;
       std::sort(component_dets.begin(), component_dets.end());
-
-      if (single_component_dets_to_obs.count(component_dets)) {
-        dets_by_component.push_back(component_dets);
-        obs_options_by_known_component.push_back(single_component_dets_to_obs[component_dets]);
+      auto known = single_component_dets_to_obs.find(component_dets);
+      if (known != single_component_dets_to_obs.end()) {
+        known_component_dets.push_back(component_dets);
+        known_component_obs_options.push_back(known->second);
       } else {
-        if (!allow_remnant_errors) {
-          throw std::invalid_argument(
-              "Component not present as its own error and allow_remnant_errors=false");
-        }
-        missing_components_dets.push_back(component_dets);
+        missing_component_dets.push_back(component_dets);
       }
     }
 
-    std::vector<std::vector<int>> consistent_obs_by_component =
-        get_component_obs_matching_undecomposed_obs(obs_options_by_known_component, observables,
-                                                    (int)missing_components_dets.size(),
-                                                    allow_remnant_errors);
-
-    if (consistent_obs_by_component.empty()) {
-      throw std::invalid_argument("Error instruction could not be decomposed consistently.");
+    auto component_observables = get_component_obs_matching_undecomposed_obs(
+        known_component_obs_options, undecomposed.observables,
+        static_cast<int>(missing_component_dets.size()));
+    if (component_observables.empty()) {
+      throw std::invalid_argument("Error instruction `" + instruction.str() +
+                                  "` could not be decomposed consistently.");
     }
 
+    std::vector<std::vector<int>> component_dets = known_component_dets;
+    component_dets.insert(component_dets.end(), missing_component_dets.begin(),
+                          missing_component_dets.end());
     std::vector<stim::DemTarget> targets;
-    std::vector<std::vector<int>> all_dets = dets_by_component;
-    all_dets.insert(all_dets.end(), missing_components_dets.begin(), missing_components_dets.end());
-
-    for (size_t i = 0; i < all_dets.size(); ++i) {
-      for (int d : all_dets[i]) targets.push_back(stim::DemTarget::relative_detector_id(d));
-      for (int o : consistent_obs_by_component[i])
-        targets.push_back(stim::DemTarget::observable_id(o));
-      if (i != all_dets.size() - 1) targets.push_back(stim::DemTarget::separator());
+    for (size_t k = 0; k < component_dets.size(); ++k) {
+      for (int detector : component_dets[k]) {
+        targets.push_back(stim::DemTarget::relative_detector_id(detector));
+      }
+      for (int observable : component_observables[k]) {
+        targets.push_back(stim::DemTarget::observable_id(observable));
+      }
+      if (k + 1 < component_dets.size()) {
+        targets.push_back(stim::DemTarget::separator());
+      }
     }
-
     output_dem.append_error_instruction(instruction.arg_data[0], targets, instruction.tag);
   }
   return output_dem;
 }
 
-stim::DetectorErrorModel decompose_errors_using_generic_classifier(
-    const stim::DetectorErrorModel& dem, const DetectorClassifier& classifier,
-    bool allow_remnant_errors) {
-  stim::DetectorErrorModel flattened = dem.flattened();
-
-  std::set<uint64_t> all_detector_indices;
-  std::map<int, std::string> detector_tags;
-  for (uint64_t d = 0; d < flattened.count_detectors(); ++d) {
-    all_detector_indices.insert(d);
-  }
-  for (const auto& inst : flattened.instructions) {
-    if (inst.type == stim::DemInstructionType::DEM_DETECTOR) {
-      int d = inst.target_data[0].val();
-      detector_tags[d] = inst.tag;
-    }
-  }
-
-  auto detector_coords = flattened.get_detector_coordinates(all_detector_indices);
-
-  std::vector<int> classification_cache(flattened.count_detectors());
-  for (uint64_t d : all_detector_indices) {
-    std::vector<double> coords =
-        detector_coords.count(d) ? detector_coords.at(d) : std::vector<double>{};
-    classification_cache[d] = classifier((int)d, coords, detector_tags[d]);
-  }
-
-  auto component_func = [&](int d) {
-    if (d < 0 || (size_t)d >= classification_cache.size()) {
-      throw std::invalid_argument("Detector D" + std::to_string(d) + " is out of range.");
-    }
-    return classification_cache[d];
-  };
-
-  return decompose_errors_using_detector_assignment(flattened, component_func,
-                                                    allow_remnant_errors);
-}
-
 std::map<int, stim::DetectorErrorModel> split_dem_by_component(
-    const stim::DetectorErrorModel& dem, const std::function<int(int)>& detector_component_func) {
+    const stim::DetectorErrorModel& dem, const std::vector<int>& detector_components) {
+  stim::DetectorErrorModel flattened = dem.flattened();
+  validate_detector_components(flattened, detector_components);
+
   std::map<int, stim::DetectorErrorModel> component_dems;
+  for (int component : detector_components) {
+    component_dems.try_emplace(component);
+  }
 
-  for (const auto& instruction : dem.instructions) {
-    if (instruction.type == stim::DemInstructionType::DEM_ERROR) {
-      double prob = instruction.arg_data[0];
+  for (const auto& instruction : flattened.instructions) {
+    if (instruction.type != stim::DemInstructionType::DEM_ERROR) {
+      for (auto& entry : component_dems) {
+        entry.second.append_dem_instruction(instruction);
+      }
+      continue;
+    }
 
-      size_t group_start = 0;
-      for (size_t k = 0; k <= instruction.target_data.size(); ++k) {
-        if (k == instruction.target_data.size() || instruction.target_data[k].is_separator()) {
-          std::vector<stim::DemTarget> component_targets;
-          std::set<int> component_ids;
-          for (size_t j = group_start; j < k; ++j) {
-            const auto& target = instruction.target_data[j];
-            component_targets.push_back(target);
-            if (target.is_relative_detector_id()) {
-              component_ids.insert(detector_component_func(target.val()));
-            }
+    auto groups = parse_and_validate_groups(instruction, detector_components, false);
+    std::map<int, std::vector<std::vector<stim::DemTarget>>> groups_by_component;
+    for (auto& group : groups) {
+      groups_by_component[group.component].push_back(std::move(group.targets));
+    }
+
+    for (const auto& [component, component_groups] : groups_by_component) {
+      std::vector<stim::DemTarget> targets;
+      std::vector<int> combined_detectors;
+      for (size_t k = 0; k < component_groups.size(); ++k) {
+        targets.insert(targets.end(), component_groups[k].begin(), component_groups[k].end());
+        for (const auto& target : component_groups[k]) {
+          if (target.is_relative_detector_id()) {
+            combined_detectors.push_back(target.val());
           }
-
-          if (component_ids.empty()) {
-            // If no detectors, we can't assign it to a component based on detectors.
-            // For now, let's skip or handle separately.
-          } else if (component_ids.size() > 1) {
-            throw std::invalid_argument("Mixed component ID in a single error component group.");
-          } else {
-            int comp_id = *component_ids.begin();
-            component_dems[comp_id].append_error_instruction(prob, component_targets, "");
-          }
-          group_start = k + 1;
+        }
+        if (k + 1 < component_groups.size()) {
+          targets.push_back(stim::DemTarget::separator());
         }
       }
-    } else if (instruction.type == stim::DemInstructionType::DEM_DETECTOR ||
-               instruction.type == stim::DemInstructionType::DEM_LOGICAL_OBSERVABLE) {
-      for (auto& pair : component_dems) {
-        pair.second.append_dem_instruction(instruction);
+      if (reduce_symmetric_difference(combined_detectors).empty()) {
+        throw std::invalid_argument("Error instruction `" + instruction.str() +
+                                    "` has a detectorless component symptom after combining its "
+                                    "decomposition groups.");
       }
+      component_dems.at(component).append_error_instruction(instruction.arg_data[0], targets,
+                                                            instruction.tag);
     }
   }
   return component_dems;
-}
-
-stim::DetectorErrorModel undecompose_errors(const stim::DetectorErrorModel& dem) {
-  stim::DetectorErrorModel undecomposed_dem;
-  for (const auto& instruction : dem.instructions) {
-    if (instruction.type == stim::DemInstructionType::DEM_REPEAT_BLOCK) {
-      undecomposed_dem.append_repeat_block(instruction.repeat_block_rep_count(),
-                                           undecompose_errors(instruction.repeat_block_body(dem)),
-                                           instruction.tag);
-      continue;
-    }
-
-    if (instruction.type != stim::DemInstructionType::DEM_ERROR) {
-      undecomposed_dem.append_dem_instruction(instruction);
-      continue;
-    }
-
-    auto [detectors, observables] = undecomposed_error_detectors_and_observables(instruction);
-    std::vector<stim::DemTarget> targets;
-    for (int d : detectors) targets.push_back(stim::DemTarget::relative_detector_id(d));
-    for (int o : observables) targets.push_back(stim::DemTarget::observable_id(o));
-
-    undecomposed_dem.append_error_instruction(instruction.arg_data[0], targets, instruction.tag);
-  }
-  return undecomposed_dem;
 }
 
 }  // namespace tesseract_decoder

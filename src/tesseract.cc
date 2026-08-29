@@ -19,7 +19,6 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
-#include <functional>  // For std::hash (though not strictly necessary here, but good practice)
 #include <iostream>
 #include <limits>
 #include <numeric>
@@ -205,10 +204,17 @@ TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(std::move(c
 }
 
 void TesseractDecoder::update_internal_costs(const std::vector<size_t>& modified_error_indices) {
+  for (size_t error_index : modified_error_indices) {
+    if (error_index >= errors.size()) {
+      throw std::out_of_range("Modified error index " + std::to_string(error_index) +
+                              " is out of range for " + std::to_string(errors.size()) +
+                              " decoder errors.");
+    }
+  }
+
   std::unordered_set<int> affected_detectors;
 
   for (size_t ei : modified_error_indices) {
-    if (ei >= errors.size()) continue;
     double min_cost = errors[ei].symptom.detectors.empty()
                           ? errors[ei].likelihood_cost
                           : errors[ei].likelihood_cost / errors[ei].symptom.detectors.size();
@@ -224,7 +230,8 @@ void TesseractDecoder::update_internal_costs(const std::vector<size_t>& modified
   for (int d : affected_detectors) {
     if (d >= 0 && (size_t)d < d2e.size()) {
       std::sort(d2e[d].begin(), d2e[d].end(), [this](size_t idx_a, size_t idx_b) {
-        return error_costs[idx_a].min_cost < error_costs[idx_b].min_cost;
+        return error_costs[idx_a].min_cost < error_costs[idx_b].min_cost ||
+               (error_costs[idx_a].min_cost == error_costs[idx_b].min_cost && idx_a < idx_b);
       });
     }
   }
@@ -244,13 +251,16 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
   // Initial fill of error_costs and sorting of d2e for all errors
   error_costs.reserve(errors.size());
   for (size_t i = 0; i < errors.size(); ++i) {
-    error_costs.push_back({errors[i].likelihood_cost,
-                           errors[i].likelihood_cost / errors[i].symptom.detectors.size()});
+    double min_cost = errors[i].symptom.detectors.empty()
+                          ? errors[i].likelihood_cost
+                          : errors[i].likelihood_cost / errors[i].symptom.detectors.size();
+    error_costs.push_back({errors[i].likelihood_cost, min_cost});
   }
 
   for (size_t d = 0; d < num_detectors; ++d) {
     std::sort(d2e[d].begin(), d2e[d].end(), [this](size_t idx_a, size_t idx_b) {
-      return error_costs[idx_a].min_cost < error_costs[idx_b].min_cost;
+      return error_costs[idx_a].min_cost < error_costs[idx_b].min_cost ||
+             (error_costs[idx_a].min_cost == error_costs[idx_b].min_cost && idx_a < idx_b);
     });
   }
 

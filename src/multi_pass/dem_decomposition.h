@@ -1,80 +1,45 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #ifndef DEM_DECOMPOSITION_H
 #define DEM_DECOMPOSITION_H
 
-#include <algorithm>
-#include <functional>
 #include <map>
-#include <numeric>
-#include <set>
-#include <string>
-#include <tuple>
 #include <vector>
 
 #include "stim.h"
 
 namespace tesseract_decoder {
 
-// Calculates the symmetric difference of a multiset of items.
-// Returns items that appear an odd number of times in the input.
-std::vector<int> reduce_symmetric_difference(const std::vector<int>& items);
-
-// Calculates the symmetric difference of a multiset of items given as a vector of sets.
-std::vector<int> reduce_set_symmetric_difference(const std::vector<std::vector<int>>& sets);
-
-// Extracts detector and observable indices from a Stim error instruction,
-// handling decomposed errors by taking the symmetric difference.
-std::pair<std::vector<int>, std::vector<int>> undecomposed_error_detectors_and_observables(
-    const stim::DemInstruction& instruction);
-
 /**
- * Given possible observables for each component and the error's observables,
- * finds a consistent assignment of observables to components.
+ * Decomposes undecomposed errors using an explicit detector-to-component assignment.
  *
- * @param obs_options_by_component A list of sets, where each set contains the possible
- *                                 observable flip combinations for a component.
- * @param error_obs The total logical observables flipped by the undecomposed error.
- * @param num_missing_components Number of components that were not found in the DEM.
- * @param allow_remnant_errors If true, allow one component missing from the DEM to be assigned
- *                             residual observables. Multiple missing components are ambiguous.
- */
-std::vector<std::vector<int>> get_component_obs_matching_undecomposed_obs(
-    const std::vector<std::set<std::vector<int>>>& obs_options_by_component,
-    const std::vector<int>& error_obs, int num_missing_components = 0,
-    bool allow_remnant_errors = false);
-
-/**
- * Decomposes errors in a DetectorErrorModel based on detector assignments to components.
- *
- * @param dem The input DetectorErrorModel.
- * @param detector_component_func A function that maps a detector ID to a component ID (int).
- * @param allow_remnant_errors If true, allow the decomposition to infer observables for one
- *                             component missing from the DEM.
+ * Existing Stim `^` decomposition groups are preserved after validation. Every
+ * existing group must contain detectors from exactly one component. Detectorless
+ * groups are rejected because they cannot be assigned unambiguously.
  */
 stim::DetectorErrorModel decompose_errors_using_detector_assignment(
-    const stim::DetectorErrorModel& dem, const std::function<int(int)>& detector_component_func,
-    bool allow_remnant_errors = false);
+    const stim::DetectorErrorModel& dem, const std::vector<int>& detector_components);
 
 /**
- * A generic classifier that receives full metadata for a detector.
- */
-using DetectorClassifier =
-    std::function<int(int index, const std::vector<double>& coords, const std::string& tag)>;
-
-/**
- * Decomposes errors using a generic classifier that can look at index, coordinates, and tags.
- */
-stim::DetectorErrorModel decompose_errors_using_generic_classifier(
-    const stim::DetectorErrorModel& dem, const DetectorClassifier& classifier,
-    bool allow_remnant_errors = false);
-
-/**
- * Splits a decomposed DEM into separate DEMs, one for each component ID.
+ * Splits a decomposed DEM into one DEM per explicitly assigned component.
+ *
+ * All groups from one physical error mechanism that belong to the same component
+ * remain in one tagged error instruction.
  */
 std::map<int, stim::DetectorErrorModel> split_dem_by_component(
-    const stim::DetectorErrorModel& dem, const std::function<int(int)>& detector_component_func);
-
-// Returns a detector error model with any error decompositions removed.
-stim::DetectorErrorModel undecompose_errors(const stim::DetectorErrorModel& dem);
+    const stim::DetectorErrorModel& dem, const std::vector<int>& detector_components);
 
 }  // namespace tesseract_decoder
 

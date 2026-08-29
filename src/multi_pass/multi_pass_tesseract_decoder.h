@@ -1,3 +1,17 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #ifndef MULTI_PASS_TESSERACT_DECODER_H
 #define MULTI_PASS_TESSERACT_DECODER_H
 
@@ -7,13 +21,12 @@
 #include <vector>
 
 #include "../tesseract.h"
-#include "../utils.h"
-#include "dem_decomposition.h"
 #include "error_correlations.h"
 #include "stim.h"
-#include "tanner_graph.h"
 
 namespace tesseract_decoder {
+
+class MultiPassTestPeer;
 
 enum class SchedulingStrategy {
   Static,  // Schedules both components in every pass.
@@ -29,7 +42,7 @@ struct MultiPassExecutionPlan {
 
   struct Component {
     size_t id;
-    int classifier_label;
+    int assignment_label;
     size_t active_detector_count;
     size_t decoder_detector_count;
     size_t error_mechanism_count;
@@ -62,28 +75,18 @@ struct MultiPassDecodeResult {
 /**
  * Decodes a detector error model by splitting it into exactly two detector components.
  *
- * One or two passes are supported. Every detector must receive a nonnegative classifier label,
- * and exactly two distinct labels must be present.
+ * One or two passes are supported. `detector_components[d]` assigns detector Dd to a component.
+ * Every assignment must be nonnegative, and exactly two distinct labels must be present.
  */
 class MultiPassTesseractDecoder {
  public:
   MultiPassTesseractDecoder(const stim::DetectorErrorModel& dem, size_t num_passes,
-                            const DetectorClassifier& classifier,
+                            const std::vector<int>& detector_components,
                             const TesseractConfig& base_config = TesseractConfig(),
                             size_t num_det_orders = 1,
                             DetOrder det_order_method = DetOrder::DetIndex, uint64_t seed = 0,
                             SchedulingStrategy strategy = SchedulingStrategy::Causal,
                             bool collect_plan_statistics = false);
-  MultiPassTesseractDecoder(const stim::DetectorErrorModel& dem, size_t num_passes,
-                            const std::vector<int>& detector_classes,
-                            const TesseractConfig& base_config = TesseractConfig(),
-                            size_t num_det_orders = 1,
-                            DetOrder det_order_method = DetOrder::DetIndex, uint64_t seed = 0,
-                            SchedulingStrategy strategy = SchedulingStrategy::Causal,
-                            bool collect_plan_statistics = false);
-
-  static std::vector<int> classify_detectors(const stim::DetectorErrorModel& dem,
-                                             const DetectorClassifier& classifier);
 
   /** Returns the component schedule and statistics; requires collect_plan_statistics=true. */
   MultiPassExecutionPlan get_execution_plan() const;
@@ -101,68 +104,37 @@ class MultiPassTesseractDecoder {
   struct LocalReweightRule {
     size_t target_comp_idx;
     size_t target_error_idx;
-    double conditional_prob;
+    double reweight_probability;
   };
 
   struct ComponentDecoder {
     std::unique_ptr<TesseractDecoder> decoder;
-    int classifier_label = -1;
-    std::set<int> component_detectors;  // Global indices
-    std::map<int, int> global_to_local_det;
+    int assignment_label = -1;
+    size_t active_detector_count = 0;
     std::vector<double> original_costs;
     std::map<ComponentSymptom, std::vector<size_t>> symptom_to_error_index;
     std::vector<std::vector<LocalReweightRule>> error_index_to_rules;
-    std::vector<size_t> modified_error_indices;
-    std::vector<size_t> shot_all_modified_error_indices;
     bool affects_observable = false;
   };
 
   size_t num_passes;
   SchedulingStrategy strategy;
   size_t total_global_detectors;
-  TesseractConfig base_config;
-  size_t num_det_orders;
-  DetOrder det_order_method;
-  uint64_t seed;
   bool collect_plan_statistics;
   size_t last_shot_num_reweights = 0;
   MultiPassExecutionPlan::DemStatistics monolithic_statistics{};
-  std::map<size_t, std::vector<size_t>> component_predictions;
-  std::vector<size_t> modified_component_indices;
-  std::vector<size_t> final_pass_active_components;
   std::vector<ComponentDecoder> component_decoders;
   std::vector<std::vector<size_t>> pass_schedule;
   std::vector<int> global_det_to_comp_id;
 
-  void initialize(const stim::DetectorErrorModel& dem, const std::vector<int>& detector_classes);
+  void initialize(const stim::DetectorErrorModel& dem, const std::vector<int>& detector_components,
+                  const TesseractConfig& base_config, size_t num_det_orders,
+                  DetOrder det_order_method, uint64_t seed);
   void build_static_schedule();
   void build_causal_schedule();
+  void restore_modified_costs(const std::vector<std::vector<size_t>>& modified_error_indices);
 
-  friend class MultiPassTraceVisualizer;
-  friend class MultiPassDebugger;
-};
-
-class MultiPassDebugger {
- public:
-  static const std::vector<std::vector<size_t>>& get_pass_schedule(
-      const MultiPassTesseractDecoder& decoder) {
-    return decoder.pass_schedule;
-  }
-  static size_t num_components(const MultiPassTesseractDecoder& decoder) {
-    return decoder.component_decoders.size();
-  }
-  static const TesseractDecoder& get_component_decoder(const MultiPassTesseractDecoder& decoder,
-                                                       size_t i) {
-    return *decoder.component_decoders[i].decoder;
-  }
-  static const std::vector<size_t>& get_modified_component_indices(
-      const MultiPassTesseractDecoder& decoder) {
-    return decoder.modified_component_indices;
-  }
-  static const MultiPassTesseractDecoder::ComponentDecoder& get_component_decoder_full(
-      const MultiPassTesseractDecoder& decoder, size_t i) {
-    return decoder.component_decoders[i];
-  }
+  friend class MultiPassTestPeer;
 };
 
 }  // namespace tesseract_decoder

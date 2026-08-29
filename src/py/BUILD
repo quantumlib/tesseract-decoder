@@ -24,6 +24,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//src:lib_tesseract_decoder",
+        "//src/py/_tesseract_py_util",
         "@pypi//sinter",
         "@pypi//stim",
     ],
@@ -111,6 +112,7 @@ py_test(
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//pytest",
+        "@pypi//sinter",
         "@pypi//stim",
         "@pypi//numpy",
         "//src:lib_tesseract_decoder",
@@ -119,6 +121,14 @@ py_test(
     imports = ["..", "."],
 )
 
+
+py_test(
+    name = "tesseract_cli_test",
+    srcs = ["tesseract_cli_test.py"],
+    data = ["//src:tesseract"],
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//pytest"],
+)
 
 
 py_test(

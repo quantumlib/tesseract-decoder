@@ -1,6 +1,19 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include "dem_decomposition.h"
 
-#include <set>
 #include <string>
 #include <vector>
 
@@ -9,196 +22,116 @@
 namespace tesseract_decoder {
 namespace {
 
-TEST(DemDecompositionTest, ReduceSymmetricDifference) {
-  ASSERT_EQ(reduce_symmetric_difference({1, 2, 3}), std::vector<int>({1, 2, 3}));
-  ASSERT_EQ(reduce_symmetric_difference({1, 1}), std::vector<int>({}));
-  ASSERT_EQ(reduce_symmetric_difference({3, 0, 1, 4, 1, 2, 4}), std::vector<int>({0, 2, 3}));
-}
-
-TEST(DemDecompositionTest, ReduceSetSymmetricDifference) {
-  ASSERT_EQ(reduce_set_symmetric_difference({{1, 2, 3}, {2, 4, 0}}),
-            std::vector<int>({0, 1, 3, 4}));
-  ASSERT_EQ(reduce_set_symmetric_difference({{}, {}}), std::vector<int>({}));
-}
-
-TEST(DemDecompositionTest, GetComponentObsMatchingUndecomposedObs) {
-  std::vector<std::set<std::vector<int>>> component_obs = {{{0, 1}, {2, 1}}, {{3, 4}, {10, 0}}};
-  std::vector<int> error_obs = {1, 10};
-  std::vector<std::vector<int>> expected_output = {{0, 1}, {10, 0}};
-  ASSERT_EQ(get_component_obs_matching_undecomposed_obs(component_obs, error_obs, 0, false),
-            expected_output);
-
-  component_obs = {{{}}, {{}}};
-  error_obs = {};
-  expected_output = {{}, {}};
-  ASSERT_EQ(get_component_obs_matching_undecomposed_obs(component_obs, error_obs, 0, false),
-            expected_output);
-
-  component_obs = {{{}}, {{}}};
-  error_obs = {0};
-  expected_output = {};
-  ASSERT_EQ(get_component_obs_matching_undecomposed_obs(component_obs, error_obs, 0, false),
-            expected_output);
-}
-
-TEST(DemDecompositionTest, RemnantErrorsSingleMissingComponent) {
-  std::vector<std::set<std::vector<int>>> component_obs = {{{1}}};
-  std::vector<int> error_obs = {1, 2};
-  std::vector<std::vector<int>> expected_output = {{1}, {2}};
-  ASSERT_EQ(get_component_obs_matching_undecomposed_obs(component_obs, error_obs, 1, true),
-            expected_output);
-}
-
-TEST(DemDecompositionTest, RemnantErrorsNoKnownComponents) {
-  std::vector<std::set<std::vector<int>>> component_obs = {};
-  std::vector<int> error_obs = {1, 2};
-  std::vector<std::vector<int>> expected_output = {{1, 2}};
-  ASSERT_EQ(get_component_obs_matching_undecomposed_obs(component_obs, error_obs, 1, true),
-            expected_output);
-  ASSERT_TRUE(
-      get_component_obs_matching_undecomposed_obs(component_obs, error_obs, 2, true).empty());
-}
-
-TEST(DemDecompositionTest, RejectsInconsistentObservableDecomposition) {
+TEST(DemDecompositionTest, PreservesExistingGroupsAndTags) {
   stim::DetectorErrorModel dem(R"DEM(
-        error(0.1) D0 L0
-        error(0.1) D1 L1
-        error(0.2) D0 D1 L0
+        error[physical mechanism](0.1) D0 L0 ^ D1 L1
+        detector[x detector](1, 2) D0
+        detector[z detector](3, 4) D1
+        logical_observable L0
+        logical_observable L1
+    )DEM");
+
+  EXPECT_EQ(decompose_errors_using_detector_assignment(dem, {0, 1}).str(), dem.str());
+}
+
+TEST(DemDecompositionTest, DecomposesMixedErrorAndPreservesTag) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error[x evidence](0.01) D0 L0
+        error[z evidence](0.02) D1 L1
+        error[correlated](0.1) D0 D1 L0 L1
         detector D0
         detector D1
         logical_observable L0
         logical_observable L1
     )DEM");
-  auto component = [](int detector) { return detector; };
-  EXPECT_THROW(decompose_errors_using_detector_assignment(dem, component, true),
+  stim::DetectorErrorModel expected(R"DEM(
+        error[x evidence](0.01) D0 L0
+        error[z evidence](0.02) D1 L1
+        error[correlated](0.1) D0 L0 ^ D1 L1
+        detector D0
+        detector D1
+        logical_observable L0
+        logical_observable L1
+    )DEM");
+
+  EXPECT_EQ(decompose_errors_using_detector_assignment(dem, {0, 1}).str(), expected.str());
+}
+
+TEST(DemDecompositionTest, RejectsAmbiguousMissingComponents) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error[ambiguous](0.1) D0 D1 L0
+        detector D0
+        detector D1
+        logical_observable L0
+    )DEM");
+  EXPECT_THROW(decompose_errors_using_detector_assignment(dem, {0, 1}), std::invalid_argument);
+}
+
+TEST(DemDecompositionTest, RejectsMixedAndDetectorlessExistingGroups) {
+  stim::DetectorErrorModel mixed(R"DEM(
+        error[mixed group](0.1) D0 D1 ^ D0
+        detector D0
+        detector D1
+    )DEM");
+  EXPECT_THROW(decompose_errors_using_detector_assignment(mixed, {0, 1}), std::invalid_argument);
+
+  stim::DetectorErrorModel logical_only_group(R"DEM(
+        error[logical only group](0.1) L0 ^ D0
+        detector D0
+        detector D1
+        logical_observable L0
+    )DEM");
+  EXPECT_THROW(decompose_errors_using_detector_assignment(logical_only_group, {0, 1}),
+               std::invalid_argument);
+
+  stim::DetectorErrorModel logical_only_error(R"DEM(
+        error[logical only](0.1) L0
+        detector D0
+        detector D1
+        logical_observable L0
+    )DEM");
+  EXPECT_THROW(decompose_errors_using_detector_assignment(logical_only_error, {0, 1}),
                std::invalid_argument);
 }
 
-TEST(DemDecompositionTest, DecomposeErrorsUsingGenericClassifier) {
+TEST(DemDecompositionTest, SplitKeepsSameComponentGroupsInOneTaggedMechanism) {
   stim::DetectorErrorModel dem(R"DEM(
-        error(0.1) D0 ^ D1 L1
-        error(0.01) D0 D3 D3 D1 L5 L4 L4
-        error(0.3) D0 D1 D3 D3 D2 D3 L0 L5
-        error(0.2) D3 D2 D0 D0 L0
-        detector(0) D0
-        detector(0) D1
-        detector(1) D2
-        detector(1) D3
+        error[physical mechanism](0.1) D0 L0 ^ D1 L1 ^ D2
+        detector[x0](1) D0
+        detector[x1](2) D1
+        detector[z](3) D2
+        logical_observable L0
+        logical_observable L1
     )DEM");
 
-  // Classifier based on coordinate
-  auto classifier = [](int index, const std::vector<double>& coords,
-                       const std::string& tag) -> int {
-    if (coords.empty()) return 0;
-    return (int)coords.back();
-  };
-
-  stim::DetectorErrorModel expected_decomposed_dem(R"DEM(
-        error(0.1) D0 D1 L1
-        error(0.01) D0 D1 L5
-        error(0.3) D0 D1 L5 ^ D2 D3 L0
-        error(0.2) D2 D3 L0
-        detector(0) D0
-        detector(0) D1
-        detector(1) D2
-        detector(1) D3
-    )DEM");
-  ASSERT_EQ(decompose_errors_using_generic_classifier(dem, classifier).str(),
-            expected_decomposed_dem.str());
+  auto components = split_dem_by_component(dem, {7, 7, 9});
+  ASSERT_EQ(components.size(), 2);
+  EXPECT_EQ(components.at(7).count_errors(), 1);
+  EXPECT_EQ(components.at(9).count_errors(), 1);
+  EXPECT_NE(components.at(7).str().find("error[physical mechanism](0.1) D0 L0 ^ D1 L1"),
+            std::string::npos);
+  EXPECT_NE(components.at(9).str().find("error[physical mechanism](0.1) D2"), std::string::npos);
+  EXPECT_NE(components.at(7).str().find("detector[x0](1) D0"), std::string::npos);
+  EXPECT_NE(components.at(9).str().find("logical_observable L1"), std::string::npos);
 }
 
-TEST(DemDecompositionTest, DecomposeErrorsUsingGenericClassifierTagBased) {
+TEST(DemDecompositionTest, SplitRejectsCancellationToDetectorlessComponent) {
   stim::DetectorErrorModel dem(R"DEM(
-        error(0.1) D0 D1
-        error(0.2) D2 D3
-        error(0.3) D0 D2
-        error(0.01) D0
-        error(0.01) D2
-        detector[{"basis": "X"}] D0
-        detector[{"basis": "X"}] D1
-        detector[{"basis": "Z"}] D2
-        detector[{"basis": "Z"}] D3
-    )DEM");
-
-  // Classifier based on finding "X" or "Z" in the tag
-  auto classifier = [](int index, const std::vector<double>& coords,
-                       const std::string& tag) -> int {
-    if (tag.find("\"X\"") != std::string::npos) return 0;
-    if (tag.find("\"Z\"") != std::string::npos) return 1;
-    return 2;
-  };
-
-  stim::DetectorErrorModel decomposed = decompose_errors_using_generic_classifier(dem, classifier);
-
-  bool found_d0d2_decomposed = false;
-  for (const auto& inst : decomposed.flattened().instructions) {
-    if (inst.type == stim::DemInstructionType::DEM_ERROR && inst.arg_data[0] == 0.3) {
-      bool has_separator = false;
-      for (const auto& target : inst.target_data) {
-        if (target.is_separator()) {
-          has_separator = true;
-          break;
-        }
-      }
-      if (has_separator) {
-        found_d0d2_decomposed = true;
-      }
-    }
-  }
-  ASSERT_TRUE(found_d0d2_decomposed);
-}
-
-TEST(DemDecompositionTest, SplitDemByComponent) {
-  stim::DetectorErrorModel dem(R"DEM(
-        error(0.1) D0 D1
-        error(0.2) D2 D3
-        error(0.3) D0 D2 L0
-        error(0.01) D0
-        error(0.01) D2 L0
+        error[cancels](0.1) D0 ^ D0 ^ D1
         detector D0
         detector D1
-        detector D2
-        detector D3
-        logical_observable L0
     )DEM");
-
-  auto classifier = [](int index, const std::vector<double>& coords,
-                       const std::string& tag) -> int {
-    return (index < 2) ? 0 : 1;  // 0,1 -> comp 0; 2,3 -> comp 1
-  };
-
-  stim::DetectorErrorModel decomposed = decompose_errors_using_generic_classifier(dem, classifier);
-
-  auto comp_func = [](int id) { return (id < 2) ? 0 : 1; };
-  auto dems = split_dem_by_component(decomposed, comp_func);
-
-  ASSERT_EQ(dems.size(), 2);
-  ASSERT_EQ(dems[0].count_errors(), 3);
-  ASSERT_EQ(dems[1].count_errors(), 3);
+  EXPECT_THROW(split_dem_by_component(dem, {0, 1}), std::invalid_argument);
 }
 
-TEST(DemDecompositionTest, UndecomposeErrorsWithRepeatBlock) {
+TEST(DemDecompositionTest, ValidatesExplicitAssignments) {
   stim::DetectorErrorModel dem(R"DEM(
-        error(0.1) D2 D5 ^ D10 L1
-        repeat 10 {
-            error(0.4) D1 L2 L3 ^ D2 ^ D2 L2
-            repeat 3 {
-                error(0.3) D10 D11 ^ D12
-            }
-        }
-        error(0.5) D0 D100
+        error(0.1) D0
+        detector D0
+        detector D1
     )DEM");
-  stim::DetectorErrorModel expected_undecomposed_dem(R"DEM(
-        error(0.1) D2 D5 D10 L1
-        repeat 10 {
-            error(0.4) D1 L3
-            repeat 3 {
-                error(0.3) D10 D11 D12
-            }
-        }
-        error(0.5) D0 D100
-    )DEM");
-  ASSERT_EQ(undecompose_errors(dem).str(), expected_undecomposed_dem.str());
+  EXPECT_THROW(decompose_errors_using_detector_assignment(dem, {0}), std::invalid_argument);
+  EXPECT_THROW(decompose_errors_using_detector_assignment(dem, {0, -1}), std::invalid_argument);
 }
 
 }  // namespace
