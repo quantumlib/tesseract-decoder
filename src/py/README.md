@@ -542,13 +542,15 @@ def get_tesseract_decoder_for_sinter():
 #### Multi-pass Tesseract decoding
 
 `MultiPassSinterDecoder` partitions a detector error model into exactly two detector components. It
-accepts one or two passes (default: 2) and uses causal scheduling by default. Its built-in classifier
-checks strict `"X"`/`"Z"` `measure_basis` metadata, then `basis` metadata, then the fourth detector
-coordinate (`0`–`2` or `3`–`5`). Every detector must be classified, and exactly two distinct labels
-must result.
+accepts one or two passes (default: 2) and uses causal scheduling by default. Its shared automatic
+classifier checks, in order, top-level `measure_basis`, `md.measure_basis`, top-level `basis`,
+`md.basis`, and then the Chromobius fourth-coordinate convention (`0`–`2` is X and `3`–`5` is Z).
+A recognized field with any other value is an error, as is a nonintegral fourth coordinate. Every
+detector must be classified, and exactly two components must result.
 
 Standard Tesseract options and multi-pass wrapper options can be passed directly as keyword
-arguments:
+arguments. A nonempty `det_orders` is used directly; when it is empty, `num_det_orders`,
+`det_order_method`, and `seed` generate component orderings:
 
 ```python
 import stim
@@ -569,29 +571,43 @@ decoder = MultiPassSinterDecoder(
     det_beam=20,
     beam_climbing=True,
     pqlimit=1_000_000,
+    merge_errors=False,
     num_det_orders=21,
     det_order_method=tesseract_decoder.utils.DetOrder.DetIndex,
 )
 compiled_decoder = decoder.compile_decoder_for_dem(dem=dem)
 ```
 
-For other annotation conventions, supply a callable with signature
-`(detector_index, coordinates, tag) -> component_label`. Returning a negative label rejects a
-detector that the callable cannot classify. For example, the built-in coordinate convention can be
-expressed as:
+For another convention, pass a `detector_basis_classifier` with signature
+`(detector_index, coordinates, tag) -> "X" | "Z" | None`. Explicit Stim surface-code parity and
+Chromobius-coordinate X/Z adapters are available from `tesseract_decoder.demutil`. The generic
+last-coordinate compatibility adapter is also exported for component-based APIs, but intentionally
+does not claim that its labels are X/Z bases. For example:
 
 ```python
-coordinate_classifier = lambda _index, coordinates, _tag: (
-    0 if len(coordinates) >= 4 and 0 <= coordinates[3] <= 2
-    else 1 if len(coordinates) >= 4 and 3 <= coordinates[3] <= 5
-    else -1
+decoder = MultiPassSinterDecoder(
+    detector_basis_classifier=(
+        tesseract_decoder.demutil.stim_surface_code_detector_basis_classifier
+    )
 )
-decoder = MultiPassSinterDecoder(detector_classifier=coordinate_classifier)
 ```
 
-`get_sinter_decoders()` provides long-beam monolithic, one-pass, and two-pass configurations using
-the same Tesseract settings; they differ only in whether multi-pass decoding is enabled and in the
-number of passes.
+The old `detector_classifier` keyword remains available for callbacks returning two arbitrary
+nonnegative integer component labels. New code should use the X/Z interface above.
+
+For Oscar's ordinary workflow, no callback is needed:
+
+```python
+from multi_pass_sinter_decoders import MultiPassSinterDecoder, get_sinter_decoders
+
+decoder = MultiPassSinterDecoder()
+custom_decoders = get_sinter_decoders()
+```
+
+`get_sinter_decoders()` preserves the `tesseract-long-beam-mono`,
+`tesseract-long-beam-multipass-1pass`, and `tesseract-long-beam-multipass-2pass` registry names.
+Low-confidence multipass shots propagate through Sinter's discard byte and are counted as discards,
+not successful shots.
 
 #### Decoding with `sinter.collect`
 `sinter.collect` is a powerful function for running many decoding jobs in parallel and collecting the results for large-scale benchmarking.

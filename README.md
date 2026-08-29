@@ -204,20 +204,50 @@ components and decodes the smaller component models separately. With two passes,
 the first pass update error priors used during the final pass. The current implementation requires
 exactly two components and accepts one or two passes.
 
+Two-pass reweighting is a correlated-matching-style heuristic. A component symptom's XOR marginal
+includes every mechanism that produces it, including one-sided mechanisms, while paired evidence
+includes only mechanisms shared with the other component symptom. Their ratio is therefore not, in
+general, an exact joint or conditional probability. Reweighted probabilities are capped at `0.499`
+so every retained error continues to have positive decoding cost.
+
 ### Detector classification
 
-The CLI classifier checks the following detector annotations in order:
+The standalone CLI deliberately accepts one canonical convention only: every detector instruction
+must have a JSON tag with a top-level `"basis"` whose value is exactly `"X"` or `"Z"`:
 
-1. A `"measure_basis"` field in the detector's JSON metadata tag, first at the top level and then
-   under `"md"`.
-2. A `"basis"` field in the same locations.
-3. A fourth detector coordinate using the Chromobius-style `color + 3 * basis` convention:
-   values `0`–`2` select component 0 and values `3`–`5` select component 1.
+```stim
+detector[{"basis":"X"}](0, 0, 0) D0
+detector[{"basis":"Z"}](1, 0, 0) D1
+```
 
-Metadata basis values must be strings exactly equal to `"X"` or `"Z"`. An invalid metadata value
-does not fall back to another field or to coordinates. Multi-pass decoding fails if any detector
-cannot be classified or if the resulting classification does not contain exactly two components.
-The Python wrapper can instead be given a custom detector classifier.
+The CLI does not infer bases from legacy metadata or coordinates. Tagged `DETECTOR` instructions in
+a `.stim` circuit retain their tags during circuit-to-DEM conversion, so a canonically tagged
+circuit can be passed directly. Otherwise, normalize its DEM in Python first. Automatic
+normalization covers only the named automatic metadata and Chromobius-coordinate conventions. For
+a Stim-generated surface-code circuit, select the explicit parity adapter as shown below. The helper
+preserves coordinates, instruction order, repeats, shifts, errors, tags, and unrelated JSON
+metadata:
+
+```python
+from pathlib import Path
+
+import stim
+import tesseract_decoder
+
+circuit = stim.Circuit(Path("circuit.stim").read_text())
+dem = circuit.detector_error_model()
+canonical_dem = tesseract_decoder.demutil.annotate_detector_bases(
+    dem,
+    detector_basis_classifier=(
+        tesseract_decoder.demutil.stim_surface_code_detector_basis_classifier
+    ),
+)
+Path("canonical.dem").write_text(str(canonical_dem))
+```
+
+Python and Sinter use the shared automatic classifier by default, including its supported legacy
+metadata and Chromobius-coordinate adapters. Multi-pass decoding still requires every detector to
+be classified and the result to contain exactly two components.
 
 ### CLI options
 
@@ -236,11 +266,13 @@ The Python wrapper can instead be given a custom detector classifier.
 
 ### CLI example
 
-This example uses a coordinate-annotated color-code circuit and the long-beam settings:
+When the circuit is not already canonically tagged, sample from the circuit while decoding against
+the normalized DEM:
 
 ```bash
 ./bazel-bin/src/tesseract \
-    --circuit testdata/colorcodes/r=5,d=5,p=0.003,noise=si1000,c=midout_color_code_X,q=23,gates=cz.stim \
+    --circuit circuit.stim \
+    --dem canonical.dem \
     --sample-num-shots 1000 \
     --multipass \
     --num-passes 2 \
@@ -253,6 +285,21 @@ This example uses a coordinate-annotated color-code circuit and the long-beam se
     --print-multipass-plan \
     --print-stats
 ```
+
+### Python and Sinter
+
+The ordinary Sinter workflows need no normalization or custom callback:
+
+```python
+from multi_pass_sinter_decoders import MultiPassSinterDecoder, get_sinter_decoders
+
+decoder = MultiPassSinterDecoder()
+custom_decoders = get_sinter_decoders()
+```
+
+Pass `detector_basis_classifier=...` to use another X/Z convention. Standard
+`TesseractSinterDecoder` configuration keywords can be supplied directly to
+`MultiPassSinterDecoder`; unknown keywords are rejected.
 
 ---
 
