@@ -100,14 +100,22 @@ TEST(DemDecompositionTest, RejectsAmbiguousObservableAssignment) {
   }
 }
 
-TEST(DemDecompositionTest, RejectsMultipleMissingComponents) {
+TEST(DemDecompositionTest, RejectsMultipleMissingComponentsAsAmbiguous) {
   stim::DetectorErrorModel dem(R"DEM(
         error[missing evidence](0.1) D0 D1 L0
         detector D0
         detector D1
         logical_observable L0
     )DEM");
-  EXPECT_THROW(decompose_errors_using_detector_assignment(dem, {0, 1}), std::invalid_argument);
+
+  try {
+    (void)decompose_errors_using_detector_assignment(dem, {0, 1});
+    FAIL() << "Expected missing evidence for both components to be rejected as ambiguous.";
+  } catch (const std::invalid_argument& ex) {
+    std::string message = ex.what();
+    EXPECT_NE(message.find("multiple consistent observable decompositions"), std::string::npos);
+    EXPECT_NE(message.find("error[missing evidence](0.1) D0 D1 L0"), std::string::npos);
+  }
 }
 
 TEST(DemDecompositionTest, RejectsMixedAndDetectorlessExistingGroups) {

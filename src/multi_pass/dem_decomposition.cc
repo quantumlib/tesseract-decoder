@@ -145,6 +145,10 @@ ObservableAssignmentSearchResult find_component_obs_matching_undecomposed_obs(
     const std::vector<int>& error_obs, int num_missing_components) {
   ObservableAssignmentSearchResult search_result;
   if (num_missing_components > 1) {
+    // With more than one component lacking evidence, observable ownership is underdetermined. The
+    // search only needs to distinguish a unique result from multiple results, so cap the count at
+    // two.
+    search_result.solution_count = 2;
     return search_result;
   }
 

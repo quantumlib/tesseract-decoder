@@ -668,6 +668,9 @@ int main(int argc, char* argv[]) {
     std::vector<stim::SparseShot> shots;
     std::unique_ptr<stim::MeasureRecordWriter> writer;
     args.extract(config, shots, writer);
+    // Construct decoders on the caller thread for clean error propagation, but do not duplicate a
+    // full decoder for workers that cannot receive a shot.
+    size_t active_num_threads = std::max<size_t>(1, std::min(args.num_threads, shots.size()));
     size_t num_observables = config.dem.count_observables();
     std::vector<stim::simd_bits<64>> obs_predicted(shots.size(),
                                                    stim::simd_bits<64>(num_observables));
@@ -675,11 +678,11 @@ int main(int argc, char* argv[]) {
     std::vector<double> decoding_time_seconds(shots.size());
     std::vector<uint8_t> low_confidence(shots.size());
     const stim::DetectorErrorModel original_dem = config.dem.flattened();
-    std::vector<std::unique_ptr<TesseractDecoder>> decoders(args.num_threads);
+    std::vector<std::unique_ptr<TesseractDecoder>> decoders(active_num_threads);
     std::vector<std::unique_ptr<tesseract_decoder::MultiPassTesseractDecoder>> mp_decoders(
-        args.num_threads);
+        active_num_threads);
     std::vector<std::vector<size_t>> error_use_per_thread(
-        args.num_threads, std::vector<size_t>(original_dem.count_errors()));
+        active_num_threads, std::vector<size_t>(original_dem.count_errors()));
     bool has_obs = args.has_observables();
     size_t num_errors = 0;
     size_t num_low_confidence = 0;
@@ -692,7 +695,7 @@ int main(int argc, char* argv[]) {
     std::vector<int> detector_components;
     if (args.multipass) {
       detector_components = classify_canonical_detector_bases(config.dem);
-      for (size_t thread_index = 0; thread_index < args.num_threads; ++thread_index) {
+      for (size_t thread_index = 0; thread_index < active_num_threads; ++thread_index) {
         bool collect_plan_statistics = args.print_multipass_plan && thread_index == 0;
         mp_decoders[thread_index] = std::make_unique<tesseract_decoder::MultiPassTesseractDecoder>(
             config.dem, args.num_passes, detector_components, config, args.num_det_orders,
@@ -708,7 +711,7 @@ int main(int argc, char* argv[]) {
     }
 
     size_t shot = parallel_for_shots_in_order(
-        shots.size(), args.num_threads,
+        shots.size(), active_num_threads,
         [&](size_t thread_index, size_t shot_index) {
           auto& error_use = error_use_per_thread[thread_index];
           CliShotDecodeResult result;
