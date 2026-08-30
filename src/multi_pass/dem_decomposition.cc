@@ -135,11 +135,17 @@ void generate_obs_combinations(
   }
 }
 
-std::vector<std::vector<int>> get_component_obs_matching_undecomposed_obs(
+struct ObservableAssignmentSearchResult {
+  std::vector<std::vector<int>> assignment;
+  size_t solution_count = 0;
+};
+
+ObservableAssignmentSearchResult find_component_obs_matching_undecomposed_obs(
     const std::vector<std::set<std::vector<int>>>& obs_options_by_component,
     const std::vector<int>& error_obs, int num_missing_components) {
+  ObservableAssignmentSearchResult search_result;
   if (num_missing_components > 1) {
-    return {};
+    return search_result;
   }
 
   std::vector<std::vector<std::vector<int>>> all_combinations;
@@ -153,18 +159,25 @@ std::vector<std::vector<int>> get_component_obs_matching_undecomposed_obs(
     residual_input.insert(residual_input.end(), known_obs.begin(), known_obs.end());
     std::vector<int> residual = reduce_symmetric_difference(residual_input);
 
+    std::vector<std::vector<int>> candidate;
     if (residual.empty()) {
-      std::vector<std::vector<int>> result = combination;
-      result.resize(result.size() + num_missing_components);
-      return result;
+      candidate = combination;
+      candidate.resize(candidate.size() + num_missing_components);
+    } else if (num_missing_components == 1) {
+      candidate = combination;
+      candidate.push_back(std::move(residual));
+    } else {
+      continue;
     }
-    if (num_missing_components == 1) {
-      std::vector<std::vector<int>> result = combination;
-      result.push_back(std::move(residual));
-      return result;
+
+    ++search_result.solution_count;
+    if (search_result.solution_count == 1) {
+      search_result.assignment = std::move(candidate);
+    } else {
+      break;
     }
   }
-  return {};
+  return search_result;
 }
 
 }  // namespace
@@ -230,13 +243,20 @@ stim::DetectorErrorModel decompose_errors_using_detector_assignment(
       }
     }
 
-    auto component_observables = get_component_obs_matching_undecomposed_obs(
+    auto observable_assignment = find_component_obs_matching_undecomposed_obs(
         known_component_obs_options, undecomposed.observables,
         static_cast<int>(missing_component_dets.size()));
-    if (component_observables.empty()) {
+    if (observable_assignment.solution_count == 0) {
       throw std::invalid_argument("Error instruction `" + instruction.str() +
-                                  "` could not be decomposed consistently.");
+                                  "` has no consistent observable decomposition.");
     }
+    if (observable_assignment.solution_count > 1) {
+      throw std::invalid_argument(
+          "Error instruction `" + instruction.str() +
+          "` has multiple consistent observable decompositions; logical observable ownership "
+          "is ambiguous.");
+    }
+    const auto& component_observables = observable_assignment.assignment;
 
     std::vector<std::vector<int>> component_dets = known_component_dets;
     component_dets.insert(component_dets.end(), missing_component_dets.begin(),

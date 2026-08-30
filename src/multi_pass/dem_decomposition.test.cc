@@ -14,6 +14,7 @@
 
 #include "dem_decomposition.h"
 
+#include <string>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -33,7 +34,7 @@ TEST(DemDecompositionTest, PreservesExistingGroupsAndTags) {
   EXPECT_EQ(decompose_errors_using_detector_assignment(dem, {0, 1}).str(), dem.str());
 }
 
-TEST(DemDecompositionTest, DecomposesMixedErrorAndPreservesTag) {
+TEST(DemDecompositionTest, DecomposesUniqueObservableAssignmentAndPreservesTag) {
   stim::DetectorErrorModel dem(R"DEM(
         error[x evidence](0.01) D0 L0
         error[z evidence](0.02) D1 L1
@@ -56,9 +57,52 @@ TEST(DemDecompositionTest, DecomposesMixedErrorAndPreservesTag) {
   EXPECT_EQ(decompose_errors_using_detector_assignment(dem, {0, 1}).str(), expected.str());
 }
 
-TEST(DemDecompositionTest, RejectsAmbiguousMissingComponents) {
+TEST(DemDecompositionTest, RejectsImpossibleObservableAssignment) {
   stim::DetectorErrorModel dem(R"DEM(
-        error[ambiguous](0.1) D0 D1 L0
+        error[x evidence](0.01) D0 L0
+        error[z evidence](0.02) D1 L1
+        error[impossible assignment](0.1) D0 D1 L0
+        detector D0
+        detector D1
+        logical_observable L0
+        logical_observable L1
+    )DEM");
+
+  try {
+    (void)decompose_errors_using_detector_assignment(dem, {0, 1});
+    FAIL() << "Expected an impossible observable assignment to be rejected.";
+  } catch (const std::invalid_argument& ex) {
+    std::string message = ex.what();
+    EXPECT_NE(message.find("no consistent observable decomposition"), std::string::npos);
+    EXPECT_NE(message.find("error[impossible assignment](0.1) D0 D1 L0"), std::string::npos);
+  }
+}
+
+TEST(DemDecompositionTest, RejectsAmbiguousObservableAssignment) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error[x no logical](0.01) D0
+        error[x logical](0.02) D0 L0
+        error[z no logical](0.03) D1
+        error[z logical](0.04) D1 L0
+        error[ambiguous assignment](0.1) D0 D1 L0
+        detector D0
+        detector D1
+        logical_observable L0
+    )DEM");
+
+  try {
+    (void)decompose_errors_using_detector_assignment(dem, {0, 1});
+    FAIL() << "Expected an ambiguous observable assignment to be rejected.";
+  } catch (const std::invalid_argument& ex) {
+    std::string message = ex.what();
+    EXPECT_NE(message.find("multiple consistent observable decompositions"), std::string::npos);
+    EXPECT_NE(message.find("error[ambiguous assignment](0.1) D0 D1 L0"), std::string::npos);
+  }
+}
+
+TEST(DemDecompositionTest, RejectsMultipleMissingComponents) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error[missing evidence](0.1) D0 D1 L0
         detector D0
         detector D1
         logical_observable L0
