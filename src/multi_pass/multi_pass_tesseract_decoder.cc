@@ -136,6 +136,11 @@ MultiPassTesseractDecoder::MultiPassTesseractDecoder(
   if (strategy != SchedulingStrategy::Static && strategy != SchedulingStrategy::Causal) {
     throw std::invalid_argument("Invalid multi-pass scheduling strategy.");
   }
+  if (num_passes == 2 && !base_config.merge_errors) {
+    throw std::invalid_argument(
+        "Two-pass decoding requires merge_errors=true because reweighting is defined on "
+        "aggregate component symptoms; use one pass to decode unmerged error mechanisms.");
+  }
   initialize(dem, detector_components, base_config, num_det_orders, det_order_method, seed);
 }
 

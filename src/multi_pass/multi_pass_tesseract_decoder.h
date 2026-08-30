@@ -77,6 +77,8 @@ struct MultiPassDecodeResult {
  *
  * One or two passes are supported. `detector_components[d]` assigns detector Dd to a component.
  * Every assignment must be nonnegative, and exactly two distinct labels must be present.
+ * Two-pass reweighting requires `base_config.merge_errors=true`; one-pass decoding also supports
+ * unmerged error mechanisms.
  */
 class MultiPassTesseractDecoder {
  public:

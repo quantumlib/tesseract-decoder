@@ -89,7 +89,7 @@ TEST(MultiPassTesseractDecoderTest, ValidatesSupportedShapeAndStrategy) {
   EXPECT_THROW(decoder.decode({2}), std::invalid_argument);
 }
 
-TEST(MultiPassTesseractDecoderTest, HonorsMergeErrorsBothWays) {
+TEST(MultiPassTesseractDecoderTest, HonorsMergeErrorsBothWaysInOnePass) {
   stim::DetectorErrorModel dem(R"DEM(
         error[a](0.1) D0 L0
         error[b](0.2) D0 L0
@@ -116,6 +116,19 @@ TEST(MultiPassTesseractDecoderTest, HonorsMergeErrorsBothWays) {
     }
     EXPECT_EQ(decoder.decode({0}), std::vector<int>({0}));
     EXPECT_EQ(decoder.decode({1}), std::vector<int>({1}));
+  }
+}
+
+TEST(MultiPassTesseractDecoderTest, RejectsUnmergedTwoPassReweighting) {
+  TesseractConfig config;
+  config.merge_errors = false;
+
+  try {
+    MultiPassTesseractDecoder decoder(correlated_dem(), 2, {0, 1}, config);
+    FAIL() << "Expected two-pass decoding with unmerged errors to be rejected.";
+  } catch (const std::invalid_argument& error) {
+    EXPECT_NE(std::string(error.what()).find("Two-pass decoding requires merge_errors=true"),
+              std::string::npos);
   }
 }
 

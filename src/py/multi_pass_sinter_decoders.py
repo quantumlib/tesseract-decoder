@@ -44,6 +44,9 @@ class MultiPassSinterDecoder(sinter.Decoder):
     and return ``"X"``, ``"Z"``, or ``None``. The compatibility keyword
     ``detector_classifier`` retains the old protocol of returning arbitrary
     nonnegative integer component labels; exactly two labels must occur.
+
+    ``merge_errors=False`` is supported with one pass. Two-pass reweighting is
+    defined on aggregate component symptoms and therefore requires merging.
     """
 
     def __init__(

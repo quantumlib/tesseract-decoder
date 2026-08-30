@@ -131,6 +131,7 @@ def test_detector_classifier_compatibility_alias_and_conflict():
 
 def test_all_standard_configuration_keywords_and_unknown_keyword_validation():
     decoder = MultiPassSinterDecoder(
+        num_passes=1,
         det_beam=17,
         beam_climbing=True,
         no_revisit_dets=False,
@@ -157,6 +158,14 @@ def test_all_standard_configuration_keywords_and_unknown_keyword_validation():
 
     with pytest.raises(TypeError, match="unexpected keyword"):
         MultiPassSinterDecoder(typoed_option=True)
+
+
+def test_two_pass_rejects_merge_errors_false():
+    decoder = MultiPassSinterDecoder(num_passes=2, merge_errors=False)
+    with pytest.raises(
+        ValueError, match="Two-pass decoding requires merge_errors=true"
+    ):
+        decoder.compile_decoder_for_dem(dem=_two_basis_dem())
 
 
 @pytest.mark.parametrize("num_passes", [0, 3])

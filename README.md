@@ -208,7 +208,9 @@ Two-pass reweighting is a correlated-matching-style heuristic. A component sympt
 includes every mechanism that produces it, including one-sided mechanisms, while paired evidence
 includes only mechanisms shared with the other component symptom. Their ratio is therefore not, in
 general, an exact joint or conditional probability. Reweighted probabilities are capped at `0.499`
-so every retained error continues to have positive decoding cost.
+so every retained error continues to have positive decoding cost. Because reweighting is defined on
+aggregate component symptoms, two-pass decoding requires `merge_errors=true`. Unmerged mechanisms
+remain supported with one-pass decoding.
 
 ### Detector classification
 

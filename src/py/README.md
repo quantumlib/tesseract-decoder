@@ -550,7 +550,9 @@ detector must be classified, and exactly two components must result.
 
 Standard Tesseract options and multi-pass wrapper options can be passed directly as keyword
 arguments. A nonempty `det_orders` is used directly; when it is empty, `num_det_orders`,
-`det_order_method`, and `seed` generate component orderings:
+`det_order_method`, and `seed` generate component orderings. Two-pass reweighting requires
+`merge_errors=True` because its probabilities describe aggregate component symptoms;
+`merge_errors=False` remains supported with one pass:
 
 ```python
 import stim
@@ -571,7 +573,7 @@ decoder = MultiPassSinterDecoder(
     det_beam=20,
     beam_climbing=True,
     pqlimit=1_000_000,
-    merge_errors=False,
+    merge_errors=True,
     num_det_orders=21,
     det_order_method=tesseract_decoder.utils.DetOrder.DetIndex,
 )
