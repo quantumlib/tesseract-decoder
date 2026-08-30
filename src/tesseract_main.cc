@@ -383,10 +383,8 @@ int canonical_detector_basis_component(int detector, const std::string& tag) {
                                 "basis field equal to \"X\" or \"Z\".");
   }
 
-  nlohmann::json metadata;
-  try {
-    metadata = nlohmann::json::parse(tag);
-  } catch (const nlohmann::json::parse_error&) {
+  nlohmann::json metadata = nlohmann::json::parse(tag, nullptr, false);
+  if (metadata.is_discarded()) {
     throw std::invalid_argument(detector_name +
                                 " has a non-JSON tag; multi-pass CLI input requires a top-level "
                                 "JSON basis field equal to \"X\" or \"Z\".");
@@ -656,216 +654,209 @@ int main(int argc, char* argv[]) {
 
   try {
     program.parse_args(argc, argv);
-    args.validate(program);
   } catch (const std::exception& err) {
     std::cerr << err.what() << std::endl;
     std::cerr << program;
     return EXIT_FAILURE;
   }
+  args.validate(program);
 
-  try {
-    TesseractConfig config;
-    std::vector<stim::SparseShot> shots;
-    std::unique_ptr<stim::MeasureRecordWriter> writer;
-    args.extract(config, shots, writer);
-    // Construct decoders on the caller thread for clean error propagation, but do not duplicate a
-    // full decoder for workers that cannot receive a shot.
-    size_t active_num_threads = std::max<size_t>(1, std::min(args.num_threads, shots.size()));
-    size_t num_observables = config.dem.count_observables();
-    std::vector<stim::simd_bits<64>> obs_predicted(shots.size(),
-                                                   stim::simd_bits<64>(num_observables));
-    std::vector<double> cost_predicted(shots.size());
-    std::vector<double> decoding_time_seconds(shots.size());
-    std::vector<uint8_t> low_confidence(shots.size());
-    const stim::DetectorErrorModel original_dem = config.dem.flattened();
-    std::vector<std::unique_ptr<TesseractDecoder>> decoders(active_num_threads);
-    std::vector<std::unique_ptr<tesseract_decoder::MultiPassTesseractDecoder>> mp_decoders(
-        active_num_threads);
-    std::vector<std::vector<size_t>> error_use_per_thread(
-        active_num_threads, std::vector<size_t>(original_dem.count_errors()));
-    bool has_obs = args.has_observables();
-    size_t num_errors = 0;
-    size_t num_low_confidence = 0;
-    double total_time_seconds = 0;
+  TesseractConfig config;
+  std::vector<stim::SparseShot> shots;
+  std::unique_ptr<stim::MeasureRecordWriter> writer;
+  args.extract(config, shots, writer);
+  // Decoder construction is outside per-shot timing.
+  size_t active_num_threads = std::max<size_t>(1, std::min(args.num_threads, shots.size()));
+  size_t num_observables = config.dem.count_observables();
+  std::vector<stim::simd_bits<64>> obs_predicted(shots.size(),
+                                                 stim::simd_bits<64>(num_observables));
+  std::vector<double> cost_predicted(shots.size());
+  std::vector<double> decoding_time_seconds(shots.size());
+  std::vector<uint8_t> low_confidence(shots.size());
+  const stim::DetectorErrorModel original_dem = config.dem.flattened();
+  std::vector<std::unique_ptr<TesseractDecoder>> decoders(active_num_threads);
+  std::vector<std::unique_ptr<tesseract_decoder::MultiPassTesseractDecoder>> mp_decoders(
+      active_num_threads);
+  std::vector<std::vector<size_t>> error_use_per_thread(
+      active_num_threads, std::vector<size_t>(original_dem.count_errors()));
+  bool has_obs = args.has_observables();
+  size_t num_errors = 0;
+  size_t num_low_confidence = 0;
+  double total_time_seconds = 0;
 
-    tesseract_decoder::SchedulingStrategy strategy_val =
-        (args.multipass_strategy == "static") ? tesseract_decoder::SchedulingStrategy::Static
-                                              : tesseract_decoder::SchedulingStrategy::Causal;
+  tesseract_decoder::SchedulingStrategy strategy_val =
+      (args.multipass_strategy == "static") ? tesseract_decoder::SchedulingStrategy::Static
+                                            : tesseract_decoder::SchedulingStrategy::Causal;
 
-    std::vector<int> detector_components;
-    if (args.multipass) {
-      detector_components = classify_canonical_detector_bases(config.dem);
-      for (size_t thread_index = 0; thread_index < active_num_threads; ++thread_index) {
-        bool collect_plan_statistics = args.print_multipass_plan && thread_index == 0;
-        mp_decoders[thread_index] = std::make_unique<tesseract_decoder::MultiPassTesseractDecoder>(
-            config.dem, args.num_passes, detector_components, config, args.num_det_orders,
-            args.det_order_method, args.det_order_seed, strategy_val, collect_plan_statistics);
-      }
-      if (args.print_multipass_plan) {
-        std::cerr << mp_decoders[0]->get_execution_plan().str();
-      }
-    } else {
-      for (auto& decoder : decoders) {
-        decoder = std::make_unique<TesseractDecoder>(config);
-      }
+  std::vector<int> detector_components;
+  if (args.multipass) {
+    detector_components = classify_canonical_detector_bases(config.dem);
+    for (size_t thread_index = 0; thread_index < active_num_threads; ++thread_index) {
+      bool collect_plan_statistics = args.print_multipass_plan && thread_index == 0;
+      mp_decoders[thread_index] = std::make_unique<tesseract_decoder::MultiPassTesseractDecoder>(
+          config.dem, args.num_passes, detector_components, config, args.num_det_orders,
+          args.det_order_method, args.det_order_seed, strategy_val, collect_plan_statistics);
     }
-
-    size_t shot = parallel_for_shots_in_order(
-        shots.size(), active_num_threads,
-        [&](size_t thread_index, size_t shot_index) {
-          auto& error_use = error_use_per_thread[thread_index];
-          CliShotDecodeResult result;
-          auto start_time = std::chrono::high_resolution_clock::now();
-
-          if (args.multipass) {
-            MultiPassDecodeResult decoded =
-                mp_decoders[thread_index]->decode_result(shots[shot_index].hits);
-            result.predictions = std::move(decoded.predictions);
-            result.low_confidence = decoded.low_confidence;
-            result.cost = decoded.total_cost;
-          } else {
-            auto& decoder = *decoders[thread_index];
-            decoder.decode_to_errors(shots[shot_index].hits);
-            result.predictions = decoder.get_flipped_observables(decoder.predicted_errors_buffer);
-            result.predicted_errors = decoder.predicted_errors_buffer;
-            result.low_confidence = decoder.low_confidence_flag;
-            result.cost = decoder.cost_from_errors(decoder.predicted_errors_buffer);
-          }
-
-          auto stop_time = std::chrono::high_resolution_clock::now();
-          decoding_time_seconds[shot_index] =
-              std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time)
-                  .count() /
-              1e6;
-          obs_predicted[shot_index].clear();
-          for (int observable : result.predictions) {
-            if (observable >= 0 && static_cast<size_t>(observable) < num_observables) {
-              obs_predicted[shot_index][observable] ^= 1;
-            }
-          }
-          low_confidence[shot_index] = result.low_confidence;
-          cost_predicted[shot_index] = result.cost;
-          if (!args.multipass &&
-              (!has_obs || shots[shot_index].obs_mask == obs_predicted[shot_index])) {
-            for (size_t error : result.predicted_errors) {
-              ++error_use[error];
-            }
-          }
-        },
-        [&](size_t shot_index) {
-          if (writer) {
-            writer->write_bits(obs_predicted[shot_index].u8, num_observables);
-            writer->write_end();
-          }
-          if (low_confidence[shot_index]) {
-            ++num_low_confidence;
-          } else if (has_obs && obs_predicted[shot_index] != shots[shot_index].obs_mask) {
-            ++num_errors;
-          }
-          total_time_seconds += decoding_time_seconds[shot_index];
-          if (args.print_stats) {
-            std::cout << "num_shots = " << (shot_index + 1)
-                      << " num_low_confidence = " << num_low_confidence;
-            if (has_obs) {
-              std::cout << " num_errors = " << num_errors;
-            }
-            std::cout << " total_time_seconds = " << total_time_seconds << std::endl;
-            std::cout << "cost = " << cost_predicted[shot_index] << std::endl;
-            std::cout.flush();
-          }
-          // Disable early termination due to \`--max-errors\` when we don't have the ground-truth
-          // observables
-          return !has_obs || num_errors < args.max_errors;
-        });
-
-    std::vector<size_t> error_use_totals(original_dem.count_errors());
-    for (const auto& error_use : error_use_per_thread) {
-      for (size_t ei = 0; ei < error_use_totals.size(); ++ei) {
-        error_use_totals[ei] += error_use[ei];
-      }
+    if (args.print_multipass_plan) {
+      std::cerr << mp_decoders[0]->get_execution_plan().str();
     }
-
-    if (!args.dem_out_fname.empty()) {
-      std::vector<size_t> counts(error_use_totals.begin(), error_use_totals.end());
-      size_t num_usage_dem_shots = shot;
-      if (has_obs) {
-        // When we know the obs, we only count non-error shots.
-        num_usage_dem_shots -= num_errors;
-      }
-      stim::DetectorErrorModel est_dem =
-          common::dem_from_counts(original_dem, counts, num_usage_dem_shots);
-      std::ofstream out(args.dem_out_fname, std::ofstream::out);
-      if (!out.is_open()) {
-        throw std::invalid_argument("Failed to open " + args.dem_out_fname);
-      }
-      out << est_dem << '\n';
+  } else {
+    for (auto& decoder : decoders) {
+      decoder = std::make_unique<TesseractDecoder>(config);
     }
-
-    int effective_sparsify_reactivate_limit = config.sparsify_reactivate_limit;
-    for (const auto& decoder : decoders) {
-      if (decoder) {
-        effective_sparsify_reactivate_limit = decoder->config.sparsify_reactivate_limit;
-        break;
-      }
-    }
-    if (config.sparsify_errors && effective_sparsify_reactivate_limit == -1) {
-      effective_sparsify_reactivate_limit = suggest_sparsify_reactivate_limit(
-          config.dem.count_detectors(), config.sparsify_base_degree);
-      effective_sparsify_reactivate_limit = std::min(
-          effective_sparsify_reactivate_limit,
-          static_cast<int>(std::min<uint64_t>(
-              config.dem.count_errors(), static_cast<uint64_t>(std::numeric_limits<int>::max()))));
-    }
-
-    bool print_final_stats = true;
-    if (!args.stats_out_fname.empty()) {
-      nlohmann::json stats_json = {
-          {"circuit_path", args.circuit_path},
-          {"dem_path", args.dem_path},
-          {"max_errors", args.max_errors},
-          {"sample_seed", args.sample_seed},
-
-          {"det_beam", args.det_beam},
-          {"det_penalty", args.det_penalty},
-          {"beam_climbing", args.beam_climbing},
-          {"no_revisit_dets", args.no_revisit_dets},
-          {"pqlimit", args.pqlimit},
-          {"num_det_orders", args.num_det_orders},
-          {"det_order_seed", args.det_order_seed},
-          {"total_time_seconds", total_time_seconds},
-          {"num_errors", has_obs ? nlohmann::json(num_errors) : nullptr},
-          {"num_low_confidence", num_low_confidence},
-          {"num_shots", shot},
-          {"num_threads", args.num_threads},
-          {"multipass", args.multipass},
-          {"strategy", args.multipass_strategy},
-          {"num_passes", args.num_passes},
-          {"sample_num_shots", args.sample_num_shots},
-          {"sparsify_errors", args.sparsify_errors},
-          {"sparsify_base_degree", args.sparsify_base_degree},
-          {"sparsify_max_degree", args.sparsify_max_degree},
-          {"sparsify_reactivate_limit", effective_sparsify_reactivate_limit}};
-
-      if (args.stats_out_fname == "-") {
-        std::cout << stats_json << std::endl;
-        print_final_stats = false;
-      } else {
-        std::ofstream out(args.stats_out_fname, std::ofstream::out);
-        out << stats_json << std::endl;
-      }
-    }
-    if (print_final_stats) {
-      std::cout << "num_shots = " << shot;
-      std::cout << " num_low_confidence = " << num_low_confidence;
-      if (has_obs) {
-        std::cout << " num_errors = " << num_errors;
-      }
-      std::cout << " total_time_seconds = " << total_time_seconds;
-      std::cout << std::endl;
-    }
-    return EXIT_SUCCESS;
-  } catch (const std::exception& err) {
-    std::cerr << "Error: " << err.what() << std::endl;
-    return EXIT_FAILURE;
   }
+
+  size_t shot = parallel_for_shots_in_order(
+      shots.size(), active_num_threads,
+      [&](size_t thread_index, size_t shot_index) {
+        auto& error_use = error_use_per_thread[thread_index];
+        CliShotDecodeResult result;
+        auto start_time = std::chrono::high_resolution_clock::now();
+
+        if (args.multipass) {
+          MultiPassDecodeResult decoded =
+              mp_decoders[thread_index]->decode_result(shots[shot_index].hits);
+          result.predictions = std::move(decoded.predictions);
+          result.low_confidence = decoded.low_confidence;
+          result.cost = decoded.total_cost;
+        } else {
+          auto& decoder = *decoders[thread_index];
+          decoder.decode_to_errors(shots[shot_index].hits);
+          result.predictions = decoder.get_flipped_observables(decoder.predicted_errors_buffer);
+          result.predicted_errors = decoder.predicted_errors_buffer;
+          result.low_confidence = decoder.low_confidence_flag;
+          result.cost = decoder.cost_from_errors(decoder.predicted_errors_buffer);
+        }
+
+        auto stop_time = std::chrono::high_resolution_clock::now();
+        decoding_time_seconds[shot_index] =
+            std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
+            1e6;
+        obs_predicted[shot_index].clear();
+        for (int observable : result.predictions) {
+          if (observable >= 0 && static_cast<size_t>(observable) < num_observables) {
+            obs_predicted[shot_index][observable] ^= 1;
+          }
+        }
+        low_confidence[shot_index] = result.low_confidence;
+        cost_predicted[shot_index] = result.cost;
+        if (!args.multipass &&
+            (!has_obs || shots[shot_index].obs_mask == obs_predicted[shot_index])) {
+          for (size_t error : result.predicted_errors) {
+            ++error_use[error];
+          }
+        }
+      },
+      [&](size_t shot_index) {
+        if (writer) {
+          writer->write_bits(obs_predicted[shot_index].u8, num_observables);
+          writer->write_end();
+        }
+        if (low_confidence[shot_index]) {
+          ++num_low_confidence;
+        } else if (has_obs && obs_predicted[shot_index] != shots[shot_index].obs_mask) {
+          ++num_errors;
+        }
+        total_time_seconds += decoding_time_seconds[shot_index];
+        if (args.print_stats) {
+          std::cout << "num_shots = " << (shot_index + 1)
+                    << " num_low_confidence = " << num_low_confidence;
+          if (has_obs) {
+            std::cout << " num_errors = " << num_errors;
+          }
+          std::cout << " total_time_seconds = " << total_time_seconds << std::endl;
+          std::cout << "cost = " << cost_predicted[shot_index] << std::endl;
+          std::cout.flush();
+        }
+        // Disable early termination due to \`--max-errors\` when we don't have the ground-truth
+        // observables
+        return !has_obs || num_errors < args.max_errors;
+      });
+
+  std::vector<size_t> error_use_totals(original_dem.count_errors());
+  for (const auto& error_use : error_use_per_thread) {
+    for (size_t ei = 0; ei < error_use_totals.size(); ++ei) {
+      error_use_totals[ei] += error_use[ei];
+    }
+  }
+
+  if (!args.dem_out_fname.empty()) {
+    std::vector<size_t> counts(error_use_totals.begin(), error_use_totals.end());
+    size_t num_usage_dem_shots = shot;
+    if (has_obs) {
+      // When we know the obs, we only count non-error shots.
+      num_usage_dem_shots -= num_errors;
+    }
+    stim::DetectorErrorModel est_dem =
+        common::dem_from_counts(original_dem, counts, num_usage_dem_shots);
+    std::ofstream out(args.dem_out_fname, std::ofstream::out);
+    if (!out.is_open()) {
+      throw std::invalid_argument("Failed to open " + args.dem_out_fname);
+    }
+    out << est_dem << '\n';
+  }
+
+  int effective_sparsify_reactivate_limit = config.sparsify_reactivate_limit;
+  for (const auto& decoder : decoders) {
+    if (decoder) {
+      effective_sparsify_reactivate_limit = decoder->config.sparsify_reactivate_limit;
+      break;
+    }
+  }
+  if (config.sparsify_errors && effective_sparsify_reactivate_limit == -1) {
+    effective_sparsify_reactivate_limit = suggest_sparsify_reactivate_limit(
+        config.dem.count_detectors(), config.sparsify_base_degree);
+    effective_sparsify_reactivate_limit = std::min(
+        effective_sparsify_reactivate_limit,
+        static_cast<int>(std::min<uint64_t>(
+            config.dem.count_errors(), static_cast<uint64_t>(std::numeric_limits<int>::max()))));
+  }
+
+  bool print_final_stats = true;
+  if (!args.stats_out_fname.empty()) {
+    nlohmann::json stats_json = {
+        {"circuit_path", args.circuit_path},
+        {"dem_path", args.dem_path},
+        {"max_errors", args.max_errors},
+        {"sample_seed", args.sample_seed},
+
+        {"det_beam", args.det_beam},
+        {"det_penalty", args.det_penalty},
+        {"beam_climbing", args.beam_climbing},
+        {"no_revisit_dets", args.no_revisit_dets},
+        {"pqlimit", args.pqlimit},
+        {"num_det_orders", args.num_det_orders},
+        {"det_order_seed", args.det_order_seed},
+        {"total_time_seconds", total_time_seconds},
+        {"num_errors", has_obs ? nlohmann::json(num_errors) : nullptr},
+        {"num_low_confidence", num_low_confidence},
+        {"num_shots", shot},
+        {"num_threads", args.num_threads},
+        {"multipass", args.multipass},
+        {"strategy", args.multipass_strategy},
+        {"num_passes", args.num_passes},
+        {"sample_num_shots", args.sample_num_shots},
+        {"sparsify_errors", args.sparsify_errors},
+        {"sparsify_base_degree", args.sparsify_base_degree},
+        {"sparsify_max_degree", args.sparsify_max_degree},
+        {"sparsify_reactivate_limit", effective_sparsify_reactivate_limit}};
+
+    if (args.stats_out_fname == "-") {
+      std::cout << stats_json << std::endl;
+      print_final_stats = false;
+    } else {
+      std::ofstream out(args.stats_out_fname, std::ofstream::out);
+      out << stats_json << std::endl;
+    }
+  }
+  if (print_final_stats) {
+    std::cout << "num_shots = " << shot;
+    std::cout << " num_low_confidence = " << num_low_confidence;
+    if (has_obs) {
+      std::cout << " num_errors = " << num_errors;
+    }
+    std::cout << " total_time_seconds = " << total_time_seconds;
+    std::cout << std::endl;
+  }
+  return EXIT_SUCCESS;
 }
