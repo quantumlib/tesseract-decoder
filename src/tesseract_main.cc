@@ -255,7 +255,12 @@ struct Args {
         order = DetOrder::DetCoordinate;
       }
       det_order_method = order;
-      config.det_orders = build_det_orders(config.dem, num_det_orders, order, det_order_seed);
+      if (multipass) {
+        // Multi-pass builds detector orders separately from each component DEM.
+        config.det_orders.clear();
+      } else {
+        config.det_orders = build_det_orders(config.dem, num_det_orders, order, det_order_seed);
+      }
     }
 
     if (sample_num_shots > 0) {
@@ -440,7 +445,9 @@ int main(int argc, char* argv[]) {
   program.add_argument("--circuit").help("Stim circuit file path").store_into(args.circuit_path);
   program.add_argument("--dem").help("Stim dem file path").store_into(args.dem_path);
   program.add_argument("--no-merge-errors")
-      .help("If provided, will not merge identical error mechanisms.")
+      .help(
+          "If provided, will not merge identical error mechanisms. Multi-pass supports this "
+          "only with --num-passes=1; two-pass reweighting requires merged mechanisms.")
       .store_into(args.no_merge_errors);
   program.add_argument("--num-det-orders")
       .help("Number of ways to orient the manifold when reordering the detectors")
@@ -685,11 +692,18 @@ int main(int argc, char* argv[]) {
     std::vector<int> detector_components;
     if (args.multipass) {
       detector_components = classify_canonical_detector_bases(config.dem);
-      if (args.print_multipass_plan) {
-        mp_decoders[0] = std::make_unique<tesseract_decoder::MultiPassTesseractDecoder>(
+      for (size_t thread_index = 0; thread_index < args.num_threads; ++thread_index) {
+        bool collect_plan_statistics = args.print_multipass_plan && thread_index == 0;
+        mp_decoders[thread_index] = std::make_unique<tesseract_decoder::MultiPassTesseractDecoder>(
             config.dem, args.num_passes, detector_components, config, args.num_det_orders,
-            args.det_order_method, args.det_order_seed, strategy_val, true);
+            args.det_order_method, args.det_order_seed, strategy_val, collect_plan_statistics);
+      }
+      if (args.print_multipass_plan) {
         std::cerr << mp_decoders[0]->get_execution_plan().str();
+      }
+    } else {
+      for (auto& decoder : decoders) {
+        decoder = std::make_unique<TesseractDecoder>(config);
       }
     }
 
@@ -701,21 +715,12 @@ int main(int argc, char* argv[]) {
           auto start_time = std::chrono::high_resolution_clock::now();
 
           if (args.multipass) {
-            if (!mp_decoders[thread_index]) {
-              mp_decoders[thread_index] =
-                  std::make_unique<tesseract_decoder::MultiPassTesseractDecoder>(
-                      config.dem, args.num_passes, detector_components, config, args.num_det_orders,
-                      args.det_order_method, args.det_order_seed, strategy_val);
-            }
             MultiPassDecodeResult decoded =
                 mp_decoders[thread_index]->decode_result(shots[shot_index].hits);
             result.predictions = std::move(decoded.predictions);
             result.low_confidence = decoded.low_confidence;
             result.cost = decoded.total_cost;
           } else {
-            if (!decoders[thread_index]) {
-              decoders[thread_index] = std::make_unique<TesseractDecoder>(config);
-            }
             auto& decoder = *decoders[thread_index];
             decoder.decode_to_errors(shots[shot_index].hits);
             result.predictions = decoder.get_flipped_observables(decoder.predicted_errors_buffer);

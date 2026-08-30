@@ -31,11 +31,13 @@ def _tesseract_binary() -> pathlib.Path:
     return binary
 
 
-def _run_dem(tmp_path, dem_text: str, *extra_args: str) -> subprocess.CompletedProcess:
+def _run_dem(
+    tmp_path, dem_text: str, *extra_args: str, shot_data: bytes = b"\0"
+) -> subprocess.CompletedProcess:
     dem_path = tmp_path / "model.dem"
     shots_path = tmp_path / "shots.b8"
     dem_path.write_text(dem_text)
-    shots_path.write_bytes(b"\0")
+    shots_path.write_bytes(shot_data)
     return subprocess.run(
         [
             str(_tesseract_binary()),
@@ -150,6 +152,59 @@ def test_tagged_stim_circuit_survives_circuit_to_dem_end_to_end(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert "num_shots = 3" in result.stdout
+
+
+@pytest.mark.parametrize("extra_args", [(), ("--print-multipass-plan",)])
+def test_multipass_construction_failure_is_a_clean_cli_error(tmp_path, extra_args):
+    result = _run_dem(
+        tmp_path,
+        r"""
+        error[bad decomposition](0.1) D0 D1 ^ D0
+        detector[{"basis":"X"}] D0
+        detector[{"basis":"Z"}] D1
+        """,
+        *extra_args,
+    )
+    assert result.returncode == 1
+    assert "detectors from multiple components" in result.stderr
+    assert "bad decomposition" in result.stderr
+    assert "terminate called" not in result.stderr
+
+
+def test_multipass_cli_derives_bfs_orders_from_each_component(tmp_path):
+    result = _run_dem(
+        tmp_path,
+        r"""
+        error(0.02) D0 D1 L0
+        error(0.1) D3 D4 D5 D6 L1
+        error(0.02) D3 D4 D6
+        error(0.3) D4 D5
+        detector[{"basis":"X"}] D0
+        detector[{"basis":"X"}] D1
+        detector[{"basis":"X"}] D2
+        detector[{"basis":"Z"}] D3
+        detector[{"basis":"Z"}] D4
+        detector[{"basis":"Z"}] D5
+        detector[{"basis":"Z"}] D6
+        logical_observable L0
+        logical_observable L1
+        """,
+        "--num-passes",
+        "1",
+        "--multipass-strategy",
+        "static",
+        "--det-order-bfs",
+        "--num-det-orders",
+        "1",
+        "--det-order-seed",
+        "1",
+        "--beam",
+        "0",
+        "--no-revisit-dets",
+        shot_data=bytes([0b01101000]),
+    )
+    assert result.returncode == 0, result.stderr
+    assert "num_shots = 1 num_low_confidence = 0" in result.stdout
 
 
 @pytest.mark.parametrize(
