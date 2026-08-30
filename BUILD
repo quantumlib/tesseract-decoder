@@ -31,7 +31,10 @@ py_wheel(
         "stim",
     ],
     python_tag="$(ABI_TAG)",
-    abi="$(ABI_TAG)",
+    abi = select({
+        "@rules_python//python/config_settings:py_freethreaded_yes": "$(ABI_TAG)t",
+        "//conditions:default": "$(ABI_TAG)",
+    }),
     platform= select({
         ":macos_arm": "macosx_11_0_arm64",
         "@platforms//os:windows": "win32",
