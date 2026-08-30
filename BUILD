@@ -32,7 +32,7 @@ py_wheel(
     ],
     python_tag="$(ABI_TAG)",
     abi = select({
-        "@rules_python//python/config_settings:py_freethreaded_yes": "$(ABI_TAG)t",
+        "@rules_python//python/config_settings:py_freethreaded": "$(ABI_TAG)t",
         "//conditions:default": "$(ABI_TAG)",
     }),
     platform= select({
