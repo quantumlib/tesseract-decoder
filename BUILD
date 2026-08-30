@@ -15,6 +15,14 @@ filegroup(
 
 MANYLINUX_VERSION="manylinux_2_42_x86_64"
 
+config_setting(
+    name = "is_freethreaded",
+    flag_values = {
+        "@rules_python//python/config_settings:py_freethreaded": "yes",
+    },
+)
+
+
 py_wheel(
     name="tesseract_decoder_wheel",
     distribution = "tesseract_decoder",
@@ -32,7 +40,7 @@ py_wheel(
     ],
     python_tag="$(ABI_TAG)",
     abi = select({
-        "@rules_python//python/config_settings:py_freethreaded=yes": "$(ABI_TAG)t",
+        ":is_freethreaded": "$(ABI_TAG)t",
         "//conditions:default": "$(ABI_TAG)",
     }),
     platform= select({
