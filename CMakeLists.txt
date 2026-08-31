@@ -111,7 +111,7 @@ add_library(tesseract_lib
 )
 target_include_directories(tesseract_lib PUBLIC ${TESSERACT_SRC_DIR})
 target_compile_options(tesseract_lib PRIVATE ${OPT_COPTS})
-target_link_libraries(tesseract_lib PUBLIC common utils boost_headers visualization error_correlations dem_decomposition libstim)
+target_link_libraries(tesseract_lib PUBLIC common utils boost_headers visualization error_correlations dem_decomposition libstim nlohmann_json::nlohmann_json)
 
 add_library(multi_pass_tesseract_decoder ALIAS tesseract_lib)
 

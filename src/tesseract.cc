@@ -156,10 +156,7 @@ double TesseractDecoder::get_detcost(size_t d,
 
 TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(std::move(config_)) {
   if (config.multipass) {
-    multi_pass_decoder = std::make_unique<MultiPassTesseractDecoder>(
-        config.dem, config.num_passes, config.detector_components, config, config.num_det_orders,
-        config.det_order_method, config.det_order_seed, config.multipass_strategy,
-        config.collect_multipass_plan_statistics);
+    multi_pass_decoder = std::make_unique<MultiPassTesseractDecoder>(config);
     num_detectors = config.dem.count_detectors();
     num_errors = config.dem.count_errors();
     num_observables = config.dem.count_observables();

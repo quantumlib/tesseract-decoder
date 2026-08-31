@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <limits>
 #include <map>
+#include <nlohmann/json.hpp>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -71,6 +72,67 @@ namespace {
 
 constexpr double MAX_REWEIGHT_PROBABILITY = 0.499;
 
+int canonical_detector_basis_component(int detector, const std::string& tag) {
+  const std::string detector_name = "Detector D" + std::to_string(detector);
+  if (tag.empty()) {
+    throw std::invalid_argument(detector_name +
+                                " has no tag; multi-pass CLI input requires a top-level JSON "
+                                "basis field equal to \"X\" or \"Z\".");
+  }
+
+  nlohmann::json metadata = nlohmann::json::parse(tag, nullptr, false);
+  if (metadata.is_discarded()) {
+    throw std::invalid_argument(detector_name +
+                                " has a non-JSON tag; multi-pass CLI input requires a top-level "
+                                "JSON basis field equal to \"X\" or \"Z\".");
+  }
+  if (!metadata.is_object() || !metadata.contains("basis")) {
+    throw std::invalid_argument(detector_name +
+                                " tag has no top-level basis field equal to \"X\" or \"Z\".");
+  }
+  const auto& basis = metadata["basis"];
+  if (basis == "X") return 0;
+  if (basis == "Z") return 1;
+  throw std::invalid_argument(detector_name +
+                              " has an invalid top-level basis; expected the string \"X\" or "
+                              "\"Z\".");
+}
+
+std::vector<int> classify_canonical_detector_bases(const stim::DetectorErrorModel& dem) {
+  stim::DetectorErrorModel flattened = dem.flattened();
+  std::vector<std::string> detector_tags(flattened.count_detectors());
+  std::vector<bool> has_detector_instruction(flattened.count_detectors());
+
+  for (const stim::DemInstruction& instruction : flattened.instructions) {
+    if (instruction.type != stim::DemInstructionType::DEM_DETECTOR) continue;
+    if (instruction.target_data.size() != 1 ||
+        !instruction.target_data[0].is_relative_detector_id()) {
+      throw std::invalid_argument("Malformed detector instruction: " + instruction.str());
+    }
+    size_t detector = instruction.target_data[0].val();
+    if (detector >= detector_tags.size()) {
+      throw std::invalid_argument("Detector D" + std::to_string(detector) + " is out of range.");
+    }
+    if (has_detector_instruction[detector]) {
+      throw std::invalid_argument("Detector D" + std::to_string(detector) +
+                                  " has more than one detector instruction.");
+    }
+    has_detector_instruction[detector] = true;
+    detector_tags[detector] = instruction.tag;
+  }
+
+  std::vector<int> detector_components(detector_tags.size());
+  for (size_t detector = 0; detector < detector_tags.size(); ++detector) {
+    if (!has_detector_instruction[detector]) {
+      throw std::invalid_argument("Detector D" + std::to_string(detector) +
+                                  " has no detector instruction with a canonical basis tag.");
+    }
+    detector_components[detector] =
+        canonical_detector_basis_component(static_cast<int>(detector), detector_tags[detector]);
+  }
+  return detector_components;
+}
+
 template <typename Callback>
 class ScopeExit {
  public:
@@ -120,6 +182,14 @@ void validate_detector_components(const std::vector<int>& detector_components,
 }
 
 }  // namespace
+
+MultiPassTesseractDecoder::MultiPassTesseractDecoder(const TesseractConfig& config)
+    : MultiPassTesseractDecoder(
+          config.dem, config.num_passes,
+          config.detector_components.empty() ? classify_canonical_detector_bases(config.dem)
+                                             : config.detector_components,
+          config, config.num_det_orders, config.det_order_method, config.det_order_seed,
+          config.multipass_strategy, config.collect_multipass_plan_statistics) {}
 
 MultiPassTesseractDecoder::MultiPassTesseractDecoder(
     const stim::DetectorErrorModel& dem, size_t num_passes,

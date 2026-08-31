@@ -71,6 +71,8 @@ struct MultiPassExecutionPlan {
  */
 class MultiPassTesseractDecoder {
  public:
+  explicit MultiPassTesseractDecoder(const TesseractConfig& config);
+
   MultiPassTesseractDecoder(const stim::DetectorErrorModel& dem, size_t num_passes,
                             const std::vector<int>& detector_components,
                             const TesseractConfig& base_config = TesseractConfig(),

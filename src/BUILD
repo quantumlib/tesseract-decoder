@@ -180,6 +180,7 @@ cc_library(
         ":libutils",
         ":libviz",
         "@boost//:dynamic_bitset",
+        "@nlohmann_json//:json",
         "@stim//:stim_lib",
     ],
 )
