@@ -114,6 +114,7 @@ jobs:
         twine check wheelhouse/*
 
     - name: Publish package to testpypi
+      if: ${{ secrets.TEST_PYPI_TOKEN != ''}}
       uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
       with:
         repository-url: https://test.pypi.org/legacy/
