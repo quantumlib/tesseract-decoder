@@ -17,7 +17,6 @@
 #include <atomic>
 #include <cmath>
 #include <fstream>
-#include <future>
 #include <limits>
 #include <memory>
 #include <nlohmann/json.hpp>
@@ -672,8 +671,6 @@ int main(int argc, char* argv[]) {
   std::vector<stim::SparseShot> shots;
   std::unique_ptr<stim::MeasureRecordWriter> writer;
   args.extract(config, shots, writer);
-  // Construct one decoder per active worker in parallel, before per-shot timing starts.
-  size_t active_num_threads = std::max<size_t>(1, std::min(args.num_threads, shots.size()));
   size_t num_observables = config.dem.count_observables();
   std::vector<stim::simd_bits<64>> obs_predicted(shots.size(),
                                                  stim::simd_bits<64>(num_observables));
@@ -681,31 +678,19 @@ int main(int argc, char* argv[]) {
   std::vector<double> decoding_time_seconds(shots.size());
   std::vector<std::atomic<bool>> low_confidence(shots.size());
   const stim::DetectorErrorModel original_dem = config.dem.flattened();
-  std::vector<std::unique_ptr<TesseractDecoder>> decoders(active_num_threads);
+  std::vector<std::unique_ptr<TesseractDecoder>> decoders(args.num_threads);
   std::vector<std::vector<size_t>> error_use_per_thread(
-      active_num_threads, std::vector<size_t>(original_dem.count_errors()));
+      args.num_threads, std::vector<size_t>(original_dem.count_errors()));
   bool has_obs = args.has_observables();
   size_t num_errors = 0;
   size_t num_low_confidence = 0;
   double total_time_seconds = 0;
-
-  std::vector<std::future<void>> initializations;
-  initializations.reserve(active_num_threads);
-  for (size_t thread_index = 0; thread_index < active_num_threads; ++thread_index) {
-    initializations.push_back(std::async(std::launch::async, [&, thread_index]() {
-      decoders[thread_index] = std::make_unique<TesseractDecoder>(config);
-    }));
-  }
-  for (auto& initialization : initializations) {
-    initialization.get();
-  }
-  if (args.print_multipass_plan) {
-    std::cerr << decoders[0]->multipass_execution_plan_str();
-  }
-
   size_t shot = parallel_for_shots_in_order(
-      shots.size(), active_num_threads,
+      shots.size(), args.num_threads,
       [&](size_t thread_index, size_t shot_index) {
+        if (!decoders[thread_index]) {
+          decoders[thread_index] = std::make_unique<TesseractDecoder>(config);
+        }
         auto& decoder = *decoders[thread_index];
         auto& error_use = error_use_per_thread[thread_index];
         auto start_time = std::chrono::high_resolution_clock::now();
@@ -754,6 +739,21 @@ int main(int argc, char* argv[]) {
         // observables
         return !has_obs || num_errors < args.max_errors;
       });
+
+  if (args.print_multipass_plan) {
+    const TesseractDecoder* plan_decoder = nullptr;
+    for (const auto& decoder : decoders) {
+      if (decoder) {
+        plan_decoder = decoder.get();
+        break;
+      }
+    }
+    if (plan_decoder == nullptr) {
+      decoders[0] = std::make_unique<TesseractDecoder>(config);
+      plan_decoder = decoders[0].get();
+    }
+    std::cerr << plan_decoder->multipass_execution_plan_str();
+  }
 
   std::vector<size_t> error_use_totals(original_dem.count_errors());
   for (const auto& error_use : error_use_per_thread) {
