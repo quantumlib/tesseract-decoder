@@ -17,6 +17,7 @@
 
 #include <boost/dynamic_bitset.hpp>
 #include <cstdint>
+#include <memory>
 #include <queue>
 #include <string>
 #include <unordered_map>
@@ -36,6 +37,13 @@ constexpr size_t DEFAULT_PQLIMIT = 200000;
 
 int suggest_sparsify_reactivate_limit(size_t num_detectors, int sparsify_base_degree);
 
+class MultiPassTesseractDecoder;
+
+enum class SchedulingStrategy {
+  Static,  // Schedules both components in every pass.
+  Causal   // Derives each pass from component dependencies.
+};
+
 struct TesseractConfig {
   stim::DetectorErrorModel dem;
   int det_beam = DEFAULT_DET_BEAM;
@@ -53,6 +61,15 @@ struct TesseractConfig {
   int sparsify_base_degree = -1;
   int sparsify_max_degree = -1;
   int sparsify_reactivate_limit = -1;
+
+  bool multipass = false;
+  size_t num_passes = 2;
+  std::vector<int> detector_components;
+  size_t num_det_orders = 1;
+  DetOrder det_order_method = DetOrder::DetIndex;
+  uint64_t det_order_seed = 0;
+  SchedulingStrategy multipass_strategy = SchedulingStrategy::Causal;
+  bool collect_multipass_plan_statistics = false;
 
   std::string str();
 };
@@ -93,6 +110,7 @@ struct TesseractDecoder {
   Visualizer visualizer;
 
   explicit TesseractDecoder(TesseractConfig config);
+  ~TesseractDecoder();
 
   // Clears the predicted_errors_buffer and fills it with the decoded errors for
   // these detection events.
@@ -112,6 +130,7 @@ struct TesseractDecoder {
   double cost_from_errors(const std::vector<size_t>& predicted_errors) const;
 
   DecoderResult decode_result(const std::vector<uint64_t>& detections);
+  std::string multipass_execution_plan_str() const;
 
   // Resynchronizes the internal state of the decoder after the public `errors`
   // vector has been modified. This is necessary to ensure that the internal
@@ -157,6 +176,8 @@ struct TesseractDecoder {
                                        const std::vector<std::vector<int>>& active_d2e) const;
 
  private:
+  std::unique_ptr<MultiPassTesseractDecoder> multi_pass_decoder;
+
   void build_sparse_d2e(const std::vector<uint64_t>& detections);
   void decode_to_errors_with_graph(const std::vector<uint64_t>& detections, size_t detector_order,
                                    size_t detector_beam,

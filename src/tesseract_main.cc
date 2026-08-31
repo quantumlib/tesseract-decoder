@@ -26,12 +26,13 @@
 #include <thread>
 
 #include "common.h"
-#include "multi_pass/multi_pass_tesseract_decoder.h"
 #include "stim.h"
 #include "tesseract.h"
 #include "utils.h"
 
 using namespace tesseract_decoder;
+
+std::vector<int> classify_canonical_detector_bases(const stim::DetectorErrorModel& dem);
 
 struct Args {
   bool multipass = false;
@@ -366,6 +367,18 @@ struct Args {
     config.sparsify_base_degree = sparsify_base_degree;
     config.sparsify_max_degree = sparsify_max_degree;
     config.sparsify_reactivate_limit = sparsify_reactivate_limit;
+
+    config.multipass = multipass;
+    config.num_passes = num_passes;
+    config.num_det_orders = num_det_orders;
+    config.det_order_method = det_order_method;
+    config.det_order_seed = det_order_seed;
+    config.multipass_strategy =
+        multipass_strategy == "static" ? SchedulingStrategy::Static : SchedulingStrategy::Causal;
+    config.collect_multipass_plan_statistics = print_multipass_plan;
+    if (multipass) {
+      config.detector_components = classify_canonical_detector_bases(config.dem);
+    }
   }
 };
 
@@ -669,8 +682,6 @@ int main(int argc, char* argv[]) {
   std::vector<std::atomic<bool>> low_confidence(shots.size());
   const stim::DetectorErrorModel original_dem = config.dem.flattened();
   std::vector<std::unique_ptr<TesseractDecoder>> decoders(active_num_threads);
-  std::vector<std::unique_ptr<tesseract_decoder::MultiPassTesseractDecoder>> mp_decoders(
-      active_num_threads);
   std::vector<std::vector<size_t>> error_use_per_thread(
       active_num_threads, std::vector<size_t>(original_dem.count_errors()));
   bool has_obs = args.has_observables();
@@ -678,54 +689,27 @@ int main(int argc, char* argv[]) {
   size_t num_low_confidence = 0;
   double total_time_seconds = 0;
 
-  tesseract_decoder::SchedulingStrategy strategy_val =
-      (args.multipass_strategy == "static") ? tesseract_decoder::SchedulingStrategy::Static
-                                            : tesseract_decoder::SchedulingStrategy::Causal;
-
-  std::vector<int> detector_components;
-  if (args.multipass) {
-    detector_components = classify_canonical_detector_bases(config.dem);
-    std::vector<std::future<void>> initializations;
-    initializations.reserve(active_num_threads);
-    for (size_t thread_index = 0; thread_index < active_num_threads; ++thread_index) {
-      bool collect_plan_statistics = args.print_multipass_plan && thread_index == 0;
-      initializations.push_back(std::async(std::launch::async, [&, thread_index,
-                                                                collect_plan_statistics]() {
-        mp_decoders[thread_index] = std::make_unique<tesseract_decoder::MultiPassTesseractDecoder>(
-            config.dem, args.num_passes, detector_components, config, args.num_det_orders,
-            args.det_order_method, args.det_order_seed, strategy_val, collect_plan_statistics);
-      }));
-    }
-    for (auto& initialization : initializations) {
-      initialization.get();
-    }
-    if (args.print_multipass_plan) {
-      std::cerr << mp_decoders[0]->get_execution_plan().str();
-    }
-  } else {
-    std::vector<std::future<void>> initializations;
-    initializations.reserve(active_num_threads);
-    for (size_t thread_index = 0; thread_index < active_num_threads; ++thread_index) {
-      initializations.push_back(std::async(std::launch::async, [&, thread_index]() {
-        decoders[thread_index] = std::make_unique<TesseractDecoder>(config);
-      }));
-    }
-    for (auto& initialization : initializations) {
-      initialization.get();
-    }
+  std::vector<std::future<void>> initializations;
+  initializations.reserve(active_num_threads);
+  for (size_t thread_index = 0; thread_index < active_num_threads; ++thread_index) {
+    initializations.push_back(std::async(std::launch::async, [&, thread_index]() {
+      decoders[thread_index] = std::make_unique<TesseractDecoder>(config);
+    }));
+  }
+  for (auto& initialization : initializations) {
+    initialization.get();
+  }
+  if (args.print_multipass_plan) {
+    std::cerr << decoders[0]->multipass_execution_plan_str();
   }
 
   size_t shot = parallel_for_shots_in_order(
       shots.size(), active_num_threads,
       [&](size_t thread_index, size_t shot_index) {
+        auto& decoder = *decoders[thread_index];
         auto& error_use = error_use_per_thread[thread_index];
-        DecoderResult result;
         auto start_time = std::chrono::high_resolution_clock::now();
-        if (args.multipass) {
-          result = mp_decoders[thread_index]->decode_result(shots[shot_index].hits);
-        } else {
-          result = decoders[thread_index]->decode_result(shots[shot_index].hits);
-        }
+        DecoderResult result = decoder.decode_result(shots[shot_index].hits);
         auto stop_time = std::chrono::high_resolution_clock::now();
         decoding_time_seconds[shot_index] =
             std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /

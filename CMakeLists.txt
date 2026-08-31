@@ -103,15 +103,17 @@ target_include_directories(dem_decomposition PUBLIC ${TESSERACT_SRC_DIR})
 target_compile_options(dem_decomposition PRIVATE ${OPT_COPTS})
 target_link_libraries(dem_decomposition PUBLIC libstim)
 
-add_library(multi_pass_tesseract_decoder ${TESSERACT_SRC_DIR}/multi_pass/multi_pass_tesseract_decoder.cc ${TESSERACT_SRC_DIR}/multi_pass/multi_pass_tesseract_decoder.h)
-target_include_directories(multi_pass_tesseract_decoder PUBLIC ${TESSERACT_SRC_DIR})
-target_compile_options(multi_pass_tesseract_decoder PRIVATE ${OPT_COPTS})
-target_link_libraries(multi_pass_tesseract_decoder PUBLIC common tesseract_lib error_correlations dem_decomposition libstim)
-
-add_library(tesseract_lib ${TESSERACT_SRC_DIR}/tesseract.cc ${TESSERACT_SRC_DIR}/tesseract.h)
+add_library(tesseract_lib
+  ${TESSERACT_SRC_DIR}/tesseract.cc
+  ${TESSERACT_SRC_DIR}/tesseract.h
+  ${TESSERACT_SRC_DIR}/multi_pass/multi_pass_tesseract_decoder.cc
+  ${TESSERACT_SRC_DIR}/multi_pass/multi_pass_tesseract_decoder.h
+)
 target_include_directories(tesseract_lib PUBLIC ${TESSERACT_SRC_DIR})
 target_compile_options(tesseract_lib PRIVATE ${OPT_COPTS})
-target_link_libraries(tesseract_lib PUBLIC utils boost_headers visualization)
+target_link_libraries(tesseract_lib PUBLIC common utils boost_headers visualization error_correlations dem_decomposition libstim)
+
+add_library(multi_pass_tesseract_decoder ALIAS tesseract_lib)
 
 add_library(tesseract_trellis_lib
   ${TESSERACT_SRC_DIR}/tesseract_trellis.cc
@@ -129,7 +131,7 @@ target_link_libraries(simplex PUBLIC common utils tesseract_lib highs libstim Th
 # === Executables ===
 add_executable(tesseract ${TESSERACT_SRC_DIR}/tesseract_main.cc)
 target_compile_options(tesseract PRIVATE ${OPT_COPTS})
-target_link_libraries(tesseract PRIVATE tesseract_lib multi_pass_tesseract_decoder argparse::argparse nlohmann_json::nlohmann_json)
+target_link_libraries(tesseract PRIVATE tesseract_lib argparse::argparse nlohmann_json::nlohmann_json)
 
 add_executable(tesseract_trellis ${TESSERACT_SRC_DIR}/tesseract_trellis_main.cc)
 target_compile_options(tesseract_trellis PRIVATE ${OPT_COPTS})
@@ -146,7 +148,7 @@ target_link_libraries(simplex_bin PRIVATE common simplex argparse::argparse nloh
 pybind11_add_module(tesseract_decoder MODULE ${TESSERACT_SRC_DIR}/tesseract.pybind.cc)
 target_compile_options(tesseract_decoder PRIVATE ${OPT_COPTS})
 target_include_directories(tesseract_decoder PRIVATE ${TESSERACT_SRC_DIR})
-target_link_libraries(tesseract_decoder PRIVATE common utils simplex tesseract_lib multi_pass_tesseract_decoder)
+target_link_libraries(tesseract_decoder PRIVATE common utils simplex tesseract_lib)
 # Keep statically linked HiGHS symbols private to this extension on every
 # supported Unix platform. Mach-O uses an explicit export list because it has
 # no ELF-style --exclude-libs option; otherwise highspy can resolve symbols to
@@ -189,6 +191,6 @@ target_link_libraries(error_correlations_test PRIVATE error_correlations GTest::
 add_test(NAME error_correlations_test COMMAND error_correlations_test)
 
 add_executable(multi_pass_tesseract_decoder_test ${TESSERACT_SRC_DIR}/multi_pass/multi_pass_tesseract_decoder.test.cc)
-target_link_libraries(multi_pass_tesseract_decoder_test PRIVATE multi_pass_tesseract_decoder GTest::gtest_main libstim)
+target_link_libraries(multi_pass_tesseract_decoder_test PRIVATE tesseract_lib GTest::gtest_main libstim)
 add_test(NAME multi_pass_tesseract_decoder_test COMMAND multi_pass_tesseract_decoder_test)
 set_tests_properties(multi_pass_tesseract_decoder_test PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})

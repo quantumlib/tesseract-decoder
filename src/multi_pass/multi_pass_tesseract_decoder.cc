@@ -194,6 +194,7 @@ void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
   for (size_t component = 0; component < component_decoders.size(); ++component) {
     auto& component_decoder = component_decoders[component];
     TesseractConfig config = base_config;
+    config.multipass = false;
     config.dem = component_dems.at(component);
     if (config.det_orders.empty()) {
       config.det_orders = build_det_orders(config.dem, num_det_orders, det_order_method, seed);

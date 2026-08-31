@@ -28,11 +28,6 @@ namespace tesseract_decoder {
 
 class MultiPassTestPeer;
 
-enum class SchedulingStrategy {
-  Static,  // Schedules both components in every pass.
-  Causal   // Derives each pass from component dependencies.
-};
-
 struct MultiPassExecutionPlan {
   struct DemStatistics {
     size_t detector_count;

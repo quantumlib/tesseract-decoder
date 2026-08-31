@@ -99,7 +99,6 @@ pybind_library(
         ":libutils",
         ":libsimplex",
         ":libtesseract",
-        ":libmulti_pass_tesseract_decoder",
     ],
 )
 
@@ -164,14 +163,24 @@ cc_library(
 
 cc_library(
     name = "libtesseract",
-    srcs = ["tesseract.cc"],
-    hdrs = ["tesseract.h"],
+    srcs = [
+        "multi_pass/multi_pass_tesseract_decoder.cc",
+        "tesseract.cc",
+    ],
+    hdrs = [
+        "multi_pass/multi_pass_tesseract_decoder.h",
+        "tesseract.h",
+    ],
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
     deps = [
+        ":libcommon",
+        ":libdem_decomposition",
+        ":liberror_correlations",
         ":libutils",
         ":libviz",
         "@boost//:dynamic_bitset",
+        "@stim//:stim_lib",
     ],
 )
 
@@ -188,19 +197,9 @@ cc_library(
     ],
 )
 
-cc_library(
+alias(
     name = "libmulti_pass_tesseract_decoder",
-    srcs = ["multi_pass/multi_pass_tesseract_decoder.cc"],
-    hdrs = ["multi_pass/multi_pass_tesseract_decoder.h"],
-    copts = OPT_COPTS,
-    linkopts = OPT_LINKOPTS,
-    deps = [
-        ":libcommon",
-        ":libtesseract",
-        ":liberror_correlations",
-        ":libdem_decomposition",
-        "@stim//:stim_lib",
-    ],
+    actual = ":libtesseract",
 )
 
 cc_test(
@@ -210,7 +209,7 @@ cc_test(
     linkopts = OPT_LINKOPTS,
     data = ["//:testdata"],
     deps = [
-        ":libmulti_pass_tesseract_decoder",
+        ":libtesseract",
         "@gtest",
         "@gtest//:gtest_main",
         "@stim//:stim_lib",
@@ -272,7 +271,6 @@ cc_binary(
     linkopts = OPT_LINKOPTS,
     deps = [
         ":libtesseract",
-        ":libmulti_pass_tesseract_decoder",
         "@argparse",
         "@nlohmann_json//:json",
         "@stim//:stim_lib",
