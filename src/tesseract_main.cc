@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <argparse/argparse.hpp>
+#include <atomic>
 #include <cmath>
 #include <fstream>
 #include <future>
@@ -665,7 +666,7 @@ int main(int argc, char* argv[]) {
                                                  stim::simd_bits<64>(num_observables));
   std::vector<double> cost_predicted(shots.size());
   std::vector<double> decoding_time_seconds(shots.size());
-  std::vector<uint8_t> low_confidence(shots.size());
+  std::vector<std::atomic<bool>> low_confidence(shots.size());
   const stim::DetectorErrorModel original_dem = config.dem.flattened();
   std::vector<std::unique_ptr<TesseractDecoder>> decoders(active_num_threads);
   std::vector<std::unique_ptr<tesseract_decoder::MultiPassTesseractDecoder>> mp_decoders(
