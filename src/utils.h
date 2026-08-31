@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <random>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_set>
 #include <vector>
@@ -40,6 +41,9 @@ std::vector<std::vector<double>> get_detector_coords(const stim::DetectorErrorMo
 std::vector<std::vector<size_t>> build_detector_graph(const stim::DetectorErrorModel& dem);
 
 enum class DetOrder { DetBFS, DetIndex, DetCoordinate };
+
+// Parses "bfs", "index", or "coordinate".
+DetOrder det_order_from_string(std::string_view description);
 
 std::vector<std::vector<size_t>> build_det_orders(const stim::DetectorErrorModel& dem,
                                                   size_t num_det_orders,

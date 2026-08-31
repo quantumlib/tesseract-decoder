@@ -43,9 +43,6 @@ struct Args {
   // Manifold orientation options
   uint64_t det_order_seed;
   size_t num_det_orders = 10;
-  bool det_order_bfs = false;
-  bool det_order_index = false;
-  bool det_order_coordinate = false;
   DetOrder det_order_method = DetOrder::DetIndex;
 
   // Sampling options
@@ -103,12 +100,6 @@ struct Args {
   void validate(const argparse::ArgumentParser& program) {
     if (circuit_path.empty() and dem_path.empty()) {
       throw std::invalid_argument("Must provide at least one of --circuit or --dem");
-    }
-
-    int det_order_flags = int(det_order_bfs) + int(det_order_index) + int(det_order_coordinate);
-    if (det_order_flags > 1) {
-      throw std::invalid_argument(
-          "Only one of --det-order-bfs, --det-order-index, or --det-order-coordinate may be set.");
     }
 
     int num_data_sources = int(sample_num_shots > 0) + int(!in_fname.empty());
@@ -245,20 +236,12 @@ struct Args {
           std::cout << ")" << std::endl;
         }
       }
-      DetOrder order = det_order_method;
-      if (det_order_bfs) {
-        order = DetOrder::DetBFS;
-      } else if (det_order_index) {
-        order = DetOrder::DetIndex;
-      } else if (det_order_coordinate) {
-        order = DetOrder::DetCoordinate;
-      }
-      det_order_method = order;
       if (multipass) {
         // Multi-pass builds detector orders separately from each component DEM.
         config.det_orders.clear();
       } else {
-        config.det_orders = build_det_orders(config.dem, num_det_orders, order, det_order_seed);
+        config.det_orders =
+            build_det_orders(config.dem, num_det_orders, det_order_method, det_order_seed);
       }
     }
 
@@ -392,20 +375,25 @@ int main(int argc, char* argv[]) {
       .metavar("N")
       .default_value(size_t(1))
       .store_into(args.num_det_orders);
-  program.add_argument("--det-order-bfs")
+  auto& det_order_group = program.add_mutually_exclusive_group();
+  det_order_group.add_argument("--det-order-bfs")
       .help("Use BFS-based detector ordering")
       .flag()
-      .store_into(args.det_order_bfs);
-  program.add_argument("--det-order-index")
+      .action(
+          [&args](const std::string&) { args.det_order_method = det_order_from_string("bfs"); });
+  det_order_group.add_argument("--det-order-index")
       .help(
           "Randomly choose increasing or decreasing detector index order "
           "(default if no method specified)")
       .flag()
-      .store_into(args.det_order_index);
-  program.add_argument("--det-order-coordinate")
+      .action(
+          [&args](const std::string&) { args.det_order_method = det_order_from_string("index"); });
+  det_order_group.add_argument("--det-order-coordinate")
       .help("Random geometric detector orientation ordering")
       .flag()
-      .store_into(args.det_order_coordinate);
+      .action([&args](const std::string&) {
+        args.det_order_method = det_order_from_string("coordinate");
+      });
   program.add_argument("--det-order-seed")
       .help(
           "Seed used when initializing the random detector traversal "

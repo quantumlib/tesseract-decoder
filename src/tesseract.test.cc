@@ -703,6 +703,13 @@ TEST(utils, BuildDetOrdersCoordinateSparse) {
   ASSERT_EQ(orders[0].size(), 2);
 }
 
+TEST(utils, DetOrderFromString) {
+  EXPECT_EQ(det_order_from_string("bfs"), DetOrder::DetBFS);
+  EXPECT_EQ(det_order_from_string("index"), DetOrder::DetIndex);
+  EXPECT_EQ(det_order_from_string("coordinate"), DetOrder::DetCoordinate);
+  EXPECT_THROW(det_order_from_string("unknown"), std::invalid_argument);
+}
+
 TEST(simplex, DuplicateDetectorCoords) {
   std::string dem_str = "detector(0, 0, 1) D0\ndetector(0, 0, 2) D0\nerror(0.1) D0\n";
   stim::DetectorErrorModel dem(dem_str.c_str());
