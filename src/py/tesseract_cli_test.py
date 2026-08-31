@@ -32,26 +32,32 @@ def _tesseract_binary() -> pathlib.Path:
 
 
 def _run_dem(
-    tmp_path, dem_text: str, *extra_args: str, shot_data: bytes = b"\0"
+    tmp_path,
+    dem_text: str,
+    *extra_args: str,
+    shot_data: bytes = b"\0",
+    multipass: bool = True,
 ) -> subprocess.CompletedProcess:
     dem_path = tmp_path / "model.dem"
     shots_path = tmp_path / "shots.b8"
     dem_path.write_text(dem_text)
     shots_path.write_bytes(shot_data)
+    command = [
+        str(_tesseract_binary()),
+        "--dem",
+        str(dem_path),
+        "--in",
+        str(shots_path),
+        "--in-format",
+        "b8",
+        "--threads",
+        "1",
+    ]
+    if multipass:
+        command.append("--multipass")
+    command.extend(extra_args)
     return subprocess.run(
-        [
-            str(_tesseract_binary()),
-            "--dem",
-            str(dem_path),
-            "--in",
-            str(shots_path),
-            "--in-format",
-            "b8",
-            "--threads",
-            "1",
-            "--multipass",
-            *extra_args,
-        ],
+        command,
         capture_output=True,
         text=True,
         check=False,
@@ -205,6 +211,20 @@ def test_multipass_cli_derives_bfs_orders_from_each_component(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     assert "num_shots = 1 num_low_confidence = 0" in result.stdout
+
+
+def test_monolithic_decoder_result_still_populates_dem_error_counts(tmp_path):
+    dem_out = tmp_path / "estimated.dem"
+    result = _run_dem(
+        tmp_path,
+        "error(0.4) D0 L0\ndetector D0\nlogical_observable L0\n",
+        "--dem-out",
+        str(dem_out),
+        shot_data=b"\x01",
+        multipass=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "error(1) D0 L0" in dem_out.read_text()
 
 
 @pytest.mark.parametrize(

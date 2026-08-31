@@ -66,12 +66,6 @@ struct MultiPassExecutionPlan {
   std::string str() const;
 };
 
-struct MultiPassDecodeResult {
-  std::vector<int> predictions;
-  bool low_confidence = false;
-  double total_cost = 0.0;  // Cost of predictions made during the final pass.
-};
-
 /**
  * Decodes a detector error model by splitting it into exactly two detector components.
  *
@@ -93,7 +87,8 @@ class MultiPassTesseractDecoder {
   /** Returns the component schedule and statistics; requires collect_plan_statistics=true. */
   MultiPassExecutionPlan get_execution_plan() const;
   std::vector<int> decode(const std::vector<uint64_t>& detections);
-  MultiPassDecodeResult decode_result(const std::vector<uint64_t>& detections);
+  /** Returns predictions and the cost of predictions made during the final pass. */
+  DecoderResult decode_result(const std::vector<uint64_t>& detections);
 
   size_t get_last_shot_num_reweights() const {
     return last_shot_num_reweights;

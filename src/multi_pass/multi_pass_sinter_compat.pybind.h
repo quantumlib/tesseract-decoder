@@ -67,7 +67,7 @@ struct MultiPassSinterCompiledDecoder {
         }
       }
 
-      MultiPassDecodeResult decoded = decoder->decode_result(fired_detectors);
+      DecoderResult decoded = decoder->decode_result(fired_detectors);
       for (py::ssize_t byte = 0; byte <= num_observable_bytes; ++byte) {
         results(shot, byte) = 0;
       }

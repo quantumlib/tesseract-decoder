@@ -57,6 +57,15 @@ struct TesseractConfig {
   std::string str();
 };
 
+struct DecoderResult {
+  std::vector<int> predictions;
+  // Indices into the original flattened DEM. A populated result may be empty.
+  std::vector<size_t> predicted_errors;
+  bool predicted_errors_populated = false;
+  bool low_confidence = false;
+  double total_cost = 0;
+};
+
 class Node {
  public:
   double cost;
@@ -101,6 +110,8 @@ struct TesseractDecoder {
   // Returns the sum of likelihood costs of the errors in the given array, indexed by the original
   // flattened DEM error indices.
   double cost_from_errors(const std::vector<size_t>& predicted_errors) const;
+
+  DecoderResult decode_result(const std::vector<uint64_t>& detections);
 
   // Resynchronizes the internal state of the decoder after the public `errors`
   // vector has been modified. This is necessary to ensure that the internal

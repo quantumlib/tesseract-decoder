@@ -16,13 +16,13 @@
 #include <argparse/argparse.hpp>
 #include <cmath>
 #include <fstream>
+#include <future>
 #include <limits>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <numeric>
 #include <queue>
 #include <thread>
-#include <utility>
 
 #include "common.h"
 #include "multi_pass/multi_pass_tesseract_decoder.h"
@@ -368,13 +368,6 @@ struct Args {
   }
 };
 
-struct CliShotDecodeResult {
-  std::vector<int> predictions;
-  std::vector<size_t> predicted_errors;
-  bool low_confidence = false;
-  double cost = 0;
-};
-
 int canonical_detector_basis_component(int detector, const std::string& tag) {
   const std::string detector_name = "Detector D" + std::to_string(detector);
   if (tag.empty()) {
@@ -665,7 +658,7 @@ int main(int argc, char* argv[]) {
   std::vector<stim::SparseShot> shots;
   std::unique_ptr<stim::MeasureRecordWriter> writer;
   args.extract(config, shots, writer);
-  // Decoder construction is outside per-shot timing.
+  // Construct one decoder per active worker in parallel, before per-shot timing starts.
   size_t active_num_threads = std::max<size_t>(1, std::min(args.num_threads, shots.size()));
   size_t num_observables = config.dem.count_observables();
   std::vector<stim::simd_bits<64>> obs_predicted(shots.size(),
@@ -691,18 +684,33 @@ int main(int argc, char* argv[]) {
   std::vector<int> detector_components;
   if (args.multipass) {
     detector_components = classify_canonical_detector_bases(config.dem);
+    std::vector<std::future<void>> initializations;
+    initializations.reserve(active_num_threads);
     for (size_t thread_index = 0; thread_index < active_num_threads; ++thread_index) {
       bool collect_plan_statistics = args.print_multipass_plan && thread_index == 0;
-      mp_decoders[thread_index] = std::make_unique<tesseract_decoder::MultiPassTesseractDecoder>(
-          config.dem, args.num_passes, detector_components, config, args.num_det_orders,
-          args.det_order_method, args.det_order_seed, strategy_val, collect_plan_statistics);
+      initializations.push_back(std::async(std::launch::async, [&, thread_index,
+                                                                collect_plan_statistics]() {
+        mp_decoders[thread_index] = std::make_unique<tesseract_decoder::MultiPassTesseractDecoder>(
+            config.dem, args.num_passes, detector_components, config, args.num_det_orders,
+            args.det_order_method, args.det_order_seed, strategy_val, collect_plan_statistics);
+      }));
+    }
+    for (auto& initialization : initializations) {
+      initialization.get();
     }
     if (args.print_multipass_plan) {
       std::cerr << mp_decoders[0]->get_execution_plan().str();
     }
   } else {
-    for (auto& decoder : decoders) {
-      decoder = std::make_unique<TesseractDecoder>(config);
+    std::vector<std::future<void>> initializations;
+    initializations.reserve(active_num_threads);
+    for (size_t thread_index = 0; thread_index < active_num_threads; ++thread_index) {
+      initializations.push_back(std::async(std::launch::async, [&, thread_index]() {
+        decoders[thread_index] = std::make_unique<TesseractDecoder>(config);
+      }));
+    }
+    for (auto& initialization : initializations) {
+      initialization.get();
     }
   }
 
@@ -710,24 +718,13 @@ int main(int argc, char* argv[]) {
       shots.size(), active_num_threads,
       [&](size_t thread_index, size_t shot_index) {
         auto& error_use = error_use_per_thread[thread_index];
-        CliShotDecodeResult result;
+        DecoderResult result;
         auto start_time = std::chrono::high_resolution_clock::now();
-
         if (args.multipass) {
-          MultiPassDecodeResult decoded =
-              mp_decoders[thread_index]->decode_result(shots[shot_index].hits);
-          result.predictions = std::move(decoded.predictions);
-          result.low_confidence = decoded.low_confidence;
-          result.cost = decoded.total_cost;
+          result = mp_decoders[thread_index]->decode_result(shots[shot_index].hits);
         } else {
-          auto& decoder = *decoders[thread_index];
-          decoder.decode_to_errors(shots[shot_index].hits);
-          result.predictions = decoder.get_flipped_observables(decoder.predicted_errors_buffer);
-          result.predicted_errors = decoder.predicted_errors_buffer;
-          result.low_confidence = decoder.low_confidence_flag;
-          result.cost = decoder.cost_from_errors(decoder.predicted_errors_buffer);
+          result = decoders[thread_index]->decode_result(shots[shot_index].hits);
         }
-
         auto stop_time = std::chrono::high_resolution_clock::now();
         decoding_time_seconds[shot_index] =
             std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
@@ -739,8 +736,8 @@ int main(int argc, char* argv[]) {
           }
         }
         low_confidence[shot_index] = result.low_confidence;
-        cost_predicted[shot_index] = result.cost;
-        if (!args.multipass &&
+        cost_predicted[shot_index] = result.total_cost;
+        if (result.predicted_errors_populated &&
             (!has_obs || shots[shot_index].obs_mask == obs_predicted[shot_index])) {
           for (size_t error : result.predicted_errors) {
             ++error_use[error];

@@ -705,6 +705,18 @@ std::vector<int> TesseractDecoder::decode(const std::vector<uint64_t>& detection
   return get_flipped_observables(predicted_errors_buffer);
 }
 
+DecoderResult TesseractDecoder::decode_result(const std::vector<uint64_t>& detections) {
+  decode_to_errors(detections);
+
+  DecoderResult result;
+  result.predictions = get_flipped_observables(predicted_errors_buffer);
+  result.predicted_errors = predicted_errors_buffer;
+  result.predicted_errors_populated = true;
+  result.low_confidence = low_confidence_flag;
+  result.total_cost = cost_from_errors(predicted_errors_buffer);
+  return result;
+}
+
 void TesseractDecoder::decode_shots(std::vector<stim::SparseShot>& shots,
                                     std::vector<std::vector<int>>& obs_predicted) {
   obs_predicted.resize(shots.size());

@@ -650,6 +650,30 @@ TEST(tesseract, EqualCostOrderingIsDeterministicAfterUpdates) {
   EXPECT_EQ(decoder.predicted_errors_buffer, std::vector<size_t>({0}));
 }
 
+TEST(tesseract, DecodeResultDistinguishesPopulatedEmptyErrors) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 L0
+        detector D0
+        logical_observable L0
+    )DEM");
+  TesseractDecoder decoder(TesseractConfig{dem});
+
+  DecoderResult empty_result = decoder.decode_result({});
+  EXPECT_TRUE(empty_result.predicted_errors_populated);
+  EXPECT_TRUE(empty_result.predicted_errors.empty());
+  EXPECT_TRUE(empty_result.predictions.empty());
+  EXPECT_FALSE(empty_result.low_confidence);
+  EXPECT_DOUBLE_EQ(empty_result.total_cost, 0);
+
+  DecoderResult fired_result = decoder.decode_result({0});
+  EXPECT_TRUE(fired_result.predicted_errors_populated);
+  EXPECT_EQ(fired_result.predicted_errors, std::vector<size_t>({0}));
+  EXPECT_EQ(fired_result.predictions, std::vector<int>({0}));
+  EXPECT_FALSE(fired_result.low_confidence);
+  EXPECT_DOUBLE_EQ(fired_result.total_cost,
+                   decoder.cost_from_errors(fired_result.predicted_errors));
+}
+
 TEST(utils, DuplicateDetectorCoords) {
   std::string dem_str = "detector(0, 0, 1) D0\ndetector(0, 0, 2) D0\nerror(0.1) D0\n";
   stim::DetectorErrorModel dem(dem_str.c_str());
