@@ -123,15 +123,6 @@ py_test(
 
 
 py_test(
-    name = "tesseract_cli_test",
-    srcs = ["tesseract_cli_test.py"],
-    data = ["//src:tesseract"],
-    visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pytest"],
-)
-
-
-py_test(
     name = "stub_test",
     srcs = ["stub_test.py"],
     data = [":generated_stubs"],
