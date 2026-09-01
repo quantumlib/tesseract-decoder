@@ -51,9 +51,9 @@ OPT_COPTS = select({
 }) + select({
         "//conditions:default": ["-std=c++20"],
 }) + select({
-    ":portable_linux_wheel": ["-march=x86-64"],
+    ":portable_linux_wheel": ["-march=x86-64-v3"],
     ":macos_arm": ["-mmacosx-version-min=11.0"],
-    "//conditions:default": ["-march=native",],
+    "//conditions:default": ["-march=x86-64",],
 })
 
 OPT_LINKOPTS = select({
