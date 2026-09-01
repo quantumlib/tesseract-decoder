@@ -65,15 +65,23 @@ std::vector<std::vector<double>> get_detector_coords(const stim::DetectorErrorMo
             "Unexpected DemInstructionType found in the detector error model.");
     }
   }
-  return has_any_detector_coordinate_instruction ? detector_coords
-                                                 : std::vector<std::vector<double>>{};
+  if (!has_any_detector_coordinate_instruction) {
+    return {};
+  }
+  return detector_coords;
 }
 
 std::vector<std::vector<size_t>> build_detector_graph(const stim::DetectorErrorModel& dem) {
   size_t num_detectors = dem.count_detectors();
   std::vector<std::vector<size_t>> neighbors(num_detectors);
   for (const stim::DemInstruction& instruction : common::flatten(dem).instructions) {
-    if (instruction.type != stim::DemInstructionType::DEM_ERROR || instruction.arg_data[0] <= 0) {
+    if (instruction.type != stim::DemInstructionType::DEM_ERROR) {
+      continue;
+    }
+    if (instruction.arg_data[0] < 0) {
+      throw std::invalid_argument("Detector error probability must be non-negative.");
+    }
+    if (instruction.arg_data[0] == 0) {
       continue;
     }
     const common::Error error(instruction);

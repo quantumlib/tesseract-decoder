@@ -621,6 +621,17 @@ TEST(utils, DetectorGraphUsesPositiveParityReducedSymptoms) {
             (std::vector<std::vector<size_t>>{{}, {2, 3}, {1, 3}, {1, 2}}));
 }
 
+TEST(utils, DetectorGraphRejectsNegativeErrorProbabilities) {
+  const std::vector<double> args{-0.1};
+  const std::vector<stim::DemTarget> targets{stim::DemTarget::relative_detector_id(0),
+                                             stim::DemTarget::relative_detector_id(1)};
+  stim::DetectorErrorModel dem;
+  dem.instructions.push_back(
+      stim::DemInstruction{args, targets, "", stim::DemInstructionType::DEM_ERROR});
+
+  EXPECT_THROW(build_detector_graph(dem), std::invalid_argument);
+}
+
 TEST(utils, EmptyDemHasEmptyBfsOrders) {
   stim::DetectorErrorModel dem;
   EXPECT_EQ(build_det_orders(dem, 3, DetOrder::DetBFS, 0), std::vector<std::vector<size_t>>(3));

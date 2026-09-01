@@ -56,7 +56,7 @@ def test_selected_detector_order_index_must_be_in_range():
         _DETECTOR_ERROR_MODEL, det_orders=[[1, 0]]
     )
     decoder = config.compile_decoder()
-    with pytest.raises(IndexError, match="Detector order index 1"):
+    with pytest.raises(IndexError):
         decoder.decode_to_errors(np.zeros(2, dtype=bool), 1, 0)
 
 

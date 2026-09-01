@@ -401,12 +401,7 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
 void TesseractDecoder::decode_to_errors_with_graph(
     const std::vector<uint64_t>& detections, size_t detector_order_index, size_t detector_beam,
     const std::vector<std::vector<int>>& active_d2e) {
-  if (detector_order_index >= config.det_orders.size()) {
-    throw std::out_of_range("Detector order index " + std::to_string(detector_order_index) +
-                            " is out of range for " + std::to_string(config.det_orders.size()) +
-                            " detector orders.");
-  }
-  const std::vector<size_t>& detector_at_position = config.det_orders[detector_order_index];
+  const std::vector<size_t>& detector_at_position = config.det_orders.at(detector_order_index);
 
   predicted_errors_buffer.clear();
   low_confidence_flag = false;
