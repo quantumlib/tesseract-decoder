@@ -55,7 +55,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, ubuntu-24.04]
 
     runs-on: ${{ matrix.os }}
 
