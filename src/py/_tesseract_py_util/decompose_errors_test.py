@@ -123,6 +123,35 @@ def test_get_component_obs_matching_undecomposed_obs(
     )
 
 
+def test_get_component_obs_matching_undecomposed_obs_rejects_ambiguity():
+    with pytest.raises(ValueError, match="Multiple component observable assignments"):
+        get_component_obs_matching_undecomposed_obs(
+            [{(), (0,)}, {(), (0,)}],
+            (0,),
+        )
+
+
+def test_decompose_errors_rejects_ambiguous_observable_assignment_with_context():
+    dem = stim.DetectorErrorModel("""
+        error[x no logical](0.01) D0
+        error[x logical](0.02) D0 L0
+        error[z no logical](0.03) D1
+        error[z logical](0.04) D1 L0
+        error[ambiguous assignment](0.1) D0 D1 L0
+        detector(0) D0
+        detector(1) D1
+        logical_observable L0
+    """)
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"error\[ambiguous assignment\]\(0\.1\) D0 D1 L0.*multiple "
+            "consistent observable decompositions"
+        ),
+    ):
+        decompose_errors_using_last_coordinate_index(dem)
+
+
 def test_do_decomposition_last_coordinate_index_two_components():
     dem = stim.DetectorErrorModel("""error(0.1) D0 ^ D1 L1
 error(0.01) D0 D3 D3 D1 L5 L4 L4

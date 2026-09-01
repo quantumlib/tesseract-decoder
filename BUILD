@@ -55,9 +55,3 @@ config_setting(
         "@platforms//cpu:arm64",
     ],
 )
-
-filegroup(
-    name = "testdata",
-    srcs = glob(["testdata/**/*"]),
-    visibility = ["//visibility:public"],
-)

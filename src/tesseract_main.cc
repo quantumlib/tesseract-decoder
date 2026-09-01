@@ -379,21 +379,17 @@ int main(int argc, char* argv[]) {
   det_order_group.add_argument("--det-order-bfs")
       .help("Use BFS-based detector ordering")
       .flag()
-      .action(
-          [&args](const std::string&) { args.det_order_method = det_order_from_string("bfs"); });
+      .action([&args](const std::string&) { args.det_order_method = DetOrder::DetBFS; });
   det_order_group.add_argument("--det-order-index")
       .help(
           "Randomly choose increasing or decreasing detector index order "
           "(default if no method specified)")
       .flag()
-      .action(
-          [&args](const std::string&) { args.det_order_method = det_order_from_string("index"); });
+      .action([&args](const std::string&) { args.det_order_method = DetOrder::DetIndex; });
   det_order_group.add_argument("--det-order-coordinate")
       .help("Random geometric detector orientation ordering")
       .flag()
-      .action([&args](const std::string&) {
-        args.det_order_method = det_order_from_string("coordinate");
-      });
+      .action([&args](const std::string&) { args.det_order_method = DetOrder::DetCoordinate; });
   program.add_argument("--det-order-seed")
       .help(
           "Seed used when initializing the random detector traversal "
@@ -737,8 +733,8 @@ int main(int argc, char* argv[]) {
         {"num_shots", shot},
         {"num_threads", args.num_threads},
         {"multipass", args.multipass},
-        {"strategy", args.multipass_strategy},
-        {"num_passes", args.num_passes},
+        {"multipass_strategy", args.multipass_strategy},
+        {"multipass_num_passes", args.num_passes},
         {"sample_num_shots", args.sample_num_shots},
         {"sparsify_errors", args.sparsify_errors},
         {"sparsify_base_degree", args.sparsify_base_degree},

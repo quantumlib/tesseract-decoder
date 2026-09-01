@@ -198,17 +198,11 @@ cc_library(
     ],
 )
 
-alias(
-    name = "libmulti_pass_tesseract_decoder",
-    actual = ":libtesseract",
-)
-
 cc_test(
     name = "multi_pass_tesseract_decoder_tests",
     srcs = ["multi_pass/multi_pass_tesseract_decoder.test.cc"],
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
-    data = ["//:testdata"],
     deps = [
         ":libtesseract",
         "@gtest",

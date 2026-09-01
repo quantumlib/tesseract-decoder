@@ -123,8 +123,8 @@ def get_component_obs_matching_undecomposed_obs(
     """Given the possible observables that could be a symptom of each component
     of a dem error, find the assignment of observables to components that is
     consistent with the observables associated with the undecomposed error.
-    Returns None if there is no assignment that is consistent with the observables
-    of the undecomposed error.
+    Returns None if there is no consistent assignment, and rejects the assignment
+    if more than one choice is consistent.
 
     Parameters
     ----------
@@ -148,11 +148,17 @@ def get_component_obs_matching_undecomposed_obs(
         Assignment of observables to each component.
     """
     error_obs_set = set(reduce_symmetric_difference(error_obs))
+    matching_assignment = None
     for obs_combinations in itertools.product(*obs_options_by_component):
         obs_from_combination = reduce_set_symmetric_difference(obs_combinations)
         if set(obs_from_combination) == error_obs_set:
-            return list(obs_combinations)
-    return None
+            if matching_assignment is not None:
+                raise ValueError(
+                    "Multiple component observable assignments are consistent with "
+                    "the undecomposed observables."
+                )
+            matching_assignment = list(obs_combinations)
+    return matching_assignment
 
 
 def decompose_errors_using_detector_assignment(
@@ -263,9 +269,16 @@ def decompose_errors_using_detector_assignment(
 
         # Assign observables to each component, such that they are consistent with the
         # observables of the undecomposed error
-        consistent_obs_by_component = get_component_obs_matching_undecomposed_obs(
-            obs_options_by_component=obs_options_by_component, error_obs=observables
-        )
+        try:
+            consistent_obs_by_component = get_component_obs_matching_undecomposed_obs(
+                obs_options_by_component=obs_options_by_component,
+                error_obs=observables,
+            )
+        except ValueError as ex:
+            raise ValueError(
+                f"The error instruction `{instruction}` has multiple consistent "
+                "observable decompositions; logical observable ownership is ambiguous."
+            ) from ex
 
         if consistent_obs_by_component is None:
             if strip_undecomposable_errors:

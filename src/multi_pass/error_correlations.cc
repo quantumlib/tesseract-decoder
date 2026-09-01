@@ -15,10 +15,8 @@
 #include "error_correlations.h"
 
 #include <algorithm>
-#include <cmath>
 #include <map>
 #include <set>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -48,34 +46,6 @@ bool ComponentSymptom::operator<(const ComponentSymptom& other) const {
     return detectors < other.detectors;
   }
   return observables < other.observables;
-}
-
-std::string ReweightProbability::str() const {
-  std::stringstream ss;
-  ss << "ReweightProbability(detectors={";
-  for (size_t k = 0; k < affected_symptom.detectors.size(); ++k) {
-    if (k) ss << ',';
-    ss << affected_symptom.detectors[k];
-  }
-  ss << "}, observables={";
-  for (size_t k = 0; k < affected_symptom.observables.size(); ++k) {
-    if (k) ss << ',';
-    ss << affected_symptom.observables[k];
-  }
-  ss << "}, probability=" << probability << ')';
-  return ss.str();
-}
-
-bool ReweightProbability::operator==(const ReweightProbability& other) const {
-  return affected_symptom == other.affected_symptom &&
-         std::abs(probability - other.probability) < 1e-12;
-}
-
-bool ReweightProbability::operator<(const ReweightProbability& other) const {
-  if (!(affected_symptom == other.affected_symptom)) {
-    return affected_symptom < other.affected_symptom;
-  }
-  return probability < other.probability;
 }
 
 CorrelationEvidence collect_correlation_evidence(const stim::DetectorErrorModel& dem,

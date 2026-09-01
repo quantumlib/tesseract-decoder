@@ -24,27 +24,12 @@
 #include <random>
 #include <stdexcept>
 #include <string>
-#include <string_view>
 #include <utility>
 
 #include "common.h"
 #include "stim.h"
 
 namespace tesseract_decoder {
-
-DetOrder det_order_from_string(std::string_view description) {
-  static constexpr std::array<std::pair<std::string_view, DetOrder>, 3> methods = {{
-      {"bfs", DetOrder::DetBFS},
-      {"index", DetOrder::DetIndex},
-      {"coordinate", DetOrder::DetCoordinate},
-  }};
-  for (const auto& [name, method] : methods) {
-    if (description == name) {
-      return method;
-    }
-  }
-  throw std::invalid_argument("Unknown detector order method: " + std::string(description));
-}
 
 std::vector<std::vector<double>> get_detector_coords(const stim::DetectorErrorModel& dem) {
   const size_t num_detectors = dem.count_detectors();

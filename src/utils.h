@@ -20,9 +20,10 @@
 #include <cassert>
 #include <chrono>
 #include <cstdint>
+#include <exception>
+#include <mutex>
 #include <random>
 #include <string>
-#include <string_view>
 #include <thread>
 #include <unordered_set>
 #include <vector>
@@ -45,9 +46,6 @@ std::vector<std::vector<double>> get_detector_coords(const stim::DetectorErrorMo
 std::vector<std::vector<size_t>> build_detector_graph(const stim::DetectorErrorModel& dem);
 
 enum class DetOrder { DetBFS, DetIndex, DetCoordinate };
-
-// Parses "bfs", "index", or "coordinate".
-DetOrder det_order_from_string(std::string_view description);
 
 // Builds detector traversal orders. Each inner vector uses the convention
 // detector_at_position[position] = detector_id and is a permutation of all
@@ -93,16 +91,26 @@ size_t parallel_for_shots_in_order(size_t num_shots, size_t num_threads, Process
   std::vector<std::atomic<bool>> finished(num_shots);
   std::atomic<bool> worker_threads_please_terminate = false;
   std::atomic<size_t> num_worker_threads_active = 0;
+  std::exception_ptr worker_exception;
+  std::mutex worker_exception_mutex;
   std::vector<std::thread> workers;
   workers.reserve(num_threads);
 
   for (size_t t = 0; t < num_threads; ++t) {
     ++num_worker_threads_active;
     workers.emplace_back([&, t]() {
-      for (size_t shot;
-           !worker_threads_please_terminate && ((shot = next_unclaimed_shot++) < num_shots);) {
-        process_shot(t, shot);
-        finished[shot] = true;
+      try {
+        for (size_t shot;
+             !worker_threads_please_terminate && ((shot = next_unclaimed_shot++) < num_shots);) {
+          process_shot(t, shot);
+          finished[shot] = true;
+        }
+      } catch (...) {
+        worker_threads_please_terminate = true;
+        std::lock_guard lock(worker_exception_mutex);
+        if (!worker_exception) {
+          worker_exception = std::current_exception();
+        }
       }
       --num_worker_threads_active;
     });
@@ -124,6 +132,9 @@ size_t parallel_for_shots_in_order(size_t num_shots, size_t num_threads, Process
 
   for (auto& worker : workers) {
     worker.join();
+  }
+  if (worker_exception) {
+    std::rethrow_exception(worker_exception);
   }
   return shot;
 }

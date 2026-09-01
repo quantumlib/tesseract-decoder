@@ -16,7 +16,6 @@
 #define ERROR_CORRELATIONS_H
 
 #include <map>
-#include <string>
 #include <vector>
 
 #include "stim.h"
@@ -35,10 +34,6 @@ struct ComponentSymptom {
 struct ReweightProbability {
   ComponentSymptom affected_symptom;
   double probability;
-
-  std::string str() const;
-  bool operator==(const ReweightProbability& other) const;
-  bool operator<(const ReweightProbability& other) const;
 };
 
 /**

@@ -706,11 +706,12 @@ TEST(utils, BuildDetOrdersCoordinateSparse) {
   ASSERT_EQ(orders[0].size(), 2);
 }
 
-TEST(utils, DetOrderFromString) {
-  EXPECT_EQ(det_order_from_string("bfs"), DetOrder::DetBFS);
-  EXPECT_EQ(det_order_from_string("index"), DetOrder::DetIndex);
-  EXPECT_EQ(det_order_from_string("coordinate"), DetOrder::DetCoordinate);
-  EXPECT_THROW(det_order_from_string("unknown"), std::invalid_argument);
+TEST(utils, ParallelForShotsPropagatesWorkerExceptions) {
+  EXPECT_THROW(
+      parallel_for_shots_in_order(
+          1, 1, [](size_t, size_t) { throw std::invalid_argument("worker construction failed"); },
+          [](size_t) { return true; }),
+      std::invalid_argument);
 }
 
 TEST(simplex, DuplicateDetectorCoords) {
