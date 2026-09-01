@@ -775,6 +775,11 @@ TEST(utils, DetectorCoordinatesAreKeyedAndAllowMissingOrShortCoordinates) {
 TEST(tesseract, DetectorOrdersMustBePermutations) {
   stim::DetectorErrorModel dem("error(0.1) D0 D1 D2");
 
+  EXPECT_NO_THROW(validate_detector_orders({{2, 0, 1}}, 3));
+  EXPECT_THROW(validate_detector_orders({{0, 1}}, 3), std::invalid_argument);
+  EXPECT_THROW(validate_detector_orders({{0, 0, 2}}, 3), std::invalid_argument);
+  EXPECT_THROW(validate_detector_orders({{0, 1, 3}}, 3), std::invalid_argument);
+
   TesseractConfig valid_config{dem};
   valid_config.det_orders = {{2, 0, 1}};
   EXPECT_NO_THROW({ TesseractDecoder decoder(valid_config); });

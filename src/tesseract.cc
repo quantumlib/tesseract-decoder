@@ -68,6 +68,21 @@ int suggest_sparsify_reactivate_limit_capped(size_t num_detectors, int sparsify_
   return static_cast<int>(rounded);
 }
 
+};  // namespace
+
+namespace std {
+template <>
+struct hash<boost::dynamic_bitset<>> {
+  size_t operator()(const boost::dynamic_bitset<>& bs) const {
+    // Delegate to Boost's internal hash_value for dynamic_bitset
+    // This is the correct and most efficient way.
+    return boost::hash_value(bs);
+  }
+};
+}  // namespace std
+
+namespace tesseract_decoder {
+
 void validate_detector_orders(const std::vector<std::vector<size_t>>& detector_orders,
                               size_t num_detectors) {
   for (size_t order_index = 0; order_index < detector_orders.size(); ++order_index) {
@@ -97,21 +112,6 @@ void validate_detector_orders(const std::vector<std::vector<size_t>>& detector_o
     }
   }
 }
-
-};  // namespace
-
-namespace std {
-template <>
-struct hash<boost::dynamic_bitset<>> {
-  size_t operator()(const boost::dynamic_bitset<>& bs) const {
-    // Delegate to Boost's internal hash_value for dynamic_bitset
-    // This is the correct and most efficient way.
-    return boost::hash_value(bs);
-  }
-};
-}  // namespace std
-
-namespace tesseract_decoder {
 
 std::string TesseractConfig::str() {
   auto& config = *this;

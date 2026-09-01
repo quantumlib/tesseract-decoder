@@ -613,6 +613,25 @@ def tesseract_lp_max_barred_cost_prior_probabilities(
     return np.exp(-np.logaddexp(0, gari_costs))
 
 
+def _gari_checks_in_row_order(
+    transform: GariTransform, row_order: str
+) -> scipy.sparse.csc_matrix:
+    if row_order == "source":
+        source_detector_count = len(transform.source_to_gari_detectors)
+        rows = np.concatenate(
+            [
+                transform.source_to_gari_detectors,
+                np.arange(
+                    source_detector_count, transform.checks.shape[0]
+                ),
+            ]
+        )
+        return transform.checks[rows, :]
+    if row_order == "block":
+        return transform.checks
+    raise ValueError("row_order must be 'source' or 'block'.")
+
+
 def _build_gari_dem(
     transform: GariTransform,
     source_probabilities: np.ndarray,
@@ -655,20 +674,25 @@ def _build_gari_dem(
         transform.checks.shape[1],
         "prior_function probabilities",
     )
-    if row_order == "source":
-        source_detector_count = len(transform.source_to_gari_detectors)
-        rows = np.concatenate(
-            [
-                transform.source_to_gari_detectors,
-                np.arange(source_detector_count, transform.checks.shape[0]),
-            ]
-        )
-        checks = transform.checks[rows, :]
-    elif row_order == "block":
-        checks = transform.checks
-    else:
-        raise ValueError("row_order must be 'source' or 'block'.")
+    checks = _gari_checks_in_row_order(transform, row_order)
     return _matrices_to_gari_dem(checks, transform.logicals, gari_probabilities)
+
+
+def _gari_transform_from_circuit(
+    circuit: stim.Circuit,
+) -> tuple[stim.DetectorErrorModel, GariTransform, np.ndarray]:
+    source_dem = _circuit_to_gari_source_dem(circuit)
+    checks, logicals, probabilities = dem_to_matrices(source_dem)
+    x_detectors, z_detectors = _detector_partition_from_fourth_coordinate(
+        source_dem
+    )
+    transform = _gari_transform(
+        checks,
+        logicals,
+        x_detectors=x_detectors,
+        z_detectors=z_detectors,
+    )
+    return source_dem, transform, probabilities
 
 
 def circuit_to_gari(
@@ -688,17 +712,7 @@ def circuit_to_gari(
     returned DEM stores transformed matrices for decoding and must not be
     sampled.
     """
-    source_dem = _circuit_to_gari_source_dem(circuit)
-    checks, logicals, probabilities = dem_to_matrices(source_dem)
-    x_detectors, z_detectors = _detector_partition_from_fourth_coordinate(
-        source_dem
-    )
-    transform = _gari_transform(
-        checks,
-        logicals,
-        x_detectors=x_detectors,
-        z_detectors=z_detectors,
-    )
+    _, transform, probabilities = _gari_transform_from_circuit(circuit)
     return _build_gari_dem(
         transform,
         probabilities,
@@ -715,13 +729,33 @@ def build_detector_orders(
     method: object | None = None,
     seed: int = 0,
 ) -> list[list[int]]:
-    """Builds traversal orders for a source-aligned GARI DEM."""
+    """Builds traversal orders for a source-aligned GARI DEM.
+
+    The supplied DEM's check and logical matrices must match the GARI
+    transform of ``circuit`` in source row order. Error probabilities may
+    differ because they do not affect detector traversal order construction.
+    """
     from tesseract_decoder import utils
 
-    source_dem = _circuit_to_gari_source_dem(circuit)
+    source_dem, transform, _ = _gari_transform_from_circuit(circuit)
     source_detector_count = source_dem.num_detectors
     if gari_dem.num_detectors < source_detector_count:
         raise ValueError("The GARI DEM has fewer detectors than the source circuit.")
+    gari_checks, gari_logicals, _ = dem_to_matrices(gari_dem)
+    expected_checks = _gari_checks_in_row_order(transform, "source")
+    checks_match = (
+        gari_checks.shape == expected_checks.shape
+        and (gari_checks != expected_checks).nnz == 0
+    )
+    logicals_match = (
+        gari_logicals.shape == transform.logicals.shape
+        and (gari_logicals != transform.logicals).nnz == 0
+    )
+    if not checks_match or not logicals_match:
+        raise ValueError(
+            "The GARI DEM is not the source-aligned GARI transform of the "
+            "supplied circuit; block-row and unrelated DEMs are unsupported."
+        )
     if method is None:
         method = utils.DetOrder.DetIndex
     virtual_detectors = list(

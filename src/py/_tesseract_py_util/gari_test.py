@@ -214,5 +214,55 @@ def test_public_circuit_conversion_and_file_output(tmp_path):
     assert (output_dir / f"{output_name}_block.dem").is_file()
 
 
+def test_build_detector_orders_validates_source_aligned_transform():
+    public_gari = demutil.gari
+    circuit = _tiny_circuit()
+    gari_dem = public_gari.circuit_to_gari(
+        circuit,
+        prior_function=public_gari.tesseract_xor_prior_probabilities,
+    )
+    expected_orders = public_gari.build_detector_orders(
+        circuit,
+        gari_dem,
+        2,
+        method=utils.DetOrder.DetCoordinate,
+        seed=0,
+    )
+
+    checks, logicals, probabilities = gari.dem_to_matrices(gari_dem)
+    changed_probabilities = np.linspace(0.11, 0.21, checks.shape[1])
+    assert not np.allclose(changed_probabilities, probabilities)
+    reweighted_dem = gari._matrices_to_gari_dem(
+        checks, logicals, changed_probabilities
+    )
+    assert (
+        public_gari.build_detector_orders(
+            circuit,
+            reweighted_dem,
+            2,
+            method=utils.DetOrder.DetCoordinate,
+            seed=0,
+        )
+        == expected_orders
+    )
+
+    block_dem = public_gari.circuit_to_gari(
+        circuit,
+        prior_function=public_gari.tesseract_xor_prior_probabilities,
+        row_order="block",
+    )
+    with pytest.raises(ValueError, match="source-aligned GARI transform"):
+        public_gari.build_detector_orders(circuit, block_dem, 1)
+
+    unrelated_checks = checks.tolil()
+    unrelated_checks[0, 0] = 1 - int(unrelated_checks[0, 0])
+    unrelated_dem = gari._matrices_to_gari_dem(
+        unrelated_checks.tocsc(), logicals, probabilities
+    )
+    assert unrelated_dem.num_detectors == gari_dem.num_detectors
+    with pytest.raises(ValueError, match="source-aligned GARI transform"):
+        public_gari.build_detector_orders(circuit, unrelated_dem, 1)
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))

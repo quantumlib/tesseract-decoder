@@ -276,6 +276,7 @@ struct Args {
         }
         config.det_orders = build_det_orders(config.dem, num_det_orders, order, det_order_seed);
       }
+      validate_detector_orders(config.det_orders, config.dem.count_detectors());
     }
 
     if (sample_num_shots > 0) {
