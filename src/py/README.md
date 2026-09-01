@@ -17,7 +17,7 @@ Explanation of configuration arguments:
 * `verbose` - A boolean flag that, when `True`, enables verbose logging. This is useful for debugging and understanding the decoder's internal behavior, as it will print information about the search process.
 * `merge_errors` - A boolean flag that, when `True`, merges error channels with identical syndrome patterns before decoding. This is enabled by default.
 * `pqlimit` - An integer that sets a limit on the number of nodes in the priority queue. This can be used to constrain the memory usage of the decoder. The default value is `200000`.
-* `det_orders` - A list of lists of integers, where each inner list represents an ordering of the detectors. This is used for "ensemble reordering," an optimization that tries different detector orderings to improve the search's convergence. The default is an empty list, meaning a single, fixed ordering is used.
+* `det_orders` - A list of complete detector-ID permutations in traversal order: `order[position] = detector_id`. This is used for "ensemble reordering," an optimization that tries different detector orderings to improve the search's convergence. The default is an empty list, meaning a single, fixed ordering is used.
 * `det_penalty` - A floating-point value that adds a cost for each residual detection event. This encourages the decoder to prioritize paths that resolve more detection events, steering the search towards more complete solutions. The default value is `0.0`, meaning no penalty is applied.
 * `create_visualization` - A boolean flag that enables decoder visualization output when set to `True`. The default value is `False`.
 * `sparsify_errors` - Enables per-shot sparse error activation. When enabled, all errors up to `sparsify_base_degree` are always active, and selected higher-degree errors are reactivated per shot.
@@ -286,7 +286,7 @@ The `tesseract_decoder.utils` module provides various helper functions used thro
 
 #### Functions
 * `utils.get_detector_coords(dem: stim.DetectorErrorModel) -> list[list[float]]`
-  * Extracts 3D coordinates for each detector from a `stim.DetectorErrorModel`.
+  * Extracts arbitrary-dimensional coordinates indexed by detector ID from a `stim.DetectorErrorModel`. Missing detector coordinates are returned as empty lists.
 
 **Example Usage**:
 

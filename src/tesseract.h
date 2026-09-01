@@ -53,6 +53,9 @@ struct TesseractConfig {
   bool verbose = false;
   bool merge_errors = true;
   size_t pqlimit = DEFAULT_PQLIMIT;
+
+  // Detector traversal permutations. Each order uses the convention
+  // det_orders[order_index][position] = detector_id.
   std::vector<std::vector<size_t>> det_orders;
   double det_penalty = 0;
   bool create_visualization = false;
@@ -118,7 +121,7 @@ struct TesseractDecoder {
 
   // Clears the predicted_errors_buffer and fills it with the decoded errors for
   // these detection events, using a specified detector ordering index.
-  void decode_to_errors(const std::vector<uint64_t>& detections, size_t detector_order,
+  void decode_to_errors(const std::vector<uint64_t>& detections, size_t detector_order_index,
                         size_t detector_beam);
 
   // Returns the bitwise XOR of the observables flipped by the errors in the given array, indexed by
@@ -170,7 +173,7 @@ struct TesseractDecoder {
   double get_detcost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const;
   double get_detcost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples,
                      const std::vector<std::vector<int>>& active_d2e) const;
-  void flip_detectors_and_block_errors(size_t detector_order, int64_t error_chain_idx,
+  void flip_detectors_and_block_errors(size_t detector_order_index, int64_t error_chain_idx,
                                        boost::dynamic_bitset<>& detectors,
                                        std::vector<DetectorCostTuple>& detector_cost_tuples,
                                        const std::vector<std::vector<int>>& active_d2e) const;
@@ -179,8 +182,8 @@ struct TesseractDecoder {
   std::unique_ptr<MultiPassTesseractDecoder> multi_pass_decoder;
 
   void build_sparse_d2e(const std::vector<uint64_t>& detections);
-  void decode_to_errors_with_graph(const std::vector<uint64_t>& detections, size_t detector_order,
-                                   size_t detector_beam,
+  void decode_to_errors_with_graph(const std::vector<uint64_t>& detections,
+                                   size_t detector_order_index, size_t detector_beam,
                                    const std::vector<std::vector<int>>& active_d2e);
 };
 
