@@ -12,14 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
-
 import numpy as np
 import pytest
 import stim
 
 from _tesseract_py_util import gari
-from tesseract_decoder import demutil
+from tesseract_decoder import demutil, utils
 
 
 def _tiny_circuit():
@@ -29,10 +27,10 @@ def _tiny_circuit():
         CORRELATED_ERROR(0.02) X1 X3 X5
         CORRELATED_ERROR(0.04) X0 X1 X2 X3 X4
         M 0 1 2 3 4 5
-        DETECTOR(0, 0, 0, 0) rec[-6]
         DETECTOR(0, 0, 0, 3) rec[-5]
-        DETECTOR(0, 0, 0, 2) rec[-4]
+        DETECTOR(0, 0, 0, 0) rec[-6]
         DETECTOR(0, 0, 0, 4) rec[-3]
+        DETECTOR(0, 0, 0, 2) rec[-4]
         OBSERVABLE_INCLUDE(0) rec[-2]
         OBSERVABLE_INCLUDE(1) rec[-1]
     """)
@@ -105,7 +103,7 @@ def test_tiny_transform():
         [[1, 0, 1, 0, 0], [0, 1, 0, 0, 0]],
     )
     np.testing.assert_array_equal(
-        transform.source_to_gari_detectors, [0, 2, 1, 3]
+        transform.source_to_gari_detectors, [2, 0, 3, 1]
     )
 
 
@@ -148,6 +146,7 @@ def test_prior_probabilities_and_gari_dem_round_trip():
         transform,
         source_probabilities,
         prior_function=gari.tesseract_xor_prior_probabilities,
+        row_order="block",
     )
     checks, logicals, probabilities = gari.dem_to_matrices(gari_dem)
     assert gari_dem.num_detectors == transform.checks.shape[0]
@@ -160,19 +159,45 @@ def test_prior_probabilities_and_gari_dem_round_trip():
 def test_public_circuit_conversion_and_file_output(tmp_path):
     public_gari = demutil.gari
     circuit = _tiny_circuit()
-    gari_dem, layout = public_gari.circuit_to_gari(
+    gari_dem = public_gari.circuit_to_gari(
         circuit,
         prior_function=public_gari.tesseract_xor_prior_probabilities,
     )
-    assert layout == {
-        "schema": "tesseract.gari_layout.v1",
-        "source_detector_count": 4,
-        "gari_detector_count": 6,
-        "source_to_gari": [0, 2, 1, 3],
-        "detector_order": "physical_then_virtual",
-    }
     assert gari_dem.num_detectors == 6
     assert gari_dem.num_observables == 2
+    _, transform = _tiny_model()
+    checks, _, _ = gari.dem_to_matrices(gari_dem)
+    np.testing.assert_array_equal(
+        checks.toarray(), transform.checks[[2, 0, 3, 1, 4, 5], :].toarray()
+    )
+    source_orders = utils.build_det_orders(
+        gari._circuit_to_gari_source_dem(circuit),
+        2,
+        method=utils.DetectorOrderMethod.Coordinate,
+        seed=0,
+    )
+    assert any(
+        list(source_order)
+        != sorted(range(4), key=source_order.__getitem__)
+        for source_order in source_orders
+    )
+    gari_orders = public_gari.build_detector_orders(
+        circuit,
+        gari_dem,
+        2,
+        method=utils.DetectorOrderMethod.Coordinate,
+        seed=0,
+    )
+    assert [order[:4] for order in gari_orders] == source_orders
+    assert [order[4:] for order in gari_orders] == [[4, 5], [4, 5]]
+
+    block_dem = public_gari.circuit_to_gari(
+        circuit,
+        prior_function=public_gari.tesseract_xor_prior_probabilities,
+        row_order="block",
+    )
+    block_checks, _, _ = gari.dem_to_matrices(block_dem)
+    assert (block_checks != transform.checks).nnz == 0
 
     circuit_path = tmp_path / "tiny.stim"
     circuit.to_file(circuit_path)
@@ -182,13 +207,61 @@ def test_public_circuit_conversion_and_file_output(tmp_path):
     written_dem = stim.DetectorErrorModel.from_file(
         output_dir / f"{output_name}.dem"
     )
-    written_layout = json.loads(
-        (output_dir / f"{output_name}_layout.json").read_text(
-            encoding="utf-8"
-        )
+    public_gari.call_gari(
+        str(circuit_path), "xor", str(output_dir), row_order="block"
     )
     assert str(written_dem) == str(gari_dem)
-    assert written_layout == layout
+    assert (output_dir / f"{output_name}_block.dem").is_file()
+
+
+def test_build_detector_orders_validates_source_aligned_transform():
+    public_gari = demutil.gari
+    circuit = _tiny_circuit()
+    gari_dem = public_gari.circuit_to_gari(
+        circuit,
+        prior_function=public_gari.tesseract_xor_prior_probabilities,
+    )
+    expected_orders = public_gari.build_detector_orders(
+        circuit,
+        gari_dem,
+        2,
+        method=utils.DetectorOrderMethod.Coordinate,
+        seed=0,
+    )
+
+    checks, logicals, probabilities = gari.dem_to_matrices(gari_dem)
+    changed_probabilities = np.linspace(0.11, 0.21, checks.shape[1])
+    assert not np.allclose(changed_probabilities, probabilities)
+    reweighted_dem = gari._matrices_to_gari_dem(
+        checks, logicals, changed_probabilities
+    )
+    assert (
+        public_gari.build_detector_orders(
+            circuit,
+            reweighted_dem,
+            2,
+            method=utils.DetectorOrderMethod.Coordinate,
+            seed=0,
+        )
+        == expected_orders
+    )
+
+    block_dem = public_gari.circuit_to_gari(
+        circuit,
+        prior_function=public_gari.tesseract_xor_prior_probabilities,
+        row_order="block",
+    )
+    with pytest.raises(ValueError, match="source-aligned GARI transform"):
+        public_gari.build_detector_orders(circuit, block_dem, 1)
+
+    unrelated_checks = checks.tolil()
+    unrelated_checks[0, 0] = 1 - int(unrelated_checks[0, 0])
+    unrelated_dem = gari._matrices_to_gari_dem(
+        unrelated_checks.tocsc(), logicals, probabilities
+    )
+    assert unrelated_dem.num_detectors == gari_dem.num_detectors
+    with pytest.raises(ValueError, match="source-aligned GARI transform"):
+        public_gari.build_detector_orders(circuit, unrelated_dem, 1)
 
 
 def test_public_circuit_conversion_uses_shared_basis_classifier():
@@ -205,20 +278,47 @@ def test_public_circuit_conversion_uses_shared_basis_classifier():
         OBSERVABLE_INCLUDE(0) rec[-2]
         OBSERVABLE_INCLUDE(1) rec[-1]
     """)
-    _, tagged_layout = gari.circuit_to_gari(
+    tagged_dem = gari.circuit_to_gari(
         tagged_circuit,
         prior_function=gari.tesseract_xor_prior_probabilities,
     )
-    assert tagged_layout["source_to_gari"] == [0, 2, 1, 3]
+    tagged_checks, _, _ = gari.dem_to_matrices(tagged_dem)
+    _, tagged_transform, _ = gari._gari_transform_from_circuit(tagged_circuit)
+    expected_tagged_checks = gari._gari_checks_in_row_order(
+        tagged_transform, "source"
+    )
+    assert (tagged_checks != expected_tagged_checks).nnz == 0
+    np.testing.assert_array_equal(
+        tagged_transform.source_to_gari_detectors, [0, 2, 1, 3]
+    )
 
-    _, custom_layout = gari.circuit_to_gari(
+    custom_classifier = lambda index, _coordinates, _tag: (
+        "X" if index % 2 == 0 else "Z"
+    )
+    custom_dem = gari.circuit_to_gari(
         _tiny_circuit(),
         prior_function=gari.tesseract_xor_prior_probabilities,
-        detector_basis_classifier=lambda index, _coordinates, _tag: (
-            "X" if index % 2 == 0 else "Z"
-        ),
+        detector_basis_classifier=custom_classifier,
     )
-    assert custom_layout["source_to_gari"] == [0, 2, 1, 3]
+    custom_checks, _, _ = gari.dem_to_matrices(custom_dem)
+    _, custom_transform, _ = gari._gari_transform_from_circuit(
+        _tiny_circuit(), detector_basis_classifier=custom_classifier
+    )
+    expected_custom_checks = gari._gari_checks_in_row_order(
+        custom_transform, "source"
+    )
+    assert (custom_checks != expected_custom_checks).nnz == 0
+    np.testing.assert_array_equal(
+        custom_transform.source_to_gari_detectors, [0, 2, 1, 3]
+    )
+    assert len(
+        gari.build_detector_orders(
+            _tiny_circuit(),
+            custom_dem,
+            1,
+            detector_basis_classifier=custom_classifier,
+        )
+    ) == 1
 
 
 if __name__ == "__main__":

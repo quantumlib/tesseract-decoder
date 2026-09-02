@@ -195,14 +195,14 @@ MultiPassTesseractDecoder::MultiPassTesseractDecoder(const TesseractConfig& conf
           config.dem, config.num_passes,
           config.detector_components.empty() ? classify_canonical_detector_bases(config.dem)
                                              : config.detector_components,
-          config, config.num_det_orders, config.det_order_method, config.det_order_seed,
-          config.multipass_strategy, config.collect_multipass_plan_statistics) {}
+          config, config.multipass_strategy, config.collect_multipass_plan_statistics) {}
 
-MultiPassTesseractDecoder::MultiPassTesseractDecoder(
-    const stim::DetectorErrorModel& dem, size_t num_passes,
-    const std::vector<int>& detector_components, const TesseractConfig& base_config,
-    size_t num_det_orders, DetOrder det_order_method, uint64_t seed, SchedulingStrategy strategy,
-    bool collect_plan_statistics)
+MultiPassTesseractDecoder::MultiPassTesseractDecoder(const stim::DetectorErrorModel& dem,
+                                                     size_t num_passes,
+                                                     const std::vector<int>& detector_components,
+                                                     const TesseractConfig& base_config,
+                                                     SchedulingStrategy strategy,
+                                                     bool collect_plan_statistics)
     : num_passes(num_passes),
       strategy(strategy),
       total_global_detectors(dem.count_detectors()),
@@ -218,14 +218,12 @@ MultiPassTesseractDecoder::MultiPassTesseractDecoder(
         "Two-pass decoding requires merge_errors=true because reweighting is defined on "
         "aggregate component symptoms; use one pass to decode unmerged error mechanisms.");
   }
-  initialize(dem, detector_components, base_config, num_det_orders, det_order_method, seed);
+  initialize(dem, detector_components, base_config);
 }
 
 void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
                                            const std::vector<int>& detector_components,
-                                           const TesseractConfig& base_config,
-                                           size_t num_det_orders, DetOrder det_order_method,
-                                           uint64_t seed) {
+                                           const TesseractConfig& base_config) {
   stim::DetectorErrorModel flattened = dem.flattened();
   total_global_detectors = flattened.count_detectors();
   validate_detector_components(detector_components, total_global_detectors);
@@ -273,9 +271,6 @@ void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
     TesseractConfig config = base_config;
     config.multipass = false;
     config.dem = component_dems.at(component);
-    if (config.det_orders.empty()) {
-      config.det_orders = build_det_orders(config.dem, num_det_orders, det_order_method, seed);
-    }
     component_decoder.decoder = std::make_unique<TesseractDecoder>(std::move(config));
     component_decoder.error_index_to_rules.resize(component_decoder.decoder->errors.size());
 

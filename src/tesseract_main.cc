@@ -44,7 +44,8 @@ struct Args {
   // Manifold orientation options
   uint64_t det_order_seed;
   size_t num_det_orders = 10;
-  DetOrder det_order_method = DetOrder::DetIndex;
+  DetectorOrderMethod det_order_method = DetectorOrderMethod::Index;
+  std::string detector_orders_path;
 
   // Sampling options
   size_t sample_num_shots = 0;
@@ -101,6 +102,14 @@ struct Args {
   void validate(const argparse::ArgumentParser& program) {
     if (circuit_path.empty() and dem_path.empty()) {
       throw std::invalid_argument("Must provide at least one of --circuit or --dem");
+    }
+
+    if (!detector_orders_path.empty() &&
+        (program.is_used("--det-order-bfs") || program.is_used("--det-order-index") ||
+         program.is_used("--det-order-coordinate") || program.is_used("--num-det-orders") ||
+         program.is_used("--det-order-seed"))) {
+      throw std::invalid_argument(
+          "--detector-orders cannot be combined with generated detector-order options.");
     }
 
     int num_data_sources = int(sample_num_shots > 0) + int(!in_fname.empty());
@@ -223,7 +232,18 @@ struct Args {
 
     config.merge_errors = !no_merge_errors;
 
-    // Sample orientations of the error model to use for the det priority
+    size_t shot_detector_count = config.dem.count_detectors();
+    if (!circuit_path.empty()) {
+      shot_detector_count = circuit.count_detectors();
+      if (shot_detector_count > config.dem.count_detectors()) {
+        throw std::invalid_argument("Circuit detector count exceeds DEM detector count.");
+      }
+      if (circuit.count_observables() != config.dem.count_observables()) {
+        throw std::invalid_argument("Circuit and DEM observable counts differ.");
+      }
+    }
+
+    // Choose the detector traversal orders.
     {
       if (verbose) {
         auto detector_coords = get_detector_coords(config.dem);
@@ -237,12 +257,33 @@ struct Args {
           std::cout << ")" << std::endl;
         }
       }
-      if (multipass) {
-        // Multi-pass builds detector orders separately from each component DEM.
-        config.det_orders.clear();
+      if (!detector_orders_path.empty()) {
+        std::ifstream input(detector_orders_path);
+        if (!input.is_open()) {
+          throw std::invalid_argument("Could not open the file: " + detector_orders_path);
+        }
+        nlohmann::json orders = nlohmann::json::parse(input, nullptr, false);
+        if (orders.is_discarded()) {
+          throw std::invalid_argument("Detector orders file is not valid JSON: " +
+                                      detector_orders_path);
+        }
+        if (!orders.is_array() || orders.empty()) {
+          throw std::invalid_argument("Detector orders file must contain at least one order.");
+        }
+        for (const auto& order : orders) {
+          if (!order.is_array() ||
+              !std::all_of(order.begin(), order.end(),
+                           [](const auto& detector) { return detector.is_number_unsigned(); })) {
+            throw std::invalid_argument(
+                "Detector orders file must contain arrays of nonnegative integers.");
+          }
+        }
+        config.detector_order_specs =
+            make_literal_detector_order_specs(orders.get<std::vector<std::vector<size_t>>>());
+        resolve_detector_order_specs(config.detector_order_specs, config.dem);
       } else {
-        config.det_orders =
-            build_det_orders(config.dem, num_det_orders, det_order_method, det_order_seed);
+        config.detector_order_specs =
+            make_detector_order_specs(num_det_orders, det_order_method, det_order_seed);
       }
     }
 
@@ -272,7 +313,7 @@ struct Args {
       }
       stim::FileFormatData shots_in_format = stim::format_name_to_enum_map().at(in_format);
       auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
-          shots_file, shots_in_format.id, 0, config.dem.count_detectors(),
+          shots_file, shots_in_format.id, 0, shot_detector_count,
           append_observables * config.dem.count_observables());
 
       // Load the shots from a file
@@ -351,9 +392,6 @@ struct Args {
 
     config.multipass = multipass;
     config.num_passes = num_passes;
-    config.num_det_orders = num_det_orders;
-    config.det_order_method = det_order_method;
-    config.det_order_seed = det_order_seed;
     config.multipass_strategy =
         multipass_strategy == "static" ? SchedulingStrategy::Static : SchedulingStrategy::Causal;
     config.collect_multipass_plan_statistics = print_multipass_plan;
@@ -380,17 +418,18 @@ int main(int argc, char* argv[]) {
   det_order_group.add_argument("--det-order-bfs")
       .help("Use BFS-based detector ordering")
       .flag()
-      .action([&args](const std::string&) { args.det_order_method = DetOrder::DetBFS; });
+      .action([&args](const std::string&) { args.det_order_method = DetectorOrderMethod::BFS; });
   det_order_group.add_argument("--det-order-index")
       .help(
           "Randomly choose increasing or decreasing detector index order "
           "(default if no method specified)")
       .flag()
-      .action([&args](const std::string&) { args.det_order_method = DetOrder::DetIndex; });
+      .action([&args](const std::string&) { args.det_order_method = DetectorOrderMethod::Index; });
   det_order_group.add_argument("--det-order-coordinate")
       .help("Random geometric detector orientation ordering")
       .flag()
-      .action([&args](const std::string&) { args.det_order_method = DetOrder::DetCoordinate; });
+      .action(
+          [&args](const std::string&) { args.det_order_method = DetectorOrderMethod::Coordinate; });
   program.add_argument("--det-order-seed")
       .help(
           "Seed used when initializing the random detector traversal "
@@ -398,6 +437,12 @@ int main(int argc, char* argv[]) {
       .metavar("N")
       .default_value(static_cast<uint64_t>(518278944))
       .store_into(args.det_order_seed);
+  program.add_argument("--detector-orders")
+      .help(
+          "JSON file containing one or more detector-ID permutations, in the same format as "
+          "TesseractConfig.det_orders")
+      .metavar("FILE")
+      .store_into(args.detector_orders_path);
   program.add_argument("--sample-num-shots")
       .help(
           "If provided, will sample the requested number of shots from the "
@@ -704,8 +749,7 @@ int main(int argc, char* argv[]) {
   for (const auto& decoder : decoders) {
     const auto* monolithic_decoder = dynamic_cast<const TesseractDecoder*>(decoder.get());
     if (monolithic_decoder != nullptr) {
-      effective_sparsify_reactivate_limit =
-          monolithic_decoder->config.sparsify_reactivate_limit;
+      effective_sparsify_reactivate_limit = monolithic_decoder->config.sparsify_reactivate_limit;
       break;
     }
   }
@@ -731,8 +775,10 @@ int main(int argc, char* argv[]) {
         {"beam_climbing", args.beam_climbing},
         {"no_revisit_dets", args.no_revisit_dets},
         {"pqlimit", args.pqlimit},
-        {"num_det_orders", args.num_det_orders},
+        {"num_det_orders",
+         config.detector_order_specs.empty() ? 1 : config.detector_order_specs.size()},
         {"det_order_seed", args.det_order_seed},
+        {"detector_orders_path", args.detector_orders_path},
         {"total_time_seconds", total_time_seconds},
         {"num_errors", has_obs ? nlohmann::json(num_errors) : nullptr},
         {"num_low_confidence", num_low_confidence},

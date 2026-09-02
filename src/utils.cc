@@ -225,19 +225,156 @@ static std::vector<std::vector<size_t>> build_det_orders_index(const stim::Detec
   return det_orders;
 }
 
-std::vector<std::vector<size_t>> build_det_orders(const stim::DetectorErrorModel& dem,
-                                                  size_t num_det_orders, DetOrder method,
-                                                  uint64_t seed) {
+static std::vector<std::vector<size_t>> generate_detector_orders(
+    const stim::DetectorErrorModel& dem, size_t num_det_orders, DetectorOrderMethod method,
+    uint64_t seed) {
   std::mt19937_64 rng(seed);
   switch (method) {
-    case DetOrder::DetBFS:
+    case DetectorOrderMethod::BFS:
       return build_det_orders_bfs(dem, num_det_orders, rng);
-    case DetOrder::DetCoordinate:
+    case DetectorOrderMethod::Coordinate:
       return build_det_orders_coordinate(dem, num_det_orders, rng);
-    case DetOrder::DetIndex:
+    case DetectorOrderMethod::Index:
       return build_det_orders_index(dem, num_det_orders, rng);
+    case DetectorOrderMethod::Literal:
+      throw std::invalid_argument("Literal detector orders cannot be generated from a DEM.");
   }
-  throw std::invalid_argument("Unknown det order method");
+  throw std::invalid_argument("Unknown detector order method.");
+}
+
+static void validate_detector_order(const std::vector<size_t>& detector_at_position,
+                                    size_t num_detectors, size_t order_index) {
+  if (detector_at_position.size() != num_detectors) {
+    throw std::invalid_argument("Detector order " + std::to_string(order_index) + " has size " +
+                                std::to_string(detector_at_position.size()) +
+                                ", but the detector error model has " +
+                                std::to_string(num_detectors) + " detectors.");
+  }
+
+  std::vector<char> seen(num_detectors, false);
+  for (size_t position = 0; position < detector_at_position.size(); ++position) {
+    const size_t detector = detector_at_position[position];
+    if (detector >= num_detectors) {
+      throw std::invalid_argument("Detector order " + std::to_string(order_index) +
+                                  " contains out-of-range detector ID " + std::to_string(detector) +
+                                  " at position " + std::to_string(position) + ".");
+    }
+    if (seen[detector]) {
+      throw std::invalid_argument("Detector order " + std::to_string(order_index) +
+                                  " contains detector ID " + std::to_string(detector) +
+                                  " more than once.");
+    }
+    seen[detector] = true;
+  }
+}
+
+DetectorOrderSpec::DetectorOrderSpec(DetectorOrderMethod method, uint64_t seed)
+    : DetectorOrderSpec(method, seed, 0) {}
+
+DetectorOrderSpec::DetectorOrderSpec(DetectorOrderMethod method, uint64_t seed,
+                                     size_t sequence_index)
+    : method(method),
+      seed(seed),
+      sequence_index(sequence_index),
+      resolved(false),
+      detector_order() {
+  if (method == DetectorOrderMethod::Literal) {
+    throw std::invalid_argument(
+        "A literal DetectorOrderSpec must be constructed from a detector order.");
+  }
+}
+
+DetectorOrderSpec::DetectorOrderSpec(std::vector<size_t> detector_order)
+    : method(DetectorOrderMethod::Literal),
+      seed(0),
+      sequence_index(0),
+      resolved(true),
+      detector_order(std::move(detector_order)) {}
+
+void DetectorOrderSpec::resolve(const stim::DetectorErrorModel& dem) {
+  if (resolved) {
+    return;
+  }
+  auto orders = generate_detector_orders(dem, sequence_index + 1, method, seed);
+  detector_order = std::move(orders.back());
+  resolved = true;
+}
+
+bool DetectorOrderSpec::is_resolved() const {
+  return resolved;
+}
+
+DetectorOrderMethod DetectorOrderSpec::get_method() const {
+  return method;
+}
+
+const std::vector<size_t>& DetectorOrderSpec::get_detector_order() const {
+  if (!resolved) {
+    throw std::logic_error("Detector order has not been resolved against a DEM.");
+  }
+  return detector_order;
+}
+
+std::vector<DetectorOrderSpec> make_detector_order_specs(size_t num_det_orders,
+                                                         DetectorOrderMethod method,
+                                                         uint64_t seed) {
+  if (method == DetectorOrderMethod::Literal) {
+    throw std::invalid_argument("Literal detector orders must provide their detector IDs.");
+  }
+  std::vector<DetectorOrderSpec> result;
+  result.reserve(num_det_orders);
+  for (size_t order_index = 0; order_index < num_det_orders; ++order_index) {
+    result.push_back(DetectorOrderSpec(method, seed, order_index));
+  }
+  return result;
+}
+
+std::vector<DetectorOrderSpec> make_literal_detector_order_specs(
+    std::vector<std::vector<size_t>> detector_orders) {
+  std::vector<DetectorOrderSpec> result;
+  result.reserve(detector_orders.size());
+  for (auto& detector_order : detector_orders) {
+    result.emplace_back(std::move(detector_order));
+  }
+  return result;
+}
+
+void resolve_detector_order_specs(std::vector<DetectorOrderSpec>& detector_order_specs,
+                                  const stim::DetectorErrorModel& dem) {
+  bool is_homogeneous_generated_sequence = !detector_order_specs.empty();
+  if (is_homogeneous_generated_sequence) {
+    const auto& first = detector_order_specs.front();
+    is_homogeneous_generated_sequence = !first.resolved && first.sequence_index == 0;
+    for (size_t k = 0; is_homogeneous_generated_sequence && k < detector_order_specs.size(); ++k) {
+      const auto& spec = detector_order_specs[k];
+      is_homogeneous_generated_sequence = !spec.resolved && spec.method == first.method &&
+                                          spec.seed == first.seed && spec.sequence_index == k;
+    }
+  }
+
+  if (is_homogeneous_generated_sequence) {
+    auto orders = generate_detector_orders(dem, detector_order_specs.size(),
+                                           detector_order_specs.front().method,
+                                           detector_order_specs.front().seed);
+    for (size_t k = 0; k < detector_order_specs.size(); ++k) {
+      detector_order_specs[k].detector_order = std::move(orders[k]);
+      detector_order_specs[k].resolved = true;
+    }
+  } else {
+    for (auto& spec : detector_order_specs) {
+      spec.resolve(dem);
+    }
+  }
+
+  for (size_t k = 0; k < detector_order_specs.size(); ++k) {
+    validate_detector_order(detector_order_specs[k].get_detector_order(), dem.count_detectors(), k);
+  }
+}
+
+std::vector<std::vector<size_t>> build_det_orders(const stim::DetectorErrorModel& dem,
+                                                  size_t num_det_orders, DetectorOrderMethod method,
+                                                  uint64_t seed) {
+  return generate_detector_orders(dem, num_det_orders, method, seed);
 }
 
 bool sampling_from_dem(uint64_t seed, size_t num_shots, stim::DetectorErrorModel dem,

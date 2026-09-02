@@ -76,8 +76,6 @@ class MultiPassTesseractDecoder : public Decoder {
   MultiPassTesseractDecoder(const stim::DetectorErrorModel& dem, size_t num_passes,
                             const std::vector<int>& detector_components,
                             const TesseractConfig& base_config = TesseractConfig(),
-                            size_t num_det_orders = 1,
-                            DetOrder det_order_method = DetOrder::DetIndex, uint64_t seed = 0,
                             SchedulingStrategy strategy = SchedulingStrategy::Causal,
                             bool collect_plan_statistics = false);
 
@@ -122,8 +120,7 @@ class MultiPassTesseractDecoder : public Decoder {
   std::vector<int> global_det_to_comp_id;
 
   void initialize(const stim::DetectorErrorModel& dem, const std::vector<int>& detector_components,
-                  const TesseractConfig& base_config, size_t num_det_orders,
-                  DetOrder det_order_method, uint64_t seed);
+                  const TesseractConfig& base_config);
   void build_static_schedule();
   void build_causal_schedule();
   void restore_modified_costs(const std::vector<std::vector<size_t>>& modified_error_indices);

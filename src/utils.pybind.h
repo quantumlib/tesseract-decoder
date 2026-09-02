@@ -34,11 +34,17 @@ void add_utils_module(py::module& root) {
   m.attr("INF") = INF;
   m.doc() = "A representation of infinity for floating point numbers.";
 
-  py::enum_<DetOrder>(m, "DetOrder", "Detector ordering methods")
-      .value("DetBFS", DetOrder::DetBFS)
-      .value("DetIndex", DetOrder::DetIndex)
-      .value("DetCoordinate", DetOrder::DetCoordinate)
+  py::enum_<DetectorOrderMethod> detector_order_method(m, "DetectorOrderMethod",
+                                                       "Detector ordering methods");
+  detector_order_method.value("BFS", DetectorOrderMethod::BFS)
+      .value("Index", DetectorOrderMethod::Index)
+      .value("Coordinate", DetectorOrderMethod::Coordinate)
+      .value("Literal", DetectorOrderMethod::Literal)
+      .value("DetBFS", DetectorOrderMethod::BFS)
+      .value("DetIndex", DetectorOrderMethod::Index)
+      .value("DetCoordinate", DetectorOrderMethod::Coordinate)
       .export_values();
+  m.attr("DetOrder") = detector_order_method;
 
   m.def(
       "get_detector_coords",
@@ -89,11 +95,11 @@ void add_utils_module(py::module& root) {
     )pbdoc");
   m.def(
       "build_det_orders",
-      [](py::object dem, size_t num_det_orders, DetOrder method, uint64_t seed) {
+      [](py::object dem, size_t num_det_orders, DetectorOrderMethod method, uint64_t seed) {
         auto input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
         return build_det_orders(input_dem, num_det_orders, method, seed);
       },
-      py::arg("dem"), py::arg("num_det_orders"), py::arg("method") = DetOrder::DetIndex,
+      py::arg("dem"), py::arg("num_det_orders"), py::arg("method") = DetectorOrderMethod::Index,
       py::arg("seed") = 0, R"pbdoc(
         Generates various detector orderings for decoding.
 
@@ -103,10 +109,10 @@ void add_utils_module(py::module& root) {
             The detector error model to generate orders for.
         num_det_orders : int
             The number of detector orderings to generate.
-        method : tesseract_decoder.utils.DetOrder, default=tesseract_decoder.utils.DetOrder.DetIndex
-            Strategy for ordering detectors. ``DetIndex`` chooses either increasing
-            or decreasing detector index order at random, ``DetBFS`` performs a
-            breadth-first traversal, and ``DetCoordinate`` projects every declared
+        method : tesseract_decoder.utils.DetectorOrderMethod, default=tesseract_decoder.utils.DetectorOrderMethod.Index
+            Strategy for ordering detectors. ``Index`` chooses either increasing
+            or decreasing detector index order at random, ``BFS`` performs a
+            breadth-first traversal, and ``Coordinate`` projects every declared
             coordinate dimension onto randomized orientations and places detectors
             without coordinates last.
         seed : int, default=0

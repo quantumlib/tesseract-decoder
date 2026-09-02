@@ -33,7 +33,7 @@ def test_tesseract_sinter_obj_exists():
     decoder = TesseractSinterDecoder()
     assert hasattr(decoder, "compile_decoder_for_dem")
     assert hasattr(decoder, "decode_via_files")
-    assert decoder.det_order_method == tesseract_decoder.utils.DetOrder.DetIndex
+    assert decoder.det_order_method == tesseract_decoder.utils.DetectorOrderMethod.Index
 
 
 @pytest.mark.parametrize("use_custom_config", [False, True])
@@ -736,11 +736,11 @@ def test_tesseract_sinter_decoder_old_positional_constructor_order():
         0.0,
         False,
         21,
-        tesseract_decoder.utils.DetOrder.DetIndex,
+        tesseract_decoder.utils.DetectorOrderMethod.Index,
         2384753,
     )
     assert decoder.num_det_orders == 21
-    assert decoder.det_order_method == tesseract_decoder.utils.DetOrder.DetIndex
+    assert decoder.det_order_method == tesseract_decoder.utils.DetectorOrderMethod.Index
     assert decoder.seed == 2384753
     assert decoder.sparsify_errors is False
     assert decoder.sparsify_base_degree == -1

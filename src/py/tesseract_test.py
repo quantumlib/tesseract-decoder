@@ -60,6 +60,26 @@ def test_selected_detector_order_index_must_be_in_range():
         decoder.decode_to_errors(np.zeros(2, dtype=bool), 1, 0)
 
 
+def test_detector_orders_property_round_trips_literal_orders():
+    config = tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL)
+    config.det_orders = [[1, 0], [0, 1]]
+
+    assert config.det_orders == [[1, 0], [0, 1]]
+    decoder = config.compile_decoder()
+    assert decoder.config.det_orders == [[1, 0], [0, 1]]
+
+
+def test_default_detector_orders_resolve_for_compile_decoder_dem():
+    # Passing an argument selects the no-DEM convenience constructor. Its
+    # generated order specifications must remain deferred until this DEM is
+    # supplied instead of being fixed as empty permutations.
+    config = tesseract_decoder.tesseract.TesseractConfig(det_beam=5)
+    decoder = config.compile_decoder_for_dem(_DETECTOR_ERROR_MODEL)
+
+    assert len(decoder.config.det_orders) == 20
+    assert all(sorted(order) == [0, 1] for order in decoder.config.det_orders)
+
+
 def test_create_tesseract_config():
     config = tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL)
     assert config.dem == _DETECTOR_ERROR_MODEL
@@ -75,7 +95,7 @@ def test_create_tesseract_config():
     assert config.det_orders == tesseract_decoder.utils.build_det_orders(
         _DETECTOR_ERROR_MODEL,
         20,
-        tesseract_decoder.utils.DetOrder.DetIndex,
+        tesseract_decoder.utils.DetectorOrderMethod.Index,
         2384753,
     )
 

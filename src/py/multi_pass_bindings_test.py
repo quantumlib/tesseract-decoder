@@ -53,7 +53,7 @@ def test_zero_configuration_and_stable_registry_workflows():
         if "multipass" in name:
             assert configured_decoder.det_beam == 20
             assert configured_decoder.det_order_method == (
-                tesseract_decoder.utils.DetOrder.DetIndex
+                tesseract_decoder.utils.DetectorOrderMethod.Index
             )
 
 
@@ -146,7 +146,7 @@ def test_all_standard_configuration_keywords_and_unknown_keyword_validation():
         sparsify_reactivate_limit=7,
         det_orders=[[1, 0]],
         num_det_orders=3,
-        det_order_method=tesseract_decoder.utils.DetOrder.DetCoordinate,
+        det_order_method=tesseract_decoder.utils.DetectorOrderMethod.Coordinate,
         seed=123,
     )
     assert decoder.det_beam == 17

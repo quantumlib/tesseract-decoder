@@ -70,7 +70,7 @@ class MultiPassSinterDecoder(sinter.Decoder):
         sparsify_reactivate_limit: int = -1,
         det_orders: Sequence[Sequence[int]] | None = None,
         num_det_orders: int = 1,
-        det_order_method=_core.utils.DetOrder.DetIndex,
+        det_order_method=_core.utils.DetectorOrderMethod.Index,
         seed: int = 0,
     ):
         if num_passes not in (1, 2):
@@ -185,9 +185,9 @@ class MultiPassSinterDecoder(sinter.Decoder):
             sparsify_reactivate_limit=self.sparsify_reactivate_limit,
             det_orders=self.det_orders,
         )
-        # The Python TesseractConfig constructor synthesizes orders when given
-        # an empty list. Restore the caller's empty list so native multipass
-        # compilation uses num_det_orders/method/seed for each component.
+        # The Python TesseractConfig constructor synthesizes deferred orders
+        # when given an empty list. Restore the caller's empty list so the
+        # multipass bridge uses num_det_orders/method/seed for each component.
         base_config.det_orders = self.det_orders
         return _core._compile_multi_pass_decoder_for_dem(
             dem=dem,
@@ -211,7 +211,7 @@ def get_sinter_decoders() -> dict[str, sinter.Decoder]:
         merge_errors=True,
         pqlimit=1_000_000,
         num_det_orders=21,
-        det_order_method=_core.utils.DetOrder.DetIndex,
+        det_order_method=_core.utils.DetectorOrderMethod.Index,
         seed=2_384_753,
     )
     return {

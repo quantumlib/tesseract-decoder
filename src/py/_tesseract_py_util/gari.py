@@ -34,7 +34,8 @@ over GF(2). GARI substitutes
 
 ``bar(e)_Z = e_Z XOR U e_Y`` and ``bar(e)_X = e_X XOR V e_Y``.
 
-Columns are emitted as ``[e_Z, e_X, e_Y, bar(e)_Z, bar(e)_X]`` and rows as
+Internally, columns are ordered as
+``[e_Z, e_X, e_Y, bar(e)_Z, bar(e)_X]`` and rows as
 ``[physical X, physical Z, virtual Z, virtual X]``:
 
 ::
@@ -47,8 +48,12 @@ Columns are emitted as ``[e_Z, e_X, e_Y, bar(e)_Z, bar(e)_X]`` and rows as
     virtual X constraint |  0 |  I |  V |    0    |    I    |
                          +----+----+----+---------+---------+
 
-The corresponding decoder syndrome is ``[s_X, s_Z, 0, 0]``. The logical map
-stays on the original physical variables:
+By default, serialized GARI DEMs restore the physical rows to the source
+detector order and append the virtual rows. A source syndrome can therefore be
+copied into the beginning of a zero-filled GARI syndrome. The block row order
+above remains available for research use.
+
+The logical map stays on the original physical variables:
 ``[L_eZ, L_eX, L_eY, 0, 0]``. These are the GARI transformed matrices. They can
 be stored using Stim's DEM syntax, but the resulting GARI DEM is only a matrix
 storage and decoding representation. It is not a physical detector error model
@@ -61,9 +66,17 @@ source matrix column. Instructions containing Stim's ``^`` decomposition
 separator are not supported. Repeated detector or logical targets are reduced
 modulo two, following Stim's GF(2) parity semantics.
 
-For certain single-basis CSS memory experiments, the paper instead evaluates
-the logical observable on ``bar(e)_X`` or ``bar(e)_Z``. That placement is
-experiment-specific and is not implemented by this generic transform.
+For a single-basis CSS memory experiment, the paper's message-passing decoder
+evaluates the logical result using the barred variable aligned with the
+relevant component matrix. For logical-Z memory it uses ``bar(e)_X`` and tests
+convergence with ``D_Z bar(e)_X = s_Z``; for logical-X memory it analogously
+uses ``bar(e)_Z`` and ``D_X bar(e)_Z = s_X``. This convention can also be
+useful for downstream BP-style decoders.
+
+This module does not select a BP/message-passing convergence rule or move
+logical targets to the barred variables. It emits the generic logical map
+``[L_eZ, L_eX, L_eY, 0, 0]``, keeping logical targets on the original error
+variables.
 
 Every pure ``e_Z`` and ``e_X`` column receives a barred counterpart, including
 columns that are not the projection of any ``e_Y`` column. Such an unused pure
@@ -75,7 +88,6 @@ five-block structure uniform and the physical top-left blocks zero.
 from __future__ import annotations
 
 import dataclasses
-import json
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -403,6 +415,8 @@ def _gari_transform(
         dtype=np.uint8,
     )
 
+    # Emit the generic [L_eZ, L_eX, L_eY, 0, 0] map. Barred-variable logical
+    # output and component convergence are choices for a downstream decoder.
     augmented_logicals = scipy.sparse.hstack(
         [
             source_logicals[:, e_z_columns],
@@ -607,11 +621,31 @@ def tesseract_lp_max_barred_cost_prior_probabilities(
     return np.exp(-np.logaddexp(0, gari_costs))
 
 
+def _gari_checks_in_row_order(
+    transform: GariTransform, row_order: str
+) -> scipy.sparse.csc_matrix:
+    if row_order == "source":
+        source_detector_count = len(transform.source_to_gari_detectors)
+        rows = np.concatenate(
+            [
+                transform.source_to_gari_detectors,
+                np.arange(
+                    source_detector_count, transform.checks.shape[0]
+                ),
+            ]
+        )
+        return transform.checks[rows, :]
+    if row_order == "block":
+        return transform.checks
+    raise ValueError("row_order must be 'source' or 'block'.")
+
+
 def _build_gari_dem(
     transform: GariTransform,
     source_probabilities: np.ndarray,
     *,
     prior_function: Callable[[GariTransform, np.ndarray], np.ndarray],
+    row_order: str,
 ) -> stim.DetectorErrorModel:
     """Builds a GARI DEM using an explicit prior policy.
 
@@ -648,26 +682,18 @@ def _build_gari_dem(
         transform.checks.shape[1],
         "prior_function probabilities",
     )
-    return _matrices_to_gari_dem(
-        transform.checks, transform.logicals, gari_probabilities
-    )
+    checks = _gari_checks_in_row_order(transform, row_order)
+    return _matrices_to_gari_dem(checks, transform.logicals, gari_probabilities)
 
 
-def circuit_to_gari(
+def _gari_transform_from_circuit(
     circuit: stim.Circuit,
     *,
-    prior_function: Callable[[GariTransform, np.ndarray], np.ndarray],
     detector_basis_classifier: DetectorBasisClassifier = (
         automatic_detector_basis_classifier
     ),
-) -> tuple[stim.DetectorErrorModel, dict[str, object]]:
-    """Converts a supported CSS circuit into a GARI matrix DEM and v1 layout.
-
-    The source DEM is generated undecomposed (``decompose_errors=False``) and
-    flattened. By default, detector basis metadata is checked before the
-    repository's Chromobius fourth-coordinate convention. The returned DEM
-    stores transformed matrices for decoding and must not be sampled.
-    """
+) -> tuple[stim.DetectorErrorModel, GariTransform, np.ndarray]:
+    """Builds the GARI transform using the shared detector-basis interface."""
     source_dem = _circuit_to_gari_source_dem(circuit)
     checks, logicals, probabilities = dem_to_matrices(source_dem)
     x_detectors, z_detectors = _detector_partition(
@@ -679,48 +705,125 @@ def circuit_to_gari(
         x_detectors=x_detectors,
         z_detectors=z_detectors,
     )
-    gari_dem = _build_gari_dem(
-        transform, probabilities, prior_function=prior_function
+    return source_dem, transform, probabilities
+
+
+def circuit_to_gari(
+    circuit: stim.Circuit,
+    *,
+    prior_function: Callable[[GariTransform, np.ndarray], np.ndarray],
+    row_order: str = "source",
+    detector_basis_classifier: DetectorBasisClassifier = (
+        automatic_detector_basis_classifier
+    ),
+) -> stim.DetectorErrorModel:
+    """Converts a supported CSS circuit into a GARI matrix DEM.
+
+    The source DEM is generated undecomposed (``decompose_errors=False``) and
+    flattened. By default, the shared automatic classifier checks detector
+    basis metadata before the strict Chromobius fourth-coordinate convention.
+    A custom classifier can be supplied with ``detector_basis_classifier``.
+    By default, source detector IDs are preserved and virtual detector rows
+    are appended. ``row_order="block"`` instead emits physical X, physical Z,
+    virtual Z, and virtual X row blocks for research use. The returned DEM
+    stores transformed matrices for decoding and must not be sampled.
+    """
+    _, transform, probabilities = _gari_transform_from_circuit(
+        circuit, detector_basis_classifier=detector_basis_classifier
     )
-    layout = {
-        "schema": "tesseract.gari_layout.v1",
-        "source_detector_count": len(transform.source_to_gari_detectors),
-        "gari_detector_count": transform.checks.shape[0],
-        "source_to_gari": transform.source_to_gari_detectors.tolist(),
-        "detector_order": "physical_then_virtual",
-    }
-    return gari_dem, layout
+    return _build_gari_dem(
+        transform,
+        probabilities,
+        prior_function=prior_function,
+        row_order=row_order,
+    )
 
 
-def call_gari(circuit_fname: str, prior_name: str, output_dir: str) -> None:
-    """Converts one circuit and writes its GARI DEM and layout files."""
+def build_detector_orders(
+    circuit: stim.Circuit,
+    gari_dem: stim.DetectorErrorModel,
+    num_det_orders: int,
+    *,
+    method: object | None = None,
+    seed: int = 0,
+    detector_basis_classifier: DetectorBasisClassifier = (
+        automatic_detector_basis_classifier
+    ),
+) -> list[list[int]]:
+    """Builds traversal orders for a source-aligned GARI DEM.
+
+    The supplied DEM's check and logical matrices must match the GARI
+    transform of ``circuit`` in source row order. Error probabilities may
+    differ because they do not affect detector traversal order construction.
+    """
+    from tesseract_decoder import utils
+
+    source_dem, transform, _ = _gari_transform_from_circuit(
+        circuit, detector_basis_classifier=detector_basis_classifier
+    )
+    source_detector_count = source_dem.num_detectors
+    if gari_dem.num_detectors < source_detector_count:
+        raise ValueError("The GARI DEM has fewer detectors than the source circuit.")
+    gari_checks, gari_logicals, _ = dem_to_matrices(gari_dem)
+    expected_checks = _gari_checks_in_row_order(transform, "source")
+    checks_match = (
+        gari_checks.shape == expected_checks.shape
+        and (gari_checks != expected_checks).nnz == 0
+    )
+    logicals_match = (
+        gari_logicals.shape == transform.logicals.shape
+        and (gari_logicals != transform.logicals).nnz == 0
+    )
+    if not checks_match or not logicals_match:
+        raise ValueError(
+            "The GARI DEM is not the source-aligned GARI transform of the "
+            "supplied circuit; block-row and unrelated DEMs are unsupported."
+        )
+    if method is None:
+        method = utils.DetectorOrderMethod.Index
+    virtual_detectors = list(
+        range(source_detector_count, gari_dem.num_detectors)
+    )
+    source_orders = utils.build_det_orders(
+        source_dem, num_det_orders, method=method, seed=seed
+    )
+    return [
+        list(source_order) + virtual_detectors
+        for source_order in source_orders
+    ]
+
+
+def call_gari(
+    circuit_fname: str,
+    prior_name: str,
+    output_dir: str,
+    *,
+    row_order: str = "source",
+) -> None:
+    """Converts one circuit and writes its GARI matrix DEM."""
     prior_function = {
         "paper": paper_prior_probabilities,
         "xor": tesseract_xor_prior_probabilities,
         "lp-max-barred-cost": tesseract_lp_max_barred_cost_prior_probabilities,
     }[prior_name]
-    gari_dem, layout = circuit_to_gari(
+    gari_dem = circuit_to_gari(
         stim.Circuit.from_file(circuit_fname),
         prior_function=prior_function,
+        row_order=row_order,
     )
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     output_name = f"{Path(circuit_fname).stem}_gari_{prior_name.replace('-', '_')}"
+    if row_order == "block":
+        output_name += "_block"
     gari_dem.to_file(output_path / f"{output_name}.dem")
-    (output_path / f"{output_name}_layout.json").write_text(
-        json.dumps(layout, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
 
 
 def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(
-        description=(
-            "Convert one Stim circuit into a GARI matrix DEM and "
-            "detector-layout JSON file."
-        )
+        description="Convert one Stim circuit into a GARI matrix DEM."
     )
     parser.add_argument(
         "--circuit", required=True, help="Input Stim circuit file."
@@ -736,12 +839,25 @@ def main() -> None:
         required=True,
         help=(
             "Output directory, created if needed. Files are named "
-            "<circuit>_gari_<prior>.dem and "
-            "<circuit>_gari_<prior>_layout.json."
+            "<circuit>_gari_<prior>.dem."
+        ),
+    )
+    parser.add_argument(
+        "--row-order",
+        choices=("source", "block"),
+        default="source",
+        help=(
+            "Use source detector IDs followed by virtual rows (default), or "
+            "emit research-only GARI row blocks with a _block.dem suffix."
         ),
     )
     args = parser.parse_args()
-    call_gari(args.circuit, args.prior, args.out_dir)
+    call_gari(
+        args.circuit,
+        args.prior,
+        args.out_dir,
+        row_order=args.row_order,
+    )
 
 
 if __name__ == "__main__":
