@@ -36,10 +36,6 @@ constexpr size_t DEFAULT_PQLIMIT = 200000;
 
 int suggest_sparsify_reactivate_limit(size_t num_detectors, int sparsify_base_degree);
 
-// Validates that each detector order is a permutation of [0, num_detectors).
-void validate_detector_orders(const std::vector<std::vector<size_t>>& detector_orders,
-                              size_t num_detectors);
-
 struct TesseractConfig {
   stim::DetectorErrorModel dem;
   int det_beam = DEFAULT_DET_BEAM;
@@ -50,9 +46,9 @@ struct TesseractConfig {
   bool merge_errors = true;
   size_t pqlimit = DEFAULT_PQLIMIT;
 
-  // Detector traversal permutations. Each order uses the convention
-  // det_orders[order_index][position] = detector_id.
-  std::vector<std::vector<size_t>> det_orders;
+  // Each specification resolves to one detector traversal permutation once
+  // the decoder's concrete DEM is known.
+  std::vector<DetectorOrderSpec> detector_order_specs;
   double det_penalty = 0;
   bool create_visualization = false;
 

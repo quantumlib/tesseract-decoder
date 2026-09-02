@@ -363,7 +363,7 @@ if __name__ == "__main__":
         merge_errors=True,
         pqlimit=1_000,
         num_det_orders=5,
-        det_order_method=tesseract_decoder.utils.DetOrder.DetIndex,
+        det_order_method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=2384753,
         sparsify_errors=True,
         sparsify_base_degree=3,
@@ -450,7 +450,7 @@ tesseract_config = tesseract.TesseractConfig(
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem=dem,
         num_det_orders=21,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
     ),
     no_revisit_dets=True,
 )
@@ -466,7 +466,7 @@ tesseract_config = tesseract.TesseractConfig(
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem=dem,
         num_det_orders=16,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
     ),
     no_revisit_dets=True,
 )

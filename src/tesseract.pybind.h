@@ -35,6 +35,56 @@ std::unique_ptr<TesseractDecoder> _compile_tesseract_decoder_helper(const Tesser
   return std::make_unique<TesseractDecoder>(self);
 }
 
+TesseractConfig make_tesseract_config(stim::DetectorErrorModel dem, int det_beam,
+                                      bool beam_climbing, bool no_revisit_dets, bool verbose,
+                                      bool merge_errors, size_t pqlimit,
+                                      std::vector<std::vector<size_t>> det_orders,
+                                      double det_penalty, bool create_visualization,
+                                      bool sparsify_errors, int sparsify_base_degree,
+                                      int sparsify_max_degree, int sparsify_reactivate_limit) {
+  TesseractConfig config;
+  config.dem = std::move(dem);
+  config.det_beam = det_beam;
+  config.beam_climbing = beam_climbing;
+  config.no_revisit_dets = no_revisit_dets;
+  config.verbose = verbose;
+  config.merge_errors = merge_errors;
+  config.pqlimit = pqlimit;
+  config.detector_order_specs =
+      det_orders.empty() ? make_detector_order_specs(20, DetectorOrderMethod::Index, 2384753)
+                         : make_literal_detector_order_specs(std::move(det_orders));
+  config.det_penalty = det_penalty;
+  config.create_visualization = create_visualization;
+  config.sparsify_errors = sparsify_errors;
+  config.sparsify_base_degree = sparsify_base_degree;
+  config.sparsify_max_degree = sparsify_max_degree;
+  config.sparsify_reactivate_limit = sparsify_reactivate_limit;
+  return config;
+}
+
+std::vector<std::vector<size_t>> get_detector_orders(const TesseractConfig& config) {
+  auto detector_order_specs = config.detector_order_specs;
+  bool has_unresolved_spec = false;
+  for (const DetectorOrderSpec& spec : detector_order_specs) {
+    has_unresolved_spec |= !spec.is_resolved();
+  }
+  if (has_unresolved_spec) {
+    resolve_detector_order_specs(detector_order_specs, config.dem);
+  }
+
+  std::vector<std::vector<size_t>> detector_orders;
+  detector_orders.reserve(detector_order_specs.size());
+  for (const DetectorOrderSpec& spec : detector_order_specs) {
+    detector_orders.push_back(spec.get_detector_order());
+  }
+  return detector_orders;
+}
+
+void set_detector_orders(TesseractConfig& config,
+                         std::vector<std::vector<size_t>> detector_orders) {
+  config.detector_order_specs = make_literal_detector_order_specs(std::move(detector_orders));
+}
+
 TesseractConfig tesseract_config_maker_no_dem(
     int det_beam = INF_DET_BEAM, bool beam_climbing = false, bool no_revisit_dets = false,
     bool verbose = false, bool merge_errors = true,
@@ -43,14 +93,10 @@ TesseractConfig tesseract_config_maker_no_dem(
     double det_penalty = 0.0, bool create_visualization = false, bool sparsify_errors = false,
     int sparsify_base_degree = -1, int sparsify_max_degree = -1,
     int sparsify_reactivate_limit = -1) {
-  stim::DetectorErrorModel empty_dem;
-  if (det_orders.empty()) {
-    det_orders = build_det_orders(empty_dem, 20, DetOrder::DetIndex, 2384753);
-  }
-  return TesseractConfig({empty_dem, det_beam, beam_climbing, no_revisit_dets, verbose,
-                          merge_errors, pqlimit, det_orders, det_penalty, create_visualization,
-                          sparsify_errors, sparsify_base_degree, sparsify_max_degree,
-                          sparsify_reactivate_limit});
+  return make_tesseract_config(stim::DetectorErrorModel(), det_beam, beam_climbing, no_revisit_dets,
+                               verbose, merge_errors, pqlimit, std::move(det_orders), det_penalty,
+                               create_visualization, sparsify_errors, sparsify_base_degree,
+                               sparsify_max_degree, sparsify_reactivate_limit);
 }
 
 TesseractConfig tesseract_config_maker(
@@ -61,14 +107,10 @@ TesseractConfig tesseract_config_maker(
     double det_penalty = 0.0, bool create_visualization = false, bool sparsify_errors = false,
     int sparsify_base_degree = -1, int sparsify_max_degree = -1,
     int sparsify_reactivate_limit = -1) {
-  stim::DetectorErrorModel input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
-  if (det_orders.empty()) {
-    det_orders = build_det_orders(input_dem, 20, DetOrder::DetIndex, 2384753);
-  }
-  return TesseractConfig({input_dem, det_beam, beam_climbing, no_revisit_dets, verbose,
-                          merge_errors, pqlimit, det_orders, det_penalty, create_visualization,
-                          sparsify_errors, sparsify_base_degree, sparsify_max_degree,
-                          sparsify_reactivate_limit});
+  return make_tesseract_config(
+      parse_py_object<stim::DetectorErrorModel>(dem), det_beam, beam_climbing, no_revisit_dets,
+      verbose, merge_errors, pqlimit, std::move(det_orders), det_penalty, create_visualization,
+      sparsify_errors, sparsify_base_degree, sparsify_max_degree, sparsify_reactivate_limit);
 }
 
 };  // namespace
@@ -201,8 +243,8 @@ void add_tesseract_module(py::module& root) {
                      "If True, merges error channels that have identical syndrome patterns.")
       .def_readwrite("pqlimit", &TesseractConfig::pqlimit,
                      "The maximum size of the priority queue.")
-      .def_readwrite("det_orders", &TesseractConfig::det_orders,
-                     "Detector-ID permutations in traversal order: order[position] = detector_id.")
+      .def_property("det_orders", &get_detector_orders, &set_detector_orders,
+                    "Detector-ID permutations in traversal order: order[position] = detector_id.")
       .def_readwrite("det_penalty", &TesseractConfig::det_penalty,
                      "The penalty cost added for each detector.")
       .def_readwrite("create_visualization", &TesseractConfig::create_visualization,

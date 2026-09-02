@@ -757,7 +757,7 @@ def build_detector_orders(
             "supplied circuit; block-row and unrelated DEMs are unsupported."
         )
     if method is None:
-        method = utils.DetOrder.DetIndex
+        method = utils.DetectorOrderMethod.Index
     virtual_detectors = list(
         range(source_detector_count, gari_dem.num_detectors)
     )

@@ -116,9 +116,9 @@ struct TesseractSinterDecoder {
   int sparsify_max_degree;
   int sparsify_reactivate_limit;
 
-  // Parameters for build_det_orders
+  // Parameters for generated detector-order specifications.
   size_t num_det_orders;
-  DetOrder det_order_method;
+  DetectorOrderMethod det_order_method;
   uint64_t seed;
 
   // Default constructor
@@ -136,14 +136,14 @@ struct TesseractSinterDecoder {
         sparsify_max_degree(-1),
         sparsify_reactivate_limit(-1),
         num_det_orders(0),
-        det_order_method(DetOrder::DetIndex),
+        det_order_method(DetectorOrderMethod::Index),
         seed(2384753) {}
 
   // Constructor with parameters
   TesseractSinterDecoder(int det_beam, bool beam_climbing, bool no_revisit_dets, bool verbose,
                          bool merge_errors, size_t pqlimit, double det_penalty,
                          bool create_visualization, size_t num_det_orders,
-                         DetOrder det_order_method, uint64_t seed, bool sparsify_errors,
+                         DetectorOrderMethod det_order_method, uint64_t seed, bool sparsify_errors,
                          int sparsify_base_degree, int sparsify_max_degree,
                          int sparsify_reactivate_limit)
       : det_beam(det_beam),
@@ -179,27 +179,30 @@ struct TesseractSinterDecoder {
     return !(*this == other);
   }
 
+  TesseractConfig make_config(const stim::DetectorErrorModel& dem) const {
+    TesseractConfig config;
+    config.dem = dem;
+    config.det_beam = det_beam;
+    config.beam_climbing = beam_climbing;
+    config.no_revisit_dets = no_revisit_dets;
+    config.verbose = verbose;
+    config.merge_errors = merge_errors;
+    config.pqlimit = pqlimit;
+    config.detector_order_specs = make_detector_order_specs(num_det_orders, det_order_method, seed);
+    config.det_penalty = det_penalty;
+    config.create_visualization = create_visualization;
+    config.sparsify_errors = sparsify_errors;
+    config.sparsify_base_degree = sparsify_base_degree;
+    config.sparsify_max_degree = sparsify_max_degree;
+    config.sparsify_reactivate_limit = sparsify_reactivate_limit;
+    return config;
+  }
+
   // Take a string representation of the DEM, parse the DEM and return a compiled decoder instance.
   TesseractSinterCompiledDecoder compile_decoder_for_dem(const py::object& dem) {
     const stim::DetectorErrorModel stim_dem(py::cast<std::string>(py::str(dem)).c_str());
 
-    std::vector<std::vector<size_t>> det_orders =
-        build_det_orders(stim_dem, num_det_orders, det_order_method, seed);
-
-    TesseractConfig local_config = {stim_dem,
-                                    det_beam,
-                                    beam_climbing,
-                                    no_revisit_dets,
-                                    verbose,
-                                    merge_errors,
-                                    pqlimit,
-                                    det_orders,
-                                    det_penalty,
-                                    create_visualization,
-                                    sparsify_errors,
-                                    sparsify_base_degree,
-                                    sparsify_max_degree,
-                                    sparsify_reactivate_limit};
+    TesseractConfig local_config = make_config(stim_dem);
     auto decoder = std::make_unique<TesseractDecoder>(local_config);
 
     return TesseractSinterCompiledDecoder{
@@ -229,23 +232,7 @@ struct TesseractSinterDecoder {
 
     // Construct TesseractDecoder.
     const stim::DetectorErrorModel stim_dem(dem_content_str.c_str());
-    std::vector<std::vector<size_t>> det_orders =
-        build_det_orders(stim_dem, num_det_orders, det_order_method, seed);
-
-    TesseractConfig local_config = {stim_dem,
-                                    det_beam,
-                                    beam_climbing,
-                                    no_revisit_dets,
-                                    verbose,
-                                    merge_errors,
-                                    pqlimit,
-                                    det_orders,
-                                    det_penalty,
-                                    create_visualization,
-                                    sparsify_errors,
-                                    sparsify_base_degree,
-                                    sparsify_max_degree,
-                                    sparsify_reactivate_limit};
+    TesseractConfig local_config = make_config(stim_dem);
     TesseractDecoder decoder(local_config);
 
     // Calculate expected number of bytes per shot for detectors and observables.
@@ -346,13 +333,13 @@ void pybind_sinter_compat(py::module& root) {
       .def(py::init<>(), R"pbdoc(
             Initializes a new TesseractSinterDecoder instance with a default TesseractConfig.
           )pbdoc")
-      .def(py::init<int, bool, bool, bool, bool, size_t, double, bool, size_t, DetOrder, uint64_t,
-                    bool, int, int, int>(),
+      .def(py::init<int, bool, bool, bool, bool, size_t, double, bool, size_t, DetectorOrderMethod,
+                    uint64_t, bool, int, int, int>(),
            py::arg("det_beam") = DEFAULT_DET_BEAM, py::arg("beam_climbing") = false,
            py::arg("no_revisit_dets") = true, py::arg("verbose") = false,
            py::arg("merge_errors") = true, py::arg("pqlimit") = DEFAULT_PQLIMIT,
            py::arg("det_penalty") = 0.0, py::arg("create_visualization") = false,
-           py::arg("num_det_orders") = 0, py::arg("det_order_method") = DetOrder::DetIndex,
+           py::arg("num_det_orders") = 0, py::arg("det_order_method") = DetectorOrderMethod::Index,
            py::arg("seed") = 2384753, py::arg("sparsify_errors") = false,
            py::arg("sparsify_base_degree") = -1, py::arg("sparsify_max_degree") = -1,
            py::arg("sparsify_reactivate_limit") = -1,
@@ -417,7 +404,7 @@ void pybind_sinter_compat(py::module& root) {
               return TesseractSinterDecoder(
                   t[0].cast<int>(), t[1].cast<bool>(), t[2].cast<bool>(), t[3].cast<bool>(),
                   t[4].cast<bool>(), t[5].cast<size_t>(), t[6].cast<double>(), t[7].cast<bool>(),
-                  t[8].cast<size_t>(), t[9].cast<DetOrder>(), t[10].cast<uint64_t>(),
+                  t[8].cast<size_t>(), t[9].cast<DetectorOrderMethod>(), t[10].cast<uint64_t>(),
                   /*sparsify_errors=*/false, /*sparsify_base_degree=*/-1,
                   /*sparsify_max_degree=*/-1, /*sparsify_reactivate_limit=*/-1);
             }
@@ -428,13 +415,13 @@ void pybind_sinter_compat(py::module& root) {
               return TesseractSinterDecoder(
                   t[0].cast<int>(), t[1].cast<bool>(), t[2].cast<bool>(), t[3].cast<bool>(),
                   t[4].cast<bool>(), t[5].cast<size_t>(), t[6].cast<double>(), t[7].cast<bool>(),
-                  t[12].cast<size_t>(), t[13].cast<DetOrder>(), t[14].cast<uint64_t>(),
+                  t[12].cast<size_t>(), t[13].cast<DetectorOrderMethod>(), t[14].cast<uint64_t>(),
                   t[8].cast<bool>(), t[9].cast<int>(), t[10].cast<int>(), t[11].cast<int>());
             }
             return TesseractSinterDecoder(
                 t[0].cast<int>(), t[1].cast<bool>(), t[2].cast<bool>(), t[3].cast<bool>(),
                 t[4].cast<bool>(), t[5].cast<size_t>(), t[6].cast<double>(), t[7].cast<bool>(),
-                t[8].cast<size_t>(), t[9].cast<DetOrder>(), t[10].cast<uint64_t>(),
+                t[8].cast<size_t>(), t[9].cast<DetectorOrderMethod>(), t[10].cast<uint64_t>(),
                 t[11].cast<bool>(), t[12].cast<int>(), t[13].cast<int>(), t[14].cast<int>());
           }));
 
@@ -447,7 +434,8 @@ void pybind_sinter_compat(py::module& root) {
             /*det_beam=*/20, /*beam_climbing=*/true, /*no_revisit_dets=*/true,
             /*verbose=*/false, /*merge_errors=*/true, /*pqlimit=*/1000000,
             /*det_penalty=*/0.0, /*create_visualization=*/false,
-            /*num_det_orders=*/21, /*det_order_method=*/DetOrder::DetIndex, /*seed=*/2384753,
+            /*num_det_orders=*/21, /*det_order_method=*/DetectorOrderMethod::Index,
+            /*seed=*/2384753,
             /*sparsify_errors=*/false, /*sparsify_base_degree=*/-1,
             /*sparsify_max_degree=*/-1, /*sparsify_reactivate_limit=*/-1);
         result["tesseract"] = result["tesseract-long-beam"];
@@ -455,35 +443,40 @@ void pybind_sinter_compat(py::module& root) {
             /*det_beam=*/20, /*beam_climbing=*/true, /*no_revisit_dets=*/true,
             /*verbose=*/false, /*merge_errors=*/true, /*pqlimit=*/1000000,
             /*det_penalty=*/0.0, /*create_visualization=*/false,
-            /*num_det_orders=*/21, /*det_order_method=*/DetOrder::DetIndex, /*seed=*/2384753,
+            /*num_det_orders=*/21, /*det_order_method=*/DetectorOrderMethod::Index,
+            /*seed=*/2384753,
             /*sparsify_errors=*/true, /*sparsify_base_degree=*/3,
             /*sparsify_max_degree=*/-1, /*sparsify_reactivate_limit=*/-1);
         result["tesseract-long-beam-sparsify-surface-code-like"] = TesseractSinterDecoder(
             /*det_beam=*/20, /*beam_climbing=*/true, /*no_revisit_dets=*/true,
             /*verbose=*/false, /*merge_errors=*/true, /*pqlimit=*/1000000,
             /*det_penalty=*/0.0, /*create_visualization=*/false,
-            /*num_det_orders=*/21, /*det_order_method=*/DetOrder::DetIndex, /*seed=*/2384753,
+            /*num_det_orders=*/21, /*det_order_method=*/DetectorOrderMethod::Index,
+            /*seed=*/2384753,
             /*sparsify_errors=*/true, /*sparsify_base_degree=*/2,
             /*sparsify_max_degree=*/-1, /*sparsify_reactivate_limit=*/-1);
         result["tesseract-short-beam"] = TesseractSinterDecoder(
             /*det_beam=*/15, /*beam_climbing=*/true, /*no_revisit_dets=*/true,
             /*verbose=*/false, /*merge_errors=*/true, /*pqlimit=*/200000,
             /*det_penalty=*/0.0, /*create_visualization=*/false,
-            /*num_det_orders=*/16, /*det_order_method=*/DetOrder::DetIndex, /*seed=*/2384753,
+            /*num_det_orders=*/16, /*det_order_method=*/DetectorOrderMethod::Index,
+            /*seed=*/2384753,
             /*sparsify_errors=*/false, /*sparsify_base_degree=*/-1,
             /*sparsify_max_degree=*/-1, /*sparsify_reactivate_limit=*/-1);
         result["tesseract-short-beam-sparsify-color-code-like"] = TesseractSinterDecoder(
             /*det_beam=*/15, /*beam_climbing=*/true, /*no_revisit_dets=*/true,
             /*verbose=*/false, /*merge_errors=*/true, /*pqlimit=*/200000,
             /*det_penalty=*/0.0, /*create_visualization=*/false,
-            /*num_det_orders=*/16, /*det_order_method=*/DetOrder::DetIndex, /*seed=*/2384753,
+            /*num_det_orders=*/16, /*det_order_method=*/DetectorOrderMethod::Index,
+            /*seed=*/2384753,
             /*sparsify_errors=*/true, /*sparsify_base_degree=*/3,
             /*sparsify_max_degree=*/-1, /*sparsify_reactivate_limit=*/-1);
         result["tesseract-short-beam-sparsify-surface-code-like"] = TesseractSinterDecoder(
             /*det_beam=*/15, /*beam_climbing=*/true, /*no_revisit_dets=*/true,
             /*verbose=*/false, /*merge_errors=*/true, /*pqlimit=*/200000,
             /*det_penalty=*/0.0, /*create_visualization=*/false,
-            /*num_det_orders=*/16, /*det_order_method=*/DetOrder::DetIndex, /*seed=*/2384753,
+            /*num_det_orders=*/16, /*det_order_method=*/DetectorOrderMethod::Index,
+            /*seed=*/2384753,
             /*sparsify_errors=*/true, /*sparsify_base_degree=*/2,
             /*sparsify_max_degree=*/-1, /*sparsify_reactivate_limit=*/-1);
         return result;

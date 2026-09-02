@@ -263,20 +263,22 @@ struct Args {
                   "Detector orders file must contain arrays of nonnegative integers.");
             }
           }
-          config.det_orders = orders.get<std::vector<std::vector<size_t>>>();
+          config.detector_order_specs =
+              make_literal_detector_order_specs(orders.get<std::vector<std::vector<size_t>>>());
         } catch (const nlohmann::json::exception& ex) {
           throw std::invalid_argument("Invalid detector orders file: " + std::string(ex.what()));
         }
+        resolve_detector_order_specs(config.detector_order_specs, config.dem);
       } else {
-        DetOrder order = DetOrder::DetIndex;
+        DetectorOrderMethod method = DetectorOrderMethod::Index;
         if (det_order_bfs) {
-          order = DetOrder::DetBFS;
+          method = DetectorOrderMethod::BFS;
         } else if (det_order_coordinate) {
-          order = DetOrder::DetCoordinate;
+          method = DetectorOrderMethod::Coordinate;
         }
-        config.det_orders = build_det_orders(config.dem, num_det_orders, order, det_order_seed);
+        config.detector_order_specs =
+            make_detector_order_specs(num_det_orders, method, det_order_seed);
       }
-      validate_detector_orders(config.det_orders, config.dem.count_detectors());
     }
 
     if (sample_num_shots > 0) {
@@ -714,7 +716,8 @@ int main(int argc, char* argv[]) {
         {"beam_climbing", args.beam_climbing},
         {"no_revisit_dets", args.no_revisit_dets},
         {"pqlimit", args.pqlimit},
-        {"num_det_orders", config.det_orders.empty() ? 1 : config.det_orders.size()},
+        {"num_det_orders",
+         config.detector_order_specs.empty() ? 1 : config.detector_order_specs.size()},
         {"det_order_seed", args.det_order_seed},
         {"detector_orders_path", args.detector_orders_path},
         {"total_time_seconds", total_time_seconds},

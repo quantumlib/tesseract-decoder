@@ -173,7 +173,7 @@ def test_public_circuit_conversion_and_file_output(tmp_path):
     source_orders = utils.build_det_orders(
         gari._circuit_to_gari_source_dem(circuit),
         2,
-        method=utils.DetOrder.DetCoordinate,
+        method=utils.DetectorOrderMethod.Coordinate,
         seed=0,
     )
     assert any(
@@ -185,7 +185,7 @@ def test_public_circuit_conversion_and_file_output(tmp_path):
         circuit,
         gari_dem,
         2,
-        method=utils.DetOrder.DetCoordinate,
+        method=utils.DetectorOrderMethod.Coordinate,
         seed=0,
     )
     assert [order[:4] for order in gari_orders] == source_orders
@@ -225,7 +225,7 @@ def test_build_detector_orders_validates_source_aligned_transform():
         circuit,
         gari_dem,
         2,
-        method=utils.DetOrder.DetCoordinate,
+        method=utils.DetectorOrderMethod.Coordinate,
         seed=0,
     )
 
@@ -240,7 +240,7 @@ def test_build_detector_orders_validates_source_aligned_transform():
             circuit,
             reweighted_dem,
             2,
-            method=utils.DetOrder.DetCoordinate,
+            method=utils.DetectorOrderMethod.Coordinate,
             seed=0,
         )
         == expected_orders

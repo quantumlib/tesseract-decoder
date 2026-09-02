@@ -175,7 +175,7 @@ tesseract_config = tesseract.TesseractConfig(
     # verbose=True,
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem, num_det_orders=1,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=2384753),
 )
 print(f'Tesseract decoder configurations --> {tesseract_config}\n')
@@ -247,7 +247,7 @@ tesseract_config1 = tesseract.TesseractConfig(
     no_revisit_dets=True,
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem, num_det_orders=5,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=2384753),
 )
 
@@ -262,7 +262,7 @@ tesseract_config2 = tesseract.TesseractConfig(
     no_revisit_dets=True,
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem, num_det_orders=5,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=2384753),
 )
 print ("Larger pqlimit")
@@ -284,7 +284,7 @@ tesseract_config1 = tesseract.TesseractConfig(
     beam_climbing=True,
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem, num_det_orders=5,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=2384753),
 )
 
@@ -299,7 +299,7 @@ tesseract_config2 = tesseract.TesseractConfig(
     beam_climbing=True,
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem, num_det_orders=5,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=2384753),
 )
 print ("Larger det_beam")
@@ -321,7 +321,7 @@ tesseract_config1 = tesseract.TesseractConfig(
     det_penalty = 10,
     # det_orders=tesseract_decoder.utils.build_det_orders(
     #     dem, num_det_orders=2,
-    #     method=tesseract_decoder.utils.DetOrder.DetIndex,
+    #     method=tesseract_decoder.utils.DetectorOrderMethod.Index,
     #     seed=2384753),
 )
 
@@ -337,7 +337,7 @@ tesseract_config2 = tesseract.TesseractConfig(
     det_penalty = False,
     # det_orders=tesseract_decoder.utils.build_det_orders(
     #     dem, num_det_orders=2,
-    #     method=tesseract_decoder.utils.DetOrder.DetIndex,
+    #     method=tesseract_decoder.utils.DetectorOrderMethod.Index,
     #     seed=2384753),
 )
 print ("Second version")
@@ -610,7 +610,7 @@ tesseract_config = tesseract_decoder.tesseract.TesseractConfig(
     det_beam=10,
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem, num_det_orders=10,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=2384753),
     # no_revisit_dets=True,
 )
@@ -668,7 +668,7 @@ tesseract_config1 = tesseract.TesseractConfig(
     create_visualization=True,
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem, num_det_orders=2,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=2384753),
 )
 
@@ -710,7 +710,7 @@ tesseract_dec = tesseract_decoder.tesseract.TesseractConfig(
     det_beam=5,
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem, num_det_orders=10,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=2384753),
     no_revisit_dets=True,
 ).compile_decoder()
