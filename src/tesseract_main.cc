@@ -39,9 +39,7 @@ struct Args {
   // Manifold orientation options
   uint64_t det_order_seed;
   size_t num_det_orders = 10;
-  bool det_order_bfs = false;
-  bool det_order_index = false;
-  bool det_order_coordinate = false;
+  DetectorOrderMethod det_order_method = DetectorOrderMethod::Index;
   std::string detector_orders_path;
 
   // Sampling options
@@ -101,13 +99,9 @@ struct Args {
       throw std::invalid_argument("Must provide at least one of --circuit or --dem");
     }
 
-    int det_order_flags = int(det_order_bfs) + int(det_order_index) + int(det_order_coordinate);
-    if (det_order_flags > 1) {
-      throw std::invalid_argument(
-          "Only one of --det-order-bfs, --det-order-index, or --det-order-coordinate may be set.");
-    }
     if (!detector_orders_path.empty() &&
-        (det_order_flags > 0 || program.is_used("--num-det-orders") ||
+        (program.is_used("--det-order-bfs") || program.is_used("--det-order-index") ||
+         program.is_used("--det-order-coordinate") || program.is_used("--num-det-orders") ||
          program.is_used("--det-order-seed"))) {
       throw std::invalid_argument(
           "--detector-orders cannot be combined with generated detector-order options.");
@@ -250,34 +244,28 @@ struct Args {
         if (!input.is_open()) {
           throw std::invalid_argument("Could not open the file: " + detector_orders_path);
         }
-        try {
-          nlohmann::json orders = nlohmann::json::parse(input);
-          if (!orders.is_array() || orders.empty()) {
-            throw std::invalid_argument("Detector orders file must contain at least one order.");
-          }
-          for (const auto& order : orders) {
-            if (!order.is_array() ||
-                !std::all_of(order.begin(), order.end(),
-                             [](const auto& detector) { return detector.is_number_unsigned(); })) {
-              throw std::invalid_argument(
-                  "Detector orders file must contain arrays of nonnegative integers.");
-            }
-          }
-          config.detector_order_specs =
-              make_literal_detector_order_specs(orders.get<std::vector<std::vector<size_t>>>());
-        } catch (const nlohmann::json::exception& ex) {
-          throw std::invalid_argument("Invalid detector orders file: " + std::string(ex.what()));
+        nlohmann::json orders = nlohmann::json::parse(input, nullptr, false);
+        if (orders.is_discarded()) {
+          throw std::invalid_argument("Detector orders file is not valid JSON: " +
+                                      detector_orders_path);
         }
-        resolve_detector_order_specs(config.detector_order_specs, config.dem);
-      } else {
-        DetectorOrderMethod method = DetectorOrderMethod::Index;
-        if (det_order_bfs) {
-          method = DetectorOrderMethod::BFS;
-        } else if (det_order_coordinate) {
-          method = DetectorOrderMethod::Coordinate;
+        if (!orders.is_array() || orders.empty()) {
+          throw std::invalid_argument("Detector orders file must contain at least one order.");
+        }
+        for (const auto& order : orders) {
+          if (!order.is_array() ||
+              !std::all_of(order.begin(), order.end(),
+                           [](const auto& detector) { return detector.is_number_unsigned(); })) {
+            throw std::invalid_argument(
+                "Detector orders file must contain arrays of nonnegative integers.");
+          }
         }
         config.detector_order_specs =
-            make_detector_order_specs(num_det_orders, method, det_order_seed);
+            make_literal_detector_order_specs(orders.get<std::vector<std::vector<size_t>>>());
+        resolve_detector_order_specs(config.detector_order_specs, config.dem);
+      } else {
+        config.detector_order_specs =
+            make_detector_order_specs(num_det_orders, det_order_method, det_order_seed);
       }
     }
 
@@ -400,20 +388,22 @@ int main(int argc, char* argv[]) {
       .metavar("N")
       .default_value(size_t(1))
       .store_into(args.num_det_orders);
-  program.add_argument("--det-order-bfs")
+  auto& det_order_group = program.add_mutually_exclusive_group();
+  det_order_group.add_argument("--det-order-bfs")
       .help("Use BFS-based detector ordering")
       .flag()
-      .store_into(args.det_order_bfs);
-  program.add_argument("--det-order-index")
+      .action([&args](const std::string&) { args.det_order_method = DetectorOrderMethod::BFS; });
+  det_order_group.add_argument("--det-order-index")
       .help(
           "Randomly choose increasing or decreasing detector index order "
           "(default if no method specified)")
       .flag()
-      .store_into(args.det_order_index);
-  program.add_argument("--det-order-coordinate")
+      .action([&args](const std::string&) { args.det_order_method = DetectorOrderMethod::Index; });
+  det_order_group.add_argument("--det-order-coordinate")
       .help("Random geometric detector orientation ordering")
       .flag()
-      .store_into(args.det_order_coordinate);
+      .action(
+          [&args](const std::string&) { args.det_order_method = DetectorOrderMethod::Coordinate; });
   program.add_argument("--det-order-seed")
       .help(
           "Seed used when initializing the random detector traversal "
