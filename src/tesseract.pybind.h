@@ -64,13 +64,7 @@ TesseractConfig make_tesseract_config(stim::DetectorErrorModel dem, int det_beam
 
 std::vector<std::vector<size_t>> get_detector_orders(const TesseractConfig& config) {
   auto orders = config.detector_orders;
-  bool has_unresolved_order = false;
-  for (const DetectorOrder& order : orders) {
-    has_unresolved_order |= !order.is_resolved();
-  }
-  if (has_unresolved_order) {
-    resolve_detector_orders(orders, config.dem);
-  }
+  resolve_detector_orders(orders, config.dem);
 
   std::vector<std::vector<size_t>> result;
   result.reserve(orders.size());

@@ -48,6 +48,8 @@ def test_detector_orders_must_be_permutations(detector_order, message):
         _DETECTOR_ERROR_MODEL, det_orders=[detector_order]
     )
     with pytest.raises(ValueError, match=message):
+        _ = config.det_orders
+    with pytest.raises(ValueError, match=message):
         config.compile_decoder()
 
 

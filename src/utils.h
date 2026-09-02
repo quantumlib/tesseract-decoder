@@ -47,8 +47,8 @@ std::vector<std::vector<size_t>> build_detector_graph(const stim::DetectorErrorM
 
 // Exactly one detector traversal permutation, either supplied directly or
 // generated once a concrete decoding DEM is known. "Resolved" means that the
-// permutation is populated; the decoder validates every order against its
-// concrete DEM.
+// permutation is populated. resolve() validates both generated and literal
+// orders against the supplied DEM.
 class DetectorOrder {
  public:
   enum class Method {
@@ -72,25 +72,16 @@ class DetectorOrder {
   const std::vector<size_t>& get_order() const;
 
  private:
-  DetectorOrder(Method method, uint64_t seed, size_t sequence_index);
-
   Method method;
   uint64_t seed;
-  size_t sequence_index;
   bool resolved;
   std::vector<size_t> order;
-
-  friend void resolve_detector_orders(std::vector<DetectorOrder>& detector_orders,
-                                      const stim::DetectorErrorModel& dem);
-  friend std::vector<DetectorOrder> make_detector_orders(size_t num_det_orders, Method method,
-                                                         uint64_t seed);
 };
 
 using DetOrder = DetectorOrder::Method;
 
-// Creates one independently resolvable object per requested order. Generated
-// orders retain their position in the seeded sequence so resolving the vector
-// produces the same orders as build_det_orders.
+// Creates one independently resolvable object per requested order. Each object
+// receives a deterministic seed derived from seed and its position.
 std::vector<DetectorOrder> make_detector_orders(
     size_t num_det_orders, DetectorOrder::Method method = DetectorOrder::Method::Index,
     uint64_t seed = 0);
@@ -99,9 +90,7 @@ std::vector<DetectorOrder> make_detector_orders(
 std::vector<DetectorOrder> make_literal_detector_orders(
     std::vector<std::vector<size_t>> detector_orders);
 
-// Resolves every unresolved order in place. Homogeneous generated
-// sequences are resolved together to avoid rebuilding detector topology for
-// each order.
+// Resolves and validates every order in place.
 void resolve_detector_orders(std::vector<DetectorOrder>& detector_orders,
                              const stim::DetectorErrorModel& dem);
 

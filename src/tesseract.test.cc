@@ -792,7 +792,7 @@ TEST(utils, EmptyDemHasEmptyBfsOrders) {
             std::vector<std::vector<size_t>>(3));
 }
 
-TEST(utils, DetectorOrdersResolveInPlaceAndPreserveGeneratedSequence) {
+TEST(utils, DetectorOrdersResolveInPlace) {
   stim::DetectorErrorModel dem(R"DEM(
     detector(0, 0) D0
     detector(4, 0) D4
@@ -848,7 +848,7 @@ TEST(utils, ADetectorOrderRepresentsOneLiteralPermutation) {
   EXPECT_NO_THROW(order.resolve(dem));
 }
 
-TEST(utils, MixedDetectorOrdersPreserveGeneratedSequencePositions) {
+TEST(utils, MixedDetectorOrdersResolveIndependently) {
   stim::DetectorErrorModel dem(R"DEM(
     error(0.1) D0 D1
     error(0.1) D1 D2
@@ -867,6 +867,15 @@ TEST(utils, MixedDetectorOrdersPreserveGeneratedSequencePositions) {
 
 TEST(utils, DetectorOrdersValidateLiteralPermutations) {
   stim::DetectorErrorModel dem("error(0.1) D0 D1 D2");
+
+  DetectorOrder valid_order(std::vector<size_t>{2, 0, 1});
+  EXPECT_NO_THROW(valid_order.resolve(dem));
+  DetectorOrder wrong_size_order(std::vector<size_t>{0, 1});
+  EXPECT_THROW(wrong_size_order.resolve(dem), std::invalid_argument);
+  DetectorOrder duplicate_order(std::vector<size_t>{0, 0, 2});
+  EXPECT_THROW(duplicate_order.resolve(dem), std::invalid_argument);
+  DetectorOrder out_of_range_order(std::vector<size_t>{0, 1, 3});
+  EXPECT_THROW(out_of_range_order.resolve(dem), std::invalid_argument);
 
   auto valid = make_literal_detector_orders({{2, 0, 1}});
   EXPECT_NO_THROW(resolve_detector_orders(valid, dem));

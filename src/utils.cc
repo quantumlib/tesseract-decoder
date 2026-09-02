@@ -103,62 +103,57 @@ std::vector<std::vector<size_t>> build_detector_graph(const stim::DetectorErrorM
   return neighbors;
 }
 
-static std::vector<std::vector<size_t>> build_det_orders_bfs(const stim::DetectorErrorModel& dem,
-                                                             size_t num_det_orders,
-                                                             std::mt19937_64& rng) {
-  std::vector<std::vector<size_t>> det_orders(num_det_orders);
+static std::vector<size_t> build_detector_order_bfs(const stim::DetectorErrorModel& dem,
+                                                    std::mt19937_64& rng) {
   auto graph = build_detector_graph(dem);
   if (graph.empty()) {
-    return det_orders;
+    return {};
   }
-  for (size_t order_index = 0; order_index < num_det_orders; ++order_index) {
-    std::vector<size_t> detector_at_position;
-    detector_at_position.reserve(graph.size());
-    std::vector<char> visited(graph.size(), false);
-    std::vector<size_t> unvisited_detectors(graph.size());
-    std::vector<size_t> unvisited_position(graph.size());
-    std::iota(unvisited_detectors.begin(), unvisited_detectors.end(), 0);
-    std::iota(unvisited_position.begin(), unvisited_position.end(), 0);
 
-    auto mark_visited = [&](size_t detector) {
-      visited[detector] = true;
-      const size_t position = unvisited_position[detector];
-      const size_t last_detector = unvisited_detectors.back();
-      unvisited_detectors[position] = last_detector;
-      unvisited_position[last_detector] = position;
-      unvisited_detectors.pop_back();
-    };
+  std::vector<size_t> detector_at_position;
+  detector_at_position.reserve(graph.size());
+  std::vector<char> visited(graph.size(), false);
+  std::vector<size_t> unvisited_detectors(graph.size());
+  std::vector<size_t> unvisited_position(graph.size());
+  std::iota(unvisited_detectors.begin(), unvisited_detectors.end(), 0);
+  std::iota(unvisited_position.begin(), unvisited_position.end(), 0);
 
-    std::queue<size_t> q;
-    while (!unvisited_detectors.empty()) {
-      std::uniform_int_distribution<size_t> dist_root(0, unvisited_detectors.size() - 1);
-      const size_t start = unvisited_detectors[dist_root(rng)];
-      mark_visited(start);
-      q.push(start);
-      detector_at_position.push_back(start);
+  auto mark_visited = [&](size_t detector) {
+    visited[detector] = true;
+    const size_t position = unvisited_position[detector];
+    const size_t last_detector = unvisited_detectors.back();
+    unvisited_detectors[position] = last_detector;
+    unvisited_position[last_detector] = position;
+    unvisited_detectors.pop_back();
+  };
 
-      while (!q.empty()) {
-        size_t cur = q.front();
-        q.pop();
-        auto neigh = graph[cur];
-        std::shuffle(neigh.begin(), neigh.end(), rng);
-        for (size_t n : neigh) {
-          if (!visited[n]) {
-            mark_visited(n);
-            q.push(n);
-            detector_at_position.push_back(n);
-          }
+  std::queue<size_t> q;
+  while (!unvisited_detectors.empty()) {
+    std::uniform_int_distribution<size_t> dist_root(0, unvisited_detectors.size() - 1);
+    const size_t start = unvisited_detectors[dist_root(rng)];
+    mark_visited(start);
+    q.push(start);
+    detector_at_position.push_back(start);
+
+    while (!q.empty()) {
+      size_t cur = q.front();
+      q.pop();
+      auto neigh = graph[cur];
+      std::shuffle(neigh.begin(), neigh.end(), rng);
+      for (size_t n : neigh) {
+        if (!visited[n]) {
+          mark_visited(n);
+          q.push(n);
+          detector_at_position.push_back(n);
         }
       }
     }
-    det_orders[order_index] = std::move(detector_at_position);
   }
-  return det_orders;
+  return detector_at_position;
 }
 
-static std::vector<std::vector<size_t>> build_det_orders_coordinate(
-    const stim::DetectorErrorModel& dem, size_t num_det_orders, std::mt19937_64& rng) {
-  std::vector<std::vector<size_t>> det_orders(num_det_orders);
+static std::vector<size_t> build_detector_order_coordinate(const stim::DetectorErrorModel& dem,
+                                                           std::mt19937_64& rng) {
   auto detector_coords = get_detector_coords(dem);
   std::vector<double> inner_products(dem.count_detectors());
   std::normal_distribution<double> dist(0, 1);
@@ -167,75 +162,66 @@ static std::vector<std::vector<size_t>> build_det_orders_coordinate(
     num_coordinate_dimensions = std::max(num_coordinate_dimensions, coord.size());
   }
   if (num_coordinate_dimensions == 0) {
-    for (size_t order_index = 0; order_index < num_det_orders; ++order_index) {
-      det_orders[order_index].resize(dem.count_detectors());
-      std::iota(det_orders[order_index].begin(), det_orders[order_index].end(), 0);
-    }
-    return det_orders;
+    std::vector<size_t> detector_at_position(dem.count_detectors());
+    std::iota(detector_at_position.begin(), detector_at_position.end(), 0);
+    return detector_at_position;
   }
-  for (size_t order_index = 0; order_index < num_det_orders; ++order_index) {
-    std::vector<double> orientation_vector;
-    orientation_vector.reserve(num_coordinate_dimensions);
-    for (size_t i = 0; i < num_coordinate_dimensions; ++i) {
-      orientation_vector.push_back(dist(rng));
-    }
-    size_t num_dets = std::min(detector_coords.size(), inner_products.size());
-    for (size_t i = 0; i < num_dets; ++i) {
-      inner_products[i] = 0;
-      for (size_t j = 0; j < detector_coords[i].size(); ++j) {
-        inner_products[i] += detector_coords[i][j] * orientation_vector[j];
-      }
-    }
-    std::vector<size_t> detector_at_position;
-    detector_at_position.reserve(dem.count_detectors());
-    for (size_t detector = 0; detector < detector_coords.size(); ++detector) {
-      if (!detector_coords[detector].empty()) {
-        detector_at_position.push_back(detector);
-      }
-    }
-    std::stable_sort(
-        detector_at_position.begin(), detector_at_position.end(),
-        [&](const size_t& i, const size_t& j) { return inner_products[i] > inner_products[j]; });
-    for (size_t detector = 0; detector < detector_coords.size(); ++detector) {
-      if (detector_coords[detector].empty()) {
-        detector_at_position.push_back(detector);
-      }
-    }
-    det_orders[order_index] = std::move(detector_at_position);
+
+  std::vector<double> orientation_vector;
+  orientation_vector.reserve(num_coordinate_dimensions);
+  for (size_t i = 0; i < num_coordinate_dimensions; ++i) {
+    orientation_vector.push_back(dist(rng));
   }
-  return det_orders;
+  size_t num_dets = std::min(detector_coords.size(), inner_products.size());
+  for (size_t i = 0; i < num_dets; ++i) {
+    inner_products[i] = 0;
+    for (size_t j = 0; j < detector_coords[i].size(); ++j) {
+      inner_products[i] += detector_coords[i][j] * orientation_vector[j];
+    }
+  }
+  std::vector<size_t> detector_at_position;
+  detector_at_position.reserve(dem.count_detectors());
+  for (size_t detector = 0; detector < detector_coords.size(); ++detector) {
+    if (!detector_coords[detector].empty()) {
+      detector_at_position.push_back(detector);
+    }
+  }
+  std::stable_sort(
+      detector_at_position.begin(), detector_at_position.end(),
+      [&](const size_t& i, const size_t& j) { return inner_products[i] > inner_products[j]; });
+  for (size_t detector = 0; detector < detector_coords.size(); ++detector) {
+    if (detector_coords[detector].empty()) {
+      detector_at_position.push_back(detector);
+    }
+  }
+  return detector_at_position;
 }
 
-static std::vector<std::vector<size_t>> build_det_orders_index(const stim::DetectorErrorModel& dem,
-                                                               size_t num_det_orders,
-                                                               std::mt19937_64& rng) {
-  std::vector<std::vector<size_t>> det_orders(num_det_orders);
+static std::vector<size_t> build_detector_order_index(const stim::DetectorErrorModel& dem,
+                                                      std::mt19937_64& rng) {
   std::uniform_int_distribution<int> dist_bool(0, 1);
   size_t n = dem.count_detectors();
-  for (size_t order_index = 0; order_index < num_det_orders; ++order_index) {
-    det_orders[order_index].resize(n);
-    if (dist_bool(rng)) {
-      for (size_t i = 0; i < n; ++i) {
-        det_orders[order_index][i] = n - 1 - i;
-      }
-    } else {
-      std::iota(det_orders[order_index].begin(), det_orders[order_index].end(), 0);
+  std::vector<size_t> detector_at_position(n);
+  if (dist_bool(rng)) {
+    for (size_t i = 0; i < n; ++i) {
+      detector_at_position[i] = n - 1 - i;
     }
+  } else {
+    std::iota(detector_at_position.begin(), detector_at_position.end(), 0);
   }
-  return det_orders;
+  return detector_at_position;
 }
 
-static std::vector<std::vector<size_t>> generate_detector_orders(
-    const stim::DetectorErrorModel& dem, size_t num_det_orders, DetectorOrder::Method method,
-    uint64_t seed) {
+static std::vector<size_t> generate_detector_order(const stim::DetectorErrorModel& dem,
+                                                   DetectorOrder::Method method, uint64_t seed) {
   std::mt19937_64 rng(seed);
   switch (method) {
     case DetectorOrder::Method::BFS:
-      return build_det_orders_bfs(dem, num_det_orders, rng);
+      return build_detector_order_bfs(dem, rng);
     case DetectorOrder::Method::Coordinate:
-      return build_det_orders_coordinate(dem, num_det_orders, rng);
+      return build_detector_order_coordinate(dem, rng);
     case DetectorOrder::Method::Index:
-      return build_det_orders_index(dem, num_det_orders, rng);
+      return build_detector_order_index(dem, rng);
     case DetectorOrder::Method::Literal:
       throw std::invalid_argument("Literal detector orders cannot be generated from a DEM.");
   }
@@ -243,54 +229,45 @@ static std::vector<std::vector<size_t>> generate_detector_orders(
 }
 
 static void validate_detector_order(const std::vector<size_t>& detector_at_position,
-                                    size_t num_detectors, size_t order_index) {
+                                    size_t num_detectors) {
   if (detector_at_position.size() != num_detectors) {
-    throw std::invalid_argument("Detector order " + std::to_string(order_index) + " has size " +
-                                std::to_string(detector_at_position.size()) +
-                                ", but the detector error model has " +
-                                std::to_string(num_detectors) + " detectors.");
+    throw std::invalid_argument(
+        "Detector order has size " + std::to_string(detector_at_position.size()) +
+        ", but the detector error model has " + std::to_string(num_detectors) + " detectors.");
   }
 
   std::vector<char> seen(num_detectors, false);
   for (size_t position = 0; position < detector_at_position.size(); ++position) {
     const size_t detector = detector_at_position[position];
     if (detector >= num_detectors) {
-      throw std::invalid_argument("Detector order " + std::to_string(order_index) +
-                                  " contains out-of-range detector ID " + std::to_string(detector) +
-                                  " at position " + std::to_string(position) + ".");
+      throw std::invalid_argument("Detector order contains out-of-range detector ID " +
+                                  std::to_string(detector) + " at position " +
+                                  std::to_string(position) + ".");
     }
     if (seen[detector]) {
-      throw std::invalid_argument("Detector order " + std::to_string(order_index) +
-                                  " contains detector ID " + std::to_string(detector) +
-                                  " more than once.");
+      throw std::invalid_argument("Detector order contains detector ID " +
+                                  std::to_string(detector) + " more than once.");
     }
     seen[detector] = true;
   }
 }
 
-DetectorOrder::DetectorOrder(Method method, uint64_t seed) : DetectorOrder(method, seed, 0) {}
-
-DetectorOrder::DetectorOrder(Method method, uint64_t seed, size_t sequence_index)
-    : method(method), seed(seed), sequence_index(sequence_index), resolved(false), order() {
+DetectorOrder::DetectorOrder(Method method, uint64_t seed)
+    : method(method), seed(seed), resolved(false), order() {
   if (method == Method::Literal) {
     throw std::invalid_argument("A literal DetectorOrder must be constructed from an order.");
   }
 }
 
 DetectorOrder::DetectorOrder(std::vector<size_t> order)
-    : method(Method::Literal),
-      seed(0),
-      sequence_index(0),
-      resolved(true),
-      order(std::move(order)) {}
+    : method(Method::Literal), seed(0), resolved(true), order(std::move(order)) {}
 
 void DetectorOrder::resolve(const stim::DetectorErrorModel& dem) {
-  if (resolved) {
-    return;
+  if (!resolved) {
+    order = generate_detector_order(dem, method, seed);
+    resolved = true;
   }
-  auto orders = generate_detector_orders(dem, sequence_index + 1, method, seed);
-  order = std::move(orders.back());
-  resolved = true;
+  validate_detector_order(order, dem.count_detectors());
 }
 
 bool DetectorOrder::is_resolved() const {
@@ -311,12 +288,12 @@ const std::vector<size_t>& DetectorOrder::get_order() const {
 std::vector<DetectorOrder> make_detector_orders(size_t num_det_orders, DetectorOrder::Method method,
                                                 uint64_t seed) {
   if (method == DetectorOrder::Method::Literal) {
-    throw std::invalid_argument("Literal detector orders must provide their detector IDs.");
+    throw std::invalid_argument("Literal detector orders cannot be generated.");
   }
   std::vector<DetectorOrder> result;
   result.reserve(num_det_orders);
   for (size_t order_index = 0; order_index < num_det_orders; ++order_index) {
-    result.push_back(DetectorOrder(method, seed, order_index));
+    result.emplace_back(method, seed + order_index);
   }
   return result;
 }
@@ -333,39 +310,22 @@ std::vector<DetectorOrder> make_literal_detector_orders(
 
 void resolve_detector_orders(std::vector<DetectorOrder>& detector_orders,
                              const stim::DetectorErrorModel& dem) {
-  bool is_homogeneous_generated_sequence = !detector_orders.empty();
-  if (is_homogeneous_generated_sequence) {
-    const auto& first = detector_orders.front();
-    is_homogeneous_generated_sequence = !first.resolved && first.sequence_index == 0;
-    for (size_t k = 0; is_homogeneous_generated_sequence && k < detector_orders.size(); ++k) {
-      const auto& order = detector_orders[k];
-      is_homogeneous_generated_sequence = !order.resolved && order.method == first.method &&
-                                          order.seed == first.seed && order.sequence_index == k;
-    }
-  }
-
-  if (is_homogeneous_generated_sequence) {
-    auto generated_orders = generate_detector_orders(
-        dem, detector_orders.size(), detector_orders.front().method, detector_orders.front().seed);
-    for (size_t k = 0; k < detector_orders.size(); ++k) {
-      detector_orders[k].order = std::move(generated_orders[k]);
-      detector_orders[k].resolved = true;
-    }
-  } else {
-    for (auto& order : detector_orders) {
-      order.resolve(dem);
-    }
-  }
-
-  for (size_t k = 0; k < detector_orders.size(); ++k) {
-    validate_detector_order(detector_orders[k].get_order(), dem.count_detectors(), k);
+  for (auto& order : detector_orders) {
+    order.resolve(dem);
   }
 }
 
 std::vector<std::vector<size_t>> build_det_orders(const stim::DetectorErrorModel& dem,
                                                   size_t num_det_orders,
                                                   DetectorOrder::Method method, uint64_t seed) {
-  return generate_detector_orders(dem, num_det_orders, method, seed);
+  auto detector_orders = make_detector_orders(num_det_orders, method, seed);
+  resolve_detector_orders(detector_orders, dem);
+  std::vector<std::vector<size_t>> result;
+  result.reserve(detector_orders.size());
+  for (const auto& order : detector_orders) {
+    result.push_back(order.get_order());
+  }
+  return result;
 }
 
 bool sampling_from_dem(uint64_t seed, size_t num_shots, stim::DetectorErrorModel dem,
