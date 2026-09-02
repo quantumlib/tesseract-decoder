@@ -252,6 +252,27 @@ TEST(MultiPassTesseractDecoderTest, PreservesExplicitDetectorOrders) {
                std::invalid_argument);
 }
 
+TEST(MultiPassTesseractDecoderTest, ResolvesMixedDetectorOrdersAgainstEachComponentDem) {
+  constexpr uint64_t seed = 1234;
+  TesseractConfig config;
+  config.detector_orders.emplace_back(DetectorOrder::Method::BFS, seed);
+  config.detector_orders.emplace_back(std::vector<size_t>{1, 0});
+  config.detector_orders.emplace_back(DetectorOrder::Method::Coordinate, seed);
+
+  MultiPassTesseractDecoder decoder(correlated_dem(), 2, {0, 1}, config);
+  for (size_t component = 0; component < decoder.num_components(); ++component) {
+    const TesseractDecoder& component_decoder =
+        MultiPassTestPeer::get_component_decoder(decoder, component);
+    const auto& orders = component_decoder.config.detector_orders;
+    ASSERT_EQ(orders.size(), 3);
+    EXPECT_EQ(orders[0].get_order(), build_det_orders(component_decoder.config.dem, 1,
+                                                      DetectorOrder::Method::BFS, seed)[0]);
+    EXPECT_EQ(orders[1].get_order(), (std::vector<size_t>{1, 0}));
+    EXPECT_EQ(orders[2].get_order(), build_det_orders(component_decoder.config.dem, 1,
+                                                      DetectorOrder::Method::Coordinate, seed)[0]);
+  }
+}
+
 TEST(MultiPassTesseractDecoderTest, CausalReweightUsesSafeCapAndReportsFinalPassCost) {
   MultiPassTesseractDecoder decoder(correlated_dem(), 2, {0, 1});
   EXPECT_EQ(MultiPassTestPeer::get_pass_schedule(decoder),
