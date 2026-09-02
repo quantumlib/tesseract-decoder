@@ -46,9 +46,9 @@ struct TesseractConfig {
   bool merge_errors = true;
   size_t pqlimit = DEFAULT_PQLIMIT;
 
-  // Each specification resolves to one detector traversal permutation once
-  // the decoder's concrete DEM is known.
-  std::vector<DetectorOrderSpec> detector_order_specs;
+  // Each entry resolves to one detector traversal permutation once the
+  // decoder's concrete DEM is known.
+  std::vector<DetectorOrder> detector_orders;
   double det_penalty = 0;
   bool create_visualization = false;
 

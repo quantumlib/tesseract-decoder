@@ -39,7 +39,7 @@ struct Args {
   // Manifold orientation options
   uint64_t det_order_seed;
   size_t num_det_orders = 10;
-  DetectorOrderMethod det_order_method = DetectorOrderMethod::Index;
+  DetectorOrder::Method det_order_method = DetectorOrder::Method::Index;
   std::string detector_orders_path;
 
   // Sampling options
@@ -260,12 +260,12 @@ struct Args {
                 "Detector orders file must contain arrays of nonnegative integers.");
           }
         }
-        config.detector_order_specs =
-            make_literal_detector_order_specs(orders.get<std::vector<std::vector<size_t>>>());
-        resolve_detector_order_specs(config.detector_order_specs, config.dem);
+        config.detector_orders =
+            make_literal_detector_orders(orders.get<std::vector<std::vector<size_t>>>());
+        resolve_detector_orders(config.detector_orders, config.dem);
       } else {
-        config.detector_order_specs =
-            make_detector_order_specs(num_det_orders, det_order_method, det_order_seed);
+        config.detector_orders =
+            make_detector_orders(num_det_orders, det_order_method, det_order_seed);
       }
     }
 
@@ -392,18 +392,20 @@ int main(int argc, char* argv[]) {
   det_order_group.add_argument("--det-order-bfs")
       .help("Use BFS-based detector ordering")
       .flag()
-      .action([&args](const std::string&) { args.det_order_method = DetectorOrderMethod::BFS; });
+      .action([&args](const std::string&) { args.det_order_method = DetectorOrder::Method::BFS; });
   det_order_group.add_argument("--det-order-index")
       .help(
           "Randomly choose increasing or decreasing detector index order "
           "(default if no method specified)")
       .flag()
-      .action([&args](const std::string&) { args.det_order_method = DetectorOrderMethod::Index; });
+      .action(
+          [&args](const std::string&) { args.det_order_method = DetectorOrder::Method::Index; });
   det_order_group.add_argument("--det-order-coordinate")
       .help("Random geometric detector orientation ordering")
       .flag()
-      .action(
-          [&args](const std::string&) { args.det_order_method = DetectorOrderMethod::Coordinate; });
+      .action([&args](const std::string&) {
+        args.det_order_method = DetectorOrder::Method::Coordinate;
+      });
   program.add_argument("--det-order-seed")
       .help(
           "Seed used when initializing the random detector traversal "
@@ -706,8 +708,7 @@ int main(int argc, char* argv[]) {
         {"beam_climbing", args.beam_climbing},
         {"no_revisit_dets", args.no_revisit_dets},
         {"pqlimit", args.pqlimit},
-        {"num_det_orders",
-         config.detector_order_specs.empty() ? 1 : config.detector_order_specs.size()},
+        {"num_det_orders", config.detector_orders.empty() ? 1 : config.detector_orders.size()},
         {"det_order_seed", args.det_order_seed},
         {"detector_orders_path", args.detector_orders_path},
         {"total_time_seconds", total_time_seconds},

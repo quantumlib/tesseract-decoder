@@ -71,7 +71,7 @@ def test_detector_orders_property_round_trips_literal_orders():
 
 def test_default_detector_orders_resolve_for_compile_decoder_dem():
     # Passing an argument selects the no-DEM convenience constructor. Its
-    # generated order specifications must remain deferred until this DEM is
+    # generated orders must remain deferred until this DEM is
     # supplied instead of being fixed as empty permutations.
     config = tesseract_decoder.tesseract.TesseractConfig(det_beam=5)
     decoder = config.compile_decoder_for_dem(_DETECTOR_ERROR_MODEL)
