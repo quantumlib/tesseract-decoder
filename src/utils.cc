@@ -19,6 +19,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <nlohmann/json.hpp>
 #include <numeric>
 #include <queue>
 #include <random>
@@ -305,6 +306,35 @@ std::vector<DetectorOrder> make_literal_detector_orders(
     result.emplace_back(std::move(order));
   }
   return result;
+}
+
+std::vector<DetectorOrder> load_detector_orders(const std::string& path,
+                                                const stim::DetectorErrorModel& dem) {
+  std::ifstream input(path);
+  if (!input.is_open()) {
+    throw std::invalid_argument("Could not open the file: " + path);
+  }
+  nlohmann::json orders = nlohmann::json::parse(input, nullptr, false);
+  if (orders.is_discarded()) {
+    throw std::invalid_argument("Detector orders file is not valid JSON: " + path);
+  }
+  if (!orders.is_array() || orders.empty()) {
+    throw std::invalid_argument("Detector orders file must contain at least one order.");
+  }
+  for (const auto& order : orders) {
+    if (!order.is_array()) {
+      throw std::invalid_argument("Each detector order must be an array.");
+    }
+    for (const auto& detector : order) {
+      if (!detector.is_number_unsigned()) {
+        throw std::invalid_argument("Detector IDs must be nonnegative integers.");
+      }
+    }
+  }
+  auto detector_orders =
+      make_literal_detector_orders(orders.get<std::vector<std::vector<size_t>>>());
+  resolve_detector_orders(detector_orders, dem);
+  return detector_orders;
 }
 
 void resolve_detector_orders(std::vector<DetectorOrder>& detector_orders,

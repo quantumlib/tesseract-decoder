@@ -239,34 +239,10 @@ struct Args {
           std::cout << ")" << std::endl;
         }
       }
-      if (!detector_orders_path.empty()) {
-        std::ifstream input(detector_orders_path);
-        if (!input.is_open()) {
-          throw std::invalid_argument("Could not open the file: " + detector_orders_path);
-        }
-        nlohmann::json orders = nlohmann::json::parse(input, nullptr, false);
-        if (orders.is_discarded()) {
-          throw std::invalid_argument("Detector orders file is not valid JSON: " +
-                                      detector_orders_path);
-        }
-        if (!orders.is_array() || orders.empty()) {
-          throw std::invalid_argument("Detector orders file must contain at least one order.");
-        }
-        for (const auto& order : orders) {
-          if (!order.is_array() ||
-              !std::all_of(order.begin(), order.end(),
-                           [](const auto& detector) { return detector.is_number_unsigned(); })) {
-            throw std::invalid_argument(
-                "Detector orders file must contain arrays of nonnegative integers.");
-          }
-        }
-        config.detector_orders =
-            make_literal_detector_orders(orders.get<std::vector<std::vector<size_t>>>());
-        resolve_detector_orders(config.detector_orders, config.dem);
-      } else {
-        config.detector_orders =
-            make_detector_orders(num_det_orders, det_order_method, det_order_seed);
-      }
+      config.detector_orders =
+          detector_orders_path.empty()
+              ? make_detector_orders(num_det_orders, det_order_method, det_order_seed)
+              : load_detector_orders(detector_orders_path, config.dem);
     }
 
     if (sample_num_shots > 0) {

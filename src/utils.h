@@ -88,6 +88,11 @@ std::vector<DetectorOrder> make_detector_orders(
 std::vector<DetectorOrder> make_literal_detector_orders(
     std::vector<std::vector<size_t>> detector_orders);
 
+// Loads literal detector orders from a JSON file containing a nonempty array
+// of arrays of nonnegative detector IDs and validates them against the DEM.
+std::vector<DetectorOrder> load_detector_orders(const std::string& path,
+                                                const stim::DetectorErrorModel& dem);
+
 // Resolves and validates every order in place.
 void resolve_detector_orders(std::vector<DetectorOrder>& detector_orders,
                              const stim::DetectorErrorModel& dem);
