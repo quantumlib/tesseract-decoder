@@ -45,68 +45,65 @@ std::vector<std::vector<double>> get_detector_coords(const stim::DetectorErrorMo
 // parity-reduced detector symptom induces a clique.
 std::vector<std::vector<size_t>> build_detector_graph(const stim::DetectorErrorModel& dem);
 
-enum class DetectorOrderMethod {
-  BFS,
-  Index,
-  Coordinate,
-  Literal,
-
-  // Compatibility names used by the original public API.
-  DetBFS = BFS,
-  DetIndex = Index,
-  DetCoordinate = Coordinate,
-};
-
-using DetOrder = DetectorOrderMethod;
-
-// A detector-ordering request for exactly one traversal permutation. Generated
-// specifications are resolved once a concrete decoding DEM is known. Literal
-// specifications already contain their traversal permutation. "Resolved"
-// means that the permutation is populated; the decoder validates every
-// specification against its concrete DEM.
-class DetectorOrderSpec {
+// Exactly one detector traversal permutation, either supplied directly or
+// generated once a concrete decoding DEM is known. "Resolved" means that the
+// permutation is populated; the decoder validates every order against its
+// concrete DEM.
+class DetectorOrder {
  public:
-  explicit DetectorOrderSpec(DetectorOrderMethod method = DetectorOrderMethod::Index,
-                             uint64_t seed = 0);
-  explicit DetectorOrderSpec(std::vector<size_t> detector_order);
+  enum class Method {
+    BFS = 0,
+    Index = 1,
+    Coordinate = 2,
+    Literal = 3,
+
+    // Compatibility names used by the original public API.
+    DetBFS = BFS,
+    DetIndex = Index,
+    DetCoordinate = Coordinate,
+  };
+
+  explicit DetectorOrder(Method method = Method::Index, uint64_t seed = 0);
+  explicit DetectorOrder(std::vector<size_t> order);
 
   void resolve(const stim::DetectorErrorModel& dem);
   bool is_resolved() const;
-  DetectorOrderMethod get_method() const;
-  const std::vector<size_t>& get_detector_order() const;
+  Method get_method() const;
+  const std::vector<size_t>& get_order() const;
 
  private:
-  DetectorOrderSpec(DetectorOrderMethod method, uint64_t seed, size_t sequence_index);
+  DetectorOrder(Method method, uint64_t seed, size_t sequence_index);
 
-  DetectorOrderMethod method;
+  Method method;
   uint64_t seed;
   size_t sequence_index;
   bool resolved;
-  std::vector<size_t> detector_order;
+  std::vector<size_t> order;
 
-  friend void resolve_detector_order_specs(std::vector<DetectorOrderSpec>& detector_order_specs,
-                                           const stim::DetectorErrorModel& dem);
-  friend std::vector<DetectorOrderSpec> make_detector_order_specs(size_t num_det_orders,
-                                                                  DetectorOrderMethod method,
-                                                                  uint64_t seed);
+  friend void resolve_detector_orders(std::vector<DetectorOrder>& detector_orders,
+                                      const stim::DetectorErrorModel& dem);
+  friend std::vector<DetectorOrder> make_detector_orders(size_t num_det_orders, Method method,
+                                                         uint64_t seed);
 };
 
-// Creates one independently resolvable specification per requested order.
-// Generated specifications retain their position in the seeded sequence so
-// resolving the vector produces the same orders as build_det_orders.
-std::vector<DetectorOrderSpec> make_detector_order_specs(
-    size_t num_det_orders, DetectorOrderMethod method = DetectorOrderMethod::Index,
+using DetOrder = DetectorOrder::Method;
+
+// Creates one independently resolvable object per requested order. Generated
+// orders retain their position in the seeded sequence so resolving the vector
+// produces the same orders as build_det_orders.
+std::vector<DetectorOrder> make_detector_orders(
+    size_t num_det_orders, DetectorOrder::Method method = DetectorOrder::Method::Index,
     uint64_t seed = 0);
 
-// Wraps already-materialized detector orders as literal specifications.
-std::vector<DetectorOrderSpec> make_literal_detector_order_specs(
+// Wraps already-materialized detector orders as literal orders.
+std::vector<DetectorOrder> make_literal_detector_orders(
     std::vector<std::vector<size_t>> detector_orders);
 
-// Resolves every unresolved specification in place. Homogeneous generated
+// Resolves every unresolved order in place. Homogeneous generated
 // sequences are resolved together to avoid rebuilding detector topology for
 // each order.
-void resolve_detector_order_specs(std::vector<DetectorOrderSpec>& detector_order_specs,
-                                  const stim::DetectorErrorModel& dem);
+void resolve_detector_orders(std::vector<DetectorOrder>& detector_orders,
+                             const stim::DetectorErrorModel& dem);
 
 // Builds detector traversal orders. Each inner vector uses the convention
 // detector_at_position[position] = detector_id and is a permutation of all
@@ -116,7 +113,7 @@ void resolve_detector_order_specs(std::vector<DetectorOrderSpec>& detector_order
 // reproducible only within a fixed C++ standard-library implementation.
 std::vector<std::vector<size_t>> build_det_orders(
     const stim::DetectorErrorModel& dem, size_t num_det_orders,
-    DetectorOrderMethod method = DetectorOrderMethod::Index, uint64_t seed = 0);
+    DetectorOrder::Method method = DetectorOrder::Method::Index, uint64_t seed = 0);
 
 const double INF = std::numeric_limits<double>::infinity();
 

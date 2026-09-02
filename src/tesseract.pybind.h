@@ -50,9 +50,9 @@ TesseractConfig make_tesseract_config(stim::DetectorErrorModel dem, int det_beam
   config.verbose = verbose;
   config.merge_errors = merge_errors;
   config.pqlimit = pqlimit;
-  config.detector_order_specs =
-      det_orders.empty() ? make_detector_order_specs(20, DetectorOrderMethod::Index, 2384753)
-                         : make_literal_detector_order_specs(std::move(det_orders));
+  config.detector_orders = det_orders.empty()
+                               ? make_detector_orders(20, DetectorOrder::Method::Index, 2384753)
+                               : make_literal_detector_orders(std::move(det_orders));
   config.det_penalty = det_penalty;
   config.create_visualization = create_visualization;
   config.sparsify_errors = sparsify_errors;
@@ -63,26 +63,26 @@ TesseractConfig make_tesseract_config(stim::DetectorErrorModel dem, int det_beam
 }
 
 std::vector<std::vector<size_t>> get_detector_orders(const TesseractConfig& config) {
-  auto detector_order_specs = config.detector_order_specs;
-  bool has_unresolved_spec = false;
-  for (const DetectorOrderSpec& spec : detector_order_specs) {
-    has_unresolved_spec |= !spec.is_resolved();
+  auto orders = config.detector_orders;
+  bool has_unresolved_order = false;
+  for (const DetectorOrder& order : orders) {
+    has_unresolved_order |= !order.is_resolved();
   }
-  if (has_unresolved_spec) {
-    resolve_detector_order_specs(detector_order_specs, config.dem);
+  if (has_unresolved_order) {
+    resolve_detector_orders(orders, config.dem);
   }
 
-  std::vector<std::vector<size_t>> detector_orders;
-  detector_orders.reserve(detector_order_specs.size());
-  for (const DetectorOrderSpec& spec : detector_order_specs) {
-    detector_orders.push_back(spec.get_detector_order());
+  std::vector<std::vector<size_t>> result;
+  result.reserve(orders.size());
+  for (const DetectorOrder& order : orders) {
+    result.push_back(order.get_order());
   }
-  return detector_orders;
+  return result;
 }
 
 void set_detector_orders(TesseractConfig& config,
                          std::vector<std::vector<size_t>> detector_orders) {
-  config.detector_order_specs = make_literal_detector_order_specs(std::move(detector_orders));
+  config.detector_orders = make_literal_detector_orders(std::move(detector_orders));
 }
 
 TesseractConfig tesseract_config_maker_no_dem(

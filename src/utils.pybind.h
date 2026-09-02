@@ -34,15 +34,15 @@ void add_utils_module(py::module& root) {
   m.attr("INF") = INF;
   m.doc() = "A representation of infinity for floating point numbers.";
 
-  py::enum_<DetectorOrderMethod> detector_order_method(m, "DetectorOrderMethod",
-                                                       "Detector ordering methods");
-  detector_order_method.value("BFS", DetectorOrderMethod::BFS)
-      .value("Index", DetectorOrderMethod::Index)
-      .value("Coordinate", DetectorOrderMethod::Coordinate)
-      .value("Literal", DetectorOrderMethod::Literal)
-      .value("DetBFS", DetectorOrderMethod::BFS)
-      .value("DetIndex", DetectorOrderMethod::Index)
-      .value("DetCoordinate", DetectorOrderMethod::Coordinate)
+  py::enum_<DetectorOrder::Method> detector_order_method(m, "DetectorOrderMethod",
+                                                         "Detector ordering methods");
+  detector_order_method.value("BFS", DetectorOrder::Method::BFS)
+      .value("Index", DetectorOrder::Method::Index)
+      .value("Coordinate", DetectorOrder::Method::Coordinate)
+      .value("Literal", DetectorOrder::Method::Literal)
+      .value("DetBFS", DetectorOrder::Method::BFS)
+      .value("DetIndex", DetectorOrder::Method::Index)
+      .value("DetCoordinate", DetectorOrder::Method::Coordinate)
       .export_values();
   m.attr("DetOrder") = detector_order_method;
 
@@ -95,11 +95,11 @@ void add_utils_module(py::module& root) {
     )pbdoc");
   m.def(
       "build_det_orders",
-      [](py::object dem, size_t num_det_orders, DetectorOrderMethod method, uint64_t seed) {
+      [](py::object dem, size_t num_det_orders, DetectorOrder::Method method, uint64_t seed) {
         auto input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
         return build_det_orders(input_dem, num_det_orders, method, seed);
       },
-      py::arg("dem"), py::arg("num_det_orders"), py::arg("method") = DetectorOrderMethod::Index,
+      py::arg("dem"), py::arg("num_det_orders"), py::arg("method") = DetectorOrder::Method::Index,
       py::arg("seed") = 0, R"pbdoc(
         Generates various detector orderings for decoding.
 

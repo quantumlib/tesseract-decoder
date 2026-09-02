@@ -92,7 +92,7 @@ std::string TesseractConfig::str() {
   ss << "verbose=" << config.verbose << ", ";
   ss << "merge_errors=" << config.merge_errors << ", ";
   ss << "pqlimit=" << config.pqlimit << ", ";
-  ss << "num_detector_orders=" << config.detector_order_specs.size() << ", ";
+  ss << "num_detector_orders=" << config.detector_orders.size() << ", ";
   ss << "det_penalty=" << config.det_penalty << ", ";
   ss << "create_visualization=" << config.create_visualization;
   ss << ")";
@@ -176,12 +176,12 @@ TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(std::move(c
   dem_error_to_error = std::move(dem_error_map);
   error_to_dem_error = common::invert_error_map(dem_error_to_error, config.dem.count_errors());
 
-  if (config.detector_order_specs.empty()) {
+  if (config.detector_orders.empty()) {
     std::vector<size_t> detector_order(config.dem.count_detectors());
     std::iota(detector_order.begin(), detector_order.end(), 0);
-    config.detector_order_specs.emplace_back(std::move(detector_order));
+    config.detector_orders.emplace_back(std::move(detector_order));
   }
-  resolve_detector_order_specs(config.detector_order_specs, config.dem);
+  resolve_detector_orders(config.detector_orders, config.dem);
   errors = get_errors_from_dem(config.dem);
   if (config.verbose) {
     for (auto& error : errors) {
@@ -342,15 +342,15 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections)
 
   std::vector<size_t> best_errors;
   double best_cost = std::numeric_limits<double>::max();
-  if (config.detector_order_specs.empty()) {
+  if (config.detector_orders.empty()) {
     throw std::runtime_error("Detector orders list must not be empty before decoding.");
   }
 
   if (config.beam_climbing) {
     int beam = 0;
     int order_index = 0;
-    for (int trial = 0;
-         trial < std::max(config.det_beam + 1, int(config.detector_order_specs.size())); ++trial) {
+    for (int trial = 0; trial < std::max(config.det_beam + 1, int(config.detector_orders.size()));
+         ++trial) {
       decode_to_errors_with_graph(detections, order_index, beam, active_d2e);
       double local_cost = cost_from_errors(predicted_errors_buffer);
       if (!low_confidence_flag && local_cost < best_cost) {
@@ -366,10 +366,10 @@ void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections)
       beam += 1;
       order_index += 1;
       beam %= (config.det_beam + 1);
-      order_index %= config.detector_order_specs.size();
+      order_index %= config.detector_orders.size();
     }
   } else {
-    for (size_t order_index = 0; order_index < config.detector_order_specs.size(); ++order_index) {
+    for (size_t order_index = 0; order_index < config.detector_orders.size(); ++order_index) {
       decode_to_errors_with_graph(detections, order_index, config.det_beam, active_d2e);
       double local_cost = cost_from_errors(predicted_errors_buffer);
       if (!low_confidence_flag && local_cost < best_cost) {
@@ -423,7 +423,7 @@ void TesseractDecoder::decode_to_errors_with_graph(
     const std::vector<uint64_t>& detections, size_t detector_order_index, size_t detector_beam,
     const std::vector<std::vector<int>>& active_d2e) {
   const std::vector<size_t>& detector_at_position =
-      config.detector_order_specs.at(detector_order_index).get_detector_order();
+      config.detector_orders.at(detector_order_index).get_order();
 
   predicted_errors_buffer.clear();
   low_confidence_flag = false;
