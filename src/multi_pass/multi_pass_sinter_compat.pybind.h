@@ -84,12 +84,11 @@ struct MultiPassSinterCompiledDecoder {
 
 MultiPassSinterCompiledDecoder compile_multi_pass_decoder_for_dem(
     const py::object& dem, const std::vector<int>& detector_components, size_t num_passes,
-    TesseractConfig base_config, size_t num_det_orders, DetectorOrderMethod det_order_method,
+    TesseractConfig base_config, size_t num_det_orders, DetectorOrder::Method det_order_method,
     uint64_t seed, SchedulingStrategy strategy) {
   stim::DetectorErrorModel stim_dem(py::cast<std::string>(py::str(dem)).c_str());
-  if (base_config.detector_order_specs.empty()) {
-    base_config.detector_order_specs =
-        make_detector_order_specs(num_det_orders, det_order_method, seed);
+  if (base_config.detector_orders.empty()) {
+    base_config.detector_orders = make_detector_orders(num_det_orders, det_order_method, seed);
   }
   auto decoder = std::make_unique<MultiPassTesseractDecoder>(
       stim_dem, num_passes, detector_components, base_config, strategy);

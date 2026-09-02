@@ -173,19 +173,18 @@ TEST(MultiPassTesseractDecoderTest, BuildsDetectorOrdersFromEachComponentDem) {
   constexpr size_t num_det_orders = 1;
   constexpr uint64_t seed = 1;
   TesseractConfig config;
-  config.detector_order_specs =
-      make_detector_order_specs(num_det_orders, DetectorOrderMethod::BFS, seed);
+  config.detector_orders = make_detector_orders(num_det_orders, DetectorOrder::Method::BFS, seed);
   MultiPassTesseractDecoder decoder(dem, 1, {0, 0, 0, 1, 1, 1, 1}, config);
-  auto monolithic_orders = build_det_orders(dem, num_det_orders, DetectorOrderMethod::BFS, seed);
+  auto monolithic_orders = build_det_orders(dem, num_det_orders, DetectorOrder::Method::BFS, seed);
   bool differs_from_monolithic = false;
   for (size_t component = 0; component < decoder.num_components(); ++component) {
     const TesseractDecoder& component_decoder =
         MultiPassTestPeer::get_component_decoder(decoder, component);
     auto component_orders = build_det_orders(component_decoder.config.dem, num_det_orders,
-                                             DetectorOrderMethod::BFS, seed);
-    ASSERT_EQ(component_decoder.config.detector_order_specs.size(), component_orders.size());
+                                             DetectorOrder::Method::BFS, seed);
+    ASSERT_EQ(component_decoder.config.detector_orders.size(), component_orders.size());
     for (size_t order = 0; order < component_orders.size(); ++order) {
-      EXPECT_EQ(component_decoder.config.detector_order_specs[order].get_detector_order(),
+      EXPECT_EQ(component_decoder.config.detector_orders[order].get_order(),
                 component_orders[order]);
     }
     differs_from_monolithic |= component_orders != monolithic_orders;
@@ -237,19 +236,18 @@ TEST(MultiPassTesseractDecoderTest, RejectsUnmergedTwoPassReweighting) {
 
 TEST(MultiPassTesseractDecoderTest, PreservesExplicitDetectorOrders) {
   TesseractConfig config;
-  config.detector_order_specs = make_literal_detector_order_specs({{1, 0}, {0, 1}});
+  config.detector_orders = make_literal_detector_orders({{1, 0}, {0, 1}});
   MultiPassTesseractDecoder decoder(correlated_dem(), 2, {0, 1}, config);
   for (size_t component = 0; component < decoder.num_components(); ++component) {
-    const auto& component_specs =
-        MultiPassTestPeer::get_component_decoder(decoder, component).config.detector_order_specs;
-    ASSERT_EQ(component_specs.size(), config.detector_order_specs.size());
-    for (size_t order = 0; order < component_specs.size(); ++order) {
-      EXPECT_EQ(component_specs[order].get_detector_order(),
-                config.detector_order_specs[order].get_detector_order());
+    const auto& component_orders =
+        MultiPassTestPeer::get_component_decoder(decoder, component).config.detector_orders;
+    ASSERT_EQ(component_orders.size(), config.detector_orders.size());
+    for (size_t order = 0; order < component_orders.size(); ++order) {
+      EXPECT_EQ(component_orders[order].get_order(), config.detector_orders[order].get_order());
     }
   }
 
-  config.detector_order_specs = make_literal_detector_order_specs({{0}});
+  config.detector_orders = make_literal_detector_orders({{0}});
   EXPECT_THROW(MultiPassTesseractDecoder(correlated_dem(), 2, {0, 1}, config),
                std::invalid_argument);
 }
@@ -276,14 +274,14 @@ TEST(MultiPassTesseractDecoderTest, RestoresCostsWhenLaterDecodeThrows) {
   const auto& schedule = MultiPassTestPeer::get_pass_schedule(decoder);
   ASSERT_EQ(schedule, std::vector<std::vector<size_t>>({{0}, {1}}));
   TesseractDecoder& target = MultiPassTestPeer::get_component_decoder(decoder, schedule[1][0]);
-  auto saved_orders = target.config.detector_order_specs;
-  target.config.detector_order_specs.clear();
+  auto saved_orders = target.config.detector_orders;
+  target.config.detector_orders.clear();
 
   EXPECT_THROW(decoder.decode({0, 1}), std::runtime_error);
   EXPECT_GT(decoder.get_last_shot_num_reweights(), 0);
   expect_costs_restored(decoder);
 
-  target.config.detector_order_specs = saved_orders;
+  target.config.detector_orders = saved_orders;
   EXPECT_EQ(decoder.decode({0, 1}), std::vector<int>({0}));
   expect_costs_restored(decoder);
 }
