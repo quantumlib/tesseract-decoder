@@ -227,7 +227,8 @@ TEST(MultiPassTesseractDecoderTest, CausalReweightUsesSafeCapAndReportsFinalPass
   EXPECT_EQ(MultiPassTestPeer::get_pass_schedule(decoder),
             std::vector<std::vector<size_t>>({{0}, {1}}));
 
-  DecoderResult result = decoder.decode_result({0, 1});
+  Decoder& decoder_interface = decoder;
+  DecoderResult result = decoder_interface.decode_result({0, 1});
   EXPECT_EQ(result.predictions, std::vector<int>({0}));
   EXPECT_TRUE(result.predicted_errors.empty());
   EXPECT_FALSE(result.predicted_errors_populated);

@@ -81,6 +81,11 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "libdecoder",
+    hdrs = ["decoder.h"],
+)
+
 pybind_library(
     name = "tesseract_decoder_pybind",
     srcs = [
@@ -175,6 +180,7 @@ cc_library(
     linkopts = OPT_LINKOPTS,
     deps = [
         ":libcommon",
+        ":libdecoder",
         ":libdem_decomposition",
         ":liberror_correlations",
         ":libutils",
@@ -353,6 +359,7 @@ cc_library(
     linkopts = OPT_LINKOPTS,
     deps = [
         ":libcommon",
+        ":libdecoder",
         ":libutils",
         "@highs",
         "@stim//:stim_lib",

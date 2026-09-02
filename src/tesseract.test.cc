@@ -675,6 +675,39 @@ TEST(tesseract, DecodeResultDistinguishesPopulatedEmptyErrors) {
                    decoder.cost_from_errors(fired_result.predicted_errors));
 }
 
+TEST(decoder, CommonInterfaceSupportsTesseractAndSimplex) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 L0
+        detector D0
+        logical_observable L0
+    )DEM");
+  TesseractDecoder tesseract_decoder(TesseractConfig{dem});
+  SimplexDecoder simplex_decoder(SimplexConfig{dem});
+
+  auto expect_decoded_result = [](Decoder& decoder) {
+    DecoderResult empty_result = decoder.decode_result({});
+    EXPECT_TRUE(empty_result.predictions.empty());
+    EXPECT_TRUE(empty_result.predicted_errors.empty());
+    EXPECT_TRUE(empty_result.predicted_errors_populated);
+    EXPECT_FALSE(empty_result.low_confidence);
+    EXPECT_EQ(empty_result.total_cost, 0);
+
+    DecoderResult result = decoder.decode_result({0});
+    EXPECT_EQ(result.predictions, std::vector<int>({0}));
+    EXPECT_EQ(result.predicted_errors, std::vector<size_t>({0}));
+    EXPECT_TRUE(result.predicted_errors_populated);
+    EXPECT_FALSE(result.low_confidence);
+    EXPECT_GT(result.total_cost, 0);
+    return result;
+  };
+  DecoderResult tesseract_result = expect_decoded_result(tesseract_decoder);
+  DecoderResult simplex_result = expect_decoded_result(simplex_decoder);
+  EXPECT_DOUBLE_EQ(tesseract_result.total_cost,
+                   tesseract_decoder.cost_from_errors(tesseract_result.predicted_errors));
+  EXPECT_DOUBLE_EQ(simplex_result.total_cost,
+                   simplex_decoder.cost_from_errors(simplex_result.predicted_errors));
+}
+
 TEST(utils, DuplicateDetectorCoords) {
   std::string dem_str = "detector(0, 0, 1) D0\ndetector(0, 0, 2) D0\nerror(0.1) D0\n";
   stim::DetectorErrorModel dem(dem_str.c_str());

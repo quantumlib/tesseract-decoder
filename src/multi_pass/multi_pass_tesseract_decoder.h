@@ -69,7 +69,7 @@ struct MultiPassExecutionPlan {
  * Two-pass reweighting requires `base_config.merge_errors=true`; one-pass decoding also supports
  * unmerged error mechanisms.
  */
-class MultiPassTesseractDecoder {
+class MultiPassTesseractDecoder : public Decoder {
  public:
   explicit MultiPassTesseractDecoder(const TesseractConfig& config);
 
@@ -85,7 +85,7 @@ class MultiPassTesseractDecoder {
   MultiPassExecutionPlan get_execution_plan() const;
   std::vector<int> decode(const std::vector<uint64_t>& detections);
   /** Returns predictions and the cost of predictions made during the final pass. */
-  DecoderResult decode_result(const std::vector<uint64_t>& detections);
+  DecoderResult decode_result(const std::vector<uint64_t>& detections) override;
 
   size_t get_last_shot_num_reweights() const {
     return last_shot_num_reweights;

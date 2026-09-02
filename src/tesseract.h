@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "common.h"
+#include "decoder.h"
 #include "stim.h"
 #include "utils.h"
 #include "visualization.h"
@@ -77,15 +78,6 @@ struct TesseractConfig {
   std::string str();
 };
 
-struct DecoderResult {
-  std::vector<int> predictions;
-  // Indices into the original flattened DEM. A populated result may be empty.
-  std::vector<size_t> predicted_errors;
-  bool predicted_errors_populated = false;
-  bool low_confidence = false;
-  double total_cost = 0;
-};
-
 class Node {
  public:
   double cost;
@@ -108,12 +100,12 @@ struct ErrorCost {
   double min_cost;
 };
 
-struct TesseractDecoder {
+struct TesseractDecoder : public Decoder {
   TesseractConfig config;
   Visualizer visualizer;
 
   explicit TesseractDecoder(TesseractConfig config);
-  ~TesseractDecoder();
+  ~TesseractDecoder() override;
 
   // Clears the predicted_errors_buffer and fills it with the decoded errors for
   // these detection events.
@@ -132,7 +124,7 @@ struct TesseractDecoder {
   // flattened DEM error indices.
   double cost_from_errors(const std::vector<size_t>& predicted_errors) const;
 
-  DecoderResult decode_result(const std::vector<uint64_t>& detections);
+  DecoderResult decode_result(const std::vector<uint64_t>& detections) override;
   std::string multipass_execution_plan_str() const;
 
   // Resynchronizes the internal state of the decoder after the public `errors`
