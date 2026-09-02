@@ -24,8 +24,6 @@
 #include <numeric>
 #include <utility>
 
-#include "multi_pass/multi_pass_tesseract_decoder.h"
-
 namespace {
 
 template <typename T>
@@ -186,11 +184,9 @@ double TesseractDecoder::get_detcost(size_t d,
 
 TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(std::move(config_)) {
   if (config.multipass) {
-    multi_pass_decoder = std::make_unique<MultiPassTesseractDecoder>(config);
-    num_detectors = config.dem.count_detectors();
-    num_errors = config.dem.count_errors();
-    num_observables = config.dem.count_observables();
-    return;
+    throw std::invalid_argument(
+        "TesseractDecoder is monolithic; use make_decoder or MultiPassTesseractDecoder for a "
+        "multi-pass configuration.");
   }
 
   config.dem = common::flatten(config.dem);
@@ -364,9 +360,6 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
 }
 
 void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections) {
-  if (multi_pass_decoder) {
-    throw std::logic_error("Multi-pass decoding does not yet populate predicted errors.");
-  }
   predicted_errors_buffer.clear();
   low_confidence_flag = false;
   if (detections.empty()) {
@@ -449,9 +442,6 @@ void TesseractDecoder::flip_detectors_and_block_errors(
 
 void TesseractDecoder::decode_to_errors(const std::vector<uint64_t>& detections,
                                         size_t detector_order_index, size_t detector_beam) {
-  if (multi_pass_decoder) {
-    throw std::logic_error("Multi-pass decoding does not yet populate predicted errors.");
-  }
   if (config.sparsify_errors) {
     build_sparse_d2e(detections);
   }
@@ -743,20 +733,11 @@ std::vector<int> TesseractDecoder::get_flipped_observables(
 }
 
 std::vector<int> TesseractDecoder::decode(const std::vector<uint64_t>& detections) {
-  if (multi_pass_decoder) {
-    return decode_result(detections).predictions;
-  }
   decode_to_errors(detections);
   return get_flipped_observables(predicted_errors_buffer);
 }
 
 DecoderResult TesseractDecoder::decode_result(const std::vector<uint64_t>& detections) {
-  if (multi_pass_decoder) {
-    DecoderResult result = multi_pass_decoder->decode_result(detections);
-    predicted_errors_buffer = result.predicted_errors;
-    low_confidence_flag = result.low_confidence;
-    return result;
-  }
   decode_to_errors(detections);
 
   DecoderResult result;
@@ -766,13 +747,6 @@ DecoderResult TesseractDecoder::decode_result(const std::vector<uint64_t>& detec
   result.low_confidence = low_confidence_flag;
   result.total_cost = cost_from_errors(predicted_errors_buffer);
   return result;
-}
-
-std::string TesseractDecoder::multipass_execution_plan_str() const {
-  if (!multi_pass_decoder) {
-    throw std::logic_error("Decoder is not configured for multi-pass decoding.");
-  }
-  return multi_pass_decoder->get_execution_plan().str();
 }
 
 void TesseractDecoder::decode_shots(std::vector<stim::SparseShot>& shots,

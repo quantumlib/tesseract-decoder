@@ -25,6 +25,7 @@
 #include <thread>
 
 #include "common.h"
+#include "multi_pass/multi_pass_tesseract_decoder.h"
 #include "stim.h"
 #include "tesseract.h"
 #include "utils.h"
@@ -596,7 +597,7 @@ int main(int argc, char* argv[]) {
   std::vector<double> decoding_time_seconds(shots.size());
   std::vector<std::atomic<bool>> low_confidence(shots.size());
   const stim::DetectorErrorModel original_dem = config.dem.flattened();
-  std::vector<std::unique_ptr<TesseractDecoder>> decoders(args.num_threads);
+  std::vector<std::unique_ptr<Decoder>> decoders(args.num_threads);
   std::vector<std::vector<size_t>> error_use_per_thread(
       args.num_threads, std::vector<size_t>(original_dem.count_errors()));
   bool has_obs = args.has_observables();
@@ -607,7 +608,7 @@ int main(int argc, char* argv[]) {
       shots.size(), args.num_threads,
       [&](size_t thread_index, size_t shot_index) {
         if (!decoders[thread_index]) {
-          decoders[thread_index] = std::make_unique<TesseractDecoder>(config);
+          decoders[thread_index] = make_decoder(config);
         }
         auto& decoder = *decoders[thread_index];
         auto& error_use = error_use_per_thread[thread_index];
@@ -659,18 +660,21 @@ int main(int argc, char* argv[]) {
       });
 
   if (args.print_multipass_plan) {
-    const TesseractDecoder* plan_decoder = nullptr;
+    const MultiPassTesseractDecoder* plan_decoder = nullptr;
     for (const auto& decoder : decoders) {
       if (decoder) {
-        plan_decoder = decoder.get();
+        plan_decoder = dynamic_cast<const MultiPassTesseractDecoder*>(decoder.get());
         break;
       }
     }
     if (plan_decoder == nullptr) {
-      decoders[0] = std::make_unique<TesseractDecoder>(config);
-      plan_decoder = decoders[0].get();
+      decoders[0] = make_decoder(config);
+      plan_decoder = dynamic_cast<const MultiPassTesseractDecoder*>(decoders[0].get());
     }
-    std::cerr << plan_decoder->multipass_execution_plan_str();
+    if (plan_decoder == nullptr) {
+      throw std::logic_error("Expected a multi-pass decoder for execution-plan diagnostics.");
+    }
+    std::cerr << plan_decoder->get_execution_plan().str();
   }
 
   std::vector<size_t> error_use_totals(original_dem.count_errors());
@@ -698,8 +702,10 @@ int main(int argc, char* argv[]) {
 
   int effective_sparsify_reactivate_limit = config.sparsify_reactivate_limit;
   for (const auto& decoder : decoders) {
-    if (decoder) {
-      effective_sparsify_reactivate_limit = decoder->config.sparsify_reactivate_limit;
+    const auto* monolithic_decoder = dynamic_cast<const TesseractDecoder*>(decoder.get());
+    if (monolithic_decoder != nullptr) {
+      effective_sparsify_reactivate_limit =
+          monolithic_decoder->config.sparsify_reactivate_limit;
       break;
     }
   }

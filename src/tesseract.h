@@ -38,8 +38,6 @@ constexpr size_t DEFAULT_PQLIMIT = 200000;
 
 int suggest_sparsify_reactivate_limit(size_t num_detectors, int sparsify_base_degree);
 
-class MultiPassTesseractDecoder;
-
 enum class SchedulingStrategy {
   Static,  // Schedules both components in every pass.
   Causal   // Derives each pass from component dependencies.
@@ -77,6 +75,9 @@ struct TesseractConfig {
 
   std::string str();
 };
+
+// Constructs the monolithic or multi-pass implementation selected by the configuration.
+std::unique_ptr<Decoder> make_decoder(const TesseractConfig& config);
 
 class Node {
  public:
@@ -125,7 +126,6 @@ struct TesseractDecoder : public Decoder {
   double cost_from_errors(const std::vector<size_t>& predicted_errors) const;
 
   DecoderResult decode_result(const std::vector<uint64_t>& detections) override;
-  std::string multipass_execution_plan_str() const;
 
   // Resynchronizes the internal state of the decoder after the public `errors`
   // vector has been modified. This is necessary to ensure that the internal
@@ -171,8 +171,6 @@ struct TesseractDecoder : public Decoder {
                                        const std::vector<std::vector<int>>& active_d2e) const;
 
  private:
-  std::unique_ptr<MultiPassTesseractDecoder> multi_pass_decoder;
-
   void build_sparse_d2e(const std::vector<uint64_t>& detections);
   void decode_to_errors_with_graph(const std::vector<uint64_t>& detections,
                                    size_t detector_order_index, size_t detector_beam,

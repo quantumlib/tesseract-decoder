@@ -89,6 +89,28 @@ TEST(MultiPassTesseractDecoderTest, ValidatesSupportedShapeAndStrategy) {
   EXPECT_THROW(decoder.decode({2}), std::invalid_argument);
 }
 
+TEST(MultiPassTesseractDecoderTest, FactorySelectsConfiguredDecoder) {
+  TesseractConfig config;
+  config.dem = stim::DetectorErrorModel(R"DEM(
+        error(0.1) D0
+        error(0.2) D1 L0
+        detector[{"basis":"X"}] D0
+        detector[{"basis":"Z"}] D1
+        logical_observable L0
+    )DEM");
+
+  std::unique_ptr<Decoder> monolithic_decoder = make_decoder(config);
+  EXPECT_NE(dynamic_cast<TesseractDecoder*>(monolithic_decoder.get()), nullptr);
+  EXPECT_EQ(dynamic_cast<MultiPassTesseractDecoder*>(monolithic_decoder.get()), nullptr);
+
+  config.multipass = true;
+  config.num_passes = 1;
+  EXPECT_THROW((void)TesseractDecoder(config), std::invalid_argument);
+  std::unique_ptr<Decoder> multi_pass_decoder = make_decoder(config);
+  EXPECT_NE(dynamic_cast<MultiPassTesseractDecoder*>(multi_pass_decoder.get()), nullptr);
+  EXPECT_EQ(dynamic_cast<TesseractDecoder*>(multi_pass_decoder.get()), nullptr);
+}
+
 TEST(MultiPassTesseractDecoderTest, TesseractConfigClassifiesCanonicalBasisTags) {
   TesseractConfig config;
   config.dem = stim::DetectorErrorModel(R"DEM(
@@ -101,8 +123,9 @@ TEST(MultiPassTesseractDecoderTest, TesseractConfigClassifiesCanonicalBasisTags)
   config.multipass = true;
   config.num_passes = 1;
 
-  TesseractDecoder decoder(config);
-  DecoderResult result = decoder.decode_result({1});
+  std::unique_ptr<Decoder> decoder = make_decoder(config);
+  EXPECT_NE(dynamic_cast<MultiPassTesseractDecoder*>(decoder.get()), nullptr);
+  DecoderResult result = decoder->decode_result({1});
   EXPECT_EQ(result.predictions, std::vector<int>({0}));
   EXPECT_FALSE(result.predicted_errors_populated);
 }
@@ -127,7 +150,7 @@ TEST(MultiPassTesseractDecoderTest, TesseractConfigRejectsNoncanonicalBasisMetad
         ("error(0.1) D0\nerror(0.2) D1 L0\n" + detector_instruction).c_str());
     config.multipass = true;
     config.num_passes = 1;
-    EXPECT_THROW((void)TesseractDecoder(config), std::invalid_argument);
+    EXPECT_THROW((void)make_decoder(config), std::invalid_argument);
   }
 }
 

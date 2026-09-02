@@ -29,6 +29,13 @@
 
 namespace tesseract_decoder {
 
+std::unique_ptr<Decoder> make_decoder(const TesseractConfig& config) {
+  if (config.multipass) {
+    return std::make_unique<MultiPassTesseractDecoder>(config);
+  }
+  return std::make_unique<TesseractDecoder>(config);
+}
+
 std::string MultiPassExecutionPlan::str() const {
   std::stringstream ss;
   ss << "Multi-pass execution plan\n"
