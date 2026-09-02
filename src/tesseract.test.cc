@@ -16,8 +16,11 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <queue>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -891,6 +894,34 @@ TEST(utils, DetectorOrdersValidateLiteralPermutations) {
 
   EXPECT_THROW(DetectorOrder(DetectorOrder::Method::Literal, 0), std::invalid_argument);
   EXPECT_THROW(make_detector_orders(1, DetectorOrder::Method::Literal, 0), std::invalid_argument);
+}
+
+TEST(utils, LoadDetectorOrders) {
+  const std::filesystem::path path =
+      std::filesystem::path(testing::TempDir()) / "tesseract_detector_orders_test.json";
+  const auto write_file = [&](std::string_view contents) {
+    std::ofstream output(path);
+    output << contents;
+  };
+
+  write_file("[[2, 0, 1], [1, 2, 0]]");
+  const stim::DetectorErrorModel dem("error(0.1) D0 D1 D2");
+  const auto orders = load_detector_orders(path.string(), dem);
+  ASSERT_EQ(orders.size(), 2);
+  EXPECT_EQ(orders[0].get_order(), (std::vector<size_t>{2, 0, 1}));
+  EXPECT_EQ(orders[1].get_order(), (std::vector<size_t>{1, 2, 0}));
+
+  for (std::string_view invalid_json : {"{", "{}", "[]", "[0]", "[[0], 1]", "[[-1]]", "[[0.5]]"}) {
+    SCOPED_TRACE(invalid_json);
+    write_file(invalid_json);
+    EXPECT_THROW(load_detector_orders(path.string(), dem), std::invalid_argument);
+  }
+
+  write_file("[[0, 1]]");
+  EXPECT_THROW(load_detector_orders(path.string(), dem), std::invalid_argument);
+
+  std::filesystem::remove(path);
+  EXPECT_THROW(load_detector_orders(path.string(), dem), std::invalid_argument);
 }
 
 TEST(utils, PreprocessingPreservesAllDetectorOrderEntries) {
