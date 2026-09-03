@@ -80,17 +80,12 @@ struct MultiPassExecutionPlan {
  *
  * One or two passes are supported. `detector_components[d]` assigns detector Dd to a component.
  * Every assignment must be nonnegative, and exactly two distinct labels must be present.
- * Two-pass reweighting requires `base_config.merge_errors=true`; one-pass decoding also supports
- * unmerged error mechanisms.
+ * Two-pass reweighting requires `component_config.merge_errors=true`; one-pass decoding also
+ * supports unmerged error mechanisms.
  */
 class MultiPassTesseractDecoder : public Decoder {
  public:
-  explicit MultiPassTesseractDecoder(const MultiPassTesseractConfig& config);
-
-  MultiPassTesseractDecoder(const stim::DetectorErrorModel& dem, size_t num_passes,
-                            const std::vector<int>& detector_components,
-                            const TesseractConfig& base_config = TesseractConfig(),
-                            SchedulingStrategy strategy = SchedulingStrategy::Causal);
+  explicit MultiPassTesseractDecoder(MultiPassTesseractConfig config);
 
   /** Computes and returns the component schedule and statistics. */
   MultiPassExecutionPlan get_execution_plan() const;

@@ -54,6 +54,20 @@ stim::DetectorErrorModel correlated_dem() {
     )DEM");
 }
 
+MultiPassTesseractConfig make_multi_pass_config(
+    const stim::DetectorErrorModel& dem, size_t num_passes = 2,
+    const std::vector<int>& detector_components = {0, 1},
+    const TesseractConfig& component_config = TesseractConfig(),
+    SchedulingStrategy strategy = SchedulingStrategy::Causal) {
+  MultiPassTesseractConfig config;
+  config.component_config = component_config;
+  config.component_config.dem = dem;
+  config.num_passes = num_passes;
+  config.detector_components = detector_components;
+  config.strategy = strategy;
+  return config;
+}
+
 void expect_costs_restored(const MultiPassTesseractDecoder& decoder) {
   for (size_t component = 0; component < decoder.num_components(); ++component) {
     const auto& component_decoder = MultiPassTestPeer::get_component_decoder(decoder, component);
@@ -73,19 +87,23 @@ void expect_costs_restored(const MultiPassTesseractDecoder& decoder) {
 TEST(MultiPassTesseractDecoderTest, ValidatesSupportedShapeAndStrategy) {
   stim::DetectorErrorModel dem = correlated_dem();
   for (size_t passes : {1, 2}) {
-    EXPECT_NO_THROW(MultiPassTesseractDecoder(dem, passes, {4, 9}));
+    EXPECT_NO_THROW(MultiPassTesseractDecoder(make_multi_pass_config(dem, passes, {4, 9})));
   }
   for (size_t passes : {0, 3}) {
-    EXPECT_THROW(MultiPassTesseractDecoder(dem, passes, {4, 9}), std::invalid_argument);
+    EXPECT_THROW(MultiPassTesseractDecoder(make_multi_pass_config(dem, passes, {4, 9})),
+                 std::invalid_argument);
   }
-  EXPECT_THROW(MultiPassTesseractDecoder(dem, 1, {4}), std::invalid_argument);
-  EXPECT_THROW(MultiPassTesseractDecoder(dem, 1, {4, -1}), std::invalid_argument);
-  EXPECT_THROW(MultiPassTesseractDecoder(dem, 1, {4, 4}), std::invalid_argument);
-  EXPECT_THROW(MultiPassTesseractDecoder(dem, 1, {4, 9}, TesseractConfig(),
-                                         static_cast<SchedulingStrategy>(999)),
+  EXPECT_THROW(MultiPassTesseractDecoder(make_multi_pass_config(dem, 1, {4})),
+               std::invalid_argument);
+  EXPECT_THROW(MultiPassTesseractDecoder(make_multi_pass_config(dem, 1, {4, -1})),
+               std::invalid_argument);
+  EXPECT_THROW(MultiPassTesseractDecoder(make_multi_pass_config(dem, 1, {4, 4})),
+               std::invalid_argument);
+  EXPECT_THROW(MultiPassTesseractDecoder(make_multi_pass_config(
+                   dem, 1, {4, 9}, TesseractConfig(), static_cast<SchedulingStrategy>(999))),
                std::invalid_argument);
 
-  MultiPassTesseractDecoder decoder(dem, 1, {4, 9});
+  MultiPassTesseractDecoder decoder(make_multi_pass_config(dem, 1, {4, 9}));
   EXPECT_THROW(decoder.decode({2}), std::invalid_argument);
 }
 
@@ -173,7 +191,7 @@ TEST(MultiPassTesseractDecoderTest, BuildsDetectorOrdersFromEachComponentDem) {
   constexpr uint64_t seed = 1;
   TesseractConfig config;
   config.detector_orders = make_detector_orders(num_det_orders, DetectorOrder::Method::BFS, seed);
-  MultiPassTesseractDecoder decoder(dem, 1, {0, 0, 0, 1, 1, 1, 1}, config);
+  MultiPassTesseractDecoder decoder(make_multi_pass_config(dem, 1, {0, 0, 0, 1, 1, 1, 1}, config));
   auto monolithic_orders = build_det_orders(dem, num_det_orders, DetectorOrder::Method::BFS, seed);
   bool differs_from_monolithic = false;
   for (size_t component = 0; component < decoder.num_components(); ++component) {
@@ -206,7 +224,7 @@ TEST(MultiPassTesseractDecoderTest, HonorsMergeErrorsBothWaysInOnePass) {
   for (bool merge_errors : {false, true}) {
     TesseractConfig config;
     config.merge_errors = merge_errors;
-    MultiPassTesseractDecoder decoder(dem, 1, {0, 1}, config);
+    MultiPassTesseractDecoder decoder(make_multi_pass_config(dem, 1, {0, 1}, config));
     MultiPassExecutionPlan plan = decoder.get_execution_plan();
     EXPECT_EQ(plan.monolithic_statistics.error_mechanism_count, merge_errors ? 2 : 4);
     ASSERT_EQ(plan.components.size(), 2);
@@ -225,7 +243,7 @@ TEST(MultiPassTesseractDecoderTest, RejectsUnmergedTwoPassReweighting) {
   config.merge_errors = false;
 
   try {
-    MultiPassTesseractDecoder decoder(correlated_dem(), 2, {0, 1}, config);
+    MultiPassTesseractDecoder decoder(make_multi_pass_config(correlated_dem(), 2, {0, 1}, config));
     FAIL() << "Expected two-pass decoding with unmerged errors to be rejected.";
   } catch (const std::invalid_argument& error) {
     EXPECT_NE(std::string(error.what()).find("Two-pass decoding requires merge_errors=true"),
@@ -236,7 +254,7 @@ TEST(MultiPassTesseractDecoderTest, RejectsUnmergedTwoPassReweighting) {
 TEST(MultiPassTesseractDecoderTest, PreservesExplicitDetectorOrders) {
   TesseractConfig config;
   config.detector_orders = make_literal_detector_orders({{1, 0}, {0, 1}});
-  MultiPassTesseractDecoder decoder(correlated_dem(), 2, {0, 1}, config);
+  MultiPassTesseractDecoder decoder(make_multi_pass_config(correlated_dem(), 2, {0, 1}, config));
   for (size_t component = 0; component < decoder.num_components(); ++component) {
     const auto& component_orders =
         MultiPassTestPeer::get_component_decoder(decoder, component).config.detector_orders;
@@ -247,8 +265,9 @@ TEST(MultiPassTesseractDecoderTest, PreservesExplicitDetectorOrders) {
   }
 
   config.detector_orders = make_literal_detector_orders({{0}});
-  EXPECT_THROW(MultiPassTesseractDecoder(correlated_dem(), 2, {0, 1}, config),
-               std::invalid_argument);
+  EXPECT_THROW(
+      MultiPassTesseractDecoder(make_multi_pass_config(correlated_dem(), 2, {0, 1}, config)),
+      std::invalid_argument);
 }
 
 TEST(MultiPassTesseractDecoderTest, ResolvesMixedDetectorOrdersAgainstEachComponentDem) {
@@ -258,7 +277,7 @@ TEST(MultiPassTesseractDecoderTest, ResolvesMixedDetectorOrdersAgainstEachCompon
   config.detector_orders.emplace_back(std::vector<size_t>{1, 0});
   config.detector_orders.emplace_back(DetectorOrder::Method::Coordinate, seed);
 
-  MultiPassTesseractDecoder decoder(correlated_dem(), 2, {0, 1}, config);
+  MultiPassTesseractDecoder decoder(make_multi_pass_config(correlated_dem(), 2, {0, 1}, config));
   for (size_t component = 0; component < decoder.num_components(); ++component) {
     const TesseractDecoder& component_decoder =
         MultiPassTestPeer::get_component_decoder(decoder, component);
@@ -273,7 +292,7 @@ TEST(MultiPassTesseractDecoderTest, ResolvesMixedDetectorOrdersAgainstEachCompon
 }
 
 TEST(MultiPassTesseractDecoderTest, CausalReweightUsesSafeCapAndReportsFinalPassCost) {
-  MultiPassTesseractDecoder decoder(correlated_dem(), 2, {0, 1});
+  MultiPassTesseractDecoder decoder(make_multi_pass_config(correlated_dem()));
   EXPECT_EQ(MultiPassTestPeer::get_pass_schedule(decoder),
             std::vector<std::vector<size_t>>({{0}, {1}}));
 
@@ -290,7 +309,7 @@ TEST(MultiPassTesseractDecoderTest, CausalReweightUsesSafeCapAndReportsFinalPass
 }
 
 TEST(MultiPassTesseractDecoderTest, RestoresCostsWhenLaterDecodeThrows) {
-  MultiPassTesseractDecoder decoder(correlated_dem(), 2, {0, 1});
+  MultiPassTesseractDecoder decoder(make_multi_pass_config(correlated_dem()));
   const auto& schedule = MultiPassTestPeer::get_pass_schedule(decoder);
   ASSERT_EQ(schedule, std::vector<std::vector<size_t>>({{0}, {1}}));
   TesseractDecoder& target = MultiPassTestPeer::get_component_decoder(decoder, schedule[1][0]);
@@ -310,7 +329,7 @@ TEST(MultiPassTesseractDecoderTest, RepeatedSparseShotsDoNotInheritState) {
   TesseractConfig config;
   config.sparsify_errors = true;
   config.sparsify_base_degree = 1;
-  MultiPassTesseractDecoder decoder(correlated_dem(), 2, {0, 1}, config);
+  MultiPassTesseractDecoder decoder(make_multi_pass_config(correlated_dem(), 2, {0, 1}, config));
 
   DecodeResult first = decoder.decode_result({0, 1});
   size_t first_reweights = decoder.get_last_shot_num_reweights();
@@ -320,7 +339,7 @@ TEST(MultiPassTesseractDecoderTest, RepeatedSparseShotsDoNotInheritState) {
   expect_costs_restored(decoder);
   DecodeResult repeated = decoder.decode_result({0, 1});
 
-  MultiPassTesseractDecoder fresh(correlated_dem(), 2, {0, 1}, config);
+  MultiPassTesseractDecoder fresh(make_multi_pass_config(correlated_dem(), 2, {0, 1}, config));
   DecodeResult fresh_result = fresh.decode_result({0, 1});
   EXPECT_EQ(repeated.predictions, first.predictions);
   EXPECT_EQ(repeated.predictions, fresh_result.predictions);
@@ -332,7 +351,7 @@ TEST(MultiPassTesseractDecoderTest, RepeatedSparseShotsDoNotInheritState) {
 }
 
 TEST(MultiPassTesseractDecoderTest, AggregatesLowConfidenceAcrossPasses) {
-  MultiPassTesseractDecoder decoder(correlated_dem(), 2, {0, 1});
+  MultiPassTesseractDecoder decoder(make_multi_pass_config(correlated_dem()));
   const auto& schedule = MultiPassTestPeer::get_pass_schedule(decoder);
   ASSERT_EQ(schedule, std::vector<std::vector<size_t>>({{0}, {1}}));
   MultiPassTestPeer::get_component_decoder(decoder, schedule[0][0]).config.pqlimit = 1;
@@ -343,7 +362,7 @@ TEST(MultiPassTesseractDecoderTest, AggregatesLowConfidenceAcrossPasses) {
 }
 
 TEST(MultiPassTesseractDecoderTest, ExecutionPlanIsComputedOnDemand) {
-  MultiPassTesseractDecoder decoder(correlated_dem(), 2, {4, 9});
+  MultiPassTesseractDecoder decoder(make_multi_pass_config(correlated_dem(), 2, {4, 9}));
   MultiPassExecutionPlan plan = decoder.get_execution_plan();
   EXPECT_EQ(plan.num_passes, 2);
   EXPECT_EQ(plan.components.size(), 2);
@@ -353,8 +372,8 @@ TEST(MultiPassTesseractDecoderTest, ExecutionPlanIsComputedOnDemand) {
 }
 
 TEST(MultiPassTesseractDecoderTest, StaticSchedulerRunsBothComponentsInEveryPass) {
-  MultiPassTesseractDecoder decoder(correlated_dem(), 2, {0, 1}, TesseractConfig(),
-                                    SchedulingStrategy::Static);
+  MultiPassTesseractDecoder decoder(make_multi_pass_config(
+      correlated_dem(), 2, {0, 1}, TesseractConfig(), SchedulingStrategy::Static));
   MultiPassExecutionPlan plan = decoder.get_execution_plan();
   EXPECT_EQ(plan.strategy, SchedulingStrategy::Static);
   EXPECT_EQ(plan.pass_schedule, std::vector<std::vector<size_t>>({{0, 1}, {0, 1}}));

@@ -183,31 +183,26 @@ void validate_detector_components(const std::vector<int>& detector_components,
 
 }  // namespace
 
-MultiPassTesseractDecoder::MultiPassTesseractDecoder(const MultiPassTesseractConfig& config)
-    : MultiPassTesseractDecoder(config.component_config.dem, config.num_passes,
-                                config.detector_components.empty()
-                                    ? classify_canonical_detector_bases(config.component_config.dem)
-                                    : config.detector_components,
-                                config.component_config, config.strategy) {}
-
-MultiPassTesseractDecoder::MultiPassTesseractDecoder(const stim::DetectorErrorModel& dem,
-                                                     size_t num_passes,
-                                                     const std::vector<int>& detector_components,
-                                                     const TesseractConfig& base_config,
-                                                     SchedulingStrategy strategy)
-    : num_passes(num_passes), strategy(strategy), total_global_detectors(dem.count_detectors()) {
+MultiPassTesseractDecoder::MultiPassTesseractDecoder(MultiPassTesseractConfig config)
+    : num_passes(config.num_passes),
+      strategy(config.strategy),
+      total_global_detectors(config.component_config.dem.count_detectors()) {
   if (num_passes < 1 || num_passes > 2) {
     throw std::invalid_argument("num_passes must be 1 or 2.");
   }
   if (strategy != SchedulingStrategy::Static && strategy != SchedulingStrategy::Causal) {
     throw std::invalid_argument("Invalid multi-pass scheduling strategy.");
   }
-  if (num_passes == 2 && !base_config.merge_errors) {
+  if (num_passes == 2 && !config.component_config.merge_errors) {
     throw std::invalid_argument(
         "Two-pass decoding requires merge_errors=true because reweighting is defined on "
         "aggregate component symptoms; use one pass to decode unmerged error mechanisms.");
   }
-  initialize(dem, detector_components, base_config);
+  std::vector<int> detector_components = std::move(config.detector_components);
+  if (detector_components.empty()) {
+    detector_components = classify_canonical_detector_bases(config.component_config.dem);
+  }
+  initialize(config.component_config.dem, detector_components, config.component_config);
 }
 
 void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,

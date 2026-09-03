@@ -97,7 +97,7 @@ MultiPassSinterCompiledDecoder compile_multi_pass_decoder_for_dem(
       .detector_components = detector_components,
       .strategy = strategy,
   };
-  auto decoder = std::make_unique<MultiPassTesseractDecoder>(config);
+  auto decoder = std::make_unique<MultiPassTesseractDecoder>(std::move(config));
   return MultiPassSinterCompiledDecoder{
       .decoder = std::move(decoder),
       .num_detectors = stim_dem.count_detectors(),

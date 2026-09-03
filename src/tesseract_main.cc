@@ -114,7 +114,7 @@ struct Args {
     config.num_passes = num_passes;
     config.strategy =
         multipass_strategy == "static" ? SchedulingStrategy::Static : SchedulingStrategy::Causal;
-    auto decoder = std::make_unique<MultiPassTesseractDecoder>(config);
+    auto decoder = std::make_unique<MultiPassTesseractDecoder>(std::move(config));
     if (print_plan) {
       std::cerr << decoder->get_execution_plan().str();
     }
