@@ -17,8 +17,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <ostream>
-#include <stdexcept>
 #include <vector>
 
 namespace tesseract_decoder {
@@ -42,9 +40,6 @@ class Decoder {
  public:
   virtual ~Decoder() = default;
   virtual DecodeResult decode_result(const std::vector<uint64_t>& detections) = 0;
-  virtual void print_execution_plan(std::ostream&) const {
-    throw std::logic_error("This decoder does not have an execution plan.");
-  }
 };
 
 }  // namespace tesseract_decoder

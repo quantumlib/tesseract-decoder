@@ -40,7 +40,6 @@ struct MultiPassTesseractConfig {
   size_t num_passes = 2;
   std::vector<int> detector_components;
   SchedulingStrategy strategy = SchedulingStrategy::Causal;
-  bool collect_plan_statistics = false;
 };
 
 struct MultiPassExecutionPlan {
@@ -91,12 +90,10 @@ class MultiPassTesseractDecoder : public Decoder {
   MultiPassTesseractDecoder(const stim::DetectorErrorModel& dem, size_t num_passes,
                             const std::vector<int>& detector_components,
                             const TesseractConfig& base_config = TesseractConfig(),
-                            SchedulingStrategy strategy = SchedulingStrategy::Causal,
-                            bool collect_plan_statistics = false);
+                            SchedulingStrategy strategy = SchedulingStrategy::Causal);
 
-  /** Returns the component schedule and statistics; requires collect_plan_statistics=true. */
+  /** Computes and returns the component schedule and statistics. */
   MultiPassExecutionPlan get_execution_plan() const;
-  void print_execution_plan(std::ostream& out) const override;
   std::vector<int> decode(const std::vector<uint64_t>& detections);
   /** Returns predictions and the cost of predictions made during the final pass. */
   DecodeResult decode_result(const std::vector<uint64_t>& detections) override;
@@ -128,9 +125,9 @@ class MultiPassTesseractDecoder : public Decoder {
   size_t num_passes;
   SchedulingStrategy strategy;
   size_t total_global_detectors;
-  bool collect_plan_statistics;
   size_t last_shot_num_reweights = 0;
-  MultiPassExecutionPlan::DemStatistics monolithic_statistics{};
+  // Retained so execution-plan statistics can be computed on demand.
+  stim::DetectorErrorModel monolithic_dem;
   std::vector<ComponentDecoder> component_decoders;
   std::vector<std::vector<size_t>> pass_schedule;
   std::vector<int> global_det_to_comp_id;

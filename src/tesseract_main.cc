@@ -104,7 +104,8 @@ struct Args {
     return append_observables || !obs_in_fname.empty() || (sample_num_shots > 0);
   }
 
-  std::unique_ptr<Decoder> make_decoder(const TesseractConfig& component_config) const {
+  std::unique_ptr<Decoder> make_decoder(const TesseractConfig& component_config,
+                                        bool print_plan = false) const {
     if (!multipass) {
       return std::make_unique<TesseractDecoder>(component_config);
     }
@@ -113,8 +114,11 @@ struct Args {
     config.num_passes = num_passes;
     config.strategy =
         multipass_strategy == "static" ? SchedulingStrategy::Static : SchedulingStrategy::Causal;
-    config.collect_plan_statistics = print_multipass_plan;
-    return std::make_unique<MultiPassTesseractDecoder>(config);
+    auto decoder = std::make_unique<MultiPassTesseractDecoder>(config);
+    if (print_plan) {
+      std::cerr << decoder->get_execution_plan().str();
+    }
+    return decoder;
   }
 
   void validate(const argparse::ArgumentParser& program) {
@@ -679,7 +683,8 @@ int main(int argc, char* argv[]) {
       shots.size(), args.num_threads,
       [&](size_t thread_index, size_t shot_index) {
         if (!decoders[thread_index]) {
-          decoders[thread_index] = args.make_decoder(config);
+          decoders[thread_index] =
+              args.make_decoder(config, args.print_multipass_plan && thread_index == 0);
         }
         auto& decoder = *decoders[thread_index];
         auto& error_use = error_use_per_thread[thread_index];
@@ -730,11 +735,8 @@ int main(int argc, char* argv[]) {
         return !has_obs || num_errors < args.max_errors;
       });
 
-  if (args.print_multipass_plan) {
-    if (!decoders[0]) {
-      decoders[0] = args.make_decoder(config);
-    }
-    decoders[0]->print_execution_plan(std::cerr);
+  if (args.print_multipass_plan && !decoders[0]) {
+    decoders[0] = args.make_decoder(config, true);
   }
 
   std::vector<size_t> error_use_totals(original_dem.count_errors());

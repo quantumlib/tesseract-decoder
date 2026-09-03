@@ -188,19 +188,14 @@ MultiPassTesseractDecoder::MultiPassTesseractDecoder(const MultiPassTesseractCon
                                 config.detector_components.empty()
                                     ? classify_canonical_detector_bases(config.component_config.dem)
                                     : config.detector_components,
-                                config.component_config, config.strategy,
-                                config.collect_plan_statistics) {}
+                                config.component_config, config.strategy) {}
 
 MultiPassTesseractDecoder::MultiPassTesseractDecoder(const stim::DetectorErrorModel& dem,
                                                      size_t num_passes,
                                                      const std::vector<int>& detector_components,
                                                      const TesseractConfig& base_config,
-                                                     SchedulingStrategy strategy,
-                                                     bool collect_plan_statistics)
-    : num_passes(num_passes),
-      strategy(strategy),
-      total_global_detectors(dem.count_detectors()),
-      collect_plan_statistics(collect_plan_statistics) {
+                                                     SchedulingStrategy strategy)
+    : num_passes(num_passes), strategy(strategy), total_global_detectors(dem.count_detectors()) {
   if (num_passes < 1 || num_passes > 2) {
     throw std::invalid_argument("num_passes must be 1 or 2.");
   }
@@ -218,20 +213,10 @@ MultiPassTesseractDecoder::MultiPassTesseractDecoder(const stim::DetectorErrorMo
 void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
                                            const std::vector<int>& detector_components,
                                            const TesseractConfig& base_config) {
-  stim::DetectorErrorModel flattened = dem.flattened();
+  monolithic_dem = dem.flattened();
+  const stim::DetectorErrorModel& flattened = monolithic_dem;
   total_global_detectors = flattened.count_detectors();
   validate_detector_components(detector_components, total_global_detectors);
-
-  if (collect_plan_statistics) {
-    std::vector<size_t> error_index_map;
-    stim::DetectorErrorModel statistics_dem = flattened;
-    if (base_config.merge_errors) {
-      statistics_dem = common::merge_indistinguishable_errors(statistics_dem, error_index_map);
-    }
-    statistics_dem = common::remove_zero_probability_errors(statistics_dem, error_index_map);
-    monolithic_statistics =
-        dem_statistics(statistics_dem.count_detectors(), get_errors_from_dem(statistics_dem));
-  }
 
   std::set<int> unique_labels(detector_components.begin(), detector_components.end());
   std::map<int, int> label_to_component;
@@ -348,9 +333,15 @@ void MultiPassTesseractDecoder::build_causal_schedule() {
 }
 
 MultiPassExecutionPlan MultiPassTesseractDecoder::get_execution_plan() const {
-  if (!collect_plan_statistics) {
-    throw std::logic_error("Execution plan statistics were not collected.");
+  std::vector<size_t> error_index_map;
+  stim::DetectorErrorModel statistics_dem = monolithic_dem;
+  if (component_decoders.front().decoder->config.merge_errors) {
+    statistics_dem = common::merge_indistinguishable_errors(statistics_dem, error_index_map);
   }
+  statistics_dem = common::remove_zero_probability_errors(statistics_dem, error_index_map);
+  auto monolithic_statistics =
+      dem_statistics(statistics_dem.count_detectors(), get_errors_from_dem(statistics_dem));
+
   MultiPassExecutionPlan plan{num_passes, strategy, monolithic_statistics, {}, {}, pass_schedule};
   for (size_t component_id = 0; component_id < component_decoders.size(); ++component_id) {
     const auto& component = component_decoders[component_id];
@@ -373,10 +364,6 @@ MultiPassExecutionPlan MultiPassTesseractDecoder::get_execution_plan() const {
     plan.dependencies.push_back({components.first, components.second, rule_count});
   }
   return plan;
-}
-
-void MultiPassTesseractDecoder::print_execution_plan(std::ostream& out) const {
-  out << get_execution_plan().str();
 }
 
 std::vector<int> MultiPassTesseractDecoder::decode(const std::vector<uint64_t>& detections) {

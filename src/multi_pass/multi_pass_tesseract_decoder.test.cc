@@ -15,7 +15,6 @@
 #include "multi_pass_tesseract_decoder.h"
 
 #include <cmath>
-#include <sstream>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -207,7 +206,7 @@ TEST(MultiPassTesseractDecoderTest, HonorsMergeErrorsBothWaysInOnePass) {
   for (bool merge_errors : {false, true}) {
     TesseractConfig config;
     config.merge_errors = merge_errors;
-    MultiPassTesseractDecoder decoder(dem, 1, {0, 1}, config, SchedulingStrategy::Causal, true);
+    MultiPassTesseractDecoder decoder(dem, 1, {0, 1}, config);
     MultiPassExecutionPlan plan = decoder.get_execution_plan();
     EXPECT_EQ(plan.monolithic_statistics.error_mechanism_count, merge_errors ? 2 : 4);
     ASSERT_EQ(plan.components.size(), 2);
@@ -343,28 +342,19 @@ TEST(MultiPassTesseractDecoderTest, AggregatesLowConfidenceAcrossPasses) {
   EXPECT_EQ(result.predictions, std::vector<int>({0}));
 }
 
-TEST(MultiPassTesseractDecoderTest, ExecutionPlanRequiresOptIn) {
+TEST(MultiPassTesseractDecoderTest, ExecutionPlanIsComputedOnDemand) {
   MultiPassTesseractDecoder decoder(correlated_dem(), 2, {4, 9});
-  EXPECT_THROW(decoder.get_execution_plan(), std::logic_error);
-
-  MultiPassTesseractDecoder diagnosed(correlated_dem(), 2, {4, 9}, TesseractConfig(),
-                                      SchedulingStrategy::Causal, true);
-  MultiPassExecutionPlan plan = diagnosed.get_execution_plan();
+  MultiPassExecutionPlan plan = decoder.get_execution_plan();
   EXPECT_EQ(plan.num_passes, 2);
   EXPECT_EQ(plan.components.size(), 2);
   EXPECT_EQ(plan.dependencies.size(), 2);
   EXPECT_EQ(plan.pass_schedule, std::vector<std::vector<size_t>>({{0}, {1}}));
   EXPECT_NE(plan.str().find("strategy: causal"), std::string::npos);
-
-  std::ostringstream printed_plan;
-  Decoder& decoder_interface = diagnosed;
-  decoder_interface.print_execution_plan(printed_plan);
-  EXPECT_EQ(printed_plan.str(), plan.str());
 }
 
 TEST(MultiPassTesseractDecoderTest, StaticSchedulerRunsBothComponentsInEveryPass) {
   MultiPassTesseractDecoder decoder(correlated_dem(), 2, {0, 1}, TesseractConfig(),
-                                    SchedulingStrategy::Static, true);
+                                    SchedulingStrategy::Static);
   MultiPassExecutionPlan plan = decoder.get_execution_plan();
   EXPECT_EQ(plan.strategy, SchedulingStrategy::Static);
   EXPECT_EQ(plan.pass_schedule, std::vector<std::vector<size_t>>({{0, 1}, {0, 1}}));
