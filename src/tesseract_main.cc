@@ -677,7 +677,7 @@ int main(int argc, char* argv[]) {
         auto& decoder = *decoders[thread_index];
         auto& error_use = error_use_per_thread[thread_index];
         auto start_time = std::chrono::high_resolution_clock::now();
-        DecoderResult result = decoder.decode_result(shots[shot_index].hits);
+        DecodeResult result = decoder.decode_result(shots[shot_index].hits);
         auto stop_time = std::chrono::high_resolution_clock::now();
         decoding_time_seconds[shot_index] =
             std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /

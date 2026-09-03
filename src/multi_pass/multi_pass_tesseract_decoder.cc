@@ -401,7 +401,7 @@ void MultiPassTesseractDecoder::restore_modified_costs(
   }
 }
 
-DecoderResult MultiPassTesseractDecoder::decode_result(const std::vector<uint64_t>& detections) {
+DecodeResult MultiPassTesseractDecoder::decode_result(const std::vector<uint64_t>& detections) {
   last_shot_num_reweights = 0;
   for (uint64_t detector : detections) {
     if (detector >= total_global_detectors) {
@@ -481,7 +481,7 @@ DecoderResult MultiPassTesseractDecoder::decode_result(const std::vector<uint64_
     aggregate_cost += decoder->cost_from_errors(predictions);
   }
 
-  DecoderResult result;
+  DecodeResult result;
   result.predictions.assign(flipped_observables.begin(), flipped_observables.end());
   result.low_confidence = aggregate_low_confidence;
   result.total_cost = aggregate_cost;

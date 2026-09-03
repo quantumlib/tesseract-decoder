@@ -74,7 +74,7 @@ struct SimplexDecoder : public Decoder {
   // flattened DEM error indices.
   double cost_from_errors(const std::vector<size_t>& predicted_errors) const;
 
-  DecoderResult decode_result(const std::vector<uint64_t>& detections) override;
+  DecodeResult decode_result(const std::vector<uint64_t>& detections) override;
   std::vector<int> decode(const std::vector<uint64_t>& detections);
 
   void decode_shots(std::vector<stim::SparseShot>& shots,

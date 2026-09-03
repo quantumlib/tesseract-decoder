@@ -665,14 +665,14 @@ TEST(tesseract, DecodeResultDistinguishesPopulatedEmptyErrors) {
     )DEM");
   TesseractDecoder decoder(TesseractConfig{dem});
 
-  DecoderResult empty_result = decoder.decode_result({});
+  DecodeResult empty_result = decoder.decode_result({});
   EXPECT_TRUE(empty_result.predicted_errors_populated);
   EXPECT_TRUE(empty_result.predicted_errors.empty());
   EXPECT_TRUE(empty_result.predictions.empty());
   EXPECT_FALSE(empty_result.low_confidence);
   EXPECT_DOUBLE_EQ(empty_result.total_cost, 0);
 
-  DecoderResult fired_result = decoder.decode_result({0});
+  DecodeResult fired_result = decoder.decode_result({0});
   EXPECT_TRUE(fired_result.predicted_errors_populated);
   EXPECT_EQ(fired_result.predicted_errors, std::vector<size_t>({0}));
   EXPECT_EQ(fired_result.predictions, std::vector<int>({0}));
@@ -691,14 +691,14 @@ TEST(decoder, CommonInterfaceSupportsTesseractAndSimplex) {
   SimplexDecoder simplex_decoder(SimplexConfig{dem});
 
   auto expect_decoded_result = [](Decoder& decoder) {
-    DecoderResult empty_result = decoder.decode_result({});
+    DecodeResult empty_result = decoder.decode_result({});
     EXPECT_TRUE(empty_result.predictions.empty());
     EXPECT_TRUE(empty_result.predicted_errors.empty());
     EXPECT_TRUE(empty_result.predicted_errors_populated);
     EXPECT_FALSE(empty_result.low_confidence);
     EXPECT_EQ(empty_result.total_cost, 0);
 
-    DecoderResult result = decoder.decode_result({0});
+    DecodeResult result = decoder.decode_result({0});
     EXPECT_EQ(result.predictions, std::vector<int>({0}));
     EXPECT_EQ(result.predicted_errors, std::vector<size_t>({0}));
     EXPECT_TRUE(result.predicted_errors_populated);
@@ -706,8 +706,8 @@ TEST(decoder, CommonInterfaceSupportsTesseractAndSimplex) {
     EXPECT_GT(result.total_cost, 0);
     return result;
   };
-  DecoderResult tesseract_result = expect_decoded_result(tesseract_decoder);
-  DecoderResult simplex_result = expect_decoded_result(simplex_decoder);
+  DecodeResult tesseract_result = expect_decoded_result(tesseract_decoder);
+  DecodeResult simplex_result = expect_decoded_result(simplex_decoder);
   EXPECT_DOUBLE_EQ(tesseract_result.total_cost,
                    tesseract_decoder.cost_from_errors(tesseract_result.predicted_errors));
   EXPECT_DOUBLE_EQ(simplex_result.total_cost,

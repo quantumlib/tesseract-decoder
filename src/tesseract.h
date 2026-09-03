@@ -122,7 +122,7 @@ struct TesseractDecoder : public Decoder {
   // flattened DEM error indices.
   double cost_from_errors(const std::vector<size_t>& predicted_errors) const;
 
-  DecoderResult decode_result(const std::vector<uint64_t>& detections) override;
+  DecodeResult decode_result(const std::vector<uint64_t>& detections) override;
 
   // Resynchronizes the internal state of the decoder after the public `errors`
   // vector has been modified. This is necessary to ensure that the internal

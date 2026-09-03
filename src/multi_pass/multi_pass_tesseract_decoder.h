@@ -83,7 +83,7 @@ class MultiPassTesseractDecoder : public Decoder {
   MultiPassExecutionPlan get_execution_plan() const;
   std::vector<int> decode(const std::vector<uint64_t>& detections);
   /** Returns predictions and the cost of predictions made during the final pass. */
-  DecoderResult decode_result(const std::vector<uint64_t>& detections) override;
+  DecodeResult decode_result(const std::vector<uint64_t>& detections) override;
 
   size_t get_last_shot_num_reweights() const {
     return last_shot_num_reweights;

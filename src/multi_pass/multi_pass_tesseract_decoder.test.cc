@@ -125,7 +125,7 @@ TEST(MultiPassTesseractDecoderTest, TesseractConfigClassifiesCanonicalBasisTags)
 
   std::unique_ptr<Decoder> decoder = make_decoder(config);
   EXPECT_NE(dynamic_cast<MultiPassTesseractDecoder*>(decoder.get()), nullptr);
-  DecoderResult result = decoder->decode_result({1});
+  DecodeResult result = decoder->decode_result({1});
   EXPECT_EQ(result.predictions, std::vector<int>({0}));
   EXPECT_FALSE(result.predicted_errors_populated);
 }
@@ -279,7 +279,7 @@ TEST(MultiPassTesseractDecoderTest, CausalReweightUsesSafeCapAndReportsFinalPass
             std::vector<std::vector<size_t>>({{0}, {1}}));
 
   Decoder& decoder_interface = decoder;
-  DecoderResult result = decoder_interface.decode_result({0, 1});
+  DecodeResult result = decoder_interface.decode_result({0, 1});
   EXPECT_EQ(result.predictions, std::vector<int>({0}));
   EXPECT_TRUE(result.predicted_errors.empty());
   EXPECT_FALSE(result.predicted_errors_populated);
@@ -313,16 +313,16 @@ TEST(MultiPassTesseractDecoderTest, RepeatedSparseShotsDoNotInheritState) {
   config.sparsify_base_degree = 1;
   MultiPassTesseractDecoder decoder(correlated_dem(), 2, {0, 1}, config);
 
-  DecoderResult first = decoder.decode_result({0, 1});
+  DecodeResult first = decoder.decode_result({0, 1});
   size_t first_reweights = decoder.get_last_shot_num_reweights();
   expect_costs_restored(decoder);
   EXPECT_TRUE(decoder.decode({}).empty());
   EXPECT_EQ(decoder.get_last_shot_num_reweights(), 0);
   expect_costs_restored(decoder);
-  DecoderResult repeated = decoder.decode_result({0, 1});
+  DecodeResult repeated = decoder.decode_result({0, 1});
 
   MultiPassTesseractDecoder fresh(correlated_dem(), 2, {0, 1}, config);
-  DecoderResult fresh_result = fresh.decode_result({0, 1});
+  DecodeResult fresh_result = fresh.decode_result({0, 1});
   EXPECT_EQ(repeated.predictions, first.predictions);
   EXPECT_EQ(repeated.predictions, fresh_result.predictions);
   EXPECT_EQ(repeated.low_confidence, first.low_confidence);
@@ -338,7 +338,7 @@ TEST(MultiPassTesseractDecoderTest, AggregatesLowConfidenceAcrossPasses) {
   ASSERT_EQ(schedule, std::vector<std::vector<size_t>>({{0}, {1}}));
   MultiPassTestPeer::get_component_decoder(decoder, schedule[0][0]).config.pqlimit = 1;
 
-  DecoderResult result = decoder.decode_result({0, 1});
+  DecodeResult result = decoder.decode_result({0, 1});
   EXPECT_TRUE(result.low_confidence);
   EXPECT_EQ(result.predictions, std::vector<int>({0}));
 }

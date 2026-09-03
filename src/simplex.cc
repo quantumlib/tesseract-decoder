@@ -395,10 +395,10 @@ std::vector<int> SimplexDecoder::decode(const std::vector<uint64_t>& detections)
   return get_flipped_observables(predicted_errors_buffer);
 }
 
-DecoderResult SimplexDecoder::decode_result(const std::vector<uint64_t>& detections) {
+DecodeResult SimplexDecoder::decode_result(const std::vector<uint64_t>& detections) {
   decode_to_errors(detections);
 
-  DecoderResult result;
+  DecodeResult result;
   result.predictions = get_flipped_observables(predicted_errors_buffer);
   result.predicted_errors = predicted_errors_buffer;
   result.predicted_errors_populated = true;

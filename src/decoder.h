@@ -21,7 +21,7 @@
 
 namespace tesseract_decoder {
 
-struct DecoderResult {
+struct DecodeResult {
   // Sorted observable IDs flipped by the decoder.
   std::vector<int> predictions;
 
@@ -39,7 +39,7 @@ struct DecoderResult {
 class Decoder {
  public:
   virtual ~Decoder() = default;
-  virtual DecoderResult decode_result(const std::vector<uint64_t>& detections) = 0;
+  virtual DecodeResult decode_result(const std::vector<uint64_t>& detections) = 0;
 };
 
 }  // namespace tesseract_decoder
