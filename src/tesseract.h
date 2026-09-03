@@ -17,7 +17,6 @@
 
 #include <boost/dynamic_bitset.hpp>
 #include <cstdint>
-#include <memory>
 #include <queue>
 #include <string>
 #include <unordered_map>
@@ -37,11 +36,6 @@ constexpr int DEFAULT_DET_BEAM = 5;
 constexpr size_t DEFAULT_PQLIMIT = 200000;
 
 int suggest_sparsify_reactivate_limit(size_t num_detectors, int sparsify_base_degree);
-
-enum class SchedulingStrategy {
-  Static,  // Schedules both components in every pass.
-  Causal   // Derives each pass from component dependencies.
-};
 
 struct TesseractConfig {
   stim::DetectorErrorModel dem;
@@ -64,17 +58,8 @@ struct TesseractConfig {
   int sparsify_max_degree = -1;
   int sparsify_reactivate_limit = -1;
 
-  bool multipass = false;
-  size_t num_passes = 2;
-  std::vector<int> detector_components;
-  SchedulingStrategy multipass_strategy = SchedulingStrategy::Causal;
-  bool collect_multipass_plan_statistics = false;
-
   std::string str();
 };
-
-// Constructs the monolithic or multi-pass implementation selected by the configuration.
-std::unique_ptr<Decoder> make_decoder(const TesseractConfig& config);
 
 class Node {
  public:

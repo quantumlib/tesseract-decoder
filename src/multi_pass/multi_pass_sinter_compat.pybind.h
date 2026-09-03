@@ -90,8 +90,14 @@ MultiPassSinterCompiledDecoder compile_multi_pass_decoder_for_dem(
   if (base_config.detector_orders.empty()) {
     base_config.detector_orders = make_detector_orders(num_det_orders, det_order_method, seed);
   }
-  auto decoder = std::make_unique<MultiPassTesseractDecoder>(
-      stim_dem, num_passes, detector_components, base_config, strategy);
+  base_config.dem = stim_dem;
+  MultiPassTesseractConfig config{
+      .component_config = std::move(base_config),
+      .num_passes = num_passes,
+      .detector_components = detector_components,
+      .strategy = strategy,
+  };
+  auto decoder = std::make_unique<MultiPassTesseractDecoder>(config);
   return MultiPassSinterCompiledDecoder{
       .decoder = std::move(decoder),
       .num_detectors = stim_dem.count_detectors(),

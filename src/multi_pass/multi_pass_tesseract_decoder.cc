@@ -29,13 +29,6 @@
 
 namespace tesseract_decoder {
 
-std::unique_ptr<Decoder> make_decoder(const TesseractConfig& config) {
-  if (config.multipass) {
-    return std::make_unique<MultiPassTesseractDecoder>(config);
-  }
-  return std::make_unique<TesseractDecoder>(config);
-}
-
 std::string MultiPassExecutionPlan::str() const {
   std::stringstream ss;
   ss << "Multi-pass execution plan\n"
@@ -190,12 +183,13 @@ void validate_detector_components(const std::vector<int>& detector_components,
 
 }  // namespace
 
-MultiPassTesseractDecoder::MultiPassTesseractDecoder(const TesseractConfig& config)
-    : MultiPassTesseractDecoder(
-          config.dem, config.num_passes,
-          config.detector_components.empty() ? classify_canonical_detector_bases(config.dem)
-                                             : config.detector_components,
-          config, config.multipass_strategy, config.collect_multipass_plan_statistics) {}
+MultiPassTesseractDecoder::MultiPassTesseractDecoder(const MultiPassTesseractConfig& config)
+    : MultiPassTesseractDecoder(config.component_config.dem, config.num_passes,
+                                config.detector_components.empty()
+                                    ? classify_canonical_detector_bases(config.component_config.dem)
+                                    : config.detector_components,
+                                config.component_config, config.strategy,
+                                config.collect_plan_statistics) {}
 
 MultiPassTesseractDecoder::MultiPassTesseractDecoder(const stim::DetectorErrorModel& dem,
                                                      size_t num_passes,
@@ -269,7 +263,6 @@ void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
   for (size_t component = 0; component < component_decoders.size(); ++component) {
     auto& component_decoder = component_decoders[component];
     TesseractConfig config = base_config;
-    config.multipass = false;
     config.dem = component_dems.at(component);
     component_decoder.decoder = std::make_unique<TesseractDecoder>(std::move(config));
     component_decoder.error_index_to_rules.resize(component_decoder.decoder->errors.size());
@@ -380,6 +373,10 @@ MultiPassExecutionPlan MultiPassTesseractDecoder::get_execution_plan() const {
     plan.dependencies.push_back({components.first, components.second, rule_count});
   }
   return plan;
+}
+
+void MultiPassTesseractDecoder::print_execution_plan(std::ostream& out) const {
+  out << get_execution_plan().str();
 }
 
 std::vector<int> MultiPassTesseractDecoder::decode(const std::vector<uint64_t>& detections) {

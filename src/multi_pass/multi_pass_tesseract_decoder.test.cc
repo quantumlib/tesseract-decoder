@@ -15,6 +15,7 @@
 #include "multi_pass_tesseract_decoder.h"
 
 #include <cmath>
+#include <sstream>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -89,9 +90,9 @@ TEST(MultiPassTesseractDecoderTest, ValidatesSupportedShapeAndStrategy) {
   EXPECT_THROW(decoder.decode({2}), std::invalid_argument);
 }
 
-TEST(MultiPassTesseractDecoderTest, FactorySelectsConfiguredDecoder) {
-  TesseractConfig config;
-  config.dem = stim::DetectorErrorModel(R"DEM(
+TEST(MultiPassTesseractDecoderTest, SeparateConfigsConstructMatchingDecoders) {
+  TesseractConfig component_config;
+  component_config.dem = stim::DetectorErrorModel(R"DEM(
         error(0.1) D0
         error(0.2) D1 L0
         detector[{"basis":"X"}] D0
@@ -99,38 +100,38 @@ TEST(MultiPassTesseractDecoderTest, FactorySelectsConfiguredDecoder) {
         logical_observable L0
     )DEM");
 
-  std::unique_ptr<Decoder> monolithic_decoder = make_decoder(config);
+  std::unique_ptr<Decoder> monolithic_decoder =
+      std::make_unique<TesseractDecoder>(component_config);
   EXPECT_NE(dynamic_cast<TesseractDecoder*>(monolithic_decoder.get()), nullptr);
   EXPECT_EQ(dynamic_cast<MultiPassTesseractDecoder*>(monolithic_decoder.get()), nullptr);
 
-  config.multipass = true;
+  MultiPassTesseractConfig config;
+  config.component_config = component_config;
   config.num_passes = 1;
-  EXPECT_THROW((void)TesseractDecoder(config), std::invalid_argument);
-  std::unique_ptr<Decoder> multi_pass_decoder = make_decoder(config);
+  std::unique_ptr<Decoder> multi_pass_decoder = std::make_unique<MultiPassTesseractDecoder>(config);
   EXPECT_NE(dynamic_cast<MultiPassTesseractDecoder*>(multi_pass_decoder.get()), nullptr);
   EXPECT_EQ(dynamic_cast<TesseractDecoder*>(multi_pass_decoder.get()), nullptr);
 }
 
-TEST(MultiPassTesseractDecoderTest, TesseractConfigClassifiesCanonicalBasisTags) {
-  TesseractConfig config;
-  config.dem = stim::DetectorErrorModel(R"DEM(
+TEST(MultiPassTesseractDecoderTest, MultiPassConfigClassifiesCanonicalBasisTags) {
+  MultiPassTesseractConfig config;
+  config.component_config.dem = stim::DetectorErrorModel(R"DEM(
         error(0.1) D0
         error(0.2) D1 L0
         detector[{"measure_basis":"invalid","basis":"X","unrelated":5}] D0
         detector[{"basis":"Z"}] D1
         logical_observable L0
     )DEM");
-  config.multipass = true;
   config.num_passes = 1;
 
-  std::unique_ptr<Decoder> decoder = make_decoder(config);
+  std::unique_ptr<Decoder> decoder = std::make_unique<MultiPassTesseractDecoder>(config);
   EXPECT_NE(dynamic_cast<MultiPassTesseractDecoder*>(decoder.get()), nullptr);
   DecodeResult result = decoder->decode_result({1});
   EXPECT_EQ(result.predictions, std::vector<int>({0}));
   EXPECT_FALSE(result.predicted_errors_populated);
 }
 
-TEST(MultiPassTesseractDecoderTest, TesseractConfigRejectsNoncanonicalBasisMetadata) {
+TEST(MultiPassTesseractDecoderTest, MultiPassConfigRejectsNoncanonicalBasisMetadata) {
   const std::vector<std::string> detector_instructions = {
       R"DEM(detector[{"measure_basis":"X"}] D0
             detector[{"basis":"Z"}] D1)DEM",
@@ -145,12 +146,11 @@ TEST(MultiPassTesseractDecoderTest, TesseractConfigRejectsNoncanonicalBasisMetad
   };
 
   for (const std::string& detector_instruction : detector_instructions) {
-    TesseractConfig config;
-    config.dem = stim::DetectorErrorModel(
+    MultiPassTesseractConfig config;
+    config.component_config.dem = stim::DetectorErrorModel(
         ("error(0.1) D0\nerror(0.2) D1 L0\n" + detector_instruction).c_str());
-    config.multipass = true;
     config.num_passes = 1;
-    EXPECT_THROW((void)make_decoder(config), std::invalid_argument);
+    EXPECT_THROW((void)MultiPassTesseractDecoder(config), std::invalid_argument);
   }
 }
 
@@ -355,6 +355,11 @@ TEST(MultiPassTesseractDecoderTest, ExecutionPlanRequiresOptIn) {
   EXPECT_EQ(plan.dependencies.size(), 2);
   EXPECT_EQ(plan.pass_schedule, std::vector<std::vector<size_t>>({{0}, {1}}));
   EXPECT_NE(plan.str().find("strategy: causal"), std::string::npos);
+
+  std::ostringstream printed_plan;
+  Decoder& decoder_interface = diagnosed;
+  decoder_interface.print_execution_plan(printed_plan);
+  EXPECT_EQ(printed_plan.str(), plan.str());
 }
 
 TEST(MultiPassTesseractDecoderTest, StaticSchedulerRunsBothComponentsInEveryPass) {

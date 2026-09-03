@@ -28,6 +28,21 @@ namespace tesseract_decoder {
 
 class MultiPassTestPeer;
 
+enum class SchedulingStrategy {
+  Static,  // Schedules both components in every pass.
+  Causal   // Derives each pass from component dependencies.
+};
+
+struct MultiPassTesseractConfig {
+  // Settings applied independently to each component decoder. The DEM is the
+  // monolithic input DEM and is replaced with each component DEM internally.
+  TesseractConfig component_config;
+  size_t num_passes = 2;
+  std::vector<int> detector_components;
+  SchedulingStrategy strategy = SchedulingStrategy::Causal;
+  bool collect_plan_statistics = false;
+};
+
 struct MultiPassExecutionPlan {
   struct DemStatistics {
     size_t detector_count;
@@ -71,7 +86,7 @@ struct MultiPassExecutionPlan {
  */
 class MultiPassTesseractDecoder : public Decoder {
  public:
-  explicit MultiPassTesseractDecoder(const TesseractConfig& config);
+  explicit MultiPassTesseractDecoder(const MultiPassTesseractConfig& config);
 
   MultiPassTesseractDecoder(const stim::DetectorErrorModel& dem, size_t num_passes,
                             const std::vector<int>& detector_components,
@@ -81,6 +96,7 @@ class MultiPassTesseractDecoder : public Decoder {
 
   /** Returns the component schedule and statistics; requires collect_plan_statistics=true. */
   MultiPassExecutionPlan get_execution_plan() const;
+  void print_execution_plan(std::ostream& out) const override;
   std::vector<int> decode(const std::vector<uint64_t>& detections);
   /** Returns predictions and the cost of predictions made during the final pass. */
   DecodeResult decode_result(const std::vector<uint64_t>& detections) override;

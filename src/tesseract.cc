@@ -152,12 +152,6 @@ double TesseractDecoder::get_detcost(size_t d,
 }
 
 TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(std::move(config_)) {
-  if (config.multipass) {
-    throw std::invalid_argument(
-        "TesseractDecoder is monolithic; use make_decoder or MultiPassTesseractDecoder for a "
-        "multi-pass configuration.");
-  }
-
   config.dem = common::flatten(config.dem);
 
   std::vector<size_t> dem_error_map(config.dem.count_errors());

@@ -104,6 +104,19 @@ struct Args {
     return append_observables || !obs_in_fname.empty() || (sample_num_shots > 0);
   }
 
+  std::unique_ptr<Decoder> make_decoder(const TesseractConfig& component_config) const {
+    if (!multipass) {
+      return std::make_unique<TesseractDecoder>(component_config);
+    }
+    MultiPassTesseractConfig config;
+    config.component_config = component_config;
+    config.num_passes = num_passes;
+    config.strategy =
+        multipass_strategy == "static" ? SchedulingStrategy::Static : SchedulingStrategy::Causal;
+    config.collect_plan_statistics = print_multipass_plan;
+    return std::make_unique<MultiPassTesseractDecoder>(config);
+  }
+
   void validate(const argparse::ArgumentParser& program) {
     if (circuit_path.empty() and dem_path.empty()) {
       throw std::invalid_argument("Must provide at least one of --circuit or --dem");
@@ -401,12 +414,6 @@ struct Args {
     config.sparsify_base_degree = sparsify_base_degree;
     config.sparsify_max_degree = sparsify_max_degree;
     config.sparsify_reactivate_limit = sparsify_reactivate_limit;
-
-    config.multipass = multipass;
-    config.num_passes = num_passes;
-    config.multipass_strategy =
-        multipass_strategy == "static" ? SchedulingStrategy::Static : SchedulingStrategy::Causal;
-    config.collect_multipass_plan_statistics = print_multipass_plan;
   }
 };
 
@@ -672,7 +679,7 @@ int main(int argc, char* argv[]) {
       shots.size(), args.num_threads,
       [&](size_t thread_index, size_t shot_index) {
         if (!decoders[thread_index]) {
-          decoders[thread_index] = make_decoder(config);
+          decoders[thread_index] = args.make_decoder(config);
         }
         auto& decoder = *decoders[thread_index];
         auto& error_use = error_use_per_thread[thread_index];
@@ -724,21 +731,10 @@ int main(int argc, char* argv[]) {
       });
 
   if (args.print_multipass_plan) {
-    const MultiPassTesseractDecoder* plan_decoder = nullptr;
-    for (const auto& decoder : decoders) {
-      if (decoder) {
-        plan_decoder = dynamic_cast<const MultiPassTesseractDecoder*>(decoder.get());
-        break;
-      }
+    if (!decoders[0]) {
+      decoders[0] = args.make_decoder(config);
     }
-    if (plan_decoder == nullptr) {
-      decoders[0] = make_decoder(config);
-      plan_decoder = dynamic_cast<const MultiPassTesseractDecoder*>(decoders[0].get());
-    }
-    if (plan_decoder == nullptr) {
-      throw std::logic_error("Expected a multi-pass decoder for execution-plan diagnostics.");
-    }
-    std::cerr << plan_decoder->get_execution_plan().str();
+    decoders[0]->print_execution_plan(std::cerr);
   }
 
   std::vector<size_t> error_use_totals(original_dem.count_errors());
