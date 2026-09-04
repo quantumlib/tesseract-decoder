@@ -15,6 +15,7 @@
 #include "error_correlations.h"
 
 #include <algorithm>
+#include <array>
 #include <map>
 #include <set>
 #include <stdexcept>
@@ -35,40 +36,43 @@ void xor_probability(double& accumulated, double probability) {
   accumulated = accumulated * (1 - probability) + probability * (1 - accumulated);
 }
 
-}  // namespace
-
-bool ComponentSymptom::operator==(const ComponentSymptom& other) const {
-  return detectors == other.detectors && observables == other.observables;
-}
-
-bool ComponentSymptom::operator<(const ComponentSymptom& other) const {
-  if (detectors != other.detectors) {
-    return detectors < other.detectors;
-  }
-  return observables < other.observables;
-}
-
-CorrelationEvidence collect_correlation_evidence(const stim::DetectorErrorModel& dem,
-                                                 const std::vector<int>& detector_components) {
-  stim::DetectorErrorModel flattened = dem.flattened();
-  if (detector_components.size() != flattened.count_detectors()) {
+std::vector<int> normalize_detector_components(const stim::DetectorErrorModel& dem,
+                                               const std::vector<int>& detector_components) {
+  if (detector_components.size() != dem.count_detectors()) {
     throw std::invalid_argument(
         "Detector component assignment count does not match the DEM detector count.");
   }
+  std::set<int> labels;
   for (size_t detector = 0; detector < detector_components.size(); ++detector) {
     if (detector_components[detector] < 0) {
       throw std::invalid_argument("Detector D" + std::to_string(detector) +
                                   " has an invalid negative component assignment.");
     }
+    labels.insert(detector_components[detector]);
   }
+  if (labels.size() != 2) {
+    throw std::invalid_argument("Multi-pass decoding requires exactly 2 detector components; got " +
+                                std::to_string(labels.size()) + ".");
+  }
+  int first_label = *labels.begin();
+  std::vector<int> normalized;
+  normalized.reserve(detector_components.size());
+  for (int component : detector_components) {
+    normalized.push_back(component == first_label ? 0 : 1);
+  }
+  return normalized;
+}
 
+CorrelationEvidence collect_correlation_evidence_from_flattened_dem(
+    const stim::DetectorErrorModel& dem, const std::vector<int>& detector_components) {
   CorrelationEvidence evidence;
-  for (const auto& instruction : flattened.instructions) {
+  for (const auto& instruction : dem.instructions) {
     if (instruction.type != stim::DemInstructionType::DEM_ERROR) {
       continue;
     }
 
-    std::map<int, std::pair<std::set<int>, std::set<int>>> symptom_sets_by_component;
+    std::array<std::pair<std::set<int>, std::set<int>>, 2> symptom_sets_by_component;
+    std::array<bool, 2> has_component_symptom{};
     instruction.for_separated_targets([&](std::span<const stim::DemTarget> group) {
       std::set<int> group_detectors;
       std::set<int> group_observables;
@@ -84,52 +88,70 @@ CorrelationEvidence collect_correlation_evidence(const stim::DetectorErrorModel&
                                     "` contains a detectorless decomposition group.");
       }
 
-      std::set<int> components;
+      int component = -1;
       for (int detector : group_detectors) {
-        if (detector < 0 || static_cast<size_t>(detector) >= detector_components.size() ||
-            detector_components[detector] < 0) {
+        if (detector < 0 || static_cast<size_t>(detector) >= detector_components.size()) {
           throw std::invalid_argument("Invalid component assignment for detector D" +
                                       std::to_string(detector) + '.');
         }
-        components.insert(detector_components[detector]);
-      }
-      if (components.size() != 1) {
-        throw std::invalid_argument("Error instruction `" + instruction.str() +
-                                    "` contains a decomposition group with detectors from multiple "
-                                    "components.");
+        if (component == -1) {
+          component = detector_components[detector];
+        } else if (component != detector_components[detector]) {
+          throw std::invalid_argument(
+              "Error instruction `" + instruction.str() +
+              "` contains a decomposition group with detectors from multiple components.");
+        }
       }
 
-      auto& [detectors, observables] = symptom_sets_by_component[*components.begin()];
+      has_component_symptom[component] = true;
+      auto& [detectors, observables] = symptom_sets_by_component[component];
       for (int detector : group_detectors) toggle(detectors, detector);
       for (int observable : group_observables) toggle(observables, observable);
     });
 
-    std::vector<ComponentSymptom> symptoms;
-    for (const auto& entry : symptom_sets_by_component) {
-      const auto& symptom_sets = entry.second;
-      if (symptom_sets.first.empty()) {
+    std::array<ComponentSymptom, 2> symptoms;
+    for (size_t component = 0; component < 2; ++component) {
+      if (!has_component_symptom[component]) continue;
+      const auto& [detectors, observables] = symptom_sets_by_component[component];
+      if (detectors.empty()) {
         throw std::invalid_argument("Error instruction `" + instruction.str() +
                                     "` has a detectorless component symptom after combining its "
                                     "decomposition groups.");
       }
-      symptoms.push_back({{symptom_sets.first.begin(), symptom_sets.first.end()},
-                          {symptom_sets.second.begin(), symptom_sets.second.end()}});
+      symptoms[component] = {{detectors.begin(), detectors.end()},
+                             {observables.begin(), observables.end()}};
     }
 
     double probability = instruction.arg_data[0];
-    for (const auto& symptom : symptoms) {
-      xor_probability(evidence.symptom_probabilities[symptom], probability);
-    }
-    for (size_t i = 0; i < symptoms.size(); ++i) {
-      for (size_t j = 0; j < symptoms.size(); ++j) {
-        if (i != j) {
-          xor_probability(evidence.paired_mechanism_probabilities[symptoms[i]][symptoms[j]],
-                          probability);
-        }
+    for (size_t component = 0; component < 2; ++component) {
+      if (has_component_symptom[component]) {
+        xor_probability(evidence.symptom_probabilities[symptoms[component]], probability);
       }
+    }
+    if (has_component_symptom[0] && has_component_symptom[1]) {
+      xor_probability(evidence.paired_mechanism_probabilities[symptoms[0]][symptoms[1]],
+                      probability);
+      xor_probability(evidence.paired_mechanism_probabilities[symptoms[1]][symptoms[0]],
+                      probability);
     }
   }
   return evidence;
+}
+
+}  // namespace
+
+bool ComponentSymptom::operator<(const ComponentSymptom& other) const {
+  if (detectors != other.detectors) {
+    return detectors < other.detectors;
+  }
+  return observables < other.observables;
+}
+
+CorrelationEvidence collect_correlation_evidence(const stim::DetectorErrorModel& dem,
+                                                 const std::vector<int>& detector_components) {
+  stim::DetectorErrorModel flattened = dem.flattened();
+  std::vector<int> normalized = normalize_detector_components(flattened, detector_components);
+  return collect_correlation_evidence_from_flattened_dem(flattened, normalized);
 }
 
 ReweightProbsMap derive_reweight_probabilities(const CorrelationEvidence& evidence) {
@@ -151,6 +173,11 @@ ReweightProbsMap derive_reweight_probabilities(const CorrelationEvidence& eviden
 ReweightProbsMap process_dem_correlations(const stim::DetectorErrorModel& dem,
                                           const std::vector<int>& detector_components) {
   return derive_reweight_probabilities(collect_correlation_evidence(dem, detector_components));
+}
+
+ReweightProbsMap process_dem_correlations(const TwoComponentDem& dem) {
+  return derive_reweight_probabilities(
+      collect_correlation_evidence_from_flattened_dem(dem.decomposed_dem, dem.detector_components));
 }
 
 }  // namespace tesseract_decoder

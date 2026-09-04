@@ -570,12 +570,7 @@ TEST(tesseract, MoreThan64Observables) {
   }
 }
 
-// Test to ensure update_internal_costs correctly reflects changes to error likelihoods
-TEST(tesseract, UpdateInternalCostsBehavior) {
-  // Define a simple DEM with two errors that can explain detector D0
-  // Error 0: D0 (prob 0.2) -> likelihood_cost: ~1.386
-  // Error 1: D0 (prob 0.1) -> likelihood_cost: ~2.197
-  // Initially, Error 0 is more likely (lower likelihood_cost)
+TEST(tesseract, TemporaryProbabilityUpdatesAffectOneDecodeAndAreRestored) {
   stim::DetectorErrorModel dem(R"DEM(
         error(0.2) D0
         error(0.1) D0
@@ -585,29 +580,15 @@ TEST(tesseract, UpdateInternalCostsBehavior) {
   TesseractConfig config{dem};
   config.merge_errors = false;  // Important: do not merge errors for this test
   TesseractDecoder decoder(config);
+  double original_likelihood_cost = decoder.errors[1].likelihood_cost;
 
-  // Initial decode: D0 fires. Should pick Error 0 (index 0) as it's more likely.
-  std::vector<uint64_t> detections = {0};
-  decoder.decode_to_errors(detections);
-  ASSERT_EQ(decoder.predicted_errors_buffer.size(), 1);
-  ASSERT_EQ(decoder.predicted_errors_buffer[0], 0);  // Should pick Error 0 (index 0)
-
-  // Manually change the likelihood_cost of Error 1 to be lower (more likely) than Error 0
-  // Original: Error 0 (prob 0.2, cost ~1.386), Error 1 (prob 0.1, cost ~2.197)
-  // Modify: Error 1 to prob 0.3 (cost ~0.847). Now Error 1 is more likely.
-  decoder.errors[1].set_with_probability(0.3);
-
-  // Call update_internal_costs to re-synchronize the decoder's state
-  decoder.update_internal_costs({1});
-
-  // Decode again with the same detections.
-  // Now, D0 fires. It should pick Error 1 (index 1) as it's now more likely.
-  decoder.decode_to_errors(detections);
-  ASSERT_EQ(decoder.predicted_errors_buffer.size(), 1);
-  ASSERT_EQ(decoder.predicted_errors_buffer[0], 1);  // Should now pick Error 1 (index 1)
+  EXPECT_EQ(decoder.decode_result({0}).predicted_errors, std::vector<size_t>({0}));
+  EXPECT_EQ(decoder.decode_result({0}, {{1, 0.3}}).predicted_errors, std::vector<size_t>({1}));
+  EXPECT_DOUBLE_EQ(decoder.errors[1].likelihood_cost, original_likelihood_cost);
+  EXPECT_EQ(decoder.decode_result({0}).predicted_errors, std::vector<size_t>({0}));
 }
 
-TEST(tesseract, UpdateInternalCostsRejectsInvalidIndicesBeforeMutation) {
+TEST(tesseract, TemporaryProbabilityUpdatesValidateBeforeMutation) {
   stim::DetectorErrorModel dem(R"DEM(
         error(0.2) D0
         error(0.1) D0
@@ -617,20 +598,36 @@ TEST(tesseract, UpdateInternalCostsRejectsInvalidIndicesBeforeMutation) {
   config.merge_errors = false;
   TesseractDecoder decoder(config);
 
-  decoder.errors[1].set_with_probability(0.3);
-  std::vector<ErrorCost> original_error_costs = decoder.error_costs;
-  std::vector<std::vector<int>> original_d2e = decoder.d2e;
-  EXPECT_THROW(decoder.update_internal_costs({1, decoder.errors.size()}), std::out_of_range);
-  EXPECT_EQ(decoder.d2e, original_d2e);
-  ASSERT_EQ(decoder.error_costs.size(), original_error_costs.size());
-  for (size_t error = 0; error < original_error_costs.size(); ++error) {
-    EXPECT_DOUBLE_EQ(decoder.error_costs[error].likelihood_cost,
-                     original_error_costs[error].likelihood_cost);
-    EXPECT_DOUBLE_EQ(decoder.error_costs[error].min_cost, original_error_costs[error].min_cost);
-  }
+  EXPECT_THROW(decoder.decode_result({0}, {{1, 0.3}, {2, 0.4}}), std::out_of_range);
+  EXPECT_THROW(decoder.decode_result({0}, {{1, 0.3}, {0, 1.0}}), std::invalid_argument);
+  EXPECT_EQ(decoder.decode_result({0}).predicted_errors, std::vector<size_t>({0}));
 }
 
-TEST(tesseract, EqualCostOrderingIsDeterministicAfterUpdates) {
+TEST(tesseract, TemporaryProbabilityUpdatesUseOriginalDemIndicesAfterPreprocessing) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0) D1
+        error(0.1) D0 L0
+        error(0.2) D0 L0
+        error(0.15) D0 L1
+        detector D0
+        detector D1
+        logical_observable L0
+        logical_observable L1
+    )DEM");
+  TesseractDecoder decoder(TesseractConfig{dem});
+  const double original_probability = decoder.error_probability(0);
+
+  EXPECT_EQ(decoder.decode_result({0}).predictions, std::vector<int>({0}));
+  EXPECT_EQ(decoder.decode_result({0}, {{1, 0.05}}).predictions, std::vector<int>({1}));
+  EXPECT_EQ(decoder.decode_result({0}, {{2, 0.05}}).predictions, std::vector<int>({1}));
+  EXPECT_DOUBLE_EQ(decoder.error_probability(0), original_probability);
+  EXPECT_THROW(decoder.decode_result({0}, {{0, 0.3}}), std::invalid_argument);
+  EXPECT_THROW(decoder.decode_result({2}, {{2, 0.05}}), std::runtime_error);
+  EXPECT_DOUBLE_EQ(decoder.error_probability(0), original_probability);
+  EXPECT_EQ(decoder.decode_result({0}).predictions, std::vector<int>({0}));
+}
+
+TEST(tesseract, TemporaryProbabilityUpdateTiesUseDeterministicErrorOrder) {
   stim::DetectorErrorModel dem(R"DEM(
         error(0.1) D0 L0
         error(0.1) D0 L1
@@ -642,19 +639,26 @@ TEST(tesseract, EqualCostOrderingIsDeterministicAfterUpdates) {
   config.merge_errors = false;
   TesseractDecoder decoder(config);
 
-  ASSERT_EQ(decoder.d2e[0], std::vector<int>({0, 1}));
-  decoder.decode_to_errors({0});
-  EXPECT_EQ(decoder.predicted_errors_buffer, std::vector<size_t>({0}));
+  EXPECT_EQ(decoder.decode_result({0}).predicted_errors, std::vector<size_t>({0}));
+  EXPECT_EQ(decoder.decode_result({0}, {{1, 0.1}}).predicted_errors, std::vector<size_t>({0}));
+  EXPECT_EQ(decoder.decode_result({0}, {{1, 0.2}}).predicted_errors, std::vector<size_t>({1}));
+  EXPECT_EQ(decoder.decode_result({0}).predicted_errors, std::vector<size_t>({0}));
+}
 
-  decoder.errors[1].set_with_probability(0.2);
-  decoder.update_internal_costs({1});
-  ASSERT_EQ(decoder.d2e[0], std::vector<int>({1, 0}));
+TEST(tesseract, TemporaryProbabilityUpdatesAreRestoredWhenDecodeThrows) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.2) D0
+        error(0.1) D0
+        detector D0
+    )DEM");
+  TesseractConfig config{dem};
+  config.merge_errors = false;
+  TesseractDecoder decoder(config);
+  double original_likelihood_cost = decoder.errors[1].likelihood_cost;
 
-  decoder.errors[1].set_with_probability(0.1);
-  decoder.update_internal_costs({1});
-  ASSERT_EQ(decoder.d2e[0], std::vector<int>({0, 1}));
-  decoder.decode_to_errors({0});
-  EXPECT_EQ(decoder.predicted_errors_buffer, std::vector<size_t>({0}));
+  EXPECT_THROW(decoder.decode_result({1}, {{1, 0.3}}), std::runtime_error);
+  EXPECT_DOUBLE_EQ(decoder.errors[1].likelihood_cost, original_likelihood_cost);
+  EXPECT_EQ(decoder.decode_result({0}).predicted_errors, std::vector<size_t>({0}));
 }
 
 TEST(tesseract, DecodeResultDistinguishesPopulatedEmptyErrors) {

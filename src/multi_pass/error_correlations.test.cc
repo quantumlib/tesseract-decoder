@@ -41,7 +41,8 @@ TEST(ErrorCorrelationsTest, DocumentsPairedMechanismRatioFormula) {
 
   ReweightProbsMap probabilities = derive_reweight_probabilities(evidence);
   ASSERT_EQ(probabilities.at(d0).size(), 1);
-  EXPECT_EQ(probabilities.at(d0)[0].affected_symptom, d1_l0);
+  EXPECT_EQ(probabilities.at(d0)[0].affected_symptom.detectors, d1_l0.detectors);
+  EXPECT_EQ(probabilities.at(d0)[0].affected_symptom.observables, d1_l0.observables);
   EXPECT_NEAR(probabilities.at(d0)[0].probability, 0.1 / 0.26, 1e-12);
 }
 

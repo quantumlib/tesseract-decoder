@@ -15,6 +15,7 @@
 #include "dem_decomposition.h"
 
 #include <algorithm>
+#include <array>
 #include <map>
 #include <set>
 #include <stdexcept>
@@ -42,26 +43,39 @@ std::vector<int> reduce_symmetric_difference(const std::vector<int>& items) {
   return {unpaired.begin(), unpaired.end()};
 }
 
-std::vector<int> reduce_set_symmetric_difference(const std::vector<std::vector<int>>& sets) {
-  std::vector<int> items;
-  for (const auto& set : sets) {
-    items.insert(items.end(), set.begin(), set.end());
-  }
-  return reduce_symmetric_difference(items);
-}
+struct NormalizedDetectorComponents {
+  std::array<int, 2> assignment_labels;
+  std::vector<int> detector_components;
+};
 
-void validate_detector_components(const stim::DetectorErrorModel& dem,
-                                  const std::vector<int>& detector_components) {
+NormalizedDetectorComponents normalize_detector_components(
+    const stim::DetectorErrorModel& dem, const std::vector<int>& detector_components) {
   if (detector_components.size() != dem.count_detectors()) {
     throw std::invalid_argument(
         "Detector component assignment count does not match the DEM detector count.");
   }
-  for (size_t d = 0; d < detector_components.size(); ++d) {
-    if (detector_components[d] < 0) {
-      throw std::invalid_argument("Detector D" + std::to_string(d) +
+  std::set<int> labels;
+  for (size_t detector = 0; detector < detector_components.size(); ++detector) {
+    if (detector_components[detector] < 0) {
+      throw std::invalid_argument("Detector D" + std::to_string(detector) +
                                   " has an invalid negative component assignment.");
     }
+    labels.insert(detector_components[detector]);
   }
+  if (labels.size() != 2) {
+    throw std::invalid_argument("Multi-pass decoding requires exactly 2 detector components; got " +
+                                std::to_string(labels.size()) + ".");
+  }
+
+  NormalizedDetectorComponents result;
+  auto label = labels.begin();
+  result.assignment_labels[0] = *label++;
+  result.assignment_labels[1] = *label;
+  result.detector_components.reserve(detector_components.size());
+  for (int component : detector_components) {
+    result.detector_components.push_back(component == result.assignment_labels[0] ? 0 : 1);
+  }
+  return result;
 }
 
 int component_for_detector(int detector, const std::vector<int>& detector_components) {
@@ -119,78 +133,58 @@ std::vector<ErrorGroup> parse_and_validate_groups(const stim::DemInstruction& in
   return groups;
 }
 
-void generate_obs_combinations(
-    const std::vector<std::set<std::vector<int>>>& obs_options_by_component,
-    std::vector<std::vector<int>>& current_combination,
-    std::vector<std::vector<std::vector<int>>>& all_combinations, size_t component_index) {
-  if (component_index == obs_options_by_component.size()) {
-    all_combinations.push_back(current_combination);
-    return;
-  }
-  for (const auto& obs_option : obs_options_by_component[component_index]) {
-    current_combination.push_back(obs_option);
-    generate_obs_combinations(obs_options_by_component, current_combination, all_combinations,
-                              component_index + 1);
-    current_combination.pop_back();
-  }
-}
-
 struct ObservableAssignmentSearchResult {
-  std::vector<std::vector<int>> assignment;
+  std::array<std::vector<int>, 2> assignment;
   size_t solution_count = 0;
 };
 
 ObservableAssignmentSearchResult find_component_obs_matching_undecomposed_obs(
-    const std::vector<std::set<std::vector<int>>>& obs_options_by_component,
-    const std::vector<int>& error_obs, int num_missing_components) {
+    const std::array<const std::set<std::vector<int>>*, 2>& obs_options_by_component,
+    const std::vector<int>& error_obs) {
   ObservableAssignmentSearchResult search_result;
-  if (num_missing_components > 1) {
-    // With more than one component lacking evidence, observable ownership is underdetermined. The
-    // search only needs to distinguish a unique result from multiple results, so cap the count at
-    // two.
+  if (obs_options_by_component[0] == nullptr && obs_options_by_component[1] == nullptr) {
     search_result.solution_count = 2;
     return search_result;
   }
 
-  std::vector<std::vector<std::vector<int>>> all_combinations;
-  std::vector<std::vector<int>> current_combination;
-  generate_obs_combinations(obs_options_by_component, current_combination, all_combinations, 0);
-
   std::vector<int> reduced_error_obs = reduce_symmetric_difference(error_obs);
-  for (const auto& combination : all_combinations) {
-    std::vector<int> residual_input = reduced_error_obs;
-    std::vector<int> known_obs = reduce_set_symmetric_difference(combination);
-    residual_input.insert(residual_input.end(), known_obs.begin(), known_obs.end());
-    std::vector<int> residual = reduce_symmetric_difference(residual_input);
-
-    std::vector<std::vector<int>> candidate;
-    if (residual.empty()) {
-      candidate = combination;
-      candidate.resize(candidate.size() + num_missing_components);
-    } else if (num_missing_components == 1) {
-      candidate = combination;
-      candidate.push_back(std::move(residual));
-    } else {
-      continue;
-    }
-
+  auto record_solution = [&](const std::vector<int>& component_0_obs,
+                             const std::vector<int>& component_1_obs) {
     ++search_result.solution_count;
     if (search_result.solution_count == 1) {
-      search_result.assignment = std::move(candidate);
-    } else {
-      break;
+      search_result.assignment = {component_0_obs, component_1_obs};
+    }
+  };
+
+  if (obs_options_by_component[0] == nullptr || obs_options_by_component[1] == nullptr) {
+    size_t known_component = obs_options_by_component[0] == nullptr ? 1 : 0;
+    size_t missing_component = 1 - known_component;
+    for (const auto& known_obs : *obs_options_by_component[known_component]) {
+      std::vector<int> residual_input = reduced_error_obs;
+      residual_input.insert(residual_input.end(), known_obs.begin(), known_obs.end());
+      std::array<std::vector<int>, 2> candidate;
+      candidate[known_component] = known_obs;
+      candidate[missing_component] = reduce_symmetric_difference(residual_input);
+      record_solution(candidate[0], candidate[1]);
+      if (search_result.solution_count > 1) break;
+    }
+    return search_result;
+  }
+
+  for (const auto& component_0_obs : *obs_options_by_component[0]) {
+    for (const auto& component_1_obs : *obs_options_by_component[1]) {
+      std::vector<int> combined_obs = component_0_obs;
+      combined_obs.insert(combined_obs.end(), component_1_obs.begin(), component_1_obs.end());
+      if (reduce_symmetric_difference(combined_obs) != reduced_error_obs) continue;
+      record_solution(component_0_obs, component_1_obs);
+      if (search_result.solution_count > 1) return search_result;
     }
   }
   return search_result;
 }
 
-}  // namespace
-
-stim::DetectorErrorModel decompose_errors_using_detector_assignment(
-    const stim::DetectorErrorModel& dem, const std::vector<int>& detector_components) {
-  stim::DetectorErrorModel flattened = dem.flattened();
-  validate_detector_components(flattened, detector_components);
-
+stim::DetectorErrorModel decompose_flattened_dem(const stim::DetectorErrorModel& flattened,
+                                                 const std::vector<int>& detector_components) {
   std::map<std::vector<int>, std::set<std::vector<int>>> single_component_dets_to_obs;
   for (const auto& instruction : flattened.instructions) {
     if (instruction.type != stim::DemInstructionType::DEM_ERROR) {
@@ -222,34 +216,26 @@ stim::DetectorErrorModel decompose_errors_using_detector_assignment(
     }
 
     const auto& undecomposed = groups[0];
-    std::map<int, std::vector<int>> dets_by_component_id;
+    std::array<std::vector<int>, 2> dets_by_component;
     for (int detector : undecomposed.detectors) {
-      dets_by_component_id[component_for_detector(detector, detector_components)].push_back(
-          detector);
+      dets_by_component[component_for_detector(detector, detector_components)].push_back(detector);
     }
-    if (dets_by_component_id.size() == 1) {
+    if (dets_by_component[0].empty() || dets_by_component[1].empty()) {
       output_dem.append_dem_instruction(instruction);
       continue;
     }
 
-    std::vector<std::vector<int>> known_component_dets;
-    std::vector<std::set<std::vector<int>>> known_component_obs_options;
-    std::vector<std::vector<int>> missing_component_dets;
-    for (auto& entry : dets_by_component_id) {
-      auto& component_dets = entry.second;
-      std::sort(component_dets.begin(), component_dets.end());
-      auto known = single_component_dets_to_obs.find(component_dets);
+    std::array<const std::set<std::vector<int>>*, 2> component_obs_options{};
+    for (size_t component = 0; component < 2; ++component) {
+      std::sort(dets_by_component[component].begin(), dets_by_component[component].end());
+      auto known = single_component_dets_to_obs.find(dets_by_component[component]);
       if (known != single_component_dets_to_obs.end()) {
-        known_component_dets.push_back(component_dets);
-        known_component_obs_options.push_back(known->second);
-      } else {
-        missing_component_dets.push_back(component_dets);
+        component_obs_options[component] = &known->second;
       }
     }
 
     auto observable_assignment = find_component_obs_matching_undecomposed_obs(
-        known_component_obs_options, undecomposed.observables,
-        static_cast<int>(missing_component_dets.size()));
+        component_obs_options, undecomposed.observables);
     if (observable_assignment.solution_count == 0) {
       throw std::invalid_argument("Error instruction `" + instruction.str() +
                                   "` has no consistent observable decomposition.");
@@ -260,20 +246,15 @@ stim::DetectorErrorModel decompose_errors_using_detector_assignment(
           "` has multiple consistent observable decompositions; logical observable ownership "
           "is ambiguous.");
     }
-    const auto& component_observables = observable_assignment.assignment;
-
-    std::vector<std::vector<int>> component_dets = known_component_dets;
-    component_dets.insert(component_dets.end(), missing_component_dets.begin(),
-                          missing_component_dets.end());
     std::vector<stim::DemTarget> targets;
-    for (size_t k = 0; k < component_dets.size(); ++k) {
-      for (int detector : component_dets[k]) {
+    for (size_t component = 0; component < 2; ++component) {
+      for (int detector : dets_by_component[component]) {
         targets.push_back(stim::DemTarget::relative_detector_id(detector));
       }
-      for (int observable : component_observables[k]) {
+      for (int observable : observable_assignment.assignment[component]) {
         targets.push_back(stim::DemTarget::observable_id(observable));
       }
-      if (k + 1 < component_dets.size()) {
+      if (component == 0) {
         targets.push_back(stim::DemTarget::separator());
       }
     }
@@ -282,31 +263,26 @@ stim::DetectorErrorModel decompose_errors_using_detector_assignment(
   return output_dem;
 }
 
-std::map<int, stim::DetectorErrorModel> split_dem_by_component(
+std::array<stim::DetectorErrorModel, 2> split_flattened_dem_by_component(
     const stim::DetectorErrorModel& dem, const std::vector<int>& detector_components) {
-  stim::DetectorErrorModel flattened = dem.flattened();
-  validate_detector_components(flattened, detector_components);
-
-  std::map<int, stim::DetectorErrorModel> component_dems;
-  for (int component : detector_components) {
-    component_dems.try_emplace(component);
-  }
-
-  for (const auto& instruction : flattened.instructions) {
+  std::array<stim::DetectorErrorModel, 2> component_dems;
+  for (const auto& instruction : dem.instructions) {
     if (instruction.type != stim::DemInstructionType::DEM_ERROR) {
-      for (auto& entry : component_dems) {
-        entry.second.append_dem_instruction(instruction);
+      for (auto& component_dem : component_dems) {
+        component_dem.append_dem_instruction(instruction);
       }
       continue;
     }
 
     auto groups = parse_and_validate_groups(instruction, detector_components, false);
-    std::map<int, std::vector<std::vector<stim::DemTarget>>> groups_by_component;
+    std::array<std::vector<std::vector<stim::DemTarget>>, 2> groups_by_component;
     for (auto& group : groups) {
       groups_by_component[group.component].push_back(std::move(group.targets));
     }
 
-    for (const auto& [component, component_groups] : groups_by_component) {
+    for (size_t component = 0; component < 2; ++component) {
+      const auto& component_groups = groups_by_component[component];
+      if (component_groups.empty()) continue;
       std::vector<stim::DemTarget> targets;
       std::vector<int> combined_detectors;
       for (size_t k = 0; k < component_groups.size(); ++k) {
@@ -325,11 +301,32 @@ std::map<int, stim::DetectorErrorModel> split_dem_by_component(
                                     "` has a detectorless component symptom after combining its "
                                     "decomposition groups.");
       }
-      component_dems.at(component).append_error_instruction(instruction.arg_data[0], targets,
-                                                            instruction.tag);
+      component_dems[component].append_error_instruction(instruction.arg_data[0], targets,
+                                                         instruction.tag);
     }
   }
   return component_dems;
+}
+
+}  // namespace
+
+TwoComponentDem prepare_two_component_dem(const stim::DetectorErrorModel& dem,
+                                          const std::vector<int>& detector_components) {
+  stim::DetectorErrorModel flattened = dem.flattened();
+  auto normalized = normalize_detector_components(flattened, detector_components);
+  stim::DetectorErrorModel decomposed =
+      decompose_flattened_dem(flattened, normalized.detector_components);
+  auto component_dems =
+      split_flattened_dem_by_component(decomposed, normalized.detector_components);
+  return {normalized.assignment_labels, std::move(normalized.detector_components),
+          std::move(decomposed), std::move(component_dems)};
+}
+
+stim::DetectorErrorModel decompose_errors_using_detector_assignment(
+    const stim::DetectorErrorModel& dem, const std::vector<int>& detector_components) {
+  stim::DetectorErrorModel flattened = dem.flattened();
+  auto normalized = normalize_detector_components(flattened, detector_components);
+  return decompose_flattened_dem(flattened, normalized.detector_components);
 }
 
 }  // namespace tesseract_decoder

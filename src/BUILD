@@ -231,6 +231,7 @@ cc_test(
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
     deps = [
+        ":libdem_decomposition",
         ":libtesseract",
         "@gtest",
         "@gtest//:gtest_main",
@@ -245,6 +246,7 @@ cc_library(
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
     deps = [
+        ":libdem_decomposition",
         "@stim//:stim_lib",
     ],
 )

@@ -15,7 +15,6 @@
 #include "multi_pass_tesseract_decoder.h"
 
 #include <algorithm>
-#include <limits>
 #include <map>
 #include <nlohmann/json.hpp>
 #include <set>
@@ -29,10 +28,31 @@
 
 namespace tesseract_decoder {
 
+SchedulingStrategy parse_scheduling_strategy(std::string_view value) {
+  if (value == "static") {
+    return SchedulingStrategy::Static;
+  }
+  if (value == "causal") {
+    return SchedulingStrategy::Causal;
+  }
+  throw std::invalid_argument("Invalid multi-pass scheduling strategy '" + std::string(value) +
+                              "'; expected 'static' or 'causal'.");
+}
+
+const char* scheduling_strategy_name(SchedulingStrategy strategy) {
+  switch (strategy) {
+    case SchedulingStrategy::Static:
+      return "static";
+    case SchedulingStrategy::Causal:
+      return "causal";
+  }
+  throw std::invalid_argument("Invalid multi-pass scheduling strategy.");
+}
+
 std::string MultiPassExecutionPlan::str() const {
   std::stringstream ss;
   ss << "Multi-pass execution plan\n"
-     << "strategy: " << (strategy == SchedulingStrategy::Static ? "static" : "causal") << '\n'
+     << "strategy: " << scheduling_strategy_name(strategy) << '\n'
      << "passes: " << num_passes << '\n'
      << "monolithic input DEM: detectors=" << monolithic_statistics.detector_count
      << ", error_mechanisms=" << monolithic_statistics.error_mechanism_count
@@ -140,20 +160,6 @@ std::vector<int> classify_canonical_detector_bases(const stim::DetectorErrorMode
   return detector_components;
 }
 
-template <typename Callback>
-class ScopeExit {
- public:
-  explicit ScopeExit(Callback callback) : callback(std::move(callback)) {}
-  ScopeExit(const ScopeExit&) = delete;
-  ScopeExit& operator=(const ScopeExit&) = delete;
-  ~ScopeExit() noexcept {
-    callback();
-  }
-
- private:
-  Callback callback;
-};
-
 MultiPassExecutionPlan::DemStatistics dem_statistics(size_t detector_count,
                                                      const std::vector<common::Error>& errors) {
   size_t detector_incidences = 0;
@@ -165,35 +171,21 @@ MultiPassExecutionPlan::DemStatistics dem_statistics(size_t detector_count,
   return {detector_count, errors.size(), average_detector_degree};
 }
 
-void validate_detector_components(const std::vector<int>& detector_components,
-                                  size_t num_detectors) {
-  if (detector_components.size() != num_detectors) {
-    throw std::invalid_argument(
-        "Detector component assignment count does not match the DEM detector count.");
+MultiPassExecutionPlan::DemStatistics dem_statistics(size_t detector_count,
+                                                     const TesseractDecoder& decoder) {
+  size_t detector_incidences = 0;
+  for (size_t error_index = 0; error_index < decoder.error_count(); ++error_index) {
+    detector_incidences += decoder.error_symptom(error_index).detectors.size();
   }
-
-  std::set<int> unique_components;
-  for (size_t d = 0; d < detector_components.size(); ++d) {
-    int component = detector_components[d];
-    if (component < 0) {
-      throw std::invalid_argument("Detector D" + std::to_string(d) +
-                                  " has an invalid negative component assignment.");
-    }
-    unique_components.insert(component);
-  }
-
-  if (unique_components.size() != 2) {
-    throw std::invalid_argument("Multi-pass decoding requires exactly 2 detector components; got " +
-                                std::to_string(unique_components.size()) + ".");
-  }
+  double average_detector_degree =
+      detector_count == 0 ? 0.0 : static_cast<double>(detector_incidences) / detector_count;
+  return {detector_count, decoder.error_count(), average_detector_degree};
 }
 
 }  // namespace
 
 MultiPassTesseractDecoder::MultiPassTesseractDecoder(MultiPassTesseractConfig config)
-    : num_passes(config.num_passes),
-      strategy(config.strategy),
-      total_global_detectors(config.component_config.dem.count_detectors()) {
+    : num_passes(config.num_passes), strategy(config.strategy) {
   if (num_passes < 1 || num_passes > 2) {
     throw std::invalid_argument("num_passes must be 1 or 2.");
   }
@@ -215,75 +207,61 @@ MultiPassTesseractDecoder::MultiPassTesseractDecoder(MultiPassTesseractConfig co
 void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
                                            const std::vector<int>& detector_components,
                                            const TesseractConfig& base_config) {
-  monolithic_dem = dem.flattened();
-  const stim::DetectorErrorModel& flattened = monolithic_dem;
-  total_global_detectors = flattened.count_detectors();
-  validate_detector_components(detector_components, total_global_detectors);
-
-  std::set<int> unique_labels(detector_components.begin(), detector_components.end());
-  std::map<int, int> label_to_component;
-  for (int label : unique_labels) {
-    label_to_component.emplace(label, static_cast<int>(label_to_component.size()));
-  }
-
-  component_decoders.resize(label_to_component.size());
-  for (const auto& [label, component] : label_to_component) {
-    component_decoders[component].assignment_label = label;
-  }
-
-  global_det_to_comp_id.resize(total_global_detectors);
-  for (size_t d = 0; d < total_global_detectors; ++d) {
-    int component = label_to_component.at(detector_components[d]);
-    global_det_to_comp_id[d] = component;
+  TwoComponentDem prepared = prepare_two_component_dem(dem, detector_components);
+  monolithic_dem = prepared.decomposed_dem;
+  global_det_to_comp_id = prepared.detector_components;
+  for (size_t d = 0; d < global_det_to_comp_id.size(); ++d) {
+    int component = global_det_to_comp_id[d];
     component_decoders[component].active_detector_count++;
   }
 
-  stim::DetectorErrorModel decomposed =
-      decompose_errors_using_detector_assignment(flattened, global_det_to_comp_id);
   ReweightProbsMap reweight_probabilities;
   if (num_passes == 2) {
-    reweight_probabilities = process_dem_correlations(decomposed, global_det_to_comp_id);
+    reweight_probabilities = process_dem_correlations(prepared);
   }
-  std::map<int, stim::DetectorErrorModel> component_dems =
-      split_dem_by_component(decomposed, global_det_to_comp_id);
 
+  std::array<std::map<ComponentSymptom, std::vector<std::pair<size_t, double>>>, 2>
+      symptom_to_errors;
   for (size_t component = 0; component < component_decoders.size(); ++component) {
     auto& component_decoder = component_decoders[component];
+    component_decoder.assignment_label = prepared.assignment_labels[component];
     TesseractConfig config = base_config;
-    config.dem = component_dems.at(component);
+    config.dem = std::move(prepared.component_dems[component]);
     component_decoder.decoder = std::make_unique<TesseractDecoder>(std::move(config));
-    component_decoder.error_index_to_rules.resize(component_decoder.decoder->errors.size());
 
-    for (size_t error_index = 0; error_index < component_decoder.decoder->errors.size();
+    for (size_t error_index = 0; error_index < component_decoder.decoder->error_count();
          ++error_index) {
-      const auto& error = component_decoder.decoder->errors[error_index];
-      component_decoder.original_costs.push_back(error.likelihood_cost);
-      component_decoder.affects_observable |= !error.symptom.observables.empty();
-      ComponentSymptom symptom{error.symptom.detectors, error.symptom.observables};
-      component_decoder.symptom_to_error_index[std::move(symptom)].push_back(error_index);
+      const auto& symptom = component_decoder.decoder->error_symptom(error_index);
+      component_decoder.affects_observable |= !symptom.observables.empty();
+      if (num_passes == 2) {
+        ComponentSymptom component_symptom{symptom.detectors, symptom.observables};
+        symptom_to_errors[component][std::move(component_symptom)].push_back(
+            {component_decoder.decoder->dem_error_index(error_index),
+             component_decoder.decoder->error_probability(error_index)});
+      }
     }
   }
 
   for (const auto& [causal_symptom, probabilities] : reweight_probabilities) {
     int causal_component = global_det_to_comp_id.at(causal_symptom.detectors.at(0));
-    auto causal_errors =
-        component_decoders[causal_component].symptom_to_error_index.find(causal_symptom);
-    if (causal_errors == component_decoders[causal_component].symptom_to_error_index.end()) {
+    auto causal_errors = symptom_to_errors[causal_component].find(causal_symptom);
+    if (causal_errors == symptom_to_errors[causal_component].end()) {
       continue;
     }
 
-    for (size_t causal_error : causal_errors->second) {
+    for (const auto& causal_error : causal_errors->second) {
+      size_t causal_dem_error_index = causal_error.first;
       for (const auto& probability : probabilities) {
         int target_component =
             global_det_to_comp_id.at(probability.affected_symptom.detectors.at(0));
-        auto target_errors = component_decoders[target_component].symptom_to_error_index.find(
-            probability.affected_symptom);
-        if (target_errors == component_decoders[target_component].symptom_to_error_index.end()) {
+        auto target_errors = symptom_to_errors[target_component].find(probability.affected_symptom);
+        if (target_errors == symptom_to_errors[target_component].end()) {
           continue;
         }
-        for (size_t target_error : target_errors->second) {
-          component_decoders[causal_component].error_index_to_rules[causal_error].push_back(
-              {static_cast<size_t>(target_component), target_error, probability.probability});
+        for (const auto& [target_dem_error_index, target_probability] : target_errors->second) {
+          component_decoders[causal_component].reweight_rules[causal_dem_error_index].push_back(
+              {static_cast<size_t>(target_component), target_dem_error_index,
+               probability.probability, target_probability});
         }
       }
     }
@@ -317,7 +295,8 @@ void MultiPassTesseractDecoder::build_causal_schedule() {
     for (size_t target_component : schedule_sets[pass + 1]) {
       for (size_t source_component = 0; source_component < component_decoders.size();
            ++source_component) {
-        for (const auto& rules : component_decoders[source_component].error_index_to_rules) {
+        for (const auto& rule_entry : component_decoders[source_component].reweight_rules) {
+          const auto& rules = rule_entry.second;
           for (const auto& rule : rules) {
             if (rule.target_comp_idx == target_component) {
               schedule_sets[pass].insert(source_component);
@@ -347,17 +326,18 @@ MultiPassExecutionPlan MultiPassTesseractDecoder::get_execution_plan() const {
   MultiPassExecutionPlan plan{num_passes, strategy, monolithic_statistics, {}, {}, pass_schedule};
   for (size_t component_id = 0; component_id < component_decoders.size(); ++component_id) {
     const auto& component = component_decoders[component_id];
-    auto statistics = dem_statistics(component.active_detector_count, component.decoder->errors);
+    auto statistics = dem_statistics(component.active_detector_count, *component.decoder);
     plan.components.push_back(
         {component_id, component.assignment_label, component.active_detector_count,
-         component.decoder->num_detectors, statistics.error_mechanism_count,
+         component.decoder->config.dem.count_detectors(), statistics.error_mechanism_count,
          statistics.average_detector_degree, component.decoder->config.sparsify_errors,
          component.decoder->config.sparsify_reactivate_limit, component.affects_observable});
   }
 
   std::map<std::pair<size_t, size_t>, size_t> dependency_counts;
   for (size_t source = 0; source < component_decoders.size(); ++source) {
-    for (const auto& rules : component_decoders[source].error_index_to_rules) {
+    for (const auto& rule_entry : component_decoders[source].reweight_rules) {
+      const auto& rules = rule_entry.second;
       for (const auto& rule : rules) {
         dependency_counts[{source, rule.target_comp_idx}]++;
       }
@@ -369,38 +349,17 @@ MultiPassExecutionPlan MultiPassTesseractDecoder::get_execution_plan() const {
   return plan;
 }
 
-std::vector<int> MultiPassTesseractDecoder::decode(const std::vector<uint64_t>& detections) {
-  return decode_result(detections).predictions;
-}
-
-void MultiPassTesseractDecoder::restore_modified_costs(
-    const std::vector<std::vector<size_t>>& modified_error_indices) {
-  for (size_t component = 0; component < modified_error_indices.size(); ++component) {
-    if (modified_error_indices[component].empty()) {
-      continue;
-    }
-    auto& component_decoder = component_decoders.at(component);
-    for (size_t error_index : modified_error_indices[component]) {
-      component_decoder.decoder->errors.at(error_index).likelihood_cost =
-          component_decoder.original_costs.at(error_index);
-    }
-    component_decoder.decoder->update_internal_costs(modified_error_indices[component]);
-  }
-}
-
 DecodeResult MultiPassTesseractDecoder::decode_result(const std::vector<uint64_t>& detections) {
-  last_shot_num_reweights = 0;
   for (uint64_t detector : detections) {
-    if (detector >= total_global_detectors) {
+    if (detector >= global_det_to_comp_id.size()) {
       throw std::invalid_argument("Detector D" + std::to_string(detector) +
                                   " is out of range for a model with " +
-                                  std::to_string(total_global_detectors) + " detectors.");
+                                  std::to_string(global_det_to_comp_id.size()) + " detectors.");
     }
   }
 
-  std::vector<std::vector<size_t>> component_predictions(component_decoders.size());
-  std::vector<std::vector<size_t>> modified_error_indices(component_decoders.size());
-  ScopeExit reset_guard([&] { restore_modified_costs(modified_error_indices); });
+  std::array<DecodeResult, 2> component_results;
+  std::array<std::map<size_t, double>, 2> probability_updates;
   bool aggregate_low_confidence = false;
 
   for (size_t pass = 0; pass < num_passes; ++pass) {
@@ -414,9 +373,15 @@ DecodeResult MultiPassTesseractDecoder::decode_result(const std::vector<uint64_t
         }
       }
 
-      component_decoder.decoder->decode_to_errors(component_detections);
-      aggregate_low_confidence |= component_decoder.decoder->low_confidence_flag;
-      component_predictions[component] = component_decoder.decoder->predicted_errors_buffer;
+      std::vector<ErrorProbabilityUpdate> updates;
+      updates.reserve(probability_updates[component].size());
+      for (const auto& [dem_error_index, probability] : probability_updates[component]) {
+        updates.push_back({dem_error_index, probability});
+      }
+      component_results[component] =
+          updates.empty() ? component_decoder.decoder->decode_result(component_detections)
+                          : component_decoder.decoder->decode_result(component_detections, updates);
+      aggregate_low_confidence |= component_results[component].low_confidence;
     }
 
     if (is_final_pass) {
@@ -424,48 +389,32 @@ DecodeResult MultiPassTesseractDecoder::decode_result(const std::vector<uint64_t
     }
 
     for (size_t source_component : pass_schedule[pass]) {
-      auto& source = component_decoders.at(source_component);
-      for (size_t dem_error_index : component_predictions[source_component]) {
-        size_t source_error = source.decoder->dem_error_to_error.at(dem_error_index);
-        if (source_error == std::numeric_limits<size_t>::max()) {
-          throw std::logic_error("A decoded error does not map to a retained component error.");
-        }
-        for (const auto& rule : source.error_index_to_rules.at(source_error)) {
-          auto& target = component_decoders.at(rule.target_comp_idx);
-          auto& target_error = target.decoder->errors.at(rule.target_error_idx);
+      const auto& source = component_decoders.at(source_component);
+      for (size_t dem_error_index : component_results[source_component].predicted_errors) {
+        auto rules = source.reweight_rules.find(dem_error_index);
+        if (rules == source.reweight_rules.end()) continue;
+        for (const auto& rule : rules->second) {
           double reweight_probability =
               std::min(rule.reweight_probability, MAX_REWEIGHT_PROBABILITY);
-          if (reweight_probability > target_error.get_probability()) {
-            modified_error_indices.at(rule.target_comp_idx).push_back(rule.target_error_idx);
-            target_error.set_with_probability(reweight_probability);
-            last_shot_num_reweights++;
+          if (reweight_probability > rule.original_probability) {
+            double& update = probability_updates[rule.target_comp_idx][rule.target_dem_error_idx];
+            update = std::max(update, reweight_probability);
           }
         }
       }
-    }
-
-    for (size_t component = 0; component < modified_error_indices.size(); ++component) {
-      auto& modified = modified_error_indices[component];
-      if (modified.empty()) {
-        continue;
-      }
-      std::sort(modified.begin(), modified.end());
-      modified.erase(std::unique(modified.begin(), modified.end()), modified.end());
-      component_decoders[component].decoder->update_internal_costs(modified);
     }
   }
 
   std::set<int> flipped_observables;
   double aggregate_cost = 0;
   for (size_t component : pass_schedule.back()) {
-    const auto& decoder = component_decoders.at(component).decoder;
-    const auto& predictions = component_predictions.at(component);
-    for (int observable : decoder->get_flipped_observables(predictions)) {
+    const auto& component_result = component_results.at(component);
+    for (int observable : component_result.predictions) {
       if (!flipped_observables.erase(observable)) {
         flipped_observables.insert(observable);
       }
     }
-    aggregate_cost += decoder->cost_from_errors(predictions);
+    aggregate_cost += component_result.total_cost;
   }
 
   DecodeResult result;

@@ -15,12 +15,30 @@
 #ifndef DEM_DECOMPOSITION_H
 #define DEM_DECOMPOSITION_H
 
-#include <map>
+#include <array>
 #include <vector>
 
 #include "stim.h"
 
 namespace tesseract_decoder {
+
+struct TwoComponentDem {
+  // Component IDs are normalized to 0 and 1. assignment_labels preserves the
+  // two caller-supplied labels in ascending order.
+  std::array<int, 2> assignment_labels;
+  std::vector<int> detector_components;
+  stim::DetectorErrorModel decomposed_dem;
+  std::array<stim::DetectorErrorModel, 2> component_dems;
+};
+
+/**
+ * Validates, decomposes, and splits a DEM assigned to exactly two components.
+ *
+ * The DEM is flattened and the assignment is validated once. This is the
+ * normal preprocessing entry point for native multipass decoding.
+ */
+TwoComponentDem prepare_two_component_dem(const stim::DetectorErrorModel& dem,
+                                          const std::vector<int>& detector_components);
 
 /**
  * Decomposes undecomposed errors using an explicit detector-to-component assignment.
@@ -30,15 +48,6 @@ namespace tesseract_decoder {
  * groups are rejected because they cannot be assigned unambiguously.
  */
 stim::DetectorErrorModel decompose_errors_using_detector_assignment(
-    const stim::DetectorErrorModel& dem, const std::vector<int>& detector_components);
-
-/**
- * Splits a decomposed DEM into one DEM per explicitly assigned component.
- *
- * All groups from one physical error mechanism that belong to the same component
- * remain in one tagged error instruction.
- */
-std::map<int, stim::DetectorErrorModel> split_dem_by_component(
     const stim::DetectorErrorModel& dem, const std::vector<int>& detector_components);
 
 }  // namespace tesseract_decoder

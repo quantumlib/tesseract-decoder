@@ -21,6 +21,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "common.h"
@@ -83,6 +84,12 @@ struct ErrorCost {
   double min_cost;
 };
 
+struct ErrorProbabilityUpdate {
+  // Index into the flattened DEM supplied to the decoder.
+  size_t dem_error_index;
+  double probability;
+};
+
 struct TesseractDecoder : public Decoder {
   TesseractConfig config;
   Visualizer visualizer;
@@ -109,11 +116,17 @@ struct TesseractDecoder : public Decoder {
 
   DecodeResult decode_result(const std::vector<uint64_t>& detections) override;
 
-  // Resynchronizes the internal state of the decoder after the public `errors`
-  // vector has been modified. This is necessary to ensure that the internal
-  // cost structures used by the decoding algorithm are consistent with the
-  // current error likelihoods.
-  void update_internal_costs(const std::vector<size_t>& modified_error_indices);
+  // Decodes with temporary error probabilities. The original probabilities and
+  // internal cost ordering are restored before this method returns or throws.
+  DecodeResult decode_result(const std::vector<uint64_t>& detections,
+                             const std::vector<ErrorProbabilityUpdate>& probability_updates);
+
+  // Accessors for the retained (merged and nonzero) decoder errors. These are
+  // used when preparing multipass correlations.
+  size_t error_count() const;
+  const common::Symptom& error_symptom(size_t error_index) const;
+  double error_probability(size_t error_index) const;
+  size_t dem_error_index(size_t error_index) const;
 
   std::vector<int> decode(const std::vector<uint64_t>& detections);
   void decode_shots(std::vector<stim::SparseShot>& shots,
@@ -153,6 +166,20 @@ struct TesseractDecoder : public Decoder {
                                        const std::vector<std::vector<int>>& active_d2e) const;
 
  private:
+  struct ErrorProbabilityRollback {
+    std::vector<std::pair<size_t, double>> previous_likelihood_costs;
+    std::vector<size_t> modified_error_indices;
+    std::vector<size_t> affected_detectors;
+  };
+
+  ErrorProbabilityRollback apply_error_probability_updates(
+      const std::vector<ErrorProbabilityUpdate>& probability_updates);
+  void restore_error_probabilities(const ErrorProbabilityRollback& rollback);
+  size_t retained_error_index(size_t dem_error_index) const;
+  std::vector<size_t> collect_affected_detectors(
+      const std::vector<size_t>& modified_error_indices) const;
+  void update_internal_costs(const std::vector<size_t>& modified_error_indices,
+                             const std::vector<size_t>& affected_detectors);
   void build_sparse_d2e(const std::vector<uint64_t>& detections);
   void decode_to_errors_with_graph(const std::vector<uint64_t>& detections,
                                    size_t detector_order_index, size_t detector_beam,

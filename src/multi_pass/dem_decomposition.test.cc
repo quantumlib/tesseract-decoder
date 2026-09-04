@@ -14,6 +14,7 @@
 
 #include "dem_decomposition.h"
 
+#include <array>
 #include <string>
 #include <vector>
 
@@ -55,6 +56,27 @@ TEST(DemDecompositionTest, DecomposesUniqueObservableAssignmentAndPreservesTag) 
     )DEM");
 
   EXPECT_EQ(decompose_errors_using_detector_assignment(dem, {0, 1}).str(), expected.str());
+}
+
+TEST(DemDecompositionTest, DecomposesUniqueAssignmentWithOneMissingComponent) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error[x evidence](0.01) D0 L0
+        error[correlated](0.1) D0 D1 L0 L1
+        detector D0
+        detector D1
+        logical_observable L0
+        logical_observable L1
+    )DEM");
+  stim::DetectorErrorModel expected(R"DEM(
+        error[x evidence](0.01) D0 L0
+        error[correlated](0.1) D0 L0 ^ D1 L1
+        detector D0
+        detector D1
+        logical_observable L0
+        logical_observable L1
+    )DEM");
+
+  EXPECT_EQ(decompose_errors_using_detector_assignment(dem, {0, 1}), expected);
 }
 
 TEST(DemDecompositionTest, RejectsImpossibleObservableAssignment) {
@@ -155,7 +177,7 @@ TEST(DemDecompositionTest, SplitKeepsSameComponentGroupsInOneTaggedMechanism) {
         logical_observable L1
   )DEM");
 
-  auto components = split_dem_by_component(dem, {7, 7, 9});
+  TwoComponentDem components = prepare_two_component_dem(dem, {7, 7, 9});
   stim::DetectorErrorModel expected_7(R"DEM(
         error[physical mechanism](0.1) D0 L0 ^ D1 L1
         detector[x0](1) D0
@@ -173,9 +195,9 @@ TEST(DemDecompositionTest, SplitKeepsSameComponentGroupsInOneTaggedMechanism) {
         logical_observable L1
     )DEM");
 
-  ASSERT_EQ(components.size(), 2u);
-  EXPECT_EQ(components.at(7), expected_7);
-  EXPECT_EQ(components.at(9), expected_9);
+  EXPECT_EQ(components.assignment_labels, (std::array<int, 2>{7, 9}));
+  EXPECT_EQ(components.component_dems[0], expected_7);
+  EXPECT_EQ(components.component_dems[1], expected_9);
 }
 
 TEST(DemDecompositionTest, SplitRejectsCancellationToDetectorlessComponent) {
@@ -184,7 +206,7 @@ TEST(DemDecompositionTest, SplitRejectsCancellationToDetectorlessComponent) {
         detector D0
         detector D1
     )DEM");
-  EXPECT_THROW(split_dem_by_component(dem, {0, 1}), std::invalid_argument);
+  EXPECT_THROW(prepare_two_component_dem(dem, {0, 1}), std::invalid_argument);
 }
 
 TEST(DemDecompositionTest, ValidatesExplicitAssignments) {
@@ -195,6 +217,11 @@ TEST(DemDecompositionTest, ValidatesExplicitAssignments) {
     )DEM");
   EXPECT_THROW(decompose_errors_using_detector_assignment(dem, {0}), std::invalid_argument);
   EXPECT_THROW(decompose_errors_using_detector_assignment(dem, {0, -1}), std::invalid_argument);
+  EXPECT_THROW(decompose_errors_using_detector_assignment(dem, {0, 0}), std::invalid_argument);
+
+  stim::DetectorErrorModel three_detector_dem("error(0.1) D0\ndetector D1\ndetector D2");
+  EXPECT_THROW(decompose_errors_using_detector_assignment(three_detector_dem, {0, 1, 2}),
+               std::invalid_argument);
 }
 
 }  // namespace

@@ -15,9 +15,11 @@
 #ifndef MULTI_PASS_TESSERACT_DECODER_H
 #define MULTI_PASS_TESSERACT_DECODER_H
 
+#include <array>
 #include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "../tesseract.h"
@@ -26,12 +28,13 @@
 
 namespace tesseract_decoder {
 
-class MultiPassTestPeer;
-
 enum class SchedulingStrategy {
   Static,  // Schedules both components in every pass.
   Causal   // Derives each pass from component dependencies.
 };
+
+SchedulingStrategy parse_scheduling_strategy(std::string_view value);
+const char* scheduling_strategy_name(SchedulingStrategy strategy);
 
 struct MultiPassTesseractConfig {
   // Settings applied independently to each component decoder. The DEM is the
@@ -91,41 +94,30 @@ class MultiPassTesseractDecoder : public Decoder {
 
   /** Computes and returns the component schedule and statistics. */
   MultiPassExecutionPlan get_execution_plan() const;
-  std::vector<int> decode(const std::vector<uint64_t>& detections);
   /** Returns predictions and the cost of predictions made during the final pass. */
   DecodeResult decode_result(const std::vector<uint64_t>& detections) override;
-
-  size_t get_last_shot_num_reweights() const {
-    return last_shot_num_reweights;
-  }
-  size_t num_components() const {
-    return component_decoders.size();
-  }
 
  private:
   struct LocalReweightRule {
     size_t target_comp_idx;
-    size_t target_error_idx;
+    size_t target_dem_error_idx;
     double reweight_probability;
+    double original_probability;
   };
 
   struct ComponentDecoder {
     std::unique_ptr<TesseractDecoder> decoder;
     int assignment_label = -1;
     size_t active_detector_count = 0;
-    std::vector<double> original_costs;
-    std::map<ComponentSymptom, std::vector<size_t>> symptom_to_error_index;
-    std::vector<std::vector<LocalReweightRule>> error_index_to_rules;
+    std::map<size_t, std::vector<LocalReweightRule>> reweight_rules;
     bool affects_observable = false;
   };
 
   size_t num_passes;
   SchedulingStrategy strategy;
-  size_t total_global_detectors;
-  size_t last_shot_num_reweights = 0;
   // Retained so execution-plan statistics can be computed on demand.
   stim::DetectorErrorModel monolithic_dem;
-  std::vector<ComponentDecoder> component_decoders;
+  std::array<ComponentDecoder, 2> component_decoders;
   std::vector<std::vector<size_t>> pass_schedule;
   std::vector<int> global_det_to_comp_id;
 
@@ -133,9 +125,6 @@ class MultiPassTesseractDecoder : public Decoder {
                   const TesseractConfig& base_config);
   void build_static_schedule();
   void build_causal_schedule();
-  void restore_modified_costs(const std::vector<std::vector<size_t>>& modified_error_indices);
-
-  friend class MultiPassTestPeer;
 };
 
 }  // namespace tesseract_decoder
