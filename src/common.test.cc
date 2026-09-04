@@ -22,6 +22,15 @@
 namespace tesseract_decoder {
 namespace {
 
+stim::Circuit source_circuit() {
+  return stim::Circuit(R"CIRCUIT(
+    M 0 1
+    DETECTOR rec[-1]
+    DETECTOR rec[-2]
+    OBSERVABLE_INCLUDE(0) rec[-1]
+  )CIRCUIT");
+}
+
 TEST(common, ErrorsStructFromDemInstruction) {
   // Test a pathological DEM error instruction
   stim::DetectorErrorModel dem("error(0.1) D0 ^  D0 D1  L0 L1 L1");
@@ -29,6 +38,34 @@ TEST(common, ErrorsStructFromDemInstruction) {
   common::Error ES(instruction);
   EXPECT_EQ(ES.symptom.detectors, std::vector<int>{1});
   EXPECT_EQ(ES.symptom.observables, std::vector<int>{0});
+}
+
+TEST(common, ShotDetectorCountAllowsSourceAlignedDemAugmentation) {
+  const stim::Circuit circuit = source_circuit();
+  const stim::DetectorErrorModel augmented_dem(R"DEM(
+    error(0.1) D0 L0
+    detector D2
+  )DEM");
+
+  EXPECT_EQ(common::shot_detector_count(circuit, augmented_dem), 2);
+}
+
+TEST(common, ShotDetectorCountRejectsMissingCircuitDetectors) {
+  const stim::Circuit circuit = source_circuit();
+  const stim::DetectorErrorModel too_small_dem("error(0.1) D0 L0");
+
+  EXPECT_THROW(common::shot_detector_count(circuit, too_small_dem), std::invalid_argument);
+}
+
+TEST(common, ShotDetectorCountRejectsDifferentObservableCounts) {
+  const stim::Circuit circuit = source_circuit();
+  const stim::DetectorErrorModel wrong_observable_count_dem(R"DEM(
+    error(0.1) D0 L1
+    detector D2
+  )DEM");
+
+  EXPECT_THROW(common::shot_detector_count(circuit, wrong_observable_count_dem),
+               std::invalid_argument);
 }
 
 TEST(common, DemFromCountsHandlesZeroProbabilityErrors) {

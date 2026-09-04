@@ -75,6 +75,12 @@ struct Error {
 // True if the DEM has no repeat or shift_detectors instructions.
 bool is_flat(const stim::DetectorErrorModel& dem);
 
+// Validates that shots produced by circuit can be decoded against dem. The DEM
+// may append virtual detectors whose shot values are implicitly zero, but it
+// may not remove circuit detector IDs, and observable counts must agree.
+// Returns the detector width of the circuit-produced shot records.
+size_t shot_detector_count(const stim::Circuit& circuit, const stim::DetectorErrorModel& dem);
+
 // Flatten the DEM, skipping rebuilds if already flat.
 stim::DetectorErrorModel flatten(const stim::DetectorErrorModel& dem);
 

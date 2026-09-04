@@ -33,15 +33,10 @@
 
 using namespace tesseract_decoder;
 
-struct DetectorOrderSource {
-  DetectorOrder::Method method;
-  std::string path;
-};
-
 struct Args {
   bool multipass = false;
   bool print_multipass_plan = false;
-  std::string multipass_strategy = "causal";
+  SchedulingStrategy multipass_strategy = SchedulingStrategy::Causal;
   size_t num_passes = 2;
   std::string circuit_path;
   std::string dem_path;
@@ -49,8 +44,8 @@ struct Args {
 
   // Manifold orientation options
   uint64_t det_order_seed;
-  size_t num_det_orders = 10;
-  std::vector<DetectorOrderSource> detector_order_sources;
+  size_t num_orders_per_generated_source = 1;
+  DetectorOrderSources detector_order_sources;
 
   // Sampling options
   size_t sample_num_shots = 0;
@@ -112,8 +107,7 @@ struct Args {
     MultiPassTesseractConfig config;
     config.component_config = component_config;
     config.num_passes = num_passes;
-    config.strategy =
-        multipass_strategy == "static" ? SchedulingStrategy::Static : SchedulingStrategy::Causal;
+    config.strategy = multipass_strategy;
     auto decoder = std::make_unique<MultiPassTesseractDecoder>(std::move(config));
     if (print_plan) {
       std::cerr << decoder->get_execution_plan().str();
@@ -126,17 +120,18 @@ struct Args {
       throw std::invalid_argument("Must provide at least one of --circuit or --dem");
     }
 
-    const bool has_generated_detector_order_source =
-        std::any_of(detector_order_sources.begin(), detector_order_sources.end(),
-                    [](const DetectorOrderSource& source) {
-                      return source.method != DetectorOrder::Method::Literal;
-                    });
-    if (!detector_order_sources.empty() && !has_generated_detector_order_source &&
+    if (detector_order_sources.empty()) {
+      detector_order_sources.add_generated(DetectorOrder::Method::Index);
+    }
+    if (!detector_order_sources.uses_generated_orders() &&
         (program.is_used("--num-det-orders") || program.is_used("--det-order-seed"))) {
       throw std::invalid_argument(
           "--num-det-orders and --det-order-seed only apply to generated detector orders. "
           "Select --det-order-bfs, --det-order-index, or --det-order-coordinate to combine "
           "generated orders with --detector-orders files.");
+    }
+    if (detector_order_sources.uses_generated_orders() && num_orders_per_generated_source == 0) {
+      throw std::invalid_argument("--num-det-orders must be at least 1.");
     }
 
     int num_data_sources = int(sample_num_shots > 0) + int(!in_fname.empty());
@@ -174,10 +169,6 @@ struct Args {
     }
     if (multipass && !dem_out_fname.empty()) {
       throw std::invalid_argument("--dem-out is not supported when --multipass is enabled.");
-    }
-    if (multipass_strategy != "static" && multipass_strategy != "causal") {
-      throw std::invalid_argument("Invalid --multipass-strategy '" + multipass_strategy +
-                                  "'. Expected 'static' or 'causal'.");
     }
     if (num_threads > 1000) {
       throw std::invalid_argument(
@@ -259,32 +250,9 @@ struct Args {
 
     config.merge_errors = !no_merge_errors;
 
-    size_t shot_detector_count = config.dem.count_detectors();
-    if (!circuit_path.empty()) {
-      const size_t circuit_detector_count = circuit.count_detectors();
-      const size_t dem_detector_count = config.dem.count_detectors();
-      const size_t circuit_observable_count = circuit.count_observables();
-      const size_t dem_observable_count = config.dem.count_observables();
-
-      // Source-aligned augmented DEMs (currently GARI) preserve the circuit
-      // detectors as a prefix and append virtual detectors whose shot values
-      // are zero. Read circuit-produced shots at the circuit width while
-      // decoding against the full DEM.
-      if (circuit_detector_count > dem_detector_count) {
-        throw std::invalid_argument(
-            "Circuit has " + std::to_string(circuit_detector_count) +
-            " detectors, but the decoding DEM has only " + std::to_string(dem_detector_count) +
-            ". When both are supplied, circuit detector IDs must be preserved in the DEM; the "
-            "DEM may only append detectors whose shot values are implicitly zero.");
-      }
-      if (circuit_observable_count != dem_observable_count) {
-        throw std::invalid_argument("Circuit has " + std::to_string(circuit_observable_count) +
-                                    " observables, but the decoding DEM has " +
-                                    std::to_string(dem_observable_count) +
-                                    "; the counts must match when both are supplied.");
-      }
-      shot_detector_count = circuit_detector_count;
-    }
+    const size_t shot_detector_count = circuit_path.empty()
+                                           ? config.dem.count_detectors()
+                                           : common::shot_detector_count(circuit, config.dem);
 
     // Choose the detector traversal orders.
     {
@@ -300,20 +268,8 @@ struct Args {
           std::cout << ")" << std::endl;
         }
       }
-      if (detector_order_sources.empty()) {
-        config.detector_orders =
-            make_detector_orders(num_det_orders, DetectorOrder::Method::Index, det_order_seed);
-      } else {
-        for (const DetectorOrderSource& source : detector_order_sources) {
-          std::vector<DetectorOrder> orders =
-              source.method == DetectorOrder::Method::Literal
-                  ? load_detector_orders(source.path, config.dem)
-                  : make_detector_orders(num_det_orders, source.method, det_order_seed);
-          for (DetectorOrder& order : orders) {
-            config.detector_orders.push_back(std::move(order));
-          }
-        }
-      }
+      config.detector_orders = detector_order_sources.make_orders(
+          config.dem, num_orders_per_generated_source, det_order_seed);
     }
 
     if (sample_num_shots > 0) {
@@ -436,12 +392,12 @@ int main(int argc, char* argv[]) {
       .help("Number of orders generated by each selected detector-order method")
       .metavar("N")
       .default_value(size_t(1))
-      .store_into(args.num_det_orders);
+      .store_into(args.num_orders_per_generated_source);
   program.add_argument("--det-order-bfs")
       .help("Add BFS-based detector orders")
       .flag()
       .action([&args](const std::string&) {
-        args.detector_order_sources.push_back({DetectorOrder::Method::BFS, ""});
+        args.detector_order_sources.add_generated(DetectorOrder::Method::BFS);
       });
   program.add_argument("--det-order-index")
       .help(
@@ -449,13 +405,13 @@ int main(int argc, char* argv[]) {
           "(default when no source is specified)")
       .flag()
       .action([&args](const std::string&) {
-        args.detector_order_sources.push_back({DetectorOrder::Method::Index, ""});
+        args.detector_order_sources.add_generated(DetectorOrder::Method::Index);
       });
   program.add_argument("--det-order-coordinate")
       .help("Add random geometric detector orientation orders")
       .flag()
       .action([&args](const std::string&) {
-        args.detector_order_sources.push_back({DetectorOrder::Method::Coordinate, ""});
+        args.detector_order_sources.add_generated(DetectorOrder::Method::Coordinate);
       });
   program.add_argument("--det-order-seed")
       .help(
@@ -470,9 +426,7 @@ int main(int argc, char* argv[]) {
           "generated detector-order methods.")
       .metavar("FILE")
       .append()
-      .action([&args](const std::string& path) {
-        args.detector_order_sources.push_back({DetectorOrder::Method::Literal, path});
-      });
+      .action([&args](const std::string& path) { args.detector_order_sources.add_file(path); });
   program.add_argument("--sample-num-shots")
       .help(
           "If provided, will sample the requested number of shots from the "
@@ -620,7 +574,9 @@ int main(int argc, char* argv[]) {
           "Multi-pass scheduling strategy: static or causal (default = causal). Note: static "
           "scheduling is experimental and was never systematically benchmarked.")
       .default_value(std::string("causal"))
-      .store_into(args.multipass_strategy);
+      .action([&args](const std::string& value) {
+        args.multipass_strategy = parse_scheduling_strategy(value);
+      });
   program.add_argument("--num-passes", "--num_passes")
       .help(
           "Number of prior propagation passes: 1 (uncorrelated independent CSS decoding) or 2 "
@@ -695,10 +651,9 @@ int main(int argc, char* argv[]) {
             std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
             1e6;
         obs_predicted[shot_index].clear();
+        validate_observable_predictions(result.predictions, num_observables);
         for (int observable : result.predictions) {
-          if (observable >= 0 && static_cast<size_t>(observable) < num_observables) {
-            obs_predicted[shot_index][observable] ^= 1;
-          }
+          obs_predicted[shot_index][observable] ^= 1;
         }
         low_confidence[shot_index] = result.low_confidence;
         cost_predicted[shot_index] = result.total_cost;
@@ -764,12 +719,7 @@ int main(int argc, char* argv[]) {
 
   bool print_final_stats = true;
   if (!args.stats_out_fname.empty()) {
-    std::vector<std::string> detector_orders_paths;
-    for (const DetectorOrderSource& source : args.detector_order_sources) {
-      if (source.method == DetectorOrder::Method::Literal) {
-        detector_orders_paths.push_back(source.path);
-      }
-    }
+    const std::vector<std::string> detector_orders_paths = args.detector_order_sources.file_paths();
     nlohmann::json stats_json = {
         {"circuit_path", args.circuit_path},
         {"dem_path", args.dem_path},
@@ -781,7 +731,9 @@ int main(int argc, char* argv[]) {
         {"beam_climbing", args.beam_climbing},
         {"no_revisit_dets", args.no_revisit_dets},
         {"pqlimit", args.pqlimit},
-        {"num_det_orders", config.detector_orders.empty() ? 1 : config.detector_orders.size()},
+        // Kept as the effective total for compatibility with existing benchmark data.
+        {"num_det_orders", config.detector_orders.size()},
+        {"num_det_orders_per_generated_source", args.num_orders_per_generated_source},
         {"det_order_seed", args.det_order_seed},
         {"detector_orders_paths", detector_orders_paths},
         {"total_time_seconds", total_time_seconds},
@@ -790,7 +742,7 @@ int main(int argc, char* argv[]) {
         {"num_shots", shot},
         {"num_threads", args.num_threads},
         {"multipass", args.multipass},
-        {"multipass_strategy", args.multipass_strategy},
+        {"multipass_strategy", scheduling_strategy_name(args.multipass_strategy)},
         {"multipass_num_passes", args.num_passes},
         {"sample_num_shots", args.sample_num_shots},
         {"sparsify_errors", args.sparsify_errors},

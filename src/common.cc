@@ -100,6 +100,29 @@ common::Error::Error(const stim::DemInstruction& error) {
   symptom.observables = observables;
 }
 
+size_t common::shot_detector_count(const stim::Circuit& circuit,
+                                   const stim::DetectorErrorModel& dem) {
+  const size_t circuit_detector_count = circuit.count_detectors();
+  const size_t dem_detector_count = dem.count_detectors();
+  if (circuit_detector_count > dem_detector_count) {
+    throw std::invalid_argument(
+        "Circuit has " + std::to_string(circuit_detector_count) +
+        " detectors, but the decoding DEM has only " + std::to_string(dem_detector_count) +
+        ". When both are supplied, circuit detector IDs must be preserved in the DEM; the DEM "
+        "may only append detectors whose shot values are implicitly zero.");
+  }
+
+  const size_t circuit_observable_count = circuit.count_observables();
+  const size_t dem_observable_count = dem.count_observables();
+  if (circuit_observable_count != dem_observable_count) {
+    throw std::invalid_argument("Circuit has " + std::to_string(circuit_observable_count) +
+                                " observables, but the decoding DEM has " +
+                                std::to_string(dem_observable_count) +
+                                "; the counts must match when both are supplied.");
+  }
+  return circuit_detector_count;
+}
+
 std::string common::Error::str() const {
   std::stringstream ss;
   ss << std::fixed << std::setprecision(6) << likelihood_cost;
