@@ -56,6 +56,8 @@ struct MultiPassExecutionPlan {
     size_t decoder_detector_count;
     size_t error_mechanism_count;
     double average_active_detector_degree;
+    bool sparsify_errors;
+    int sparsify_reactivate_limit;
     bool affects_observable;
   };
 

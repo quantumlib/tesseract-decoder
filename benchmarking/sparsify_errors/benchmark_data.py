@@ -268,9 +268,9 @@ def validate_aggregate_row(
                 f"{_context(source, row)}: sparsify_max_degree must be -1 or "
                 "at least sparsify_base_degree"
             )
-        if row["sparsify_reactivate_limit"] < 0:
+        if row["sparsify_reactivate_limit"] < -1:
             raise BenchmarkDataError(
-                f"{_context(source, row)}: sparsify_reactivate_limit must be non-negative"
+                f"{_context(source, row)}: sparsify_reactivate_limit must be -1 or non-negative"
             )
     elif any(
         row[field] != -1

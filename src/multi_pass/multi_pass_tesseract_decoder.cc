@@ -44,7 +44,14 @@ std::string MultiPassExecutionPlan::str() const {
        << ", decoder_detectors=" << component.decoder_detector_count
        << ", observable=" << (component.affects_observable ? "yes" : "no")
        << ", error_mechanisms=" << component.error_mechanism_count
-       << ", average_active_detector_degree=" << component.average_active_detector_degree << '\n';
+       << ", average_active_detector_degree=" << component.average_active_detector_degree
+       << ", sparsify_reactivate_limit=";
+    if (!component.sparsify_errors) {
+      ss << "disabled";
+    } else {
+      ss << component.sparsify_reactivate_limit;
+    }
+    ss << '\n';
   }
   ss << "dependencies:\n";
   if (dependencies.empty()) {
@@ -341,10 +348,11 @@ MultiPassExecutionPlan MultiPassTesseractDecoder::get_execution_plan() const {
   for (size_t component_id = 0; component_id < component_decoders.size(); ++component_id) {
     const auto& component = component_decoders[component_id];
     auto statistics = dem_statistics(component.active_detector_count, component.decoder->errors);
-    plan.components.push_back({component_id, component.assignment_label,
-                               component.active_detector_count, component.decoder->num_detectors,
-                               statistics.error_mechanism_count, statistics.average_detector_degree,
-                               component.affects_observable});
+    plan.components.push_back(
+        {component_id, component.assignment_label, component.active_detector_count,
+         component.decoder->num_detectors, statistics.error_mechanism_count,
+         statistics.average_detector_degree, component.decoder->config.sparsify_errors,
+         component.decoder->config.sparsify_reactivate_limit, component.affects_observable});
   }
 
   std::map<std::pair<size_t, size_t>, size_t> dependency_counts;

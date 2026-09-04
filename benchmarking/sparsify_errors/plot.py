@@ -110,6 +110,15 @@ def _observed_segments(points):
 
 
 def _validate_plot_sweep(rows):
+    if any(
+        row["sparsify_errors"] and row["sparsify_reactivate_limit"] == -1
+        for row in rows
+    ):
+        raise BenchmarkDataError(
+            "plot input contains automatic sparsify_reactivate_limit=-1; "
+            "plots require explicit resolved limits"
+        )
+
     for field in PLOT_GLOBAL_INVARIANTS:
         values = {row[field] for row in rows}
         if len(values) != 1:

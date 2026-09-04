@@ -54,6 +54,24 @@ stim::DetectorErrorModel correlated_dem() {
     )DEM");
 }
 
+stim::DetectorErrorModel asymmetric_component_dem() {
+  return stim::DetectorErrorModel(R"DEM(
+        error(0.02) D0 D1 L0
+        error(0.1) D3 D4 D5 D6 L1
+        error(0.02) D3 D4 D6
+        error(0.3) D4 D5
+        detector D0
+        detector D1
+        detector D2
+        detector D3
+        detector D4
+        detector D5
+        detector D6
+        logical_observable L0
+        logical_observable L1
+  )DEM");
+}
+
 MultiPassTesseractConfig make_multi_pass_config(
     const stim::DetectorErrorModel& dem, size_t num_passes = 2,
     const std::vector<int>& detector_components = {0, 1},
@@ -172,21 +190,7 @@ TEST(MultiPassTesseractDecoderTest, MultiPassConfigRejectsNoncanonicalBasisMetad
 }
 
 TEST(MultiPassTesseractDecoderTest, BuildsDetectorOrdersFromEachComponentDem) {
-  stim::DetectorErrorModel dem(R"DEM(
-        error(0.02) D0 D1 L0
-        error(0.1) D3 D4 D5 D6 L1
-        error(0.02) D3 D4 D6
-        error(0.3) D4 D5
-        detector D0
-        detector D1
-        detector D2
-        detector D3
-        detector D4
-        detector D5
-        detector D6
-        logical_observable L0
-        logical_observable L1
-  )DEM");
+  stim::DetectorErrorModel dem = asymmetric_component_dem();
   constexpr size_t num_det_orders = 1;
   constexpr uint64_t seed = 1;
   TesseractConfig config;
@@ -207,6 +211,22 @@ TEST(MultiPassTesseractDecoderTest, BuildsDetectorOrdersFromEachComponentDem) {
     differs_from_monolithic |= component_orders != monolithic_orders;
   }
   EXPECT_TRUE(differs_from_monolithic);
+}
+
+TEST(MultiPassTesseractDecoderTest, ExecutionPlanReportsComponentSparsifyLimits) {
+  TesseractConfig config;
+  config.sparsify_errors = true;
+  config.sparsify_base_degree = 3;
+  MultiPassTesseractDecoder decoder(
+      make_multi_pass_config(asymmetric_component_dem(), 1, {0, 0, 0, 1, 1, 1, 1}, config));
+  MultiPassExecutionPlan plan = decoder.get_execution_plan();
+  ASSERT_EQ(plan.components.size(), 2);
+  EXPECT_TRUE(plan.components[0].sparsify_errors);
+  EXPECT_TRUE(plan.components[1].sparsify_errors);
+  EXPECT_EQ(plan.components[0].sparsify_reactivate_limit, 1);
+  EXPECT_EQ(plan.components[1].sparsify_reactivate_limit, 3);
+  EXPECT_NE(plan.str().find("sparsify_reactivate_limit=1"), std::string::npos);
+  EXPECT_NE(plan.str().find("sparsify_reactivate_limit=3"), std::string::npos);
 }
 
 TEST(MultiPassTesseractDecoderTest, HonorsMergeErrorsBothWaysInOnePass) {
@@ -366,9 +386,12 @@ TEST(MultiPassTesseractDecoderTest, ExecutionPlanIsComputedOnDemand) {
   MultiPassExecutionPlan plan = decoder.get_execution_plan();
   EXPECT_EQ(plan.num_passes, 2);
   EXPECT_EQ(plan.components.size(), 2);
+  EXPECT_FALSE(plan.components[0].sparsify_errors);
+  EXPECT_FALSE(plan.components[1].sparsify_errors);
   EXPECT_EQ(plan.dependencies.size(), 2);
   EXPECT_EQ(plan.pass_schedule, std::vector<std::vector<size_t>>({{0}, {1}}));
   EXPECT_NE(plan.str().find("strategy: causal"), std::string::npos);
+  EXPECT_NE(plan.str().find("sparsify_reactivate_limit=disabled"), std::string::npos);
 }
 
 TEST(MultiPassTesseractDecoderTest, StaticSchedulerRunsBothComponentsInEveryPass) {

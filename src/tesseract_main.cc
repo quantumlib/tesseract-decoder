@@ -762,23 +762,6 @@ int main(int argc, char* argv[]) {
     out << est_dem << '\n';
   }
 
-  int effective_sparsify_reactivate_limit = config.sparsify_reactivate_limit;
-  for (const auto& decoder : decoders) {
-    const auto* monolithic_decoder = dynamic_cast<const TesseractDecoder*>(decoder.get());
-    if (monolithic_decoder != nullptr) {
-      effective_sparsify_reactivate_limit = monolithic_decoder->config.sparsify_reactivate_limit;
-      break;
-    }
-  }
-  if (config.sparsify_errors && effective_sparsify_reactivate_limit == -1) {
-    effective_sparsify_reactivate_limit = suggest_sparsify_reactivate_limit(
-        config.dem.count_detectors(), config.sparsify_base_degree);
-    effective_sparsify_reactivate_limit = std::min(
-        effective_sparsify_reactivate_limit,
-        static_cast<int>(std::min<uint64_t>(
-            config.dem.count_errors(), static_cast<uint64_t>(std::numeric_limits<int>::max()))));
-  }
-
   bool print_final_stats = true;
   if (!args.stats_out_fname.empty()) {
     std::vector<std::string> detector_orders_paths;
@@ -813,7 +796,7 @@ int main(int argc, char* argv[]) {
         {"sparsify_errors", args.sparsify_errors},
         {"sparsify_base_degree", args.sparsify_base_degree},
         {"sparsify_max_degree", args.sparsify_max_degree},
-        {"sparsify_reactivate_limit", effective_sparsify_reactivate_limit}};
+        {"sparsify_reactivate_limit", config.sparsify_reactivate_limit}};
 
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;

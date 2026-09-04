@@ -82,6 +82,9 @@ tooling from the immutable circuit snapshot stored with the run:
 - `merge_errors` and `det_order_method`: model-compilation and detector-order
   modes. New run manifests record these directly; the historical rows use the
   explicit assumptions documented in `provenance.json`.
+- `sparsify_reactivate_limit`: the value requested from the native CLI. `-1`
+  means automatic selection; plots require an explicit resolved limit instead
+  of treating that sentinel as a numeric value.
 
 The native per-job stats do not contain detector/error-model counts.
 Aggregation reconstructs those fields from each run's read-only circuit
