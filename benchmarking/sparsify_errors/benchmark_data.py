@@ -910,13 +910,13 @@ def _validate_run_manifest(manifest: Mapping[str, Any], source: str) -> None:
     if (
         not reactivate_limits
         or any(
-            not _matches_type(limit, int) or limit < 0 for limit in reactivate_limits
+            not _matches_type(limit, int) or limit < -1 for limit in reactivate_limits
         )
         or reactivate_limits != sorted(set(reactivate_limits))
     ):
         raise BenchmarkDataError(
             f"{source}: sparsify_reactivate_limits must be unique, sorted, "
-            "non-negative integers"
+            "and contain only -1 or non-negative integers"
         )
     base_degrees = sweep["sparsify_base_degree_by_directory"]
     if not base_degrees:

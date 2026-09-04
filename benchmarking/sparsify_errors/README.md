@@ -83,8 +83,9 @@ tooling from the immutable circuit snapshot stored with the run:
   modes. New run manifests record these directly; the historical rows use the
   explicit assumptions documented in `provenance.json`.
 - `sparsify_reactivate_limit`: the value requested from the native CLI. `-1`
-  means automatic selection; plots require an explicit resolved limit instead
-  of treating that sentinel as a numeric value.
+  means automatic selection. Time/tradeoff plots retain automatic runs as
+  distinct empirical points. Analyses with a numeric M axis or fit omit them
+  instead of inventing a resolved value or treating `-1` as numeric.
 
 The native per-job stats do not contain detector/error-model counts.
 Aggregation reconstructs those fields from each run's read-only circuit
