@@ -162,6 +162,44 @@ def test_decode_shots_bit_packed_multi_shot():
     assert np.array_equal(predictions, expected_predictions)
 
 
+def test_decode_shots_bit_packed_with_strided_input():
+    dem = stim.DetectorErrorModel("""
+        error(0.1) D0 D1 L0
+        error(0.1) D8 L1
+        detector D0
+        detector D1
+        detector D2
+        detector D3
+        detector D4
+        detector D5
+        detector D6
+        detector D7
+        detector D8
+    """)
+    compiled_decoder = TesseractSinterDecoder().compile_decoder_for_dem(dem=dem)
+
+    storage = np.zeros((2, 4), dtype=np.uint8)
+    detections = storage[:, ::2]
+    assert not detections.flags.c_contiguous
+    detections[0] = [0b00000011, 0]
+    detections[1] = [0, 0b00000001]
+
+    predictions = compiled_decoder.decode_shots_bit_packed(
+        bit_packed_detection_event_data=detections
+    )
+
+    assert np.array_equal(
+        predictions,
+        np.array(
+            [
+                [0b00000001],
+                [0b00000010],
+            ],
+            dtype=np.uint8,
+        ),
+    )
+
+
 def test_decode_via_files_sanity_check():
     """
     Tests the 'decode_via_files' method by simulating a small circuit and

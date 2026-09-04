@@ -64,23 +64,20 @@ struct TesseractSinterCompiledDecoder {
         py::array_t<uint8_t>({(py::ssize_t)num_shots, (py::ssize_t)num_observable_bytes});
     auto result_buffer = result_array.mutable_data();
 
-    const uint8_t* detections_data = bit_packed_detection_event_data.data();
-    const size_t detections_stride = bit_packed_detection_event_data.strides(0);
+    auto detections = bit_packed_detection_event_data.unchecked<2>();
 
     // Loop through each shot and decode it with TesseractDecoder.
     for (size_t shot = 0; shot < num_shots; ++shot) {
-      const uint8_t* single_shot_data = detections_data + shot * detections_stride;
-
       // Unpack the shot data into a vector of indices of fired detectors.
-      std::vector<uint64_t> detections;
+      std::vector<uint64_t> fired_detectors;
       for (uint64_t i = 0; i < num_detectors; ++i) {
-        if ((single_shot_data[i / 8] >> (i % 8)) & 1) {
-          detections.push_back(i);
+        if ((detections(shot, i / 8) >> (i % 8)) & 1) {
+          fired_detectors.push_back(i);
         }
       }
 
       // Decode with TesseractDecoder.
-      std::vector<int> predictions = decoder->decode(detections);
+      std::vector<int> predictions = decoder->decode(fired_detectors);
 
       // Store predictions into the output buffer
       uint8_t* single_result_buffer = result_buffer + shot * num_observable_bytes;
