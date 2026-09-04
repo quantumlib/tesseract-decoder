@@ -78,6 +78,18 @@ Tesseract uses [Bazel](https://bazel.build/) as its build system. To build the d
 bazel build src:all
 ```
 
+#### Building with CMake
+
+Tesseract also ships a `CMakeLists.txt` that vendors all C++ dependencies (Stim, HiGHS, argparse, nlohmann/json, Boost) via `FetchContent` for a single self-contained build:
+
+```bash
+cmake -S . -B cmake-build -DCMAKE_BUILD_TYPE=Release
+cmake --build cmake-build -j
+# Binary: cmake-build/tesseract
+```
+
+> **Note for macOS / Windows users.** The conventional CMake binary directory name is `build`, but the Bazel build descriptor at the repository root is named `BUILD` (uppercase). On case-insensitive filesystems — APFS (macOS default) and NTFS (Windows default) — `cmake -B build` fails with `Error: <repo>/BUILD is not a directory` because CMake cannot create a directory whose name collides with the existing `BUILD` regular file. Use a non-conflicting name (for example `cmake-build`, `_build`, or `out`) as shown above. On case-sensitive filesystems (typical Linux ext4 / xfs) `cmake -B build` works without modification.
+
 ## Running Tests
 
 Unit tests are executed with Bazel. Run the quick test suite using:
