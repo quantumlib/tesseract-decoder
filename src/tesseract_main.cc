@@ -690,8 +690,8 @@ int main(int argc, char* argv[]) {
         return !has_obs || num_errors < args.max_errors;
       });
 
-  if (args.print_multipass_plan && !decoders[0]) {
-    decoders[0] = args.make_decoder(config, true);
+  if (!decoders[0]) {
+    decoders[0] = args.make_decoder(config, args.print_multipass_plan);
   }
 
   std::vector<size_t> error_use_totals(original_dem.count_errors());
