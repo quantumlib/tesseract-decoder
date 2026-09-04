@@ -35,11 +35,21 @@ def _two_basis_dem() -> stim.DetectorErrorModel:
 
 def test_zero_configuration_and_stable_registry_workflows():
     assert not hasattr(tesseract_decoder, "MultiPassSinterDecoder")
-    assert hasattr(tesseract_decoder, "_compile_multi_pass_decoder_for_dem")
     decoder = MultiPassSinterDecoder()
     assert decoder.num_passes == 2
     assert decoder.strategy == tesseract_decoder.SchedulingStrategy.Causal
-    assert decoder.compile_decoder_for_dem(dem=_two_basis_dem()).num_components == 2
+    assert decoder.det_orders == []
+    assert decoder.num_det_orders == 1
+    assert decoder.det_order_method == tesseract_decoder.utils.DetectorOrderMethod.Index
+    assert decoder.seed == 0
+    compiled = decoder.compile_decoder_for_dem(dem=_two_basis_dem())
+    predictions = compiled.decode_shots_bit_packed(
+        bit_packed_detection_event_data=np.array([[0], [1], [2], [3]], dtype=np.uint8)
+    )
+    assert np.array_equal(
+        predictions,
+        np.array([[0, 0], [1, 0], [1, 0], [0, 0]], dtype=np.uint8),
+    )
 
     decoders = get_sinter_decoders()
     assert set(decoders) == {
@@ -50,6 +60,7 @@ def test_zero_configuration_and_stable_registry_workflows():
     assert decoders["tesseract-long-beam-multipass-1pass"].num_passes == 1
     assert decoders["tesseract-long-beam-multipass-2pass"].num_passes == 2
     for name, configured_decoder in decoders.items():
+        configured_decoder.compile_decoder_for_dem(dem=_two_basis_dem())
         if "multipass" in name:
             assert configured_decoder.det_beam == 20
             assert configured_decoder.det_order_method == (
@@ -145,19 +156,71 @@ def test_all_standard_configuration_keywords_and_unknown_keyword_validation():
         sparsify_max_degree=4,
         sparsify_reactivate_limit=7,
         det_orders=[[1, 0]],
-        num_det_orders=3,
-        det_order_method=tesseract_decoder.utils.DetectorOrderMethod.Coordinate,
-        seed=123,
     )
     assert decoder.det_beam == 17
     assert decoder.merge_errors is False
     assert decoder.sparsify_reactivate_limit == 7
     assert decoder.det_orders == [[1, 0]]
-    assert decoder.num_det_orders == 3
+    assert decoder.num_det_orders == 1
+    assert (
+        decoder.det_order_method == tesseract_decoder.utils.DetectorOrderMethod.Literal
+    )
+    assert decoder.seed is None
     decoder.compile_decoder_for_dem(dem=_two_basis_dem())
 
     with pytest.raises(TypeError, match="unexpected keyword"):
         MultiPassSinterDecoder(typoed_option=True)
+
+
+@pytest.mark.parametrize(
+    "generation_option",
+    [
+        {"num_det_orders": 3},
+        {"det_order_method": (tesseract_decoder.utils.DetectorOrderMethod.Coordinate)},
+        {"seed": 123},
+    ],
+)
+def test_literal_and_generated_detector_order_options_are_mutually_exclusive(
+    generation_option,
+):
+    with pytest.raises(ValueError, match="cannot be combined"):
+        MultiPassSinterDecoder(det_orders=[[1, 0]], **generation_option)
+
+
+def test_generated_detector_order_configuration_remains_simple():
+    decoder = MultiPassSinterDecoder(
+        num_passes=1,
+        num_det_orders=3,
+        det_order_method=tesseract_decoder.utils.DetectorOrderMethod.Coordinate,
+        seed=123,
+    )
+    assert decoder.det_orders == []
+    assert decoder.num_det_orders == 3
+    assert (
+        decoder.det_order_method
+        == tesseract_decoder.utils.DetectorOrderMethod.Coordinate
+    )
+    assert decoder.seed == 123
+    decoder.compile_decoder_for_dem(dem=_two_basis_dem())
+
+
+@pytest.mark.parametrize("count", [0, -1, True, 1.5])
+def test_generated_detector_order_count_must_be_positive(count):
+    with pytest.raises(ValueError, match="positive integer"):
+        MultiPassSinterDecoder(num_det_orders=count)
+
+
+@pytest.mark.parametrize("seed", [-1, True, 1.5])
+def test_generated_detector_order_seed_must_be_nonnegative(seed):
+    with pytest.raises(ValueError, match="nonnegative integer"):
+        MultiPassSinterDecoder(seed=seed)
+
+
+def test_literal_method_requires_literal_orders():
+    with pytest.raises(ValueError, match="requires nonempty det_orders"):
+        MultiPassSinterDecoder(
+            det_order_method=tesseract_decoder.utils.DetectorOrderMethod.Literal
+        )
 
 
 def test_two_pass_rejects_merge_errors_false():

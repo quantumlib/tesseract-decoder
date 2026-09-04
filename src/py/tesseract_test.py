@@ -17,16 +17,20 @@ import pytest
 import stim
 import tesseract_decoder
 from shared_decoding_tests import (
-    shared_test_compile_decoder, shared_test_cost_from_errors,
-    shared_test_decode, shared_test_decode_batch,
+    shared_test_compile_decoder,
+    shared_test_cost_from_errors,
+    shared_test_decode,
+    shared_test_decode_batch,
     shared_test_decode_batch_with_complex_model,
     shared_test_decode_batch_with_invalid_dimensions,
     shared_test_decode_batch_with_mismatched_syndrome_size,
-    shared_test_decode_complex_dem, shared_test_decode_from_detection_events,
+    shared_test_decode_complex_dem,
+    shared_test_decode_from_detection_events,
     shared_test_decode_with_mismatched_syndrome_size,
     shared_test_decoder_predicts_various_observable_flips,
     shared_test_get_observables_from_errors,
-    shared_test_merge_errors_affects_cost)
+    shared_test_merge_errors_affects_cost,
+)
 
 _DETECTOR_ERROR_MODEL = stim.DetectorErrorModel("""
 error(0.125) D0
@@ -102,6 +106,74 @@ def test_create_tesseract_config():
     )
 
 
+def test_generated_detector_orders_are_part_of_the_config():
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        _DETECTOR_ERROR_MODEL,
+        num_det_orders=3,
+        det_order_method=tesseract_decoder.utils.DetectorOrderMethod.BFS,
+        seed=123,
+    )
+
+    assert config.det_orders == tesseract_decoder.utils.build_det_orders(
+        _DETECTOR_ERROR_MODEL,
+        3,
+        tesseract_decoder.utils.DetectorOrderMethod.BFS,
+        123,
+    )
+
+
+def test_empty_literal_order_list_retains_generated_default():
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        _DETECTOR_ERROR_MODEL,
+        det_orders=[],
+    )
+    config.det_orders = []
+
+    assert config.det_orders == tesseract_decoder.utils.build_det_orders(
+        _DETECTOR_ERROR_MODEL,
+        20,
+        tesseract_decoder.utils.DetectorOrderMethod.Index,
+        2384753,
+    )
+
+
+@pytest.mark.parametrize(
+    "generation_option",
+    [
+        {"num_det_orders": 2},
+        {"det_order_method": (tesseract_decoder.utils.DetectorOrderMethod.Coordinate)},
+        {"seed": 123},
+    ],
+)
+def test_literal_and_generated_detector_order_options_are_mutually_exclusive(
+    generation_option,
+):
+    with pytest.raises(ValueError, match="cannot be combined"):
+        tesseract_decoder.tesseract.TesseractConfig(
+            _DETECTOR_ERROR_MODEL,
+            det_orders=[[0, 1]],
+            **generation_option,
+        )
+
+
+@pytest.mark.parametrize("count", [0, -1, True, 1.5])
+def test_generated_detector_order_count_must_be_a_positive_integer(count):
+    with pytest.raises(ValueError, match="num_det_orders"):
+        tesseract_decoder.tesseract.TesseractConfig(
+            _DETECTOR_ERROR_MODEL,
+            num_det_orders=count,
+        )
+
+
+@pytest.mark.parametrize("seed", [-1, True, 1.5])
+def test_generated_detector_order_seed_must_be_a_nonnegative_integer(seed):
+    with pytest.raises(ValueError, match="seed"):
+        tesseract_decoder.tesseract.TesseractConfig(
+            _DETECTOR_ERROR_MODEL,
+            seed=seed,
+        )
+
+
 def test_create_tesseract_config_with_dem():
     """
     Tests the constructor that takes a `dem` argument.
@@ -147,6 +219,7 @@ def test_compile_decoder_for_dem_basic_functionality():
     Verifies that `compile_decoder_for_dem` returns a `TesseractDecoder` instance.
     """
     config = tesseract_decoder.tesseract.TesseractConfig()
+    assert len(config.det_orders) == 20
     custom_dem = stim.DetectorErrorModel()
     decoder = config.compile_decoder_for_dem(custom_dem)
 
@@ -405,15 +478,12 @@ def test_compile_decoder_resolves_auto_sparsify_reactivate_limit():
         sparsify_reactivate_limit=-1,
     )
     decoder = config.compile_decoder()
-    assert (
-        decoder.config.sparsify_reactivate_limit
-        == min(
-            tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(
-                _DETECTOR_ERROR_MODEL.num_detectors,
-                2,
-            ),
-            _DETECTOR_ERROR_MODEL.num_errors,
-        )
+    assert decoder.config.sparsify_reactivate_limit == min(
+        tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(
+            _DETECTOR_ERROR_MODEL.num_detectors,
+            2,
+        ),
+        _DETECTOR_ERROR_MODEL.num_errors,
     )
 
 
@@ -508,7 +578,9 @@ def test_decoder_compilation_validation():
     # sparsify_max_degree < sparsify_base_degree throws
     config.sparsify_base_degree = 3
     config.sparsify_max_degree = 2
-    with pytest.raises(ValueError, match="sparsify_max_degree must be >= sparsify_base_degree"):
+    with pytest.raises(
+        ValueError, match="sparsify_max_degree must be >= sparsify_base_degree"
+    ):
         config.compile_decoder()
 
 

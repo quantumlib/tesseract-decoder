@@ -49,7 +49,7 @@ struct TesseractConfig {
 
   // Each entry resolves to one detector traversal permutation once the
   // decoder's concrete DEM is known.
-  std::vector<DetectorOrder> detector_orders;
+  std::vector<DetectorOrder> detector_orders{DetectorOrder()};
   double det_penalty = 0;
   bool create_visualization = false;
 

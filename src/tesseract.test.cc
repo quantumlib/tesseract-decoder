@@ -894,6 +894,7 @@ TEST(utils, DetectorOrdersValidateLiteralPermutations) {
 
   EXPECT_THROW(DetectorOrder(DetectorOrder::Method::Literal, 0), std::invalid_argument);
   EXPECT_THROW(make_detector_orders(1, DetectorOrder::Method::Literal, 0), std::invalid_argument);
+  EXPECT_THROW(make_detector_orders(0, DetectorOrder::Method::Index, 0), std::invalid_argument);
 }
 
 TEST(utils, LoadDetectorOrders) {
@@ -924,6 +925,52 @@ TEST(utils, LoadDetectorOrders) {
   EXPECT_THROW(load_detector_orders(path.string(), dem), std::invalid_argument);
 }
 
+TEST(utils, DetectorOrderSourcesPreserveSourceAndFileOrder) {
+  const std::filesystem::path path =
+      std::filesystem::path(testing::TempDir()) / "tesseract_detector_order_sources_test.json";
+  {
+    std::ofstream output(path);
+    output << "[[2, 0, 1], [1, 2, 0]]";
+  }
+  const stim::DetectorErrorModel dem(R"DEM(
+    error(0.1) D0 D1
+    error(0.1) D1 D2
+  )DEM");
+
+  DetectorOrderSources sources;
+  EXPECT_TRUE(sources.empty());
+  EXPECT_FALSE(sources.uses_generated_orders());
+  sources.add_file(path.string());
+  sources.add_generated(DetectorOrder::Method::BFS);
+  sources.add_file(path.string());
+
+  EXPECT_FALSE(sources.empty());
+  EXPECT_TRUE(sources.uses_generated_orders());
+  EXPECT_EQ(sources.file_paths(), (std::vector<std::string>{path.string(), path.string()}));
+
+  auto orders = sources.make_orders(dem, 2, 1234);
+  ASSERT_EQ(orders.size(), 6);
+  EXPECT_EQ(orders[0].get_order(), (std::vector<size_t>{2, 0, 1}));
+  EXPECT_EQ(orders[1].get_order(), (std::vector<size_t>{1, 2, 0}));
+  EXPECT_EQ(orders[2].get_method(), DetectorOrder::Method::BFS);
+  EXPECT_FALSE(orders[2].is_resolved());
+  EXPECT_EQ(orders[3].get_method(), DetectorOrder::Method::BFS);
+  EXPECT_FALSE(orders[3].is_resolved());
+  EXPECT_EQ(orders[4].get_order(), (std::vector<size_t>{2, 0, 1}));
+  EXPECT_EQ(orders[5].get_order(), (std::vector<size_t>{1, 2, 0}));
+
+  std::filesystem::remove(path);
+}
+
+TEST(utils, DetectorOrderSourcesRejectInvalidGeneratedInputs) {
+  const stim::DetectorErrorModel dem("error(0.1) D0");
+  DetectorOrderSources sources;
+  EXPECT_THROW(sources.add_generated(DetectorOrder::Method::Literal), std::invalid_argument);
+
+  sources.add_generated(DetectorOrder::Method::Index);
+  EXPECT_THROW(sources.make_orders(dem, 0, 0), std::invalid_argument);
+}
+
 TEST(utils, PreprocessingPreservesAllDetectorOrderEntries) {
   stim::DetectorErrorModel dem("error(0) D2\nerror(0.1) D3 D3");
   TesseractConfig config{dem};
@@ -933,6 +980,25 @@ TEST(utils, PreprocessingPreservesAllDetectorOrderEntries) {
   EXPECT_EQ(decoder.num_detectors, 4);
   ASSERT_EQ(decoder.config.detector_orders.size(), 1);
   EXPECT_EQ(decoder.config.detector_orders[0].get_order().size(), 4);
+}
+
+TEST(tesseract, DefaultConfigContainsAnExplicitDetectorOrderSpecification) {
+  TesseractConfig config;
+  ASSERT_EQ(config.detector_orders.size(), 1);
+  config.dem = stim::DetectorErrorModel("error(0.1) D0 D1");
+
+  TesseractDecoder decoder(config);
+  auto order = decoder.config.detector_orders[0].get_order();
+  std::sort(order.begin(), order.end());
+  EXPECT_EQ(order, (std::vector<size_t>{0, 1}));
+}
+
+TEST(tesseract, EmptyDetectorOrderConfigurationIsRejected) {
+  TesseractConfig config;
+  config.dem = stim::DetectorErrorModel("error(0.1) D0");
+  config.detector_orders.clear();
+
+  EXPECT_THROW((void)TesseractDecoder(config), std::invalid_argument);
 }
 
 TEST(utils, BfsOrdersContainDetectorsInTraversalOrder) {

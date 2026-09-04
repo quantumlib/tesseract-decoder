@@ -26,6 +26,7 @@
 #include <string>
 #include <thread>
 #include <unordered_set>
+#include <variant>
 #include <vector>
 
 #include "common.h"
@@ -78,10 +79,35 @@ class DetectorOrder {
   std::vector<size_t> order;
 };
 
+// An ordered collection of detector-order inputs. Each input is either a
+// generated ordering method or a JSON file containing literal orders.
+class DetectorOrderSources {
+ public:
+  void add_generated(DetectorOrder::Method method);
+  void add_file(std::string path);
+
+  bool empty() const;
+  bool uses_generated_orders() const;
+  std::vector<DetectorOrder> make_orders(const stim::DetectorErrorModel& dem,
+                                         size_t orders_per_generated_source, uint64_t seed) const;
+  std::vector<std::string> file_paths() const;
+
+ private:
+  struct GeneratedSource {
+    DetectorOrder::Method method;
+  };
+  struct FileSource {
+    std::string path;
+  };
+
+  std::vector<std::variant<GeneratedSource, FileSource>> sources;
+};
+
 using DetOrder = DetectorOrder::Method;
 
-// Creates one independently resolvable object per requested order. Each object
-// receives a deterministic seed derived from seed and its position.
+// Creates one independently resolvable object per requested order. The count
+// must be positive. Each object receives a deterministic seed derived from seed
+// and its position.
 std::vector<DetectorOrder> make_detector_orders(
     size_t num_det_orders, DetectorOrder::Method method = DetectorOrder::Method::Index,
     uint64_t seed = 0);

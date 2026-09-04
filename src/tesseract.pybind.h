@@ -35,13 +35,26 @@ std::unique_ptr<TesseractDecoder> _compile_tesseract_decoder_helper(const Tesser
   return std::make_unique<TesseractDecoder>(self);
 }
 
+uint64_t parse_nonnegative_integer(const py::object& value, const char* name) {
+  if (PyBool_Check(value.ptr()) || !PyLong_Check(value.ptr())) {
+    throw std::invalid_argument(std::string(name) + " must be a nonnegative integer.");
+  }
+  unsigned long long result = PyLong_AsUnsignedLongLong(value.ptr());
+  if (PyErr_Occurred()) {
+    PyErr_Clear();
+    throw std::invalid_argument(std::string(name) + " must be a nonnegative integer.");
+  }
+  return result;
+}
+
 TesseractConfig make_tesseract_config(stim::DetectorErrorModel dem, int det_beam,
                                       bool beam_climbing, bool no_revisit_dets, bool verbose,
-                                      bool merge_errors, size_t pqlimit,
-                                      std::vector<std::vector<size_t>> det_orders,
+                                      bool merge_errors, size_t pqlimit, py::object det_orders,
                                       double det_penalty, bool create_visualization,
                                       bool sparsify_errors, int sparsify_base_degree,
-                                      int sparsify_max_degree, int sparsify_reactivate_limit) {
+                                      int sparsify_max_degree, int sparsify_reactivate_limit,
+                                      py::object num_det_orders, py::object det_order_method,
+                                      py::object seed) {
   TesseractConfig config;
   config.dem = std::move(dem);
   config.det_beam = det_beam;
@@ -50,9 +63,31 @@ TesseractConfig make_tesseract_config(stim::DetectorErrorModel dem, int det_beam
   config.verbose = verbose;
   config.merge_errors = merge_errors;
   config.pqlimit = pqlimit;
-  config.detector_orders = det_orders.empty()
-                               ? make_detector_orders(20, DetectorOrder::Method::Index, 2384753)
-                               : make_literal_detector_orders(std::move(det_orders));
+  std::vector<std::vector<size_t>> literal_orders;
+  if (!det_orders.is_none()) {
+    literal_orders = py::cast<std::vector<std::vector<size_t>>>(det_orders);
+  }
+  const bool generation_was_configured =
+      !num_det_orders.is_none() || !det_order_method.is_none() || !seed.is_none();
+  if (!literal_orders.empty() && generation_was_configured) {
+    throw std::invalid_argument(
+        "det_orders cannot be combined with num_det_orders, det_order_method, or seed.");
+  }
+  if (!literal_orders.empty()) {
+    config.detector_orders = make_literal_detector_orders(std::move(literal_orders));
+  } else {
+    const uint64_t parsed_count =
+        num_det_orders.is_none() ? 20 : parse_nonnegative_integer(num_det_orders, "num_det_orders");
+    if (parsed_count == 0 || parsed_count > std::numeric_limits<size_t>::max()) {
+      throw std::invalid_argument("num_det_orders must be at least 1 and fit in size_t.");
+    }
+    const size_t count = static_cast<size_t>(parsed_count);
+    const DetectorOrder::Method method = det_order_method.is_none()
+                                             ? DetectorOrder::Method::Index
+                                             : py::cast<DetectorOrder::Method>(det_order_method);
+    const uint64_t order_seed = seed.is_none() ? 2384753 : parse_nonnegative_integer(seed, "seed");
+    config.detector_orders = make_detector_orders(count, method, order_seed);
+  }
   config.det_penalty = det_penalty;
   config.create_visualization = create_visualization;
   config.sparsify_errors = sparsify_errors;
@@ -76,35 +111,39 @@ std::vector<std::vector<size_t>> get_detector_orders(const TesseractConfig& conf
 
 void set_detector_orders(TesseractConfig& config,
                          std::vector<std::vector<size_t>> detector_orders) {
-  config.detector_orders = make_literal_detector_orders(std::move(detector_orders));
+  config.detector_orders = detector_orders.empty()
+                               ? make_detector_orders(20, DetectorOrder::Method::Index, 2384753)
+                               : make_literal_detector_orders(std::move(detector_orders));
 }
 
 TesseractConfig tesseract_config_maker_no_dem(
     int det_beam = INF_DET_BEAM, bool beam_climbing = false, bool no_revisit_dets = false,
     bool verbose = false, bool merge_errors = true,
-    size_t pqlimit = std::numeric_limits<size_t>::max(),
-    std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
+    size_t pqlimit = std::numeric_limits<size_t>::max(), py::object det_orders = py::none(),
     double det_penalty = 0.0, bool create_visualization = false, bool sparsify_errors = false,
-    int sparsify_base_degree = -1, int sparsify_max_degree = -1,
-    int sparsify_reactivate_limit = -1) {
-  return make_tesseract_config(stim::DetectorErrorModel(), det_beam, beam_climbing, no_revisit_dets,
-                               verbose, merge_errors, pqlimit, std::move(det_orders), det_penalty,
-                               create_visualization, sparsify_errors, sparsify_base_degree,
-                               sparsify_max_degree, sparsify_reactivate_limit);
+    int sparsify_base_degree = -1, int sparsify_max_degree = -1, int sparsify_reactivate_limit = -1,
+    py::object num_det_orders = py::none(), py::object det_order_method = py::none(),
+    py::object seed = py::none()) {
+  return make_tesseract_config(
+      stim::DetectorErrorModel(), det_beam, beam_climbing, no_revisit_dets, verbose, merge_errors,
+      pqlimit, std::move(det_orders), det_penalty, create_visualization, sparsify_errors,
+      sparsify_base_degree, sparsify_max_degree, sparsify_reactivate_limit,
+      std::move(num_det_orders), std::move(det_order_method), std::move(seed));
 }
 
 TesseractConfig tesseract_config_maker(
     py::object dem, int det_beam = INF_DET_BEAM, bool beam_climbing = false,
     bool no_revisit_dets = false, bool verbose = false, bool merge_errors = true,
-    size_t pqlimit = std::numeric_limits<size_t>::max(),
-    std::vector<std::vector<size_t>> det_orders = std::vector<std::vector<size_t>>(),
+    size_t pqlimit = std::numeric_limits<size_t>::max(), py::object det_orders = py::none(),
     double det_penalty = 0.0, bool create_visualization = false, bool sparsify_errors = false,
-    int sparsify_base_degree = -1, int sparsify_max_degree = -1,
-    int sparsify_reactivate_limit = -1) {
+    int sparsify_base_degree = -1, int sparsify_max_degree = -1, int sparsify_reactivate_limit = -1,
+    py::object num_det_orders = py::none(), py::object det_order_method = py::none(),
+    py::object seed = py::none()) {
   return make_tesseract_config(
       parse_py_object<stim::DetectorErrorModel>(dem), det_beam, beam_climbing, no_revisit_dets,
       verbose, merge_errors, pqlimit, std::move(det_orders), det_penalty, create_visualization,
-      sparsify_errors, sparsify_base_degree, sparsify_max_degree, sparsify_reactivate_limit);
+      sparsify_errors, sparsify_base_degree, sparsify_max_degree, sparsify_reactivate_limit,
+      std::move(num_det_orders), std::move(det_order_method), std::move(seed));
 }
 
 };  // namespace
@@ -128,20 +167,20 @@ void add_tesseract_module(py::module& root) {
 
         It can decode syndromes from a `stim.DetectorErrorModel` to predict
         which observables have been flipped.
-    )pbdoc");
+  )pbdoc");
 
+  // Both Python constructor overloads use the established Python defaults,
+  // including 20 generated Index orders. The native C++ config has its own
+  // single-order default.
   py_tesseract_config
-      .def(py::init<>(), R"pbdoc(
-        Default constructor for TesseractConfig.
-        Creates a new instance with default parameter values.
-    )pbdoc")
       .def(py::init(&tesseract_config_maker_no_dem), py::arg("det_beam") = 5,
            py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = true,
            py::arg("verbose") = false, py::arg("merge_errors") = true, py::arg("pqlimit") = 200000,
-           py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0,
+           py::arg("det_orders") = py::none(), py::arg("det_penalty") = 0.0,
            py::arg("create_visualization") = false, py::arg("sparsify_errors") = false,
            py::arg("sparsify_base_degree") = -1, py::arg("sparsify_max_degree") = -1,
-           py::arg("sparsify_reactivate_limit") = -1,
+           py::arg("sparsify_reactivate_limit") = -1, py::arg("num_det_orders") = py::none(),
+           py::arg("det_order_method") = py::none(), py::arg("seed") = py::none(),
            R"pbdoc(
              The constructor for the `TesseractConfig` class without a `dem` argument.
              This creates an empty `DetectorErrorModel` by default.
@@ -161,10 +200,11 @@ void add_tesseract_module(py::module& root) {
                  If True, merges error channels that have identical syndrome patterns.
               pqlimit : int, default=max_size_t
                  The maximum size of the priority queue.
-              det_orders : list[list[int]], default=empty
-                 Detector traversal permutations to use for decoding. Each inner list
+              det_orders : list[list[int]] | None, default=None
+                 Nonempty detector traversal permutations to use for decoding. Each inner list
                  gives detector IDs in traversal order and must contain every detector
-                 exactly once. If empty, the decoder generates its own ordering.
+                 exactly once. Nonempty literal orders cannot be combined with
+                 generated-order options.
               det_penalty : float, default=0.0
                  A penalty value added to the cost of each detector visited.
               create_visualization: bool, defualt=False
@@ -177,14 +217,21 @@ void add_tesseract_module(py::module& root) {
                  Maximum detector degree for optional errors.
              sparsify_reactivate_limit: int, default=-1
                  Maximum number of optional errors to reactivate per shot. Use -1 for heuristic default.
+             num_det_orders: int | None, default=None
+                 Number of generated orders. Defaults to 20 when no literal orders are supplied.
+             det_order_method: DetectorOrderMethod | None, default=None
+                 Method for generated orders. Defaults to Index.
+             seed: int | None, default=None
+                 Seed for generated orders. Defaults to 2384753.
              )pbdoc")
       .def(py::init(&tesseract_config_maker), py::arg("dem"), py::arg("det_beam") = 5,
            py::arg("beam_climbing") = false, py::arg("no_revisit_dets") = true,
            py::arg("verbose") = false, py::arg("merge_errors") = true, py::arg("pqlimit") = 200000,
-           py::arg("det_orders") = std::vector<std::vector<size_t>>(), py::arg("det_penalty") = 0.0,
+           py::arg("det_orders") = py::none(), py::arg("det_penalty") = 0.0,
            py::arg("create_visualization") = false, py::arg("sparsify_errors") = false,
            py::arg("sparsify_base_degree") = -1, py::arg("sparsify_max_degree") = -1,
-           py::arg("sparsify_reactivate_limit") = -1,
+           py::arg("sparsify_reactivate_limit") = -1, py::arg("num_det_orders") = py::none(),
+           py::arg("det_order_method") = py::none(), py::arg("seed") = py::none(),
            R"pbdoc(
             The constructor for the `TesseractConfig` class.
 
@@ -205,10 +252,11 @@ void add_tesseract_module(py::module& root) {
                 If True, merges error channels that have identical syndrome patterns.
             pqlimit : int, default=max_size_t
                 The maximum size of the priority queue.
-            det_orders : list[list[int]], default=empty
-                Detector traversal permutations to use for decoding. Each inner list
+            det_orders : list[list[int]] | None, default=None
+                Nonempty detector traversal permutations to use for decoding. Each inner list
                 gives detector IDs in traversal order and must contain every detector
-                exactly once. If empty, the decoder generates its own ordering.
+                exactly once. Nonempty literal orders cannot be combined with
+                generated-order options.
             det_penalty : float, default=0.0
                 A penalty value added to the cost of each detector visited.
             create_visualization: bool, defualt=False
@@ -221,6 +269,12 @@ void add_tesseract_module(py::module& root) {
                 Maximum detector degree for optional errors.
             sparsify_reactivate_limit: int, default=-1
                 Maximum number of optional errors to reactivate per shot. Use -1 for heuristic default.
+            num_det_orders: int | None, default=None
+                Number of generated orders. Defaults to 20 when no literal orders are supplied.
+            det_order_method: DetectorOrderMethod | None, default=None
+                Method for generated orders. Defaults to Index.
+            seed: int | None, default=None
+                Seed for generated orders. Defaults to 2384753.
            )pbdoc")
       .def_property("dem", &dem_getter<TesseractConfig>, &dem_setter<TesseractConfig>,
                     "The `stim.DetectorErrorModel` that defines the error channels and detectors.")

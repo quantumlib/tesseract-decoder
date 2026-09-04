@@ -5,7 +5,7 @@ The `tesseract_decoder.tesseract` module provides the Tesseract decoder, which e
 
 #### Class `tesseract.TesseractConfig`
 This class holds the configuration parameters that control the behavior of the Tesseract decoder.
-* `TesseractConfig(dem: stim.DetectorErrorModel, det_beam: int = 5, beam_climbing: bool = False, no_revisit_dets: bool = True, verbose: bool = False, merge_errors: bool = True, pqlimit: int = 200000, det_orders: list[list[int]] = [], det_penalty: float = 0.0, create_visualization: bool = False, sparsify_errors: bool = False, sparsify_base_degree: int = -1, sparsify_max_degree: int = -1, sparsify_reactivate_limit: int = -1)`
+* `TesseractConfig(dem: stim.DetectorErrorModel, det_beam: int = 5, beam_climbing: bool = False, no_revisit_dets: bool = True, verbose: bool = False, merge_errors: bool = True, pqlimit: int = 200000, det_orders: list[list[int]] | None = None, det_penalty: float = 0.0, create_visualization: bool = False, sparsify_errors: bool = False, sparsify_base_degree: int = -1, sparsify_max_degree: int = -1, sparsify_reactivate_limit: int = -1, num_det_orders: int | None = None, det_order_method: DetectorOrderMethod | None = None, seed: int | None = None)`
 * `__str__()`
 
 Explanation of configuration arguments:
@@ -17,7 +17,10 @@ Explanation of configuration arguments:
 * `verbose` - A boolean flag that, when `True`, enables verbose logging. This is useful for debugging and understanding the decoder's internal behavior, as it will print information about the search process.
 * `merge_errors` - A boolean flag that, when `True`, merges error channels with identical syndrome patterns before decoding. This is enabled by default.
 * `pqlimit` - An integer that sets a limit on the number of nodes in the priority queue. This can be used to constrain the memory usage of the decoder. The default value is `200000`.
-* `det_orders` - A list of complete detector-ID permutations in traversal order: `order[position] = detector_id`. This is used for "ensemble reordering," an optimization that tries different detector orderings to improve the search's convergence. The default is an empty list, meaning a single, fixed ordering is used.
+* `det_orders` - A nonempty list of complete detector-ID permutations in traversal order: `order[position] = detector_id`. This is used for "ensemble reordering," an optimization that tries different detector orderings to improve the search's convergence. It cannot be combined with generated-order options. `None` and an empty list retain the historical generated-order default.
+* `num_det_orders` - Number of generated detector orders. The default is `20` when no nonempty literal order list is supplied.
+* `det_order_method` - Method used to generate detector orders. The default is `DetectorOrderMethod.Index`.
+* `seed` - Seed used to generate detector orders. The default is `2384753`.
 * `det_penalty` - A floating-point value that adds a cost for each residual detection event. This encourages the decoder to prioritize paths that resolve more detection events, steering the search towards more complete solutions. The default value is `0.0`, meaning no penalty is applied.
 * `create_visualization` - A boolean flag that enables decoder visualization output when set to `True`. The default value is `False`.
 * `sparsify_errors` - Enables per-shot sparse error activation. When enabled, all errors up to `sparsify_base_degree` are always active, and selected higher-degree errors are reactivated per shot.

@@ -36,10 +36,6 @@ struct MultiPassSinterCompiledDecoder {
   uint64_t num_detectors;
   uint64_t num_observables;
 
-  size_t num_components() const {
-    return decoder->num_components();
-  }
-
   py::array_t<uint8_t> decode_shots_bit_packed(
       const py::array_t<uint8_t>& bit_packed_detection_event_data) {
     return decode_sinter_shots_bit_packed(*decoder, num_detectors, num_observables,
@@ -50,12 +46,8 @@ struct MultiPassSinterCompiledDecoder {
 
 MultiPassSinterCompiledDecoder compile_multi_pass_decoder_for_dem(
     const py::object& dem, const std::vector<int>& detector_components, size_t num_passes,
-    TesseractConfig base_config, size_t num_det_orders, DetectorOrder::Method det_order_method,
-    uint64_t seed, SchedulingStrategy strategy) {
+    TesseractConfig base_config, SchedulingStrategy strategy) {
   stim::DetectorErrorModel stim_dem(py::cast<std::string>(py::str(dem)).c_str());
-  if (base_config.detector_orders.empty()) {
-    base_config.detector_orders = make_detector_orders(num_det_orders, det_order_method, seed);
-  }
   base_config.dem = stim_dem;
   MultiPassTesseractConfig config{
       .component_config = std::move(base_config),
@@ -80,15 +72,13 @@ void pybind_multi_pass_sinter_compat(py::module& m) {
   // This type and its factory are implementation details. The supported Sinter
   // decoder is the pure-Python `multi_pass_sinter_decoders.MultiPassSinterDecoder`.
   py::class_<MultiPassSinterCompiledDecoder>(m, "_MultiPassSinterCompiledDecoder")
-      .def_property_readonly("num_components", &MultiPassSinterCompiledDecoder::num_components)
       .def("decode_shots_bit_packed", &MultiPassSinterCompiledDecoder::decode_shots_bit_packed,
            py::kw_only(), py::arg("bit_packed_detection_event_data"),
            py::call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>());
 
   m.def("_compile_multi_pass_decoder_for_dem", &compile_multi_pass_decoder_for_dem, py::kw_only(),
         py::arg("dem"), py::arg("detector_components"), py::arg("num_passes"),
-        py::arg("base_config"), py::arg("num_det_orders"), py::arg("det_order_method"),
-        py::arg("seed"), py::arg("strategy"));
+        py::arg("base_config"), py::arg("strategy"));
 }
 
 }  // namespace tesseract_decoder

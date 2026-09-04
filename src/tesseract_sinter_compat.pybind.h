@@ -90,9 +90,9 @@ struct TesseractSinterDecoder {
         sparsify_base_degree(-1),
         sparsify_max_degree(-1),
         sparsify_reactivate_limit(-1),
-        num_det_orders(0),
+        num_det_orders(1),
         det_order_method(DetectorOrder::Method::Index),
-        seed(2384753) {}
+        seed(0) {}
 
   // Constructor with parameters
   TesseractSinterDecoder(int det_beam, bool beam_climbing, bool no_revisit_dets, bool verbose,
@@ -115,7 +115,11 @@ struct TesseractSinterDecoder {
         sparsify_reactivate_limit(sparsify_reactivate_limit),
         num_det_orders(num_det_orders),
         det_order_method(det_order_method),
-        seed(seed) {}
+        seed(seed) {
+    if (num_det_orders == 0) {
+      throw std::invalid_argument("num_det_orders must be at least 1.");
+    }
+  }
 
   bool operator==(const TesseractSinterDecoder& other) const {
     return det_beam == other.det_beam && beam_climbing == other.beam_climbing &&
@@ -135,6 +139,9 @@ struct TesseractSinterDecoder {
   }
 
   TesseractConfig make_config(const stim::DetectorErrorModel& dem) const {
+    if (num_det_orders == 0) {
+      throw std::invalid_argument("num_det_orders must be at least 1.");
+    }
     TesseractConfig config;
     config.dem = dem;
     config.det_beam = det_beam;
@@ -233,6 +240,24 @@ struct TesseractSinterDecoder {
   }
 };
 
+TesseractSinterDecoder restore_pickled_tesseract_sinter_decoder(
+    int det_beam, bool beam_climbing, bool no_revisit_dets, bool verbose, bool merge_errors,
+    size_t pqlimit, double det_penalty, bool create_visualization, size_t num_det_orders,
+    DetectorOrder::Method det_order_method, uint64_t seed, bool sparsify_errors,
+    int sparsify_base_degree, int sparsify_max_degree, int sparsify_reactivate_limit) {
+  // Older default instances serialized a zero count, which meant one ascending
+  // detector order through the decoder's former empty-list fallback.
+  if (num_det_orders == 0) {
+    num_det_orders = 1;
+    det_order_method = DetectorOrder::Method::Index;
+    seed = 0;
+  }
+  return TesseractSinterDecoder(det_beam, beam_climbing, no_revisit_dets, verbose, merge_errors,
+                                pqlimit, det_penalty, create_visualization, num_det_orders,
+                                det_order_method, seed, sparsify_errors, sparsify_base_degree,
+                                sparsify_max_degree, sparsify_reactivate_limit);
+}
+
 //--------------------------------------------------------------------------------------------------
 // Expose C++ classes to the Python interpreter.
 //--------------------------------------------------------------------------------------------------
@@ -287,8 +312,8 @@ void pybind_sinter_compat(py::module& root) {
            py::arg("no_revisit_dets") = true, py::arg("verbose") = false,
            py::arg("merge_errors") = true, py::arg("pqlimit") = DEFAULT_PQLIMIT,
            py::arg("det_penalty") = 0.0, py::arg("create_visualization") = false,
-           py::arg("num_det_orders") = 0,
-           py::arg("det_order_method") = DetectorOrder::Method::Index, py::arg("seed") = 2384753,
+           py::arg("num_det_orders") = 1,
+           py::arg("det_order_method") = DetectorOrder::Method::Index, py::arg("seed") = 0,
            py::arg("sparsify_errors") = false, py::arg("sparsify_base_degree") = -1,
            py::arg("sparsify_max_degree") = -1, py::arg("sparsify_reactivate_limit") = -1,
            R"pbdoc(
@@ -349,7 +374,7 @@ void pybind_sinter_compat(py::module& root) {
           },
           [](py::tuple t) {  // __setstate__
             if (t.size() == 11) {
-              return TesseractSinterDecoder(
+              return restore_pickled_tesseract_sinter_decoder(
                   t[0].cast<int>(), t[1].cast<bool>(), t[2].cast<bool>(), t[3].cast<bool>(),
                   t[4].cast<bool>(), t[5].cast<size_t>(), t[6].cast<double>(), t[7].cast<bool>(),
                   t[8].cast<size_t>(), t[9].cast<DetectorOrder::Method>(), t[10].cast<uint64_t>(),
@@ -360,13 +385,13 @@ void pybind_sinter_compat(py::module& root) {
               throw std::runtime_error("Invalid state for TesseractSinterDecoder!");
             }
             if (py::isinstance<py::bool_>(t[8])) {
-              return TesseractSinterDecoder(
+              return restore_pickled_tesseract_sinter_decoder(
                   t[0].cast<int>(), t[1].cast<bool>(), t[2].cast<bool>(), t[3].cast<bool>(),
                   t[4].cast<bool>(), t[5].cast<size_t>(), t[6].cast<double>(), t[7].cast<bool>(),
                   t[12].cast<size_t>(), t[13].cast<DetectorOrder::Method>(), t[14].cast<uint64_t>(),
                   t[8].cast<bool>(), t[9].cast<int>(), t[10].cast<int>(), t[11].cast<int>());
             }
-            return TesseractSinterDecoder(
+            return restore_pickled_tesseract_sinter_decoder(
                 t[0].cast<int>(), t[1].cast<bool>(), t[2].cast<bool>(), t[3].cast<bool>(),
                 t[4].cast<bool>(), t[5].cast<size_t>(), t[6].cast<double>(), t[7].cast<bool>(),
                 t[8].cast<size_t>(), t[9].cast<DetectorOrder::Method>(), t[10].cast<uint64_t>(),

@@ -21,8 +21,10 @@ import sinter
 import stim
 import tesseract_decoder
 from sinter._decoding._decoding import sample_decode
-from tesseract_decoder import (TesseractSinterDecoder,
-                               make_tesseract_sinter_decoders_dict)
+from tesseract_decoder import (
+    TesseractSinterDecoder,
+    make_tesseract_sinter_decoders_dict,
+)
 
 
 def test_tesseract_sinter_obj_exists():
@@ -33,7 +35,37 @@ def test_tesseract_sinter_obj_exists():
     decoder = TesseractSinterDecoder()
     assert hasattr(decoder, "compile_decoder_for_dem")
     assert hasattr(decoder, "decode_via_files")
+    assert decoder.num_det_orders == 1
     assert decoder.det_order_method == tesseract_decoder.utils.DetectorOrderMethod.Index
+    assert decoder.seed == 0
+
+
+def test_tesseract_sinter_requires_a_detector_order():
+    with pytest.raises(ValueError, match="at least 1"):
+        TesseractSinterDecoder(num_det_orders=0)
+
+
+def test_legacy_zero_detector_order_pickle_state_is_upgraded():
+    decoder = TesseractSinterDecoder()
+    decoder.__setstate__(
+        (
+            5,
+            False,
+            True,
+            False,
+            True,
+            200_000,
+            0.0,
+            False,
+            0,
+            tesseract_decoder.utils.DetectorOrderMethod.Index,
+            2_384_753,
+        )
+    )
+
+    assert decoder.num_det_orders == 1
+    assert decoder.det_order_method == tesseract_decoder.utils.DetectorOrderMethod.Index
+    assert decoder.seed == 0
 
 
 @pytest.mark.parametrize("use_custom_config", [False, True])
@@ -70,6 +102,8 @@ def test_compile_decoder_for_dem(use_custom_config):
 
     # Verify the config was correctly applied
     assert compiled_decoder.decoder.config.verbose == use_custom_config
+    if not use_custom_config:
+        assert compiled_decoder.decoder.config.det_orders == [[0, 1, 2, 3]]
 
 
 def test_decode_shots_bit_packed():
@@ -800,15 +834,12 @@ def test_sinter_compile_sparsify_config_reaches_decoder():
     compiled = decoder.compile_decoder_for_dem(dem=dem)
     assert compiled.decoder.config.sparsify_errors is True
     assert compiled.decoder.config.sparsify_base_degree == 2
-    assert (
-        compiled.decoder.config.sparsify_reactivate_limit
-        == min(
-            tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(
-                dem.num_detectors,
-                2,
-            ),
-            dem.num_errors,
-        )
+    assert compiled.decoder.config.sparsify_reactivate_limit == min(
+        tesseract_decoder.tesseract.suggest_sparsify_reactivate_limit(
+            dem.num_detectors,
+            2,
+        ),
+        dem.num_errors,
     )
 
 

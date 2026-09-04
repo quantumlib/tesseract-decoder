@@ -152,6 +152,9 @@ double TesseractDecoder::get_detcost(size_t d,
 }
 
 TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(std::move(config_)) {
+  if (config.detector_orders.empty()) {
+    throw std::invalid_argument("At least one detector order is required.");
+  }
   config.dem = common::flatten(config.dem);
 
   std::vector<size_t> dem_error_map(config.dem.count_errors());
@@ -170,11 +173,6 @@ TesseractDecoder::TesseractDecoder(TesseractConfig config_) : config(std::move(c
   dem_error_to_error = std::move(dem_error_map);
   error_to_dem_error = common::invert_error_map(dem_error_to_error, config.dem.count_errors());
 
-  if (config.detector_orders.empty()) {
-    std::vector<size_t> detector_order(config.dem.count_detectors());
-    std::iota(detector_order.begin(), detector_order.end(), 0);
-    config.detector_orders.emplace_back(std::move(detector_order));
-  }
   resolve_detector_orders(config.detector_orders, config.dem);
   errors = get_errors_from_dem(config.dem);
   if (config.verbose) {

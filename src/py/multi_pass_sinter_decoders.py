@@ -47,6 +47,10 @@ class MultiPassSinterDecoder(sinter.Decoder):
 
     ``merge_errors=False`` is supported with one pass. Two-pass reweighting is
     defined on aggregate component symptoms and therefore requires merging.
+
+    Detector orders may be supplied literally with ``det_orders`` or generated
+    per component with ``num_det_orders``, ``det_order_method``, and ``seed``.
+    The two forms are mutually exclusive.
     """
 
     def __init__(
@@ -69,9 +73,9 @@ class MultiPassSinterDecoder(sinter.Decoder):
         sparsify_max_degree: int = -1,
         sparsify_reactivate_limit: int = -1,
         det_orders: Sequence[Sequence[int]] | None = None,
-        num_det_orders: int = 1,
-        det_order_method=_core.utils.DetectorOrderMethod.Index,
-        seed: int = 0,
+        num_det_orders: int | None = None,
+        det_order_method=None,
+        seed: int | None = None,
     ):
         if num_passes not in (1, 2):
             raise ValueError("num_passes must be 1 or 2.")
@@ -106,12 +110,47 @@ class MultiPassSinterDecoder(sinter.Decoder):
         self.sparsify_base_degree = sparsify_base_degree
         self.sparsify_max_degree = sparsify_max_degree
         self.sparsify_reactivate_limit = sparsify_reactivate_limit
-        self.det_orders = (
+        literal_orders = (
             [list(order) for order in det_orders] if det_orders is not None else []
         )
-        self.num_det_orders = num_det_orders
-        self.det_order_method = det_order_method
-        self.seed = seed
+        generation_was_configured = any(
+            value is not None for value in (num_det_orders, det_order_method, seed)
+        )
+        if literal_orders and generation_was_configured:
+            raise ValueError(
+                "det_orders cannot be combined with num_det_orders, "
+                "det_order_method, or seed."
+            )
+
+        self.det_orders = literal_orders
+        if literal_orders:
+            self.num_det_orders = len(literal_orders)
+            self.det_order_method = _core.utils.DetectorOrderMethod.Literal
+            self.seed = None
+        else:
+            self.num_det_orders = 1 if num_det_orders is None else num_det_orders
+            self.det_order_method = (
+                _core.utils.DetectorOrderMethod.Index
+                if det_order_method is None
+                else det_order_method
+            )
+            self.seed = 0 if seed is None else seed
+            if (
+                isinstance(self.num_det_orders, bool)
+                or not isinstance(self.num_det_orders, Integral)
+                or self.num_det_orders <= 0
+            ):
+                raise ValueError("num_det_orders must be a positive integer.")
+            if self.det_order_method == _core.utils.DetectorOrderMethod.Literal:
+                raise ValueError(
+                    "DetectorOrderMethod.Literal requires nonempty det_orders."
+                )
+            if (
+                isinstance(self.seed, bool)
+                or not isinstance(self.seed, Integral)
+                or self.seed < 0
+            ):
+                raise ValueError("seed must be a nonnegative integer.")
 
     @property
     def detector_classifier(
@@ -170,7 +209,7 @@ class MultiPassSinterDecoder(sinter.Decoder):
         self, *, dem: stim.DetectorErrorModel
     ) -> sinter.CompiledDecoder:
         detector_components = self._classify_detector_components(dem)
-        base_config = _core.tesseract.TesseractConfig(
+        config_kwargs = dict(
             det_beam=self.det_beam,
             beam_climbing=self.beam_climbing,
             no_revisit_dets=self.no_revisit_dets,
@@ -183,20 +222,21 @@ class MultiPassSinterDecoder(sinter.Decoder):
             sparsify_base_degree=self.sparsify_base_degree,
             sparsify_max_degree=self.sparsify_max_degree,
             sparsify_reactivate_limit=self.sparsify_reactivate_limit,
-            det_orders=self.det_orders,
         )
-        # The Python TesseractConfig constructor synthesizes deferred orders
-        # when given an empty list. Restore the caller's empty list so the
-        # multipass bridge uses num_det_orders/method/seed for each component.
-        base_config.det_orders = self.det_orders
+        if self.det_orders:
+            config_kwargs["det_orders"] = self.det_orders
+        else:
+            config_kwargs.update(
+                num_det_orders=self.num_det_orders,
+                det_order_method=self.det_order_method,
+                seed=self.seed,
+            )
+        base_config = _core.tesseract.TesseractConfig(**config_kwargs)
         return _core._compile_multi_pass_decoder_for_dem(
             dem=dem,
             detector_components=detector_components,
             num_passes=self.num_passes,
             base_config=base_config,
-            num_det_orders=self.num_det_orders,
-            det_order_method=self.det_order_method,
-            seed=self.seed,
             strategy=self.strategy,
         )
 
