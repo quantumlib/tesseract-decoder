@@ -14,6 +14,8 @@
 
 #include "common.h"
 
+#include <limits>
+
 #include "gtest/gtest.h"
 #include "stim.h"
 
@@ -110,6 +112,29 @@ TEST(common, RemoveZeroProbabilityErrors) {
   EXPECT_NEAR(flat.instructions[0].arg_data[0], 0.1, 1e-9);
   ASSERT_EQ(flat.instructions[1].type, stim::DemInstructionType::DEM_ERROR);
   EXPECT_NEAR(flat.instructions[1].arg_data[0], 0.2, 1e-9);
+}
+
+TEST(common, RemoveZeroProbabilityErrorsPreservesIndexSpaces) {
+  stim::DetectorErrorModel dem("error(0) D2 L1");
+
+  std::vector<size_t> error_index_map;
+  stim::DetectorErrorModel cleaned = common::remove_zero_probability_errors(dem, error_index_map);
+
+  EXPECT_EQ(cleaned.count_errors(), 0);
+  EXPECT_EQ(cleaned.count_detectors(), 3);
+  EXPECT_EQ(cleaned.count_observables(), 2);
+  EXPECT_EQ(error_index_map, (std::vector<size_t>{std::numeric_limits<size_t>::max()}));
+}
+
+TEST(common, MergeIndistinguishableErrorsPreservesIndexSpaces) {
+  stim::DetectorErrorModel dem("error(0.1) D2 D2 L1 L1");
+
+  std::vector<size_t> error_index_map;
+  stim::DetectorErrorModel merged = common::merge_indistinguishable_errors(dem, error_index_map);
+
+  EXPECT_EQ(merged.count_errors(), 1);
+  EXPECT_EQ(merged.count_detectors(), 3);
+  EXPECT_EQ(merged.count_observables(), 2);
 }
 
 // Helper function to compare the two methods.
