@@ -17,6 +17,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace tesseract_decoder {
@@ -35,6 +37,17 @@ struct DecodeResult {
   // Cost of the final decoding decision.
   double total_cost = 0;
 };
+
+inline void validate_observable_predictions(const std::vector<int>& predictions,
+                                            uint64_t num_observables) {
+  for (int observable : predictions) {
+    if (observable < 0 || static_cast<uint64_t>(observable) >= num_observables) {
+      throw std::invalid_argument("Decoder predicted observable " + std::to_string(observable) +
+                                  " outside the DEM's observable range [0, " +
+                                  std::to_string(num_observables) + ").");
+    }
+  }
+}
 
 class Decoder {
  public:

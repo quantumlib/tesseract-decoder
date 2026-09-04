@@ -24,6 +24,7 @@
 #include <stdexcept>
 #include <vector>
 
+#include "../sinter_compat.pybind.h"
 #include "multi_pass_tesseract_decoder.h"
 
 namespace py = pybind11;
@@ -41,44 +42,9 @@ struct MultiPassSinterCompiledDecoder {
 
   py::array_t<uint8_t> decode_shots_bit_packed(
       const py::array_t<uint8_t>& bit_packed_detection_event_data) {
-    if (bit_packed_detection_event_data.ndim() != 2) {
-      throw std::invalid_argument("Input `bit_packed_detection_event_data` must be a 2D array.");
-    }
-
-    const uint64_t num_detector_bytes = (num_detectors + 7) / 8;
-    if (bit_packed_detection_event_data.shape(1) != static_cast<py::ssize_t>(num_detector_bytes)) {
-      throw std::invalid_argument(
-          "Input array's second dimension does not match num_detector_bytes.");
-    }
-
-    const py::ssize_t num_shots = bit_packed_detection_event_data.shape(0);
-    const py::ssize_t num_observable_bytes = (num_observables + 7) / 8;
-
-    // Sinter reserves the final byte for the per-shot discard flag.
-    py::array_t<uint8_t> result_array({num_shots, num_observable_bytes + 1});
-    auto detections = bit_packed_detection_event_data.unchecked<2>();
-    auto results = result_array.mutable_unchecked<2>();
-
-    for (py::ssize_t shot = 0; shot < num_shots; ++shot) {
-      std::vector<uint64_t> fired_detectors;
-      for (uint64_t detector = 0; detector < num_detectors; ++detector) {
-        if ((detections(shot, detector / 8) >> (detector % 8)) & 1) {
-          fired_detectors.push_back(detector);
-        }
-      }
-
-      DecodeResult decoded = decoder->decode_result(fired_detectors);
-      for (py::ssize_t byte = 0; byte <= num_observable_bytes; ++byte) {
-        results(shot, byte) = 0;
-      }
-      for (int observable : decoded.predictions) {
-        if (observable >= 0 && static_cast<uint64_t>(observable) < num_observables) {
-          results(shot, observable / 8) ^= static_cast<uint8_t>(1U << (observable % 8));
-        }
-      }
-      results(shot, num_observable_bytes) = decoded.low_confidence;
-    }
-    return result_array;
+    return decode_sinter_shots_bit_packed(*decoder, num_detectors, num_observables,
+                                          bit_packed_detection_event_data,
+                                          SinterOutputFormat::PredictionsAndDiscard);
   }
 };
 

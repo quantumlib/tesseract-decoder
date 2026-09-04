@@ -162,6 +162,45 @@ def test_decode_shots_bit_packed_multi_shot():
     assert np.array_equal(predictions, expected_predictions)
 
 
+@pytest.mark.parametrize("layout", ["row_stride", "column_stride", "fortran"])
+def test_decode_shots_bit_packed_honors_both_numpy_strides(layout):
+    dem = stim.DetectorErrorModel(
+        "\n".join(
+            ["error(0.1) D0 L0", "error(0.1) D8 L1"]
+            + [f"detector D{detector}" for detector in range(9)]
+        )
+    )
+    packed = np.array(
+        [
+            [0b00000001, 0],
+            [0, 0b00000001],
+            [0b00000001, 0b00000001],
+        ],
+        dtype=np.uint8,
+    )
+    if layout == "row_stride":
+        storage = np.zeros((6, 2), dtype=np.uint8)
+        detections = storage[::2]
+        detections[:] = packed
+    elif layout == "column_stride":
+        storage = np.zeros((3, 4), dtype=np.uint8)
+        detections = storage[:, ::2]
+        detections[:] = packed
+    else:
+        detections = np.asfortranarray(packed)
+    assert not detections.flags.c_contiguous
+
+    compiled = TesseractSinterDecoder().compile_decoder_for_dem(dem=dem)
+    predictions = compiled.decode_shots_bit_packed(
+        bit_packed_detection_event_data=detections
+    )
+
+    assert np.array_equal(
+        predictions,
+        np.array([[0b01], [0b10], [0b11]], dtype=np.uint8),
+    )
+
+
 def test_decode_via_files_sanity_check():
     """
     Tests the 'decode_via_files' method by simulating a small circuit and

@@ -86,6 +86,24 @@ cc_library(
     hdrs = ["decoder.h"],
 )
 
+cc_library(
+    name = "libsinter_compat",
+    hdrs = ["sinter_compat.h"],
+    deps = [":libdecoder"],
+)
+
+cc_test(
+    name = "sinter_compat_tests",
+    srcs = ["sinter_compat.test.cc"],
+    copts = OPT_COPTS,
+    linkopts = OPT_LINKOPTS,
+    deps = [
+        ":libsinter_compat",
+        "@gtest",
+        "@gtest//:gtest_main",
+    ],
+)
+
 pybind_library(
     name = "tesseract_decoder_pybind",
     srcs = [
@@ -93,6 +111,7 @@ pybind_library(
         "common.pybind.h",
         "utils.pybind.h",
         "simplex.pybind.h",
+        "sinter_compat.pybind.h",
         "visualization.pybind.h",
         "tesseract.pybind.h",
         "tesseract_sinter_compat.pybind.h",
@@ -103,6 +122,7 @@ pybind_library(
         ":libcommon",
         ":libutils",
         ":libsimplex",
+        ":libsinter_compat",
         ":libtesseract",
     ],
 )

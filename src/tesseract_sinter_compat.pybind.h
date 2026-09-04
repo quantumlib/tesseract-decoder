@@ -20,6 +20,8 @@
 #include <fstream>
 #include <iostream>
 
+#include "sinter_compat.h"
+#include "sinter_compat.pybind.h"
 #include "stim.h"
 #include "tesseract.h"
 
@@ -44,56 +46,9 @@ struct TesseractSinterCompiledDecoder {
   // Decode a batch of syndrome shots in a bit-packed NumPy array.
   py::array_t<uint8_t> decode_shots_bit_packed(
       const py::array_t<uint8_t>& bit_packed_detection_event_data) {
-    // Validate input.
-    if (bit_packed_detection_event_data.ndim() != 2) {
-      throw std::invalid_argument("Input `bit_packed_detection_event_data` must be a 2D array.");
-    }
-
-    // Calculate number of bytes per shot.
-    const uint64_t num_detector_bytes = (num_detectors + 7) / 8;
-    if (bit_packed_detection_event_data.shape(1) != (py::ssize_t)num_detector_bytes) {
-      throw std::invalid_argument(
-          "Input array's second dimension does not match num_detector_bytes.");
-    }
-
-    const size_t num_shots = bit_packed_detection_event_data.shape(0);
-    const uint64_t num_observable_bytes = (num_observables + 7) / 8;
-
-    // Result buffer to store the predicted observables for all shots.
-    auto result_array =
-        py::array_t<uint8_t>({(py::ssize_t)num_shots, (py::ssize_t)num_observable_bytes});
-    auto result_buffer = result_array.mutable_data();
-
-    const uint8_t* detections_data = bit_packed_detection_event_data.data();
-    const size_t detections_stride = bit_packed_detection_event_data.strides(0);
-
-    // Loop through each shot and decode it with TesseractDecoder.
-    for (size_t shot = 0; shot < num_shots; ++shot) {
-      const uint8_t* single_shot_data = detections_data + shot * detections_stride;
-
-      // Unpack the shot data into a vector of indices of fired detectors.
-      std::vector<uint64_t> detections;
-      for (uint64_t i = 0; i < num_detectors; ++i) {
-        if ((single_shot_data[i / 8] >> (i % 8)) & 1) {
-          detections.push_back(i);
-        }
-      }
-
-      // Decode with TesseractDecoder.
-      std::vector<int> predictions = decoder->decode(detections);
-
-      // Store predictions into the output buffer
-      uint8_t* single_result_buffer = result_buffer + shot * num_observable_bytes;
-      std::fill(single_result_buffer, single_result_buffer + num_observable_bytes, 0);
-      for (size_t obs_index : predictions) {
-        if (obs_index >= 0 && obs_index < num_observables) {
-          single_result_buffer[obs_index / 8] ^= (1 << (obs_index % 8));
-        }
-      }
-    }
-
-    // Return the result.
-    return result_array;
+    return decode_sinter_shots_bit_packed(*decoder, num_detectors, num_observables,
+                                          bit_packed_detection_event_data,
+                                          SinterOutputFormat::Predictions);
   }
 };
 
@@ -266,15 +221,8 @@ struct TesseractSinterDecoder {
         }
       }
 
-      std::vector<int> predictions = decoder.decode(detections);
-
-      // Pack the predictions back into a bit-packed format.
-      std::fill(single_result_data.begin(), single_result_data.end(), 0);
-      for (size_t obs_index : predictions) {
-        if (obs_index >= 0 && obs_index < num_obs) {
-          single_result_data[obs_index / 8] ^= (1 << (obs_index % 8));
-        }
-      }
+      pack_sinter_decode_result(decoder.decode_result(detections), num_obs,
+                                SinterOutputFormat::Predictions, single_result_data);
 
       // Write result to the output file.
       output_file.write(reinterpret_cast<char*>(single_result_data.data()), num_observable_bytes);
