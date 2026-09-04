@@ -159,9 +159,11 @@ file, and then three coordinate orders:
 ```
 
 Each selected generated method contributes `--num-det-orders` orders and uses
-`--det-order-seed` independently as its base seed. `--detector-orders FILE` may
-be repeated, and each occurrence contributes every order in that file. The
-JSON format is the same list-of-lists form as Python's
+`--det-order-seed` independently as its base seed. Within a method, order `k`
+uses `seed + k` with an independent random-number stream; this differs from the
+older shared-stream ensemble generator. `--detector-orders FILE` may be
+repeated, and each occurrence contributes every order in that file. The JSON
+format is the same list-of-lists form as Python's
 `TesseractConfig.det_orders`:
 
 ```json

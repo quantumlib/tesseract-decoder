@@ -86,6 +86,17 @@ def test_default_detector_orders_resolve_for_compile_decoder_dem():
     assert all(sorted(order) == [0, 1] for order in decoder.config.det_orders)
 
 
+def test_reading_generated_detector_orders_does_not_bind_config_to_dem():
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        stim.DetectorErrorModel("error(0.1) D0 D1")
+    )
+    assert all(len(order) == 2 for order in config.det_orders)
+
+    config.dem = stim.DetectorErrorModel("error(0.1) D0 D1 D2")
+
+    assert all(sorted(order) == [0, 1, 2] for order in config.det_orders)
+
+
 def test_create_tesseract_config():
     config = tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL)
     assert config.dem == _DETECTOR_ERROR_MODEL

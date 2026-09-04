@@ -48,8 +48,8 @@ std::vector<std::vector<size_t>> build_detector_graph(const stim::DetectorErrorM
 
 // Exactly one detector traversal permutation, either supplied directly or
 // generated once a concrete decoding DEM is known. "Resolved" means that the
-// permutation is populated. resolve() validates both generated and literal
-// orders against the supplied DEM.
+// permutation is populated. resolve() regenerates method-based orders for the
+// supplied DEM and validates both generated and literal orders.
 class DetectorOrder {
  public:
   enum class Method {
@@ -73,6 +73,9 @@ class DetectorOrder {
   const std::vector<size_t>& get_order() const;
 
  private:
+  friend void resolve_detector_orders(std::vector<DetectorOrder>& detector_orders,
+                                      const stim::DetectorErrorModel& dem);
+
   Method method;
   uint64_t seed;
   bool resolved;
@@ -106,8 +109,8 @@ class DetectorOrderSources {
 using DetOrder = DetectorOrder::Method;
 
 // Creates one independently resolvable object per requested order. The count
-// must be positive. Each object receives a deterministic seed derived from seed
-// and its position.
+// must be positive. The object at position k uses seed + k with an independent
+// random-number stream.
 std::vector<DetectorOrder> make_detector_orders(
     size_t num_det_orders, DetectorOrder::Method method = DetectorOrder::Method::Index,
     uint64_t seed = 0);

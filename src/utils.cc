@@ -105,9 +105,8 @@ std::vector<std::vector<size_t>> build_detector_graph(const stim::DetectorErrorM
   return neighbors;
 }
 
-static std::vector<size_t> build_detector_order_bfs(const stim::DetectorErrorModel& dem,
+static std::vector<size_t> build_detector_order_bfs(const std::vector<std::vector<size_t>>& graph,
                                                     std::mt19937_64& rng) {
-  auto graph = build_detector_graph(dem);
   if (graph.empty()) {
     return {};
   }
@@ -154,17 +153,13 @@ static std::vector<size_t> build_detector_order_bfs(const stim::DetectorErrorMod
   return detector_at_position;
 }
 
-static std::vector<size_t> build_detector_order_coordinate(const stim::DetectorErrorModel& dem,
-                                                           std::mt19937_64& rng) {
-  auto detector_coords = get_detector_coords(dem);
-  std::vector<double> inner_products(dem.count_detectors());
+static std::vector<size_t> build_detector_order_coordinate(
+    size_t num_detectors, const std::vector<std::vector<double>>& detector_coords,
+    size_t num_coordinate_dimensions, std::mt19937_64& rng) {
+  std::vector<double> inner_products(num_detectors);
   std::normal_distribution<double> dist(0, 1);
-  size_t num_coordinate_dimensions = 0;
-  for (const auto& coord : detector_coords) {
-    num_coordinate_dimensions = std::max(num_coordinate_dimensions, coord.size());
-  }
   if (num_coordinate_dimensions == 0) {
-    std::vector<size_t> detector_at_position(dem.count_detectors());
+    std::vector<size_t> detector_at_position(num_detectors);
     std::iota(detector_at_position.begin(), detector_at_position.end(), 0);
     return detector_at_position;
   }
@@ -182,7 +177,7 @@ static std::vector<size_t> build_detector_order_coordinate(const stim::DetectorE
     }
   }
   std::vector<size_t> detector_at_position;
-  detector_at_position.reserve(dem.count_detectors());
+  detector_at_position.reserve(num_detectors);
   for (size_t detector = 0; detector < detector_coords.size(); ++detector) {
     if (!detector_coords[detector].empty()) {
       detector_at_position.push_back(detector);
@@ -199,14 +194,12 @@ static std::vector<size_t> build_detector_order_coordinate(const stim::DetectorE
   return detector_at_position;
 }
 
-static std::vector<size_t> build_detector_order_index(const stim::DetectorErrorModel& dem,
-                                                      std::mt19937_64& rng) {
+static std::vector<size_t> build_detector_order_index(size_t num_detectors, std::mt19937_64& rng) {
   std::uniform_int_distribution<int> dist_bool(0, 1);
-  size_t n = dem.count_detectors();
-  std::vector<size_t> detector_at_position(n);
+  std::vector<size_t> detector_at_position(num_detectors);
   if (dist_bool(rng)) {
-    for (size_t i = 0; i < n; ++i) {
-      detector_at_position[i] = n - 1 - i;
+    for (size_t i = 0; i < num_detectors; ++i) {
+      detector_at_position[i] = num_detectors - 1 - i;
     }
   } else {
     std::iota(detector_at_position.begin(), detector_at_position.end(), 0);
@@ -214,16 +207,40 @@ static std::vector<size_t> build_detector_order_index(const stim::DetectorErrorM
   return detector_at_position;
 }
 
-static std::vector<size_t> generate_detector_order(const stim::DetectorErrorModel& dem,
+struct DetectorOrderPreparation {
+  size_t num_detectors;
+  std::vector<std::vector<size_t>> graph;
+  std::vector<std::vector<double>> detector_coords;
+  size_t num_coordinate_dimensions = 0;
+};
+
+static DetectorOrderPreparation prepare_detector_order_generation(
+    const stim::DetectorErrorModel& dem, bool prepare_graph, bool prepare_coordinates) {
+  DetectorOrderPreparation preparation{.num_detectors = dem.count_detectors()};
+  if (prepare_graph) {
+    preparation.graph = build_detector_graph(dem);
+  }
+  if (prepare_coordinates) {
+    preparation.detector_coords = get_detector_coords(dem);
+    for (const auto& coordinates : preparation.detector_coords) {
+      preparation.num_coordinate_dimensions =
+          std::max(preparation.num_coordinate_dimensions, coordinates.size());
+    }
+  }
+  return preparation;
+}
+
+static std::vector<size_t> generate_detector_order(const DetectorOrderPreparation& preparation,
                                                    DetectorOrder::Method method, uint64_t seed) {
   std::mt19937_64 rng(seed);
   switch (method) {
     case DetectorOrder::Method::BFS:
-      return build_detector_order_bfs(dem, rng);
+      return build_detector_order_bfs(preparation.graph, rng);
     case DetectorOrder::Method::Coordinate:
-      return build_detector_order_coordinate(dem, rng);
+      return build_detector_order_coordinate(preparation.num_detectors, preparation.detector_coords,
+                                             preparation.num_coordinate_dimensions, rng);
     case DetectorOrder::Method::Index:
-      return build_detector_order_index(dem, rng);
+      return build_detector_order_index(preparation.num_detectors, rng);
     case DetectorOrder::Method::Literal:
       throw std::invalid_argument("Literal detector orders cannot be generated from a DEM.");
   }
@@ -265,8 +282,10 @@ DetectorOrder::DetectorOrder(std::vector<size_t> order)
     : method(Method::Literal), seed(0), resolved(true), order(std::move(order)) {}
 
 void DetectorOrder::resolve(const stim::DetectorErrorModel& dem) {
-  if (!resolved) {
-    order = generate_detector_order(dem, method, seed);
+  if (method != Method::Literal) {
+    const auto preparation =
+        prepare_detector_order_generation(dem, method == Method::BFS, method == Method::Coordinate);
+    order = generate_detector_order(preparation, method, seed);
     resolved = true;
   }
   validate_detector_order(order, dem.count_detectors());
@@ -392,8 +411,20 @@ std::vector<DetectorOrder> load_detector_orders(const std::string& path,
 
 void resolve_detector_orders(std::vector<DetectorOrder>& detector_orders,
                              const stim::DetectorErrorModel& dem) {
+  bool prepare_graph = false;
+  bool prepare_coordinates = false;
+  for (const auto& order : detector_orders) {
+    prepare_graph |= order.method == DetectorOrder::Method::BFS;
+    prepare_coordinates |= order.method == DetectorOrder::Method::Coordinate;
+  }
+  const auto preparation =
+      prepare_detector_order_generation(dem, prepare_graph, prepare_coordinates);
   for (auto& order : detector_orders) {
-    order.resolve(dem);
+    if (order.method != DetectorOrder::Method::Literal) {
+      order.order = generate_detector_order(preparation, order.method, order.seed);
+      order.resolved = true;
+    }
+    validate_detector_order(order.order, preparation.num_detectors);
   }
 }
 

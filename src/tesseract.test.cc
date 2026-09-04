@@ -838,6 +838,33 @@ TEST(utils, DetectorOrdersResolveInPlace) {
   }
 }
 
+TEST(utils, GeneratedDetectorOrderCanBeResolvedAgainstAnotherDem) {
+  stim::DetectorErrorModel increasing_coordinates(R"DEM(
+    detector(0) D0
+    detector(1) D1
+    detector(2) D2
+    error(0.1) D0 D1
+    error(0.1) D1 D2
+  )DEM");
+  stim::DetectorErrorModel decreasing_coordinates(R"DEM(
+    detector(2) D0
+    detector(1) D1
+    detector(0) D2
+    error(0.1) D0 D1
+    error(0.1) D1 D2
+  )DEM");
+  DetectorOrder order(DetectorOrder::Method::Coordinate, 1234);
+
+  order.resolve(increasing_coordinates);
+  const std::vector<size_t> first_order = order.get_order();
+  order.resolve(decreasing_coordinates);
+
+  EXPECT_NE(order.get_order(), first_order);
+  std::vector<size_t> sorted_order = order.get_order();
+  std::sort(sorted_order.begin(), sorted_order.end());
+  EXPECT_EQ(sorted_order, (std::vector<size_t>{0, 1, 2}));
+}
+
 TEST(utils, ADetectorOrderRepresentsOneLiteralPermutation) {
   static_assert(std::is_same_v<decltype(std::declval<const DetectorOrder&>().get_order()),
                                const std::vector<size_t>&>);
