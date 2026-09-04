@@ -51,8 +51,8 @@ struct CorrelationEvidence {
 
 using ReweightProbsMap = std::map<ComponentSymptom, std::vector<ReweightProbability>>;
 
-CorrelationEvidence collect_correlation_evidence(const stim::DetectorErrorModel& dem,
-                                                 const std::vector<int>& detector_components);
+// Collects evidence from an already-flattened, validated, and decomposed DEM.
+CorrelationEvidence collect_correlation_evidence(const TwoComponentDem& dem);
 
 /**
  * Forms the heuristic ratio paired_mechanism_probability / symptom_probability.
@@ -61,9 +61,6 @@ CorrelationEvidence collect_correlation_evidence(const stim::DetectorErrorModel&
  * general, an exact conditional probability.
  */
 ReweightProbsMap derive_reweight_probabilities(const CorrelationEvidence& evidence);
-
-ReweightProbsMap process_dem_correlations(const stim::DetectorErrorModel& dem,
-                                          const std::vector<int>& detector_components);
 
 // Uses an already-flattened, validated, and decomposed two-component DEM.
 ReweightProbsMap process_dem_correlations(const TwoComponentDem& dem);

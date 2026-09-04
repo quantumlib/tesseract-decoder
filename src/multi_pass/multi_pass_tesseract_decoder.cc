@@ -208,7 +208,6 @@ void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
                                            const std::vector<int>& detector_components,
                                            const TesseractConfig& base_config) {
   TwoComponentDem prepared = prepare_two_component_dem(dem, detector_components);
-  monolithic_dem = prepared.decomposed_dem;
   global_det_to_comp_id = prepared.detector_components;
   for (size_t d = 0; d < global_det_to_comp_id.size(); ++d) {
     int component = global_det_to_comp_id[d];
@@ -219,6 +218,7 @@ void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
   if (num_passes == 2) {
     reweight_probabilities = process_dem_correlations(prepared);
   }
+  monolithic_dem = std::move(prepared.decomposed_dem);
 
   std::array<std::map<ComponentSymptom, std::vector<std::pair<size_t, double>>>, 2>
       symptom_to_errors;

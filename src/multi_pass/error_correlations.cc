@@ -14,7 +14,6 @@
 
 #include "error_correlations.h"
 
-#include <algorithm>
 #include <array>
 #include <map>
 #include <set>
@@ -36,35 +35,8 @@ void xor_probability(double& accumulated, double probability) {
   accumulated = accumulated * (1 - probability) + probability * (1 - accumulated);
 }
 
-std::vector<int> normalize_detector_components(const stim::DetectorErrorModel& dem,
-                                               const std::vector<int>& detector_components) {
-  if (detector_components.size() != dem.count_detectors()) {
-    throw std::invalid_argument(
-        "Detector component assignment count does not match the DEM detector count.");
-  }
-  std::set<int> labels;
-  for (size_t detector = 0; detector < detector_components.size(); ++detector) {
-    if (detector_components[detector] < 0) {
-      throw std::invalid_argument("Detector D" + std::to_string(detector) +
-                                  " has an invalid negative component assignment.");
-    }
-    labels.insert(detector_components[detector]);
-  }
-  if (labels.size() != 2) {
-    throw std::invalid_argument("Multi-pass decoding requires exactly 2 detector components; got " +
-                                std::to_string(labels.size()) + ".");
-  }
-  int first_label = *labels.begin();
-  std::vector<int> normalized;
-  normalized.reserve(detector_components.size());
-  for (int component : detector_components) {
-    normalized.push_back(component == first_label ? 0 : 1);
-  }
-  return normalized;
-}
-
-CorrelationEvidence collect_correlation_evidence_from_flattened_dem(
-    const stim::DetectorErrorModel& dem, const std::vector<int>& detector_components) {
+CorrelationEvidence collect_correlation_evidence_impl(const stim::DetectorErrorModel& dem,
+                                                      const std::vector<int>& detector_components) {
   CorrelationEvidence evidence;
   for (const auto& instruction : dem.instructions) {
     if (instruction.type != stim::DemInstructionType::DEM_ERROR) {
@@ -147,11 +119,8 @@ bool ComponentSymptom::operator<(const ComponentSymptom& other) const {
   return observables < other.observables;
 }
 
-CorrelationEvidence collect_correlation_evidence(const stim::DetectorErrorModel& dem,
-                                                 const std::vector<int>& detector_components) {
-  stim::DetectorErrorModel flattened = dem.flattened();
-  std::vector<int> normalized = normalize_detector_components(flattened, detector_components);
-  return collect_correlation_evidence_from_flattened_dem(flattened, normalized);
+CorrelationEvidence collect_correlation_evidence(const TwoComponentDem& dem) {
+  return collect_correlation_evidence_impl(dem.decomposed_dem, dem.detector_components);
 }
 
 ReweightProbsMap derive_reweight_probabilities(const CorrelationEvidence& evidence) {
@@ -170,14 +139,8 @@ ReweightProbsMap derive_reweight_probabilities(const CorrelationEvidence& eviden
   return reweight_probabilities;
 }
 
-ReweightProbsMap process_dem_correlations(const stim::DetectorErrorModel& dem,
-                                          const std::vector<int>& detector_components) {
-  return derive_reweight_probabilities(collect_correlation_evidence(dem, detector_components));
-}
-
 ReweightProbsMap process_dem_correlations(const TwoComponentDem& dem) {
-  return derive_reweight_probabilities(
-      collect_correlation_evidence_from_flattened_dem(dem.decomposed_dem, dem.detector_components));
+  return derive_reweight_probabilities(collect_correlation_evidence(dem));
 }
 
 }  // namespace tesseract_decoder
