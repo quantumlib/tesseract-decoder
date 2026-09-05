@@ -23,6 +23,7 @@
 #include <numeric>
 #include <queue>
 #include <thread>
+#include <utility>
 
 #include "common.h"
 #include "stim.h"
@@ -30,6 +31,11 @@
 #include "utils.h"
 
 using namespace tesseract_decoder;
+
+struct DetectorOrderSource {
+  DetectorOrder::Method method;
+  std::string path;
+};
 
 struct Args {
   std::string circuit_path;
@@ -39,9 +45,7 @@ struct Args {
   // Manifold orientation options
   uint64_t det_order_seed;
   size_t num_det_orders = 10;
-  bool det_order_bfs = false;
-  bool det_order_index = false;
-  bool det_order_coordinate = false;
+  std::vector<DetectorOrderSource> detector_order_sources;
 
   // Sampling options
   size_t sample_num_shots = 0;
@@ -100,10 +104,17 @@ struct Args {
       throw std::invalid_argument("Must provide at least one of --circuit or --dem");
     }
 
-    int det_order_flags = int(det_order_bfs) + int(det_order_index) + int(det_order_coordinate);
-    if (det_order_flags > 1) {
+    const bool has_generated_detector_order_source =
+        std::any_of(detector_order_sources.begin(), detector_order_sources.end(),
+                    [](const DetectorOrderSource& source) {
+                      return source.method != DetectorOrder::Method::Literal;
+                    });
+    if (!detector_order_sources.empty() && !has_generated_detector_order_source &&
+        (program.is_used("--num-det-orders") || program.is_used("--det-order-seed"))) {
       throw std::invalid_argument(
-          "Only one of --det-order-bfs, --det-order-index, or --det-order-coordinate may be set.");
+          "--num-det-orders and --det-order-seed only apply to generated detector orders. "
+          "Select --det-order-bfs, --det-order-index, or --det-order-coordinate to combine "
+          "generated orders with --detector-orders files.");
     }
 
     int num_data_sources = int(sample_num_shots > 0) + int(!in_fname.empty());
@@ -213,7 +224,34 @@ struct Args {
 
     config.merge_errors = !no_merge_errors;
 
-    // Sample orientations of the error model to use for the det priority
+    size_t shot_detector_count = config.dem.count_detectors();
+    if (!circuit_path.empty()) {
+      const size_t circuit_detector_count = circuit.count_detectors();
+      const size_t dem_detector_count = config.dem.count_detectors();
+      const size_t circuit_observable_count = circuit.count_observables();
+      const size_t dem_observable_count = config.dem.count_observables();
+
+      // Source-aligned augmented DEMs (currently GARI) preserve the circuit
+      // detectors as a prefix and append virtual detectors whose shot values
+      // are zero. Read circuit-produced shots at the circuit width while
+      // decoding against the full DEM.
+      if (circuit_detector_count > dem_detector_count) {
+        throw std::invalid_argument(
+            "Circuit has " + std::to_string(circuit_detector_count) +
+            " detectors, but the decoding DEM has only " + std::to_string(dem_detector_count) +
+            ". When both are supplied, circuit detector IDs must be preserved in the DEM; the "
+            "DEM may only append detectors whose shot values are implicitly zero.");
+      }
+      if (circuit_observable_count != dem_observable_count) {
+        throw std::invalid_argument("Circuit has " + std::to_string(circuit_observable_count) +
+                                    " observables, but the decoding DEM has " +
+                                    std::to_string(dem_observable_count) +
+                                    "; the counts must match when both are supplied.");
+      }
+      shot_detector_count = circuit_detector_count;
+    }
+
+    // Choose the detector traversal orders.
     {
       if (verbose) {
         auto detector_coords = get_detector_coords(config.dem);
@@ -227,15 +265,20 @@ struct Args {
           std::cout << ")" << std::endl;
         }
       }
-      DetOrder order = DetOrder::DetIndex;
-      if (det_order_bfs) {
-        order = DetOrder::DetBFS;
-      } else if (det_order_index) {
-        order = DetOrder::DetIndex;
-      } else if (det_order_coordinate) {
-        order = DetOrder::DetCoordinate;
+      if (detector_order_sources.empty()) {
+        config.detector_orders =
+            make_detector_orders(num_det_orders, DetectorOrder::Method::Index, det_order_seed);
+      } else {
+        for (const DetectorOrderSource& source : detector_order_sources) {
+          std::vector<DetectorOrder> orders =
+              source.method == DetectorOrder::Method::Literal
+                  ? load_detector_orders(source.path, config.dem)
+                  : make_detector_orders(num_det_orders, source.method, det_order_seed);
+          for (DetectorOrder& order : orders) {
+            config.detector_orders.push_back(std::move(order));
+          }
+        }
       }
-      config.det_orders = build_det_orders(config.dem, num_det_orders, order, det_order_seed);
     }
 
     if (sample_num_shots > 0) {
@@ -264,7 +307,7 @@ struct Args {
       }
       stim::FileFormatData shots_in_format = stim::format_name_to_enum_map().at(in_format);
       auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
-          shots_file, shots_in_format.id, 0, config.dem.count_detectors(),
+          shots_file, shots_in_format.id, 0, shot_detector_count,
           append_observables * config.dem.count_observables());
 
       // Load the shots from a file
@@ -353,31 +396,46 @@ int main(int argc, char* argv[]) {
       .help("If provided, will not merge identical error mechanisms.")
       .store_into(args.no_merge_errors);
   program.add_argument("--num-det-orders")
-      .help("Number of ways to orient the manifold when reordering the detectors")
+      .help("Number of orders generated by each selected detector-order method")
       .metavar("N")
       .default_value(size_t(1))
       .store_into(args.num_det_orders);
   program.add_argument("--det-order-bfs")
-      .help("Use BFS-based detector ordering")
+      .help("Add BFS-based detector orders")
       .flag()
-      .store_into(args.det_order_bfs);
+      .action([&args](const std::string&) {
+        args.detector_order_sources.push_back({DetectorOrder::Method::BFS, ""});
+      });
   program.add_argument("--det-order-index")
       .help(
-          "Randomly choose increasing or decreasing detector index order "
-          "(default if no method specified)")
+          "Add randomly increasing or decreasing detector index orders "
+          "(default when no source is specified)")
       .flag()
-      .store_into(args.det_order_index);
+      .action([&args](const std::string&) {
+        args.detector_order_sources.push_back({DetectorOrder::Method::Index, ""});
+      });
   program.add_argument("--det-order-coordinate")
-      .help("Random geometric detector orientation ordering")
+      .help("Add random geometric detector orientation orders")
       .flag()
-      .store_into(args.det_order_coordinate);
+      .action([&args](const std::string&) {
+        args.detector_order_sources.push_back({DetectorOrder::Method::Coordinate, ""});
+      });
   program.add_argument("--det-order-seed")
       .help(
-          "Seed used when initializing the random detector traversal "
-          "orderings.")
+          "Base seed used independently by each generated detector-order "
+          "method.")
       .metavar("N")
       .default_value(static_cast<uint64_t>(518278944))
       .store_into(args.det_order_seed);
+  program.add_argument("--detector-orders")
+      .help(
+          "Add detector-ID permutations from a JSON file. May be repeated and combined with "
+          "generated detector-order methods.")
+      .metavar("FILE")
+      .append()
+      .action([&args](const std::string& path) {
+        args.detector_order_sources.push_back({DetectorOrder::Method::Literal, path});
+      });
   program.add_argument("--sample-num-shots")
       .help(
           "If provided, will sample the requested number of shots from the "
@@ -656,6 +714,12 @@ int main(int argc, char* argv[]) {
 
   bool print_final_stats = true;
   if (!args.stats_out_fname.empty()) {
+    std::vector<std::string> detector_orders_paths;
+    for (const DetectorOrderSource& source : args.detector_order_sources) {
+      if (source.method == DetectorOrder::Method::Literal) {
+        detector_orders_paths.push_back(source.path);
+      }
+    }
     nlohmann::json stats_json = {
         {"circuit_path", args.circuit_path},
         {"dem_path", args.dem_path},
@@ -667,8 +731,9 @@ int main(int argc, char* argv[]) {
         {"beam_climbing", args.beam_climbing},
         {"no_revisit_dets", args.no_revisit_dets},
         {"pqlimit", args.pqlimit},
-        {"num_det_orders", args.num_det_orders},
+        {"num_det_orders", config.detector_orders.empty() ? 1 : config.detector_orders.size()},
         {"det_order_seed", args.det_order_seed},
+        {"detector_orders_paths", detector_orders_paths},
         {"total_time_seconds", total_time_seconds},
         {"num_errors", has_obs ? nlohmann::json(num_errors) : nullptr},
         {"num_low_confidence", num_low_confidence},
