@@ -58,10 +58,11 @@ struct TesseractSinterCompiledDecoder {
 
     const size_t num_shots = bit_packed_detection_event_data.shape(0);
     const uint64_t num_observable_bytes = (num_observables + 7) / 8;
+    const uint64_t num_result_bytes = num_observable_bytes + 1;
 
-    // Result buffer to store the predicted observables for all shots.
+    // Sinter interprets a nonzero trailing byte as a discard flag for the shot.
     auto result_array =
-        py::array_t<uint8_t>({(py::ssize_t)num_shots, (py::ssize_t)num_observable_bytes});
+        py::array_t<uint8_t>({(py::ssize_t)num_shots, (py::ssize_t)num_result_bytes});
     auto result_buffer = result_array.mutable_data();
 
     const uint8_t* detections_data = bit_packed_detection_event_data.data();
@@ -83,13 +84,14 @@ struct TesseractSinterCompiledDecoder {
       std::vector<int> predictions = decoder->decode(detections);
 
       // Store predictions into the output buffer
-      uint8_t* single_result_buffer = result_buffer + shot * num_observable_bytes;
-      std::fill(single_result_buffer, single_result_buffer + num_observable_bytes, 0);
+      uint8_t* single_result_buffer = result_buffer + shot * num_result_bytes;
+      std::fill(single_result_buffer, single_result_buffer + num_result_bytes, 0);
       for (size_t obs_index : predictions) {
         if (obs_index >= 0 && obs_index < num_observables) {
           single_result_buffer[obs_index / 8] ^= (1 << (obs_index % 8));
         }
       }
+      single_result_buffer[num_observable_bytes] = decoder->low_confidence_flag;
     }
 
     // Return the result.
@@ -323,8 +325,10 @@ void pybind_sinter_compat(py::module& root) {
                     `(num_shots, ceil(num_detectors / 8))`. Each byte contains
                     8 bits of detection event data. A `1` in bit `k` of byte `j`
                     indicates that detector `8j + k` fired.
-                :return: A 2D numpy array of shape `(num_shots, ceil(num_observables / 8))`
-                    containing the predicted observable flips in a bit-packed format.
+                :return: A 2D numpy array of shape
+                    `(num_shots, ceil(num_observables / 8) + 1)`. The first bytes contain
+                    predicted observable flips in bit-packed format. The final byte is nonzero
+                    when Sinter should discard the shot because decoding had low confidence.
             )pbdoc")
       .def_readwrite("num_detectors", &TesseractSinterCompiledDecoder::num_detectors,
                      R"pbdoc(The number of detectors in the decoder's underlying DEM.)pbdoc")

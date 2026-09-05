@@ -367,6 +367,9 @@ sinter collect \
 
 Sinter efficiently manages the execution of these tasks, and Tesseract is used for decoding. For more usage examples, see the tests in `src/py/tesseract_sinter_compat_test.py`.
 
+The compiled Sinter integration reports low-confidence decoding outcomes as discards. Use
+`errors + discards` when calculating a conservative logical failure count.
+
 ## Good Starting Points for Tesseract Configurations:
  The [Tesseract paper](https://arxiv.org/pdf/2503.10988) recommends two setup for starting your exploration with tesseract:
 
