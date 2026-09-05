@@ -50,6 +50,15 @@ jobs:
       matrix:
         os: [ubuntu-22.04, ubuntu-24.04, macos-14]
         python-version: ['3.12', '3.13', '3.14']
+        # TODO: re-enable the ubuntu-22.04 + Python 3.14 wheel build. It is
+        # flaky: the same cell succeeded on 02b7c048 and failed on 2bdc8f80
+        # with no source change in between, and with fail-fast it takes the
+        # whole pre-release run down with it. Note that PR CI
+        # (dry-run-release.yml) does not cover ubuntu-22.04 at all, so this
+        # only ever breaks after a merge to main.
+        exclude:
+        - os: ubuntu-22.04
+          python-version: '3.14'
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
