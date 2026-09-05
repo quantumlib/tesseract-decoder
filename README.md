@@ -144,8 +144,96 @@ Using a Detection Event File and Observable Flips:
 ./tesseract --in events.01 --in-format 01 --obs_in obs.01 --obs-in-format 01 --dem surface_code.dem --out decoded.txt
 ```
 
+Tesseract can combine generated detector-order methods with explicit detector
+traversal orders from one or more JSON files. Sources are concatenated in
+command-line order. For example, this uses three BFS orders, every order in the
+file, and then three coordinate orders:
+
+```bash
+./tesseract \
+    --num-det-orders 3 \
+    --det-order-bfs \
+    --detector-orders orders.json \
+    --det-order-coordinate \
+    ...
+```
+
+Each selected generated method contributes `--num-det-orders` orders and uses
+`--det-order-seed` independently as its base seed. Within a method, order `k`
+uses `seed + k` with an independent random-number stream; this differs from the
+older shared-stream ensemble generator. `--detector-orders FILE` may be
+repeated, and each occurrence contributes every order in that file. The JSON
+format is the same list-of-lists form as Python's
+`TesseractConfig.det_orders`:
+
+```json
+[[0, 2, 1, 3], [3, 1, 2, 0]]
+```
+
+Every inner list must be a complete permutation of the DEM detector IDs. With
+no detector-order source option, Tesseract uses the existing generated Index
+source. A file-only invocation remains file-only; use `--det-order-index`
+explicitly to combine file orders with generated Index orders.
+
 Tesseract supports reading and writing from all of Stim's standard [output
 formats](https://github.com/quantumlib/Stim/blob/main/doc/result_formats.md).
+
+### Decoding with GARI
+
+Generate a GARI matrix DEM from a source circuit:
+
+```bash
+python src/py/_tesseract_py_util/gari.py \
+    --circuit circuit_file.stim \
+    --prior xor \
+    --out-dir gari_output
+```
+
+This writes `gari_output/circuit_file_gari_xor.dem`. Its physical detector rows preserve the
+source detector IDs, and its added virtual rows form a suffix. GARI-aware detector orders can be
+written in the generic CLI format when reordering is wanted:
+
+```python
+import json
+import stim
+from tesseract_decoder import demutil
+
+circuit = stim.Circuit.from_file("circuit_file.stim")
+gari_dem = stim.DetectorErrorModel.from_file("gari_output/circuit_file_gari_xor.dem")
+orders = demutil.gari.build_detector_orders(circuit, gari_dem, num_det_orders=5)
+with open("gari_orders.json", "w") as f:
+    json.dump(orders, f)
+```
+
+Sample from the source circuit and decode with the generated DEM:
+
+```bash
+./bazel-bin/src/tesseract \
+    --circuit circuit_file.stim \
+    --dem gari_output/circuit_file_gari_xor.dem \
+    --detector-orders gari_orders.json \
+    --sample-num-shots 100 \
+    --sample-seed 1234 \
+    --threads 1 \
+    --pqlimit 1000000 \
+    --beam 5 \
+    --beam-climbing \
+    --no-revisit-dets \
+    --print-stats \
+    --stats-out gari-stats.json
+```
+
+The GARI matrix DEM is a decoding representation and must not be sampled. When a circuit and a
+larger DEM are supplied together, both command-line decoders read or sample the circuit's detector
+prefix and leave the DEM's virtual suffix zero. Their observable counts must agree. When reading a
+source-width event file, pass both `--circuit` and `--dem`; with `--dem` alone the input width is the
+full DEM width.
+
+For matrix analysis, `gari.py --row-order block` writes a `_block.dem` file in the internal
+physical-X, physical-Z, virtual-Z, virtual-X row order. This research form does not accept source
+syndromes as a direct prefix. See
+[GARI transformed matrices](src/py/README.md#gari-transformed-matrices) for supported circuit
+conventions and Python API details.
 
 ### Performance Optimization
 
@@ -194,6 +282,116 @@ errors are not capped by degree.
 *   *Observable flips output*: predictions of logical errors.
 *   *DEM usage frequency output*: if `--dem-out` is specified, outputs estimated error frequencies.
 *   *Statistics output*: includes number of shots, errors, low confidence shots, and processing time.
+
+---
+
+## Multi-Pass Graph Shattering
+
+Multi-pass graph shattering partitions a correlated detector error model into two detector
+components and decodes the smaller component models separately. With two passes, predictions from
+the first pass update error priors used during the final pass. The current implementation requires
+exactly two components and accepts one or two passes.
+
+Two-pass reweighting is a correlated-matching-style heuristic. A component symptom's XOR marginal
+includes every mechanism that produces it, including one-sided mechanisms, while paired evidence
+includes only mechanisms shared with the other component symptom. Their ratio is therefore not, in
+general, an exact joint or conditional probability. Reweighted probabilities are capped at `0.499`
+so every retained error continues to have positive decoding cost. Because reweighting is defined on
+aggregate component symptoms, two-pass decoding requires `merge_errors=true`. Unmerged mechanisms
+remain supported with one-pass decoding.
+
+### Detector classification
+
+The standalone CLI deliberately accepts one canonical convention only: every detector instruction
+must have a JSON tag with a top-level `"basis"` whose value is exactly `"X"` or `"Z"`:
+
+```stim
+detector[{"basis":"X"}](0, 0, 0) D0
+detector[{"basis":"Z"}](1, 0, 0) D1
+```
+
+The CLI does not infer bases from legacy metadata or coordinates. Tagged `DETECTOR` instructions in
+a `.stim` circuit retain their tags during circuit-to-DEM conversion, so a canonically tagged
+circuit can be passed directly. Otherwise, normalize its DEM in Python first. Automatic
+normalization covers only the named automatic metadata and Chromobius-coordinate conventions. For
+a Stim-generated surface-code circuit, select the explicit parity adapter as shown below. The helper
+preserves coordinates, instruction order, repeats, shifts, errors, tags, and unrelated JSON
+metadata:
+
+```python
+from pathlib import Path
+
+import stim
+import tesseract_decoder
+
+circuit = stim.Circuit(Path("circuit.stim").read_text())
+dem = circuit.detector_error_model()
+canonical_dem = tesseract_decoder.demutil.annotate_detector_bases(
+    dem,
+    detector_basis_classifier=(
+        tesseract_decoder.demutil.stim_surface_code_detector_basis_classifier
+    ),
+)
+Path("canonical.dem").write_text(str(canonical_dem))
+```
+
+Python and Sinter use the shared automatic classifier by default, including its supported legacy
+metadata and Chromobius-coordinate adapters. Multi-pass decoding still requires every detector to
+be classified and the result to contain exactly two components.
+
+### CLI options
+
+* `--multipass`: Enables multi-pass graph shattering.
+* `--num-passes`, `--num_passes`: Selects one or two passes (default: 2). One pass performs no
+  inter-pass prior update; two passes perform one round of prior propagation. Other values are
+  rejected.
+* `--multipass-strategy`, `--multipass_strategy`: Selects `causal` (default), which derives the pass
+  schedule from component dependencies, or experimental `static`, which schedules both components
+  in every pass.
+* `--print-multipass-plan`: Prints the monolithic and component model statistics, dependencies, and
+  pass schedule to standard error. It requires `--multipass`; these statistics are calculated only
+  when this flag is present.
+
+`--dem-out` is not supported with `--multipass`.
+
+### CLI example
+
+When the circuit is not already canonically tagged, sample from the circuit while decoding against
+the normalized DEM:
+
+```bash
+./bazel-bin/src/tesseract \
+    --circuit circuit.stim \
+    --dem canonical.dem \
+    --sample-num-shots 1000 \
+    --multipass \
+    --num-passes 2 \
+    --multipass-strategy causal \
+    --pqlimit 1000000 \
+    --beam 20 \
+    --beam-climbing \
+    --no-revisit-dets \
+    --num-det-orders 21 \
+    --print-multipass-plan \
+    --print-stats
+```
+
+### Python and Sinter
+
+The ordinary Sinter workflows need no normalization or custom callback:
+
+```python
+from multi_pass_sinter_decoders import MultiPassSinterDecoder, get_sinter_decoders
+
+decoder = MultiPassSinterDecoder()
+custom_decoders = get_sinter_decoders()
+```
+
+Pass `detector_basis_classifier=...` to use another X/Z convention. Standard
+`TesseractSinterDecoder` configuration keywords can be supplied directly to
+`MultiPassSinterDecoder`; unknown keywords are rejected.
+
+---
 
 ## Python Interface
 
@@ -294,7 +492,7 @@ if __name__ == "__main__":
         merge_errors=True,
         pqlimit=1_000,
         num_det_orders=5,
-        det_order_method=tesseract_decoder.utils.DetOrder.DetIndex,
+        det_order_method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=2384753,
         sparsify_errors=True,
         sparsify_base_degree=3,
@@ -381,7 +579,7 @@ tesseract_config = tesseract.TesseractConfig(
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem=dem,
         num_det_orders=21,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
     ),
     no_revisit_dets=True,
 )
@@ -397,7 +595,7 @@ tesseract_config = tesseract.TesseractConfig(
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem=dem,
         num_det_orders=16,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
     ),
     no_revisit_dets=True,
 )

@@ -18,6 +18,19 @@ load("@rules_python//python:py_library.bzl", "py_library")
 load("@rules_python//python:py_binary.bzl", "py_binary")
 
 py_library(
+    name = "multi_pass_sinter_decoders",
+    srcs = ["multi_pass_sinter_decoders.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src:lib_tesseract_decoder",
+        "//src/py/_tesseract_py_util",
+        "@pypi//sinter",
+        "@pypi//stim",
+    ],
+)
+
+py_library(
     name = "shared_decoding_tests",
     srcs = ["shared_decoding_tests.py"],
     visibility = ["//:__subpackages__"],
@@ -93,6 +106,20 @@ py_test(
     imports = ["..", "."],
 )
 
+py_test(
+    name = "multi_pass_bindings_test",
+    srcs = ["multi_pass_bindings_test.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//sinter",
+        "@pypi//stim",
+        "@pypi//numpy",
+        "//src:lib_tesseract_decoder",
+        ":multi_pass_sinter_decoders",
+    ],
+    imports = ["..", "."],
+)
 
 
 py_test(

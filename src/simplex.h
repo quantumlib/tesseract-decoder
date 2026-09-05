@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "common.h"
+#include "decoder.h"
 #include "stim.h"
 
 struct HighsModel;
@@ -39,7 +40,7 @@ struct SimplexConfig {
   std::string str();
 };
 
-struct SimplexDecoder {
+struct SimplexDecoder : public Decoder {
   SimplexConfig config;
   std::vector<common::Error> errors;
   size_t num_detectors = 0;
@@ -73,12 +74,13 @@ struct SimplexDecoder {
   // flattened DEM error indices.
   double cost_from_errors(const std::vector<size_t>& predicted_errors) const;
 
+  DecodeResult decode_result(const std::vector<uint64_t>& detections) override;
   std::vector<int> decode(const std::vector<uint64_t>& detections);
 
   void decode_shots(std::vector<stim::SparseShot>& shots,
                     std::vector<std::vector<int>>& obs_predicted);
 
-  ~SimplexDecoder();
+  ~SimplexDecoder() override;
 
   void init_ilp();
 };

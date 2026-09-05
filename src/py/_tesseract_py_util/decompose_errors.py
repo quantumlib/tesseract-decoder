@@ -20,6 +20,23 @@ from functools import reduce
 
 import stim
 
+if __package__:
+    from .detector_basis import (
+        DetectorBasisClassifier,
+        automatic_detector_basis_classifier,
+        classify_detector_bases,
+        last_coordinate_component_classifier,
+        stim_surface_code_detector_basis_classifier,
+    )
+else:
+    from detector_basis import (
+        DetectorBasisClassifier,
+        automatic_detector_basis_classifier,
+        classify_detector_bases,
+        last_coordinate_component_classifier,
+        stim_surface_code_detector_basis_classifier,
+    )
+
 
 def reduce_symmetric_difference(items: Iterable[int]) -> tuple[int]:
     """
@@ -51,14 +68,63 @@ def undecomposed_error_detectors_and_observables(
     return detectors, observables
 
 
+def _error_has_separator(instruction: stim.DemInstruction) -> bool:
+    return any(target.is_separator() for target in instruction.targets_copy())
+
+
+def _validated_error_groups(
+    instruction: stim.DemInstruction,
+    detector_component_func: Callable[[int], int],
+    *,
+    allow_mixed_group: bool,
+) -> list[tuple[tuple[int], tuple[int], int | None]]:
+    """Parses Stim ``^`` groups and validates their component assignments."""
+    if instruction.type != "error":
+        raise ValueError(f"DEM instruction must be an error, not {instruction.type}")
+
+    raw_groups: list[list[stim.DemTarget]] = [[]]
+    for target in instruction.targets_copy():
+        if target.is_separator():
+            raw_groups.append([])
+        else:
+            raw_groups[-1].append(target)
+
+    result = []
+    for raw_group in raw_groups:
+        detectors = reduce_symmetric_difference(
+            target.val
+            for target in raw_group
+            if target.is_relative_detector_id()
+        )
+        observables = reduce_symmetric_difference(
+            target.val
+            for target in raw_group
+            if target.is_logical_observable_id()
+        )
+        if not detectors:
+            raise ValueError(
+                f"Error instruction `{instruction}` contains a detectorless "
+                "decomposition group, which cannot be assigned to a component."
+            )
+        components = {detector_component_func(d) for d in detectors}
+        if len(components) != 1 and not allow_mixed_group:
+            raise ValueError(
+                f"Error instruction `{instruction}` contains a decomposition "
+                "group with detectors from multiple components."
+            )
+        component = next(iter(components)) if len(components) == 1 else None
+        result.append((detectors, observables, component))
+    return result
+
+
 def get_component_obs_matching_undecomposed_obs(
     obs_options_by_component: list[set[tuple[int]]], error_obs: tuple[int]
 ) -> list[tuple[int]] | None:
     """Given the possible observables that could be a symptom of each component
     of a dem error, find the assignment of observables to components that is
     consistent with the observables associated with the undecomposed error.
-    Returns None if there is no assignment that is consistent with the observables
-    of the undecomposed error.
+    Returns None if there is no consistent assignment, and rejects the assignment
+    if more than one choice is consistent.
 
     Parameters
     ----------
@@ -82,11 +148,17 @@ def get_component_obs_matching_undecomposed_obs(
         Assignment of observables to each component.
     """
     error_obs_set = set(reduce_symmetric_difference(error_obs))
+    matching_assignment = None
     for obs_combinations in itertools.product(*obs_options_by_component):
         obs_from_combination = reduce_set_symmetric_difference(obs_combinations)
         if set(obs_from_combination) == error_obs_set:
-            return list(obs_combinations)
-    return None
+            if matching_assignment is not None:
+                raise ValueError(
+                    "Multiple component observable assignments are consistent with "
+                    "the undecomposed observables."
+                )
+            matching_assignment = list(obs_combinations)
+    return matching_assignment
 
 
 def decompose_errors_using_detector_assignment(
@@ -105,8 +177,9 @@ def decompose_errors_using_detector_assignment(
     the detectors and observables of the original error in the dem.
     See https://github.com/quantumlib/Stim/blob/main/doc/file_format_dem_detector_error_model.md#error-instruction
     for more details on the Stim ERROR instruction format, including decomposition.
-    If the dem provided was already decomposed, this decomposition will be ignored
-    (each error will be undecomposed before the new decomposition is applied).
+    Existing Stim ``^`` decomposition groups are preserved after validation. Each
+    existing group must contain at least one detector, and all detectors in a group
+    must belong to the same component.
 
     Parameters
     ----------
@@ -132,12 +205,19 @@ def decompose_errors_using_detector_assignment(
         if instruction.type != "error":
             continue
 
-        detectors, observables = undecomposed_error_detectors_and_observables(
-            instruction=instruction
+        is_decomposed = _error_has_separator(instruction)
+        groups = _validated_error_groups(
+            instruction,
+            detector_component_func,
+            allow_mixed_group=not is_decomposed,
         )
-
-        if len(set(detector_component_func(d) for d in detectors)) == 1:
-            single_component_dets_to_obs[detectors].add(observables)
+        if is_decomposed:
+            for detectors, observables, _component in groups:
+                single_component_dets_to_obs[detectors].add(observables)
+        else:
+            detectors, observables, component = groups[0]
+            if component is not None:
+                single_component_dets_to_obs[detectors].add(observables)
 
     output_dem = stim.DetectorErrorModel()
 
@@ -146,9 +226,17 @@ def decompose_errors_using_detector_assignment(
             output_dem.append(instruction)
             continue
 
-        detectors, observables = undecomposed_error_detectors_and_observables(
-            instruction=instruction
+        is_decomposed = _error_has_separator(instruction)
+        groups = _validated_error_groups(
+            instruction,
+            detector_component_func,
+            allow_mixed_group=not is_decomposed,
         )
+        if is_decomposed:
+            output_dem.append(instruction)
+            continue
+
+        detectors, observables, _component = groups[0]
         det_components = {d: detector_component_func(d) for d in detectors}
         unique_components = sorted(set(det_components.values()))
         num_components = len(unique_components)
@@ -181,9 +269,16 @@ def decompose_errors_using_detector_assignment(
 
         # Assign observables to each component, such that they are consistent with the
         # observables of the undecomposed error
-        consistent_obs_by_component = get_component_obs_matching_undecomposed_obs(
-            obs_options_by_component=obs_options_by_component, error_obs=observables
-        )
+        try:
+            consistent_obs_by_component = get_component_obs_matching_undecomposed_obs(
+                obs_options_by_component=obs_options_by_component,
+                error_obs=observables,
+            )
+        except ValueError as ex:
+            raise ValueError(
+                f"The error instruction `{instruction}` has multiple consistent "
+                "observable decompositions; logical observable ownership is ambiguous."
+            ) from ex
 
         if consistent_obs_by_component is None:
             if strip_undecomposable_errors:
@@ -253,9 +348,13 @@ def decompose_errors_using_detector_coordinate_assignment(
         The decomposed detector error model. Note that the DEM will also be flattened.
     """
     detector_coords = dem.get_detector_coordinates()
+    detector_components = [
+        coord_to_component_func(detector_coords.get(detector_id, []))
+        for detector_id in range(dem.num_detectors)
+    ]
 
     def component_using_coords(detector_id: int) -> int:
-        return coord_to_component_func(detector_coords[detector_id])
+        return detector_components[detector_id]
 
     return decompose_errors_using_detector_assignment(
         dem=dem,
@@ -268,9 +367,27 @@ def detector_coord_to_basis_for_stim_surface_code_convention(coord: tuple[int]) 
     """For detector coordinates consistent with the stim.Circuit.generated
     surface code circuits, return the basis from the detector coordinate.
     Returns 0 for X basis and 1 for Z basis detector."""
-    x = coord[0]
-    y = coord[1]
-    return 1 - ((x // 2 + y // 2) % 2)
+    basis = stim_surface_code_detector_basis_classifier(0, coord, "")
+    return 0 if basis == "X" else 1
+
+
+def decompose_errors_using_detector_basis_classifier(
+    dem: stim.DetectorErrorModel,
+    detector_basis_classifier: DetectorBasisClassifier = (
+        automatic_detector_basis_classifier
+    ),
+    strip_undecomposable_errors: bool = False,
+) -> stim.DetectorErrorModel:
+    """Decomposes errors using a shared detector X/Z basis classifier."""
+    detector_bases = classify_detector_bases(
+        dem, detector_basis_classifier=detector_basis_classifier
+    )
+    detector_components = [0 if basis == "X" else 1 for basis in detector_bases]
+    return decompose_errors_using_detector_assignment(
+        dem=dem,
+        detector_component_func=detector_components.__getitem__,
+        strip_undecomposable_errors=strip_undecomposable_errors,
+    )
 
 
 def decompose_errors_using_last_coordinate_index(
@@ -286,8 +403,9 @@ def decompose_errors_using_last_coordinate_index(
     to an undecomposed error elsewhere in the dem. The symmetric difference of the
     detectors and observables in the components of a decomposed error will equal
     the detectors and observables of the original error in the dem.
-    If the dem provided was already decomposed, this decomposition will be ignored
-    (each error will be undecomposed before the new decomposition is applied).
+    Existing Stim ``^`` decomposition groups are preserved after validation. Each
+    existing group must contain at least one detector, and all detectors in a group
+    must belong to the same component.
 
     Parameters
     ----------
@@ -303,13 +421,16 @@ def decompose_errors_using_last_coordinate_index(
         The decomposed detector error model
     """
     detector_coords = dem.get_detector_coordinates()
-
-    def last_coordinate_component(detector_id: int) -> int:
-        return detector_coords[detector_id][-1]
+    detector_components = [
+        last_coordinate_component_classifier(
+            detector_id, detector_coords.get(detector_id, []), ""
+        )
+        for detector_id in range(dem.num_detectors)
+    ]
 
     return decompose_errors_using_detector_assignment(
         dem=dem,
-        detector_component_func=last_coordinate_component,
+        detector_component_func=detector_components.__getitem__,
         strip_undecomposable_errors=strip_undecomposable_errors,
     )
 
@@ -341,16 +462,9 @@ def decompose_errors_for_stim_surface_code_coords(
     stim.DetectorErrorModel
         The decomposed detector error model
     """
-    detector_coords = dem.get_detector_coordinates()
-
-    def stim_surface_code_det_component(detector_id: int) -> int:
-        return detector_coord_to_basis_for_stim_surface_code_convention(
-            detector_coords[detector_id]
-        )
-
-    return decompose_errors_using_detector_assignment(
+    return decompose_errors_using_detector_basis_classifier(
         dem=dem,
-        detector_component_func=stim_surface_code_det_component,
+        detector_basis_classifier=stim_surface_code_detector_basis_classifier,
         strip_undecomposable_errors=strip_undecomposable_errors,
     )
 

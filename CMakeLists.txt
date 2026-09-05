@@ -86,17 +86,32 @@ target_link_libraries(common PUBLIC libstim Threads::Threads)
 add_library(utils ${TESSERACT_SRC_DIR}/utils.cc ${TESSERACT_SRC_DIR}/utils.h)
 target_include_directories(utils PUBLIC ${TESSERACT_SRC_DIR})
 target_compile_options(utils PRIVATE ${OPT_COPTS})
-target_link_libraries(utils PUBLIC common libstim Threads::Threads)
+target_link_libraries(utils PUBLIC common libstim Threads::Threads PRIVATE nlohmann_json::nlohmann_json)
 
 add_library(visualization ${TESSERACT_SRC_DIR}/visualization.cc ${TESSERACT_SRC_DIR}/visualization.h)
 target_include_directories(visualization PUBLIC ${TESSERACT_SRC_DIR})
 target_compile_options(visualization PRIVATE ${OPT_COPTS})
 target_link_libraries(visualization PUBLIC common boost_headers)
 
-add_library(tesseract_lib ${TESSERACT_SRC_DIR}/tesseract.cc ${TESSERACT_SRC_DIR}/tesseract.h)
+add_library(error_correlations ${TESSERACT_SRC_DIR}/multi_pass/error_correlations.cc ${TESSERACT_SRC_DIR}/multi_pass/error_correlations.h)
+target_include_directories(error_correlations PUBLIC ${TESSERACT_SRC_DIR})
+target_compile_options(error_correlations PRIVATE ${OPT_COPTS})
+target_link_libraries(error_correlations PUBLIC libstim)
+
+add_library(dem_decomposition ${TESSERACT_SRC_DIR}/multi_pass/dem_decomposition.cc ${TESSERACT_SRC_DIR}/multi_pass/dem_decomposition.h)
+target_include_directories(dem_decomposition PUBLIC ${TESSERACT_SRC_DIR})
+target_compile_options(dem_decomposition PRIVATE ${OPT_COPTS})
+target_link_libraries(dem_decomposition PUBLIC libstim)
+
+add_library(tesseract_lib
+  ${TESSERACT_SRC_DIR}/tesseract.cc
+  ${TESSERACT_SRC_DIR}/tesseract.h
+  ${TESSERACT_SRC_DIR}/multi_pass/multi_pass_tesseract_decoder.cc
+  ${TESSERACT_SRC_DIR}/multi_pass/multi_pass_tesseract_decoder.h
+)
 target_include_directories(tesseract_lib PUBLIC ${TESSERACT_SRC_DIR})
 target_compile_options(tesseract_lib PRIVATE ${OPT_COPTS})
-target_link_libraries(tesseract_lib PUBLIC utils boost_headers visualization)
+target_link_libraries(tesseract_lib PUBLIC common utils boost_headers visualization error_correlations dem_decomposition libstim nlohmann_json::nlohmann_json)
 
 add_library(tesseract_trellis_lib
   ${TESSERACT_SRC_DIR}/tesseract_trellis.cc
@@ -164,3 +179,16 @@ add_test(NAME tesseract_test COMMAND tesseract_test)
 add_executable(tesseract_trellis_test ${TESSERACT_SRC_DIR}/tesseract_trellis.test.cc)
 target_link_libraries(tesseract_trellis_test PRIVATE tesseract_trellis_lib GTest::gtest_main)
 add_test(NAME tesseract_trellis_test COMMAND tesseract_trellis_test)
+
+add_executable(dem_decomposition_test ${TESSERACT_SRC_DIR}/multi_pass/dem_decomposition.test.cc)
+target_link_libraries(dem_decomposition_test PRIVATE dem_decomposition GTest::gtest_main libstim)
+add_test(NAME dem_decomposition_test COMMAND dem_decomposition_test)
+
+add_executable(error_correlations_test ${TESSERACT_SRC_DIR}/multi_pass/error_correlations.test.cc)
+target_link_libraries(error_correlations_test PRIVATE error_correlations GTest::gtest_main libstim)
+add_test(NAME error_correlations_test COMMAND error_correlations_test)
+
+add_executable(multi_pass_tesseract_decoder_test ${TESSERACT_SRC_DIR}/multi_pass/multi_pass_tesseract_decoder.test.cc)
+target_link_libraries(multi_pass_tesseract_decoder_test PRIVATE tesseract_lib GTest::gtest_main libstim)
+add_test(NAME multi_pass_tesseract_decoder_test COMMAND multi_pass_tesseract_decoder_test)
+set_tests_properties(multi_pass_tesseract_decoder_test PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
