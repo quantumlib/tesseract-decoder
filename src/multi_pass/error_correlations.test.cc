@@ -14,12 +14,32 @@
 
 #include "error_correlations.h"
 
+#include <map>
 #include <vector>
 
 #include "gtest/gtest.h"
 
 namespace tesseract_decoder {
 namespace {
+
+TEST(ErrorCorrelationsTest, OrdersSymptomsByDetectorsThenObservables) {
+  const std::vector<common::Symptom> expected = {
+      {{0}, {0}},
+      {{0}, {1}},
+      {{0, 1}, {}},
+      {{1}, {}},
+  };
+  std::map<common::Symptom, int, common::Symptom::less> ordered;
+  for (auto symptom = expected.rbegin(); symptom != expected.rend(); ++symptom) {
+    ordered.emplace(*symptom, 0);
+  }
+
+  std::vector<common::Symptom> actual;
+  for (const auto& entry : ordered) {
+    actual.push_back(entry.first);
+  }
+  EXPECT_EQ(actual, expected);
+}
 
 TEST(ErrorCorrelationsTest, DocumentsPairedMechanismRatioFormula) {
   stim::DetectorErrorModel dem(R"DEM(
@@ -29,8 +49,8 @@ TEST(ErrorCorrelationsTest, DocumentsPairedMechanismRatioFormula) {
         detector D0
         detector D1
     )DEM");
-  ComponentSymptom d0{{0}, {}};
-  ComponentSymptom d1_l0{{1}, {0}};
+  common::Symptom d0{{0}, {}};
+  common::Symptom d1_l0{{1}, {0}};
 
   TwoComponentDem prepared = prepare_two_component_dem(dem, {0, 1});
   CorrelationEvidence evidence = collect_correlation_evidence(prepared);
@@ -67,8 +87,8 @@ TEST(ErrorCorrelationsTest, CombinesSameComponentGroupsBeforeRecordingEvidence) 
         detector D1
         detector D2
     )DEM");
-  ComponentSymptom combined{{0, 1}, {0, 1}};
-  ComponentSymptom affected{{2}, {}};
+  common::Symptom combined{{0, 1}, {0, 1}};
+  common::Symptom affected{{2}, {}};
 
   TwoComponentDem prepared = prepare_two_component_dem(dem, {0, 0, 1});
   CorrelationEvidence evidence = collect_correlation_evidence(prepared);

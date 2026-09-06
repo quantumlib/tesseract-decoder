@@ -18,21 +18,15 @@
 #include <map>
 #include <vector>
 
+#include "../common.h"
 #include "dem_decomposition.h"
 #include "stim.h"
 
 namespace tesseract_decoder {
 
-struct ComponentSymptom {
-  std::vector<int> detectors;
-  std::vector<int> observables;
-
-  bool operator<(const ComponentSymptom& other) const;
-};
-
 /** A correlated-matching-style probability used to reweight an affected symptom. */
 struct ReweightProbability {
-  ComponentSymptom affected_symptom;
+  common::Symptom affected_symptom;
   double probability;
 };
 
@@ -45,11 +39,14 @@ struct ReweightProbability {
  * one-sided mechanisms, so it is not generally the joint probability P(a and b).
  */
 struct CorrelationEvidence {
-  std::map<ComponentSymptom, double> symptom_probabilities;
-  std::map<ComponentSymptom, std::map<ComponentSymptom, double>> paired_mechanism_probabilities;
+  std::map<common::Symptom, double, common::Symptom::less> symptom_probabilities;
+  std::map<common::Symptom,
+           std::map<common::Symptom, double, common::Symptom::less>, common::Symptom::less>
+      paired_mechanism_probabilities;
 };
 
-using ReweightProbsMap = std::map<ComponentSymptom, std::vector<ReweightProbability>>;
+using ReweightProbsMap =
+    std::map<common::Symptom, std::vector<ReweightProbability>, common::Symptom::less>;
 
 // Collects evidence from an already-flattened, validated, and decomposed DEM.
 CorrelationEvidence collect_correlation_evidence(const TwoComponentDem& dem);

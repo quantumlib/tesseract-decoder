@@ -220,8 +220,9 @@ void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
   }
   monolithic_dem = std::move(prepared.decomposed_dem);
 
-  std::array<std::map<ComponentSymptom, std::vector<std::pair<size_t, double>>>, 2>
-      symptom_to_errors;
+  std::array<
+      std::map<common::Symptom, std::pair<size_t, double>, common::Symptom::less>, 2>
+      symptom_to_error;
   for (size_t component = 0; component < component_decoders.size(); ++component) {
     auto& component_decoder = component_decoders[component];
     component_decoder.assignment_label = prepared.assignment_labels[component];
@@ -234,36 +235,40 @@ void MultiPassTesseractDecoder::initialize(const stim::DetectorErrorModel& dem,
       const auto& symptom = component_decoder.decoder->error_symptom(error_index);
       component_decoder.affects_observable |= !symptom.observables.empty();
       if (num_passes == 2) {
-        ComponentSymptom component_symptom{symptom.detectors, symptom.observables};
-        symptom_to_errors[component][std::move(component_symptom)].push_back(
-            {component_decoder.decoder->dem_error_index(error_index),
-             component_decoder.decoder->error_probability(error_index)});
+        bool inserted = symptom_to_error[component]
+                            .emplace(symptom,
+                                     std::make_pair(
+                                         component_decoder.decoder->dem_error_index(error_index),
+                                         component_decoder.decoder->error_probability(error_index)))
+                            .second;
+        if (!inserted) {
+          throw std::logic_error("Component " + std::to_string(component) +
+                                 " retained duplicate " + symptom.str() +
+                                 " despite merge_errors=true.");
+        }
       }
     }
   }
 
   for (const auto& [causal_symptom, probabilities] : reweight_probabilities) {
     int causal_component = global_det_to_comp_id.at(causal_symptom.detectors.at(0));
-    auto causal_errors = symptom_to_errors[causal_component].find(causal_symptom);
-    if (causal_errors == symptom_to_errors[causal_component].end()) {
+    auto causal_error = symptom_to_error[causal_component].find(causal_symptom);
+    if (causal_error == symptom_to_error[causal_component].end()) {
       continue;
     }
 
-    for (const auto& causal_error : causal_errors->second) {
-      size_t causal_dem_error_index = causal_error.first;
-      for (const auto& probability : probabilities) {
-        int target_component =
-            global_det_to_comp_id.at(probability.affected_symptom.detectors.at(0));
-        auto target_errors = symptom_to_errors[target_component].find(probability.affected_symptom);
-        if (target_errors == symptom_to_errors[target_component].end()) {
-          continue;
-        }
-        for (const auto& [target_dem_error_index, target_probability] : target_errors->second) {
-          component_decoders[causal_component].reweight_rules[causal_dem_error_index].push_back(
-              {static_cast<size_t>(target_component), target_dem_error_index,
-               probability.probability, target_probability});
-        }
+    size_t causal_dem_error_index = causal_error->second.first;
+    for (const auto& probability : probabilities) {
+      int target_component =
+          global_det_to_comp_id.at(probability.affected_symptom.detectors.at(0));
+      auto target_error = symptom_to_error[target_component].find(probability.affected_symptom);
+      if (target_error == symptom_to_error[target_component].end()) {
+        continue;
       }
+      const auto& [target_dem_error_index, target_probability] = target_error->second;
+      component_decoders[causal_component].reweight_rules[causal_dem_error_index].push_back(
+          {static_cast<size_t>(target_component), target_dem_error_index, probability.probability,
+           target_probability});
     }
   }
 

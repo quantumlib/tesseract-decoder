@@ -246,6 +246,7 @@ cc_library(
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
     deps = [
+        ":libcommon",
         ":libdem_decomposition",
         "@stim//:stim_lib",
     ],

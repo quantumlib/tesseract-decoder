@@ -26,6 +26,15 @@ struct Symptom {
   std::vector<int> detectors;
   std::vector<int> observables;
 
+  struct less {
+    bool operator()(const Symptom& lhs, const Symptom& rhs) const {
+      if (lhs.detectors != rhs.detectors) {
+        return lhs.detectors < rhs.detectors;
+      }
+      return lhs.observables < rhs.observables;
+    }
+  };
+
   struct hash {
     size_t operator()(const Symptom& s) const {
       size_t hash = 0;

@@ -265,6 +265,38 @@ TEST(MultiPassTesseractDecoderTest, RejectsUnmergedTwoPassReweighting) {
   }
 }
 
+TEST(MultiPassTesseractDecoderTest, DuplicateMechanismsCreateOneRulePerRetainedSymptom) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.05) D0 ^ D1 L0
+        error(0.1) D0 ^ D1 L0
+        error(0.2) D0
+        detector D0
+        detector D1
+        logical_observable L0
+    )DEM");
+  MultiPassTesseractDecoder decoder(make_multi_pass_config(dem));
+
+  MultiPassExecutionPlan plan = decoder.get_execution_plan();
+  ASSERT_EQ(plan.components.size(), 2);
+  EXPECT_EQ(plan.components[0].error_mechanism_count, 1);
+  EXPECT_EQ(plan.components[1].error_mechanism_count, 1);
+  ASSERT_EQ(plan.dependencies.size(), 2);
+  EXPECT_EQ(plan.dependencies[0].source_component, 0);
+  EXPECT_EQ(plan.dependencies[0].target_component, 1);
+  EXPECT_EQ(plan.dependencies[0].rule_count, 1);
+  EXPECT_EQ(plan.dependencies[1].source_component, 1);
+  EXPECT_EQ(plan.dependencies[1].target_component, 0);
+  EXPECT_EQ(plan.dependencies[1].rule_count, 1);
+
+  // The paired mechanisms have aggregate probability 0.14. Together with the
+  // one-sided 0.2 mechanism, the source symptom has aggregate probability 0.284.
+  double reweighted_probability = 0.14 / 0.284;
+  DecodeResult result = decoder.decode_result({0, 1});
+  EXPECT_EQ(result.predictions, std::vector<int>({0}));
+  EXPECT_NEAR(result.total_cost,
+              -std::log(reweighted_probability / (1 - reweighted_probability)), 1e-12);
+}
+
 TEST(MultiPassTesseractDecoderTest, CausalReweightUsesSafeCapAndReportsFinalPassCost) {
   MultiPassTesseractDecoder decoder(make_multi_pass_config(correlated_dem()));
   EXPECT_EQ(decoder.get_execution_plan().pass_schedule,

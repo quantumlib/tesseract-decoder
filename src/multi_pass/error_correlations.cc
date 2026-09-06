@@ -14,6 +14,7 @@
 
 #include "error_correlations.h"
 
+#include <algorithm>
 #include <array>
 #include <map>
 #include <set>
@@ -81,7 +82,7 @@ CorrelationEvidence collect_correlation_evidence_impl(const stim::DetectorErrorM
       for (int observable : group_observables) toggle(observables, observable);
     });
 
-    std::array<ComponentSymptom, 2> symptoms;
+    std::array<common::Symptom, 2> symptoms;
     for (size_t component = 0; component < 2; ++component) {
       if (!has_component_symptom[component]) continue;
       const auto& [detectors, observables] = symptom_sets_by_component[component];
@@ -111,13 +112,6 @@ CorrelationEvidence collect_correlation_evidence_impl(const stim::DetectorErrorM
 }
 
 }  // namespace
-
-bool ComponentSymptom::operator<(const ComponentSymptom& other) const {
-  if (detectors != other.detectors) {
-    return detectors < other.detectors;
-  }
-  return observables < other.observables;
-}
 
 CorrelationEvidence collect_correlation_evidence(const TwoComponentDem& dem) {
   return collect_correlation_evidence_impl(dem.decomposed_dem, dem.detector_components);
