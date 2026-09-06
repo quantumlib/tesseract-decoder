@@ -956,52 +956,6 @@ TEST(utils, LoadDetectorOrders) {
   EXPECT_THROW(load_detector_orders(path.string(), dem), std::invalid_argument);
 }
 
-TEST(utils, DetectorOrderSourcesPreserveSourceAndFileOrder) {
-  const std::filesystem::path path =
-      std::filesystem::path(testing::TempDir()) / "tesseract_detector_order_sources_test.json";
-  {
-    std::ofstream output(path);
-    output << "[[2, 0, 1], [1, 2, 0]]";
-  }
-  const stim::DetectorErrorModel dem(R"DEM(
-    error(0.1) D0 D1
-    error(0.1) D1 D2
-  )DEM");
-
-  DetectorOrderSources sources;
-  EXPECT_TRUE(sources.empty());
-  EXPECT_FALSE(sources.uses_generated_orders());
-  sources.add_file(path.string());
-  sources.add_generated(DetectorOrder::Method::BFS);
-  sources.add_file(path.string());
-
-  EXPECT_FALSE(sources.empty());
-  EXPECT_TRUE(sources.uses_generated_orders());
-  EXPECT_EQ(sources.file_paths(), (std::vector<std::string>{path.string(), path.string()}));
-
-  auto orders = sources.make_orders(dem, 2, 1234);
-  ASSERT_EQ(orders.size(), 6);
-  EXPECT_EQ(orders[0].get_order(), (std::vector<size_t>{2, 0, 1}));
-  EXPECT_EQ(orders[1].get_order(), (std::vector<size_t>{1, 2, 0}));
-  EXPECT_EQ(orders[2].get_method(), DetectorOrder::Method::BFS);
-  EXPECT_FALSE(orders[2].is_resolved());
-  EXPECT_EQ(orders[3].get_method(), DetectorOrder::Method::BFS);
-  EXPECT_FALSE(orders[3].is_resolved());
-  EXPECT_EQ(orders[4].get_order(), (std::vector<size_t>{2, 0, 1}));
-  EXPECT_EQ(orders[5].get_order(), (std::vector<size_t>{1, 2, 0}));
-
-  std::filesystem::remove(path);
-}
-
-TEST(utils, DetectorOrderSourcesRejectInvalidGeneratedInputs) {
-  const stim::DetectorErrorModel dem("error(0.1) D0");
-  DetectorOrderSources sources;
-  EXPECT_THROW(sources.add_generated(DetectorOrder::Method::Literal), std::invalid_argument);
-
-  sources.add_generated(DetectorOrder::Method::Index);
-  EXPECT_THROW(sources.make_orders(dem, 0, 0), std::invalid_argument);
-}
-
 TEST(utils, PreprocessingPreservesAllDetectorOrderEntries) {
   stim::DetectorErrorModel dem("error(0) D2\nerror(0.1) D3 D3");
   TesseractConfig config{dem};

@@ -33,6 +33,11 @@
 
 using namespace tesseract_decoder;
 
+struct DetectorOrderSource {
+  DetectorOrder::Method method;
+  std::string path;
+};
+
 struct Args {
   bool multipass = false;
   bool print_multipass_plan = false;
@@ -45,7 +50,7 @@ struct Args {
   // Manifold orientation options
   uint64_t det_order_seed;
   size_t num_orders_per_generated_source = 1;
-  DetectorOrderSources detector_order_sources;
+  std::vector<DetectorOrderSource> detector_order_sources;
 
   // Sampling options
   size_t sample_num_shots = 0;
@@ -121,16 +126,21 @@ struct Args {
     }
 
     if (detector_order_sources.empty()) {
-      detector_order_sources.add_generated(DetectorOrder::Method::Index);
+      detector_order_sources.push_back({DetectorOrder::Method::Index, ""});
     }
-    if (!detector_order_sources.uses_generated_orders() &&
+    const bool uses_generated_orders =
+        std::any_of(detector_order_sources.begin(), detector_order_sources.end(),
+                    [](const DetectorOrderSource& source) {
+                      return source.method != DetectorOrder::Method::Literal;
+                    });
+    if (!uses_generated_orders &&
         (program.is_used("--num-det-orders") || program.is_used("--det-order-seed"))) {
       throw std::invalid_argument(
           "--num-det-orders and --det-order-seed only apply to generated detector orders. "
           "Select --det-order-bfs, --det-order-index, or --det-order-coordinate to combine "
           "generated orders with --detector-orders files.");
     }
-    if (detector_order_sources.uses_generated_orders() && num_orders_per_generated_source == 0) {
+    if (uses_generated_orders && num_orders_per_generated_source == 0) {
       throw std::invalid_argument("--num-det-orders must be at least 1.");
     }
 
@@ -268,8 +278,17 @@ struct Args {
           std::cout << ")" << std::endl;
         }
       }
-      config.detector_orders = detector_order_sources.make_orders(
-          config.dem, num_orders_per_generated_source, det_order_seed);
+      config.detector_orders.clear();
+      for (const DetectorOrderSource& source : detector_order_sources) {
+        std::vector<DetectorOrder> orders =
+            source.method == DetectorOrder::Method::Literal
+                ? load_detector_orders(source.path, config.dem)
+                : make_detector_orders(num_orders_per_generated_source, source.method,
+                                       det_order_seed);
+        for (DetectorOrder& order : orders) {
+          config.detector_orders.push_back(std::move(order));
+        }
+      }
     }
 
     if (sample_num_shots > 0) {
@@ -397,7 +416,7 @@ int main(int argc, char* argv[]) {
       .help("Add BFS-based detector orders")
       .flag()
       .action([&args](const std::string&) {
-        args.detector_order_sources.add_generated(DetectorOrder::Method::BFS);
+        args.detector_order_sources.push_back({DetectorOrder::Method::BFS, ""});
       });
   program.add_argument("--det-order-index")
       .help(
@@ -405,13 +424,13 @@ int main(int argc, char* argv[]) {
           "(default when no source is specified)")
       .flag()
       .action([&args](const std::string&) {
-        args.detector_order_sources.add_generated(DetectorOrder::Method::Index);
+        args.detector_order_sources.push_back({DetectorOrder::Method::Index, ""});
       });
   program.add_argument("--det-order-coordinate")
       .help("Add random geometric detector orientation orders")
       .flag()
       .action([&args](const std::string&) {
-        args.detector_order_sources.add_generated(DetectorOrder::Method::Coordinate);
+        args.detector_order_sources.push_back({DetectorOrder::Method::Coordinate, ""});
       });
   program.add_argument("--det-order-seed")
       .help(
@@ -426,7 +445,9 @@ int main(int argc, char* argv[]) {
           "generated detector-order methods.")
       .metavar("FILE")
       .append()
-      .action([&args](const std::string& path) { args.detector_order_sources.add_file(path); });
+      .action([&args](const std::string& path) {
+        args.detector_order_sources.push_back({DetectorOrder::Method::Literal, path});
+      });
   program.add_argument("--sample-num-shots")
       .help(
           "If provided, will sample the requested number of shots from the "
@@ -719,7 +740,12 @@ int main(int argc, char* argv[]) {
 
   bool print_final_stats = true;
   if (!args.stats_out_fname.empty()) {
-    const std::vector<std::string> detector_orders_paths = args.detector_order_sources.file_paths();
+    std::vector<std::string> detector_orders_paths;
+    for (const DetectorOrderSource& source : args.detector_order_sources) {
+      if (source.method == DetectorOrder::Method::Literal) {
+        detector_orders_paths.push_back(source.path);
+      }
+    }
     nlohmann::json stats_json = {
         {"circuit_path", args.circuit_path},
         {"dem_path", args.dem_path},

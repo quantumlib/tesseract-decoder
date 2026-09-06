@@ -19,7 +19,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <iterator>
 #include <nlohmann/json.hpp>
 #include <numeric>
 #include <queue>
@@ -304,54 +303,6 @@ const std::vector<size_t>& DetectorOrder::get_order() const {
     throw std::logic_error("Detector order has not been resolved against a DEM.");
   }
   return order;
-}
-
-void DetectorOrderSources::add_generated(DetectorOrder::Method method) {
-  if (method == DetectorOrder::Method::Literal) {
-    throw std::invalid_argument("Literal detector orders must be added from a file.");
-  }
-  sources.push_back(GeneratedSource{method});
-}
-
-void DetectorOrderSources::add_file(std::string path) {
-  sources.push_back(FileSource{std::move(path)});
-}
-
-bool DetectorOrderSources::empty() const {
-  return sources.empty();
-}
-
-bool DetectorOrderSources::uses_generated_orders() const {
-  return std::any_of(sources.begin(), sources.end(), [](const auto& source) {
-    return std::holds_alternative<GeneratedSource>(source);
-  });
-}
-
-std::vector<DetectorOrder> DetectorOrderSources::make_orders(const stim::DetectorErrorModel& dem,
-                                                             size_t orders_per_generated_source,
-                                                             uint64_t seed) const {
-  std::vector<DetectorOrder> result;
-  for (const auto& source : sources) {
-    std::vector<DetectorOrder> source_orders;
-    if (const auto* generated = std::get_if<GeneratedSource>(&source)) {
-      source_orders = make_detector_orders(orders_per_generated_source, generated->method, seed);
-    } else {
-      source_orders = load_detector_orders(std::get<FileSource>(source).path, dem);
-    }
-    result.insert(result.end(), std::make_move_iterator(source_orders.begin()),
-                  std::make_move_iterator(source_orders.end()));
-  }
-  return result;
-}
-
-std::vector<std::string> DetectorOrderSources::file_paths() const {
-  std::vector<std::string> result;
-  for (const auto& source : sources) {
-    if (const auto* file = std::get_if<FileSource>(&source)) {
-      result.push_back(file->path);
-    }
-  }
-  return result;
 }
 
 std::vector<DetectorOrder> make_detector_orders(size_t num_det_orders, DetectorOrder::Method method,
