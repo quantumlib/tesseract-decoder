@@ -177,36 +177,65 @@ TEST(MultiPassTesseractDecoderTest, MultiPassConfigRejectsNoncanonicalBasisMetad
 
 TEST(MultiPassTesseractDecoderTest, BuildsDetectorOrdersFromEachComponentDem) {
   stim::DetectorErrorModel dem = order_sensitive_component_dem();
-  constexpr size_t num_det_orders = 1;
+  constexpr size_t num_det_orders = 3;
   constexpr uint64_t seed = 1;
   const std::vector<int> detector_components = {0, 0, 0, 0, 1, 1, 1, 1};
   TesseractConfig generated_config;
   generated_config.det_beam = 0;
   generated_config.detector_orders =
       make_detector_orders(num_det_orders, DetectorOrder::Method::BFS, seed);
-  auto monolithic_orders = build_det_orders(dem, num_det_orders, DetectorOrder::Method::BFS, seed);
   TwoComponentDem prepared = prepare_two_component_dem(dem, detector_components);
-  bool component_order_differs = false;
+  std::vector<std::unique_ptr<TesseractDecoder>> independent_decoders;
   for (const auto& component_dem : prepared.component_dems) {
-    component_order_differs |=
-        build_det_orders(component_dem, num_det_orders, DetectorOrder::Method::BFS, seed) !=
-        monolithic_orders;
+    TesseractConfig config = generated_config;
+    config.dem = component_dem;
+    auto decoder = std::make_unique<TesseractDecoder>(config);
+    auto expected_orders =
+        build_det_orders(component_dem, num_det_orders, DetectorOrder::Method::BFS, seed);
+    ASSERT_EQ(decoder->config.detector_orders.size(), expected_orders.size());
+    for (size_t order = 0; order < expected_orders.size(); ++order) {
+      EXPECT_TRUE(decoder->config.detector_orders[order].is_resolved());
+      EXPECT_EQ(decoder->config.detector_orders[order].get_order(), expected_orders[order]);
+    }
+    independent_decoders.push_back(std::move(decoder));
   }
-  ASSERT_TRUE(component_order_differs);
 
   MultiPassTesseractDecoder component_order_decoder(
       make_multi_pass_config(dem, 1, detector_components, generated_config));
-  TesseractConfig monolithic_order_config = generated_config;
-  monolithic_order_config.detector_orders = make_literal_detector_orders(monolithic_orders);
-  MultiPassTesseractDecoder monolithic_order_decoder(
-      make_multi_pass_config(dem, 1, detector_components, monolithic_order_config));
 
-  const std::vector<uint64_t> detections = {0, 1, 3};
-  DecodeResult component_result = component_order_decoder.decode_result(detections);
-  DecodeResult monolithic_result = monolithic_order_decoder.decode_result(detections);
-  EXPECT_TRUE(component_result.predictions != monolithic_result.predictions ||
-              component_result.low_confidence != monolithic_result.low_confidence ||
-              component_result.total_cost != monolithic_result.total_cost);
+  // Different orders need not give different answers. Compare with independently
+  // configured component decoders for every syndrome, including empty components.
+  for (size_t syndrome = 0; syndrome < (size_t{1} << detector_components.size()); ++syndrome) {
+    SCOPED_TRACE(syndrome);
+    std::vector<uint64_t> detections;
+    std::array<std::vector<uint64_t>, 2> component_detections;
+    for (size_t detector = 0; detector < detector_components.size(); ++detector) {
+      if (syndrome & (size_t{1} << detector)) {
+        detections.push_back(detector);
+        component_detections[detector_components[detector]].push_back(detector);
+      }
+    }
+    std::vector<bool> observable_flips(dem.count_observables(), false);
+    bool expected_low_confidence = false;
+    double expected_cost = 0;
+    for (size_t component = 0; component < independent_decoders.size(); ++component) {
+      DecodeResult result =
+          independent_decoders[component]->decode_result(component_detections[component]);
+      for (int observable : result.predictions) {
+        observable_flips[observable] = !observable_flips[observable];
+      }
+      expected_low_confidence |= result.low_confidence;
+      expected_cost += result.total_cost;
+    }
+    std::vector<int> expected_predictions;
+    for (size_t observable = 0; observable < observable_flips.size(); ++observable) {
+      if (observable_flips[observable]) expected_predictions.push_back(observable);
+    }
+    DecodeResult result = component_order_decoder.decode_result(detections);
+    EXPECT_EQ(result.predictions, expected_predictions);
+    EXPECT_EQ(result.low_confidence, expected_low_confidence);
+    EXPECT_DOUBLE_EQ(result.total_cost, expected_cost);
+  }
 }
 
 TEST(MultiPassTesseractDecoderTest, ExecutionPlanReportsComponentSparsifyLimits) {
