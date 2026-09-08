@@ -40,8 +40,8 @@ struct ReweightProbability {
  */
 struct CorrelationEvidence {
   std::map<common::Symptom, double, common::Symptom::less> symptom_probabilities;
-  std::map<common::Symptom,
-           std::map<common::Symptom, double, common::Symptom::less>, common::Symptom::less>
+  std::map<common::Symptom, std::map<common::Symptom, double, common::Symptom::less>,
+           common::Symptom::less>
       paired_mechanism_probabilities;
 };
 

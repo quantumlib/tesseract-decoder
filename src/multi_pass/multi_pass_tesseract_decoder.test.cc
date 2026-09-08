@@ -322,8 +322,8 @@ TEST(MultiPassTesseractDecoderTest, DuplicateMechanismsCreateOneRulePerRetainedS
   double reweighted_probability = 0.14 / 0.284;
   DecodeResult result = decoder.decode_result({0, 1});
   EXPECT_EQ(result.predictions, std::vector<int>({0}));
-  EXPECT_NEAR(result.total_cost,
-              -std::log(reweighted_probability / (1 - reweighted_probability)), 1e-12);
+  EXPECT_NEAR(result.total_cost, -std::log(reweighted_probability / (1 - reweighted_probability)),
+              1e-12);
 }
 
 TEST(MultiPassTesseractDecoderTest, CausalReweightUsesSafeCapAndReportsFinalPassCost) {
