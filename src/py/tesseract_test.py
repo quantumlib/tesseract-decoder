@@ -48,6 +48,8 @@ def test_detector_orders_must_be_permutations(detector_order, message):
         _DETECTOR_ERROR_MODEL, det_orders=[detector_order]
     )
     with pytest.raises(ValueError, match=message):
+        _ = config.det_orders
+    with pytest.raises(ValueError, match=message):
         config.compile_decoder()
 
 
@@ -58,6 +60,37 @@ def test_selected_detector_order_index_must_be_in_range():
     decoder = config.compile_decoder()
     with pytest.raises(IndexError):
         decoder.decode_to_errors(np.zeros(2, dtype=bool), 1, 0)
+
+
+def test_detector_orders_property_round_trips_literal_orders():
+    config = tesseract_decoder.tesseract.TesseractConfig(_DETECTOR_ERROR_MODEL)
+    config.det_orders = [[1, 0], [0, 1]]
+
+    assert config.det_orders == [[1, 0], [0, 1]]
+    decoder = config.compile_decoder()
+    assert decoder.config.det_orders == [[1, 0], [0, 1]]
+
+
+def test_default_detector_orders_resolve_for_compile_decoder_dem():
+    # Passing an argument selects the no-DEM convenience constructor. Its
+    # generated orders must remain deferred until this DEM is
+    # supplied instead of being fixed as empty permutations.
+    config = tesseract_decoder.tesseract.TesseractConfig(det_beam=5)
+    decoder = config.compile_decoder_for_dem(_DETECTOR_ERROR_MODEL)
+
+    assert len(decoder.config.det_orders) == 20
+    assert all(sorted(order) == [0, 1] for order in decoder.config.det_orders)
+
+
+def test_reading_generated_detector_orders_does_not_bind_config_to_dem():
+    config = tesseract_decoder.tesseract.TesseractConfig(
+        stim.DetectorErrorModel("error(0.1) D0 D1")
+    )
+    assert all(len(order) == 2 for order in config.det_orders)
+
+    config.dem = stim.DetectorErrorModel("error(0.1) D0 D1 D2")
+
+    assert all(sorted(order) == [0, 1, 2] for order in config.det_orders)
 
 
 def test_create_tesseract_config():
@@ -75,7 +108,7 @@ def test_create_tesseract_config():
     assert config.det_orders == tesseract_decoder.utils.build_det_orders(
         _DETECTOR_ERROR_MODEL,
         20,
-        tesseract_decoder.utils.DetOrder.DetIndex,
+        tesseract_decoder.utils.DetectorOrderMethod.Index,
         2384753,
     )
 

@@ -175,7 +175,7 @@ tesseract_config = tesseract.TesseractConfig(
     # verbose=True,
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem, num_det_orders=1,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=2384753),
 )
 print(f'Tesseract decoder configurations --> {tesseract_config}\n')
@@ -247,7 +247,7 @@ tesseract_config1 = tesseract.TesseractConfig(
     no_revisit_dets=True,
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem, num_det_orders=5,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=2384753),
 )
 
@@ -262,7 +262,7 @@ tesseract_config2 = tesseract.TesseractConfig(
     no_revisit_dets=True,
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem, num_det_orders=5,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=2384753),
 )
 print ("Larger pqlimit")
@@ -284,7 +284,7 @@ tesseract_config1 = tesseract.TesseractConfig(
     beam_climbing=True,
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem, num_det_orders=5,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=2384753),
 )
 
@@ -299,7 +299,7 @@ tesseract_config2 = tesseract.TesseractConfig(
     beam_climbing=True,
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem, num_det_orders=5,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=2384753),
 )
 print ("Larger det_beam")
@@ -321,7 +321,7 @@ tesseract_config1 = tesseract.TesseractConfig(
     det_penalty = 10,
     # det_orders=tesseract_decoder.utils.build_det_orders(
     #     dem, num_det_orders=2,
-    #     method=tesseract_decoder.utils.DetOrder.DetIndex,
+    #     method=tesseract_decoder.utils.DetectorOrderMethod.Index,
     #     seed=2384753),
 )
 
@@ -337,7 +337,7 @@ tesseract_config2 = tesseract.TesseractConfig(
     det_penalty = False,
     # det_orders=tesseract_decoder.utils.build_det_orders(
     #     dem, num_det_orders=2,
-    #     method=tesseract_decoder.utils.DetOrder.DetIndex,
+    #     method=tesseract_decoder.utils.DetectorOrderMethod.Index,
     #     seed=2384753),
 )
 print ("Second version")
@@ -358,7 +358,7 @@ print_results(results)
 # %% id="gari-transform-example"
 gari = tesseract_decoder.demutil.gari
 
-gari_dem, gari_layout = gari.circuit_to_gari(
+gari_dem = gari.circuit_to_gari(
     circuit,
     prior_function=gari.tesseract_xor_prior_probabilities,
 )
@@ -366,23 +366,23 @@ gari_dem, gari_layout = gari.circuit_to_gari(
 # %% [markdown] id="gari-syndrome-layout"
 # Sample detection events only from the original circuit. The GARI matrix DEM
 # stores the transformed matrices for decoding and is not sampled. Copy the
-# source syndrome into its physical rows; the added virtual entries stay zero.
+# source syndrome into the detector prefix; the added virtual entries stay
+# zero.
 
 # %% id="gari-sample-example"
 num_shots = 10
 gari_dets = np.zeros((num_shots, gari_dem.num_detectors), dtype=bool)
-gari_dets[:, gari_layout["source_to_gari"]] = dets[:num_shots]
-
-# %% [markdown] id="gari-detector-order"
-# The layout is physical-then-virtual. Setting `num_det_orders=0` selects one
-# ascending detector order, so Tesseract processes the rows in that order.
+gari_dets[:, :dets.shape[1]] = dets[:num_shots]
 
 # %% id="gari-decode-example"
-short_beam = tesseract_decoder.make_tesseract_sinter_decoders_dict()[
-    "tesseract-short-beam"
-]
-short_beam.num_det_orders = 0
-gari_decoder = short_beam.compile_decoder_for_dem(dem=gari_dem).decoder
+gari_config = tesseract.TesseractConfig(
+    dem=gari_dem,
+    det_beam=15,
+    beam_climbing=True,
+    no_revisit_dets=True,
+    pqlimit=200_000,
+)
+gari_decoder = gari_config.compile_decoder()
 predicted_observables = gari_decoder.decode_batch(gari_dets)
 logical_failures = np.count_nonzero(
     np.any(predicted_observables != obs[:num_shots], axis=1)
@@ -610,7 +610,7 @@ tesseract_config = tesseract_decoder.tesseract.TesseractConfig(
     det_beam=10,
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem, num_det_orders=10,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=2384753),
     # no_revisit_dets=True,
 )
@@ -668,7 +668,7 @@ tesseract_config1 = tesseract.TesseractConfig(
     create_visualization=True,
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem, num_det_orders=2,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=2384753),
 )
 
@@ -710,7 +710,7 @@ tesseract_dec = tesseract_decoder.tesseract.TesseractConfig(
     det_beam=5,
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem, num_det_orders=10,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=2384753),
     no_revisit_dets=True,
 ).compile_decoder()

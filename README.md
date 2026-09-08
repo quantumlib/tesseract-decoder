@@ -144,8 +144,96 @@ Using a Detection Event File and Observable Flips:
 ./tesseract --in events.01 --in-format 01 --obs_in obs.01 --obs-in-format 01 --dem surface_code.dem --out decoded.txt
 ```
 
+Tesseract can combine generated detector-order methods with explicit detector
+traversal orders from one or more JSON files. Sources are concatenated in
+command-line order. For example, this uses three BFS orders, every order in the
+file, and then three coordinate orders:
+
+```bash
+./tesseract \
+    --num-det-orders 3 \
+    --det-order-bfs \
+    --detector-orders orders.json \
+    --det-order-coordinate \
+    ...
+```
+
+Each selected generated method contributes `--num-det-orders` orders and uses
+`--det-order-seed` independently as its base seed. Within a method, order `k`
+uses `seed + k` with an independent random-number stream; this differs from the
+older shared-stream ensemble generator. `--detector-orders FILE` may be
+repeated, and each occurrence contributes every order in that file. The JSON
+format is the same list-of-lists form as Python's
+`TesseractConfig.det_orders`:
+
+```json
+[[0, 2, 1, 3], [3, 1, 2, 0]]
+```
+
+Every inner list must be a complete permutation of the DEM detector IDs. With
+no detector-order source option, Tesseract uses the existing generated Index
+source. A file-only invocation remains file-only; use `--det-order-index`
+explicitly to combine file orders with generated Index orders.
+
 Tesseract supports reading and writing from all of Stim's standard [output
 formats](https://github.com/quantumlib/Stim/blob/main/doc/result_formats.md).
+
+### Decoding with GARI
+
+Generate a GARI matrix DEM from a source circuit:
+
+```bash
+python src/py/_tesseract_py_util/gari.py \
+    --circuit circuit_file.stim \
+    --prior xor \
+    --out-dir gari_output
+```
+
+This writes `gari_output/circuit_file_gari_xor.dem`. Its physical detector rows preserve the
+source detector IDs, and its added virtual rows form a suffix. GARI-aware detector orders can be
+written in the generic CLI format when reordering is wanted:
+
+```python
+import json
+import stim
+from tesseract_decoder import demutil
+
+circuit = stim.Circuit.from_file("circuit_file.stim")
+gari_dem = stim.DetectorErrorModel.from_file("gari_output/circuit_file_gari_xor.dem")
+orders = demutil.gari.build_detector_orders(circuit, gari_dem, num_det_orders=5)
+with open("gari_orders.json", "w") as f:
+    json.dump(orders, f)
+```
+
+Sample from the source circuit and decode with the generated DEM:
+
+```bash
+./bazel-bin/src/tesseract \
+    --circuit circuit_file.stim \
+    --dem gari_output/circuit_file_gari_xor.dem \
+    --detector-orders gari_orders.json \
+    --sample-num-shots 100 \
+    --sample-seed 1234 \
+    --threads 1 \
+    --pqlimit 1000000 \
+    --beam 5 \
+    --beam-climbing \
+    --no-revisit-dets \
+    --print-stats \
+    --stats-out gari-stats.json
+```
+
+The GARI matrix DEM is a decoding representation and must not be sampled. When a circuit and a
+larger DEM are supplied together, both command-line decoders read or sample the circuit's detector
+prefix and leave the DEM's virtual suffix zero. Their observable counts must agree. When reading a
+source-width event file, pass both `--circuit` and `--dem`; with `--dem` alone the input width is the
+full DEM width.
+
+For matrix analysis, `gari.py --row-order block` writes a `_block.dem` file in the internal
+physical-X, physical-Z, virtual-Z, virtual-X row order. This research form does not accept source
+syndromes as a direct prefix. See
+[GARI transformed matrices](src/py/README.md#gari-transformed-matrices) for supported circuit
+conventions and Python API details.
 
 ### Performance Optimization
 
@@ -294,7 +382,7 @@ if __name__ == "__main__":
         merge_errors=True,
         pqlimit=1_000,
         num_det_orders=5,
-        det_order_method=tesseract_decoder.utils.DetOrder.DetIndex,
+        det_order_method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=2384753,
         sparsify_errors=True,
         sparsify_base_degree=3,
@@ -381,7 +469,7 @@ tesseract_config = tesseract.TesseractConfig(
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem=dem,
         num_det_orders=21,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
     ),
     no_revisit_dets=True,
 )
@@ -397,7 +485,7 @@ tesseract_config = tesseract.TesseractConfig(
     det_orders=tesseract_decoder.utils.build_det_orders(
         dem=dem,
         num_det_orders=16,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
     ),
     no_revisit_dets=True,
 )
