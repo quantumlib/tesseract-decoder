@@ -104,25 +104,26 @@ int canonical_detector_basis_component(int detector, const std::string& tag) {
   if (tag.empty()) {
     throw std::invalid_argument(detector_name +
                                 " has no tag; multi-pass CLI input requires a top-level JSON "
-                                "basis field equal to \"X\" or \"Z\".");
+                                "measure_basis field equal to \"X\" or \"Z\".");
   }
 
   nlohmann::json metadata = nlohmann::json::parse(tag, nullptr, false);
   if (metadata.is_discarded()) {
     throw std::invalid_argument(detector_name +
                                 " has a non-JSON tag; multi-pass CLI input requires a top-level "
-                                "JSON basis field equal to \"X\" or \"Z\".");
+                                "JSON measure_basis field equal to \"X\" or \"Z\".");
   }
-  if (!metadata.is_object() || !metadata.contains("basis")) {
-    throw std::invalid_argument(detector_name +
-                                " tag has no top-level basis field equal to \"X\" or \"Z\".");
+  if (!metadata.is_object() || !metadata.contains("measure_basis")) {
+    throw std::invalid_argument(
+        detector_name + " tag has no top-level measure_basis field equal to \"X\" or \"Z\".");
   }
-  const auto& basis = metadata["basis"];
+  const auto& basis = metadata["measure_basis"];
   if (basis == "X") return 0;
   if (basis == "Z") return 1;
-  throw std::invalid_argument(detector_name +
-                              " has an invalid top-level basis; expected the string \"X\" or "
-                              "\"Z\".");
+  throw std::invalid_argument(
+      detector_name +
+      " has an invalid top-level measure_basis; expected the string \"X\" or "
+      "\"Z\".");
 }
 
 std::vector<int> classify_canonical_detector_bases(const stim::DetectorErrorModel& dem) {
@@ -151,8 +152,9 @@ std::vector<int> classify_canonical_detector_bases(const stim::DetectorErrorMode
   std::vector<int> detector_components(detector_tags.size());
   for (size_t detector = 0; detector < detector_tags.size(); ++detector) {
     if (!has_detector_instruction[detector]) {
-      throw std::invalid_argument("Detector D" + std::to_string(detector) +
-                                  " has no detector instruction with a canonical basis tag.");
+      throw std::invalid_argument(
+          "Detector D" + std::to_string(detector) +
+          " has no detector instruction with a canonical measure_basis tag.");
     }
     detector_components[detector] =
         canonical_detector_basis_component(static_cast<int>(detector), detector_tags[detector]);

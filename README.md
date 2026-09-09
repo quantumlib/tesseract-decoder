@@ -303,11 +303,11 @@ remain supported with one-pass decoding.
 ### Detector classification
 
 The standalone CLI deliberately accepts one canonical convention only: every detector instruction
-must have a JSON tag with a top-level `"basis"` whose value is exactly `"X"` or `"Z"`:
+must have a JSON tag with a top-level `"measure_basis"` whose value is exactly `"X"` or `"Z"`:
 
 ```stim
-detector[{"basis":"X"}](0, 0, 0) D0
-detector[{"basis":"Z"}](1, 0, 0) D1
+detector[{"measure_basis":"X"}](0, 0, 0) D0
+detector[{"measure_basis":"Z"}](1, 0, 0) D1
 ```
 
 The CLI does not infer bases from legacy metadata or coordinates. Tagged `DETECTOR` instructions in
@@ -334,6 +334,13 @@ canonical_dem = tesseract_decoder.demutil.annotate_detector_bases(
 )
 Path("canonical.dem").write_text(str(canonical_dem))
 ```
+
+`annotate_detector_bases(dem)` writes top-level `measure_basis`, the authoritative field in both
+Python and the CLI. It rejects an invalid or conflicting existing top-level `measure_basis`, but
+preserves lower-priority fields such as `basis` and `md` without requiring agreement. These fields
+may describe something other than the decoding component. Non-JSON detector tags are rejected
+rather than overwritten. To migrate a DEM using the previous CLI convention, top-level `basis`,
+pass it through this helper before using it with the CLI.
 
 Python and Sinter use the shared automatic classifier by default, including its supported legacy
 metadata and Chromobius-coordinate adapters. Multi-pass decoding still requires every detector to

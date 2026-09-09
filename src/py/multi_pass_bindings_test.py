@@ -33,6 +33,79 @@ def _two_basis_dem() -> stim.DetectorErrorModel:
     )
 
 
+@pytest.mark.parametrize("num_passes", [1, 2])
+@pytest.mark.parametrize(
+    "detector_tags",
+    [
+        ('{"basis":"X"}', '{"basis":"Z"}'),
+        (
+            '{"basis":"Z","md":{"measure_basis":"X"}}',
+            '{"basis":"X","md":{"measure_basis":"Z"}}',
+        ),
+        (
+            '{"measure_basis":"X","basis":0,"md":{"measure_basis":"Y"}}',
+            '{"measure_basis":"Z","md":{"basis":null}}',
+        ),
+    ],
+)
+def test_normalization_agrees_with_python_and_native_classification(detector_tags, num_passes):
+    dem = stim.DetectorErrorModel(
+        f"""
+        error(0.1) D0 L0
+        error(0.2) D1 L0
+        detector[{detector_tags[0]}] D0
+        detector[{detector_tags[1]}] D1
+        """
+    )
+    annotated = tesseract_decoder.demutil.annotate_detector_bases(dem)
+    # An empty component vector selects the same native canonical reader as the
+    # CLI; the public Python wrapper normally supplies its classified vector.
+    native = tesseract_decoder._compile_multi_pass_decoder_for_dem(
+        dem=annotated,
+        detector_components=[],
+        num_passes=num_passes,
+        base_config=tesseract_decoder.TesseractConfig(dem=annotated),
+        strategy=tesseract_decoder.SchedulingStrategy.Causal,
+    )
+    shots = np.array([[0], [1], [2], [3]], dtype=np.uint8)
+    expected = np.array([[0, 0], [1, 0], [1, 0], [0, 0]], dtype=np.uint8)
+    for decoder in (
+        native,
+        MultiPassSinterDecoder(num_passes=num_passes).compile_decoder_for_dem(dem=dem),
+        MultiPassSinterDecoder(num_passes=num_passes).compile_decoder_for_dem(dem=annotated),
+    ):
+        np.testing.assert_array_equal(
+            decoder.decode_shots_bit_packed(bit_packed_detection_event_data=shots),
+            expected,
+        )
+
+
+def test_canonical_circuit_tags_reach_native_classification():
+    circuit = stim.Circuit(r"""
+        R 0 1
+        X_ERROR(0.1) 0
+        X_ERROR(0.2) 1
+        M 0 1
+        DETECTOR[{"measure_basis":"X","basis":"Z"}] rec[-2]
+        DETECTOR[{"measure_basis":"Z","basis":0}] rec[-1]
+        OBSERVABLE_INCLUDE(0) rec[-2] rec[-1]
+    """)
+    dem = circuit.detector_error_model()
+    native = tesseract_decoder._compile_multi_pass_decoder_for_dem(
+        dem=dem,
+        detector_components=[],
+        num_passes=2,
+        base_config=tesseract_decoder.TesseractConfig(dem=dem),
+        strategy=tesseract_decoder.SchedulingStrategy.Causal,
+    )
+    np.testing.assert_array_equal(
+        native.decode_shots_bit_packed(
+            bit_packed_detection_event_data=np.array([[0], [1], [2], [3]], dtype=np.uint8)
+        ),
+        np.array([[0, 0], [1, 0], [1, 0], [0, 0]], dtype=np.uint8),
+    )
+
+
 def test_zero_configuration_and_stable_registry_workflows():
     assert not hasattr(tesseract_decoder, "MultiPassSinterDecoder")
     decoder = MultiPassSinterDecoder()

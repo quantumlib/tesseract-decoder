@@ -240,27 +240,18 @@ def _tag_with_canonical_basis(
     else:
         metadata = {}
 
-    md = metadata.get("md")
-    md_dict = md if isinstance(md, dict) else {}
-    fields = (
-        (metadata, "measure_basis", "top-level measure_basis"),
-        (md_dict, "measure_basis", "md.measure_basis"),
-        (metadata, "basis", "top-level basis"),
-        (md_dict, "basis", "md.basis"),
+    existing = _metadata_basis(
+        detector_index=detector_index,
+        metadata=metadata,
+        key="measure_basis",
+        path="top-level measure_basis",
     )
-    for field_metadata, key, path in fields:
-        existing = _metadata_basis(
-            detector_index=detector_index,
-            metadata=field_metadata,
-            key=key,
-            path=path,
+    if existing is not None and existing != basis:
+        raise ValueError(
+            f"Detector D{detector_index} has conflicting top-level measure_basis "
+            f"{existing!r}; classifier assigned {basis!r}."
         )
-        if existing is not None and existing != basis:
-            raise ValueError(
-                f"Detector D{detector_index} has conflicting {path} "
-                f"{existing!r}; classifier assigned {basis!r}."
-            )
-    metadata["basis"] = basis
+    metadata["measure_basis"] = basis
     return json.dumps(metadata, separators=(",", ":"), ensure_ascii=True)
 
 
@@ -271,12 +262,14 @@ def annotate_detector_bases(
         automatic_detector_basis_classifier
     ),
 ) -> stim.DetectorErrorModel:
-    """Returns ``dem`` with canonical top-level X/Z detector basis tags.
+    """Returns ``dem`` with canonical top-level X/Z ``measure_basis`` tags.
 
     The model's instruction order, repeat blocks, shifts, coordinates, error
     instructions, and non-detector tags are retained. Existing JSON-object
-    detector tags are augmented without dropping unrelated metadata. Conflicts,
-    non-JSON tags, and JSON tags that are not objects are rejected.
+    detector tags are augmented without dropping other metadata. An invalid or
+    conflicting existing top-level ``measure_basis`` is rejected, as are non-JSON
+    tags and JSON tags that are not objects. Lower-priority metadata is preserved
+    without requiring agreement with the classifier's result.
     """
     bases = classify_detector_bases(
         dem, detector_basis_classifier=detector_basis_classifier

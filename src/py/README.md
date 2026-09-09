@@ -548,8 +548,17 @@ def get_tesseract_decoder_for_sinter():
 accepts one or two passes (default: 2) and uses causal scheduling by default. Its shared automatic
 classifier checks, in order, top-level `measure_basis`, `md.measure_basis`, top-level `basis`,
 `md.basis`, and then the Chromobius fourth-coordinate convention (`0`–`2` is X and `3`–`5` is Z).
-A recognized field with any other value is an error, as is a nonintegral fourth coordinate. Every
-detector must be classified, and exactly two components must result.
+A reached metadata field with any value other than `"X"` or `"Z"` is an error; lower-priority
+fields are ignored once a basis is found. The coordinate fallback rejects nonintegral values.
+Every detector must be classified, and exactly two components must result.
+
+Top-level `measure_basis` is also the canonical convention consumed by the native CLI.
+`tesseract_decoder.demutil.annotate_detector_bases(dem)` normalizes legacy tags or coordinates to
+this convention while preserving the DEM structure and unrelated metadata. It rejects an invalid
+or conflicting existing top-level `measure_basis`, but preserves lower-priority metadata even
+when it differs. A DEM using the previous CLI convention, top-level `basis`, must be normalized
+with this helper before CLI decoding. Python and Sinter still classify it automatically without
+normalization.
 
 Standard Tesseract options and multi-pass wrapper options can be passed directly as keyword
 arguments. A nonempty `det_orders` is used directly; when it is empty, `num_det_orders`,

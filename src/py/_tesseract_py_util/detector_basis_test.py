@@ -130,8 +130,8 @@ def test_tagged_circuit_detector_metadata_survives_dem_conversion():
         R 0 1
         X_ERROR(0.1) 0
         M 0 1
-        DETECTOR[{"basis":"X"}] rec[-2]
-        DETECTOR[{"basis":"Z"}] rec[-1]
+        DETECTOR[{"measure_basis":"X","basis":"Z"}] rec[-2]
+        DETECTOR[{"measure_basis":"Z","basis":"X"}] rec[-1]
     """)
     dem = circuit.detector_error_model()
     assert classify_detector_bases(dem) == ["X", "Z"]
@@ -173,20 +173,20 @@ def test_annotate_detector_bases_preserves_dem_structure_and_metadata():
     assert top_metadata == {
         "measure_basis": "X",
         "keep": {"a": 1},
-        "basis": "X",
     }
     assert repeat_metadata == {
         "md": {"basis": "Z"},
         "keep": [1, 2],
-        "basis": "Z",
+        "measure_basis": "Z",
     }
     assert classify_detector_bases(annotated) == ["X", "Z", "Z"]
+    assert annotate_detector_bases(annotated) == annotated
 
 
 def test_annotate_detector_bases_emits_canonical_top_level_tag():
     dem = stim.DetectorErrorModel("detector(1, 2, 3, 0) D0")
     annotated = annotate_detector_bases(dem)
-    assert str(annotated) == 'detector[{"basis":"X"}](1, 2, 3, 0) D0'
+    assert str(annotated) == 'detector[{"measure_basis":"X"}](1, 2, 3, 0) D0'
 
 
 @pytest.mark.parametrize(
@@ -214,17 +214,44 @@ def test_annotate_detector_bases_rejects_tags_it_cannot_merge(tag, match):
 
 
 @pytest.mark.parametrize(
-    "tag,path",
+    "metadata,expected",
     [
-        ('{"measure_basis":"Z"}', "top-level measure_basis"),
-        ('{"md":{"measure_basis":"Z"}}', "md.measure_basis"),
-        ('{"basis":"Z"}', "top-level basis"),
-        ('{"md":{"basis":"Z"}}', "md.basis"),
+        ({"basis": "X"}, "X"),
+        ({"basis": "Z", "md": {"measure_basis": "X"}}, "X"),
+        ({"md": {"basis": "Z"}}, "Z"),
+        ({"measure_basis": "X", "basis": "Z"}, "X"),
+        ({"measure_basis": "Z", "basis": 0, "md": {"measure_basis": "Y"}}, "Z"),
     ],
 )
-def test_annotate_detector_bases_rejects_conflicting_metadata(tag, path):
-    dem = stim.DetectorErrorModel(f"detector[{tag}] D0")
-    with pytest.raises(ValueError, match=f"conflicting {path}"):
+def test_annotation_preserves_metadata_and_automatic_classification(metadata, expected):
+    dem = stim.DetectorErrorModel(f"detector[{json.dumps(metadata)}] D0")
+    annotated = annotate_detector_bases(dem)
+    assert json.loads(annotated[0].tag) == {**metadata, "measure_basis": expected}
+    assert classify_detector_bases(dem) == classify_detector_bases(annotated) == [expected]
+    assert annotate_detector_bases(annotated) == annotated
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"basis": "Z"},
+        {"md": {"measure_basis": "Z", "basis": "Z"}},
+        {"basis": 0, "md": {"measure_basis": "Y", "basis": None}},
+    ],
+)
+def test_annotation_custom_classifier_preserves_lower_priority_metadata(metadata):
+    dem = stim.DetectorErrorModel(f"detector[{json.dumps(metadata)}] D0")
+    annotated = annotate_detector_bases(
+        dem, detector_basis_classifier=lambda _i, _c, _t: "X"
+    )
+    assert json.loads(annotated[0].tag) == {**metadata, "measure_basis": "X"}
+    assert classify_detector_bases(annotated) == ["X"]
+    assert annotate_detector_bases(annotated) == annotated
+
+
+def test_annotate_detector_bases_rejects_conflicting_canonical_metadata():
+    dem = stim.DetectorErrorModel('detector[{"measure_basis":"Z"}] D0')
+    with pytest.raises(ValueError, match="conflicting top-level measure_basis"):
         annotate_detector_bases(
             dem, detector_basis_classifier=lambda _i, _c, _t: "X"
         )

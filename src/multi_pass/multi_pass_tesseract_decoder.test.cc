@@ -140,8 +140,8 @@ TEST(MultiPassTesseractDecoderTest, MultiPassConfigClassifiesCanonicalBasisTags)
   config.component_config.dem = stim::DetectorErrorModel(R"DEM(
         error(0.1) D0
         error(0.2) D1 L0
-        detector[{"measure_basis":"invalid","basis":"X","unrelated":5}] D0
-        detector[{"basis":"Z"}] D1
+        detector[{"measure_basis":"X"}] D0
+        detector[{"measure_basis":"Z"}] D1
         logical_observable L0
     )DEM");
   config.num_passes = 1;
@@ -152,24 +152,45 @@ TEST(MultiPassTesseractDecoderTest, MultiPassConfigClassifiesCanonicalBasisTags)
   EXPECT_FALSE(result.predicted_errors_populated);
 }
 
+TEST(MultiPassTesseractDecoderTest, CanonicalMeasureBasisIgnoresLowerPriorityMetadata) {
+  MultiPassTesseractConfig config;
+  config.component_config.dem = stim::DetectorErrorModel(R"DEM(
+        error(0.1) D0
+        error(0.2) D1 L0
+        detector[{"measure_basis":"X","basis":"Z","md":{"measure_basis":"invalid"}}] D0
+        detector[{"measure_basis":"Z","basis":false,"md":"invalid","unrelated":5}] D1
+        logical_observable L0
+    )DEM");
+  config.num_passes = 1;
+
+  MultiPassTesseractDecoder decoder(config);
+  MultiPassExecutionPlan plan = decoder.get_execution_plan();
+  ASSERT_EQ(plan.components.size(), 2);
+  EXPECT_FALSE(plan.components[0].affects_observable);
+  EXPECT_TRUE(plan.components[1].affects_observable);
+  EXPECT_EQ(decoder.decode_result({1}).predictions, std::vector<int>({0}));
+}
+
 TEST(MultiPassTesseractDecoderTest, MultiPassConfigRejectsNoncanonicalBasisMetadata) {
   const std::vector<std::string> detector_instructions = {
-      R"DEM(detector[{"measure_basis":"X"}] D0
-            detector[{"basis":"Z"}] D1)DEM",
-      R"DEM(detector[{"md":{"basis":"X"}}] D0
-            detector[{"basis":"Z"}] D1)DEM",
-      R"DEM(detector(0, 0, 0, 0) D0
-            detector[{"basis":"Z"}] D1)DEM",
-      R"DEM(detector[{"basis":"Y"}] D0
-            detector[{"basis":"Z"}] D1)DEM",
-      R"DEM(detector[not-json] D0
-            detector[{"basis":"Z"}] D1)DEM",
+      R"DEM(detector[{"basis":"X"}] D0)DEM",
+      R"DEM(detector[{"md":{"measure_basis":"X"}}] D0)DEM",
+      R"DEM(detector[{"md":{"basis":"X"}}] D0)DEM",
+      R"DEM(detector(0, 0, 0, 0) D0)DEM",
+      R"DEM(detector[{"measure_basis":"Y","basis":"X"}] D0)DEM",
+      R"DEM(detector[{"measure_basis":false}] D0)DEM",
+      R"DEM(detector[{"measure_basis":null}] D0)DEM",
+      R"DEM(detector[not-json] D0)DEM",
+      R"DEM(detector[42] D0)DEM",
   };
 
   for (const std::string& detector_instruction : detector_instructions) {
+    SCOPED_TRACE(detector_instruction);
     MultiPassTesseractConfig config;
     config.component_config.dem = stim::DetectorErrorModel(
-        ("error(0.1) D0\nerror(0.2) D1 L0\n" + detector_instruction).c_str());
+        ("error(0.1) D0\nerror(0.2) D1 L0\ndetector[{\"measure_basis\":\"Z\"}] D1\n" +
+         detector_instruction)
+            .c_str());
     config.num_passes = 1;
     EXPECT_THROW((void)MultiPassTesseractDecoder(config), std::invalid_argument);
   }
