@@ -5,7 +5,7 @@ The `tesseract_decoder.tesseract` module provides the Tesseract decoder, which e
 
 #### Class `tesseract.TesseractConfig`
 This class holds the configuration parameters that control the behavior of the Tesseract decoder.
-* `TesseractConfig(dem: stim.DetectorErrorModel, det_beam: int = 5, beam_climbing: bool = False, no_revisit_dets: bool = True, verbose: bool = False, merge_errors: bool = True, pqlimit: int = 200000, det_orders: list[list[int]] = [], det_penalty: float = 0.0, create_visualization: bool = False, sparsify_errors: bool = False, sparsify_base_degree: int = -1, sparsify_max_degree: int = -1, sparsify_reactivate_limit: int = -1)`
+* `TesseractConfig(dem: stim.DetectorErrorModel, det_beam: int = 5, beam_climbing: bool = False, no_revisit_dets: bool = True, verbose: bool = False, merge_errors: bool = True, pqlimit: int = 200000, det_orders: list[list[int]] | None = None, det_penalty: float = 0.0, create_visualization: bool = False, sparsify_errors: bool = False, sparsify_base_degree: int = -1, sparsify_max_degree: int = -1, sparsify_reactivate_limit: int = -1, num_det_orders: int | None = None, det_order_method: DetectorOrderMethod | None = None, seed: int | None = None)`
 * `__str__()`
 
 Explanation of configuration arguments:
@@ -17,7 +17,10 @@ Explanation of configuration arguments:
 * `verbose` - A boolean flag that, when `True`, enables verbose logging. This is useful for debugging and understanding the decoder's internal behavior, as it will print information about the search process.
 * `merge_errors` - A boolean flag that, when `True`, merges error channels with identical syndrome patterns before decoding. This is enabled by default.
 * `pqlimit` - An integer that sets a limit on the number of nodes in the priority queue. This can be used to constrain the memory usage of the decoder. The default value is `200000`.
-* `det_orders` - A list of complete detector-ID permutations in traversal order: `order[position] = detector_id`. This is used for "ensemble reordering," an optimization that tries different detector orderings to improve the search's convergence. The default is an empty list, meaning a single, fixed ordering is used.
+* `det_orders` - A nonempty list of complete detector-ID permutations in traversal order: `order[position] = detector_id`. This is used for "ensemble reordering," an optimization that tries different detector orderings to improve the search's convergence. It cannot be combined with generated-order options. `None` and an empty list retain the historical generated-order default.
+* `num_det_orders` - Number of generated detector orders. The default is `20` when no nonempty literal order list is supplied.
+* `det_order_method` - Method used to generate detector orders. The default is `DetectorOrderMethod.Index`.
+* `seed` - Seed used to generate detector orders. The default is `2384753`.
 * `det_penalty` - A floating-point value that adds a cost for each residual detection event. This encourages the decoder to prioritize paths that resolve more detection events, steering the search towards more complete solutions. The default value is `0.0`, meaning no penalty is applied.
 * `create_visualization` - A boolean flag that enables decoder visualization output when set to `True`. The default value is `False`.
 * `sparsify_errors` - Enables per-shot sparse error activation. When enabled, all errors up to `sparsify_base_degree` are always active, and selected higher-degree errors are reactivated per shot.
@@ -539,6 +542,87 @@ def get_tesseract_decoder_for_sinter():
     return tesseract_module.make_tesseract_sinter_decoders_dict()
 ```
 
+#### Multi-pass Tesseract decoding
+
+`MultiPassSinterDecoder` partitions a detector error model into exactly two detector components. It
+accepts one or two passes (default: 2) and uses causal scheduling by default. Its shared automatic
+classifier checks, in order, top-level `measure_basis`, `md.measure_basis`, top-level `basis`,
+`md.basis`, and then the Chromobius fourth-coordinate convention (`0`–`2` is X and `3`–`5` is Z).
+A reached metadata field with any value other than `"X"` or `"Z"` is an error; lower-priority
+fields are ignored once a basis is found. The coordinate fallback rejects nonintegral values.
+Every detector must be classified, and exactly two components must result.
+
+Top-level `measure_basis` is also the canonical convention consumed by the native CLI.
+`tesseract_decoder.demutil.annotate_detector_bases(dem)` normalizes legacy tags or coordinates to
+this convention while preserving the DEM structure and unrelated metadata. It rejects an invalid
+or conflicting existing top-level `measure_basis`, but preserves lower-priority metadata even
+when it differs. A DEM using the previous CLI convention, top-level `basis`, must be normalized
+with this helper before CLI decoding. Python and Sinter still classify it automatically without
+normalization.
+
+Standard Tesseract options and multi-pass wrapper options can be passed directly as keyword
+arguments. A nonempty `det_orders` is used directly; when it is empty, `num_det_orders`,
+`det_order_method`, and `seed` generate component orderings. Two-pass reweighting requires
+`merge_errors=True` because its probabilities describe aggregate component symptoms;
+`merge_errors=False` remains supported with one pass:
+
+```python
+import stim
+import tesseract_decoder
+from multi_pass_sinter_decoders import MultiPassSinterDecoder
+
+dem = stim.DetectorErrorModel("""
+    error(0.1) D0 ^ D1 L0
+    error(0.01) D0
+    error(0.2) D1 L0
+    detector[{"measure_basis": "X"}] D0
+    detector[{"measure_basis": "Z"}] D1
+    logical_observable L0
+""")
+
+decoder = MultiPassSinterDecoder(
+    num_passes=2,
+    det_beam=20,
+    beam_climbing=True,
+    pqlimit=1_000_000,
+    merge_errors=True,
+    num_det_orders=21,
+    det_order_method=tesseract_decoder.utils.DetectorOrderMethod.Index,
+)
+compiled_decoder = decoder.compile_decoder_for_dem(dem=dem)
+```
+
+For another convention, pass a `detector_basis_classifier` with signature
+`(detector_index, coordinates, tag) -> "X" | "Z" | None`. Explicit Stim surface-code parity and
+Chromobius-coordinate X/Z adapters are available from `tesseract_decoder.demutil`. The generic
+last-coordinate compatibility adapter is also exported for component-based APIs, but intentionally
+does not claim that its labels are X/Z bases. For example:
+
+```python
+decoder = MultiPassSinterDecoder(
+    detector_basis_classifier=(
+        tesseract_decoder.demutil.stim_surface_code_detector_basis_classifier
+    )
+)
+```
+
+The old `detector_classifier` keyword remains available for callbacks returning two arbitrary
+nonnegative integer component labels. New code should use the X/Z interface above.
+
+For Oscar's ordinary workflow, no callback is needed:
+
+```python
+from multi_pass_sinter_decoders import MultiPassSinterDecoder, get_sinter_decoders
+
+decoder = MultiPassSinterDecoder()
+custom_decoders = get_sinter_decoders()
+```
+
+`get_sinter_decoders()` preserves the `tesseract-long-beam-mono`,
+`tesseract-long-beam-multipass-1pass`, and `tesseract-long-beam-multipass-2pass` registry names.
+Low-confidence multipass shots propagate through Sinter's discard byte and are counted as discards,
+not successful shots.
+
 #### Decoding with `sinter.collect`
 `sinter.collect` is a powerful function for running many decoding jobs in parallel and collecting the results for large-scale benchmarking.
 
@@ -708,9 +792,10 @@ nice_calibrated_dem = demutil.regeneralize_spatial_dem(
 
 `demutil.gari.circuit_to_gari` converts a supported correlated CSS Stim
 circuit into a GARI matrix DEM. It generates a flattened source DEM with
-`decompose_errors=False`. Detectors must follow the repository's
-fourth-coordinate convention: values `0`–`2` identify X detectors and `3`–`5`
-identify Z detectors.
+`decompose_errors=False`. By default it uses the shared automatic basis
+classifier: detector metadata is checked first, followed by the strict
+Chromobius fourth-coordinate convention. A custom classifier can be supplied
+with `detector_basis_classifier=`.
 
 ```python
 import stim

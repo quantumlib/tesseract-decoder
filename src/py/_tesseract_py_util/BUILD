@@ -13,6 +13,18 @@ py_library(
 )
 
 py_test(
+    name = "detector_basis_test",
+    srcs = ["detector_basis_test.py"],
+    imports = ["..", "."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":_tesseract_py_util",
+        "@pypi//pytest",
+        "@pypi//stim",
+    ],
+)
+
+py_test(
     name = "gari_test",
     srcs = ["gari_test.py"],
     imports = ["..", ".", "../.."],

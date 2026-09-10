@@ -20,6 +20,8 @@
 #include <fstream>
 #include <iostream>
 
+#include "sinter_compat.h"
+#include "sinter_compat.pybind.h"
 #include "stim.h"
 #include "tesseract.h"
 
@@ -44,56 +46,9 @@ struct TesseractSinterCompiledDecoder {
   // Decode a batch of syndrome shots in a bit-packed NumPy array.
   py::array_t<uint8_t> decode_shots_bit_packed(
       const py::array_t<uint8_t>& bit_packed_detection_event_data) {
-    // Validate input.
-    if (bit_packed_detection_event_data.ndim() != 2) {
-      throw std::invalid_argument("Input `bit_packed_detection_event_data` must be a 2D array.");
-    }
-
-    // Calculate number of bytes per shot.
-    const uint64_t num_detector_bytes = (num_detectors + 7) / 8;
-    if (bit_packed_detection_event_data.shape(1) != (py::ssize_t)num_detector_bytes) {
-      throw std::invalid_argument(
-          "Input array's second dimension does not match num_detector_bytes.");
-    }
-
-    const size_t num_shots = bit_packed_detection_event_data.shape(0);
-    const uint64_t num_observable_bytes = (num_observables + 7) / 8;
-
-    // Result buffer to store the predicted observables for all shots.
-    auto result_array =
-        py::array_t<uint8_t>({(py::ssize_t)num_shots, (py::ssize_t)num_observable_bytes});
-    auto result_buffer = result_array.mutable_data();
-
-    const uint8_t* detections_data = bit_packed_detection_event_data.data();
-    const size_t detections_stride = bit_packed_detection_event_data.strides(0);
-
-    // Loop through each shot and decode it with TesseractDecoder.
-    for (size_t shot = 0; shot < num_shots; ++shot) {
-      const uint8_t* single_shot_data = detections_data + shot * detections_stride;
-
-      // Unpack the shot data into a vector of indices of fired detectors.
-      std::vector<uint64_t> detections;
-      for (uint64_t i = 0; i < num_detectors; ++i) {
-        if ((single_shot_data[i / 8] >> (i % 8)) & 1) {
-          detections.push_back(i);
-        }
-      }
-
-      // Decode with TesseractDecoder.
-      std::vector<int> predictions = decoder->decode(detections);
-
-      // Store predictions into the output buffer
-      uint8_t* single_result_buffer = result_buffer + shot * num_observable_bytes;
-      std::fill(single_result_buffer, single_result_buffer + num_observable_bytes, 0);
-      for (size_t obs_index : predictions) {
-        if (obs_index >= 0 && obs_index < num_observables) {
-          single_result_buffer[obs_index / 8] ^= (1 << (obs_index % 8));
-        }
-      }
-    }
-
-    // Return the result.
-    return result_array;
+    return decode_sinter_shots_bit_packed(*decoder, num_detectors, num_observables,
+                                          bit_packed_detection_event_data,
+                                          SinterOutputFormat::Predictions);
   }
 };
 
@@ -135,9 +90,9 @@ struct TesseractSinterDecoder {
         sparsify_base_degree(-1),
         sparsify_max_degree(-1),
         sparsify_reactivate_limit(-1),
-        num_det_orders(0),
+        num_det_orders(1),
         det_order_method(DetectorOrder::Method::Index),
-        seed(2384753) {}
+        seed(0) {}
 
   // Constructor with parameters
   TesseractSinterDecoder(int det_beam, bool beam_climbing, bool no_revisit_dets, bool verbose,
@@ -160,7 +115,11 @@ struct TesseractSinterDecoder {
         sparsify_reactivate_limit(sparsify_reactivate_limit),
         num_det_orders(num_det_orders),
         det_order_method(det_order_method),
-        seed(seed) {}
+        seed(seed) {
+    if (num_det_orders == 0) {
+      throw std::invalid_argument("num_det_orders must be at least 1.");
+    }
+  }
 
   bool operator==(const TesseractSinterDecoder& other) const {
     return det_beam == other.det_beam && beam_climbing == other.beam_climbing &&
@@ -180,6 +139,9 @@ struct TesseractSinterDecoder {
   }
 
   TesseractConfig make_config(const stim::DetectorErrorModel& dem) const {
+    if (num_det_orders == 0) {
+      throw std::invalid_argument("num_det_orders must be at least 1.");
+    }
     TesseractConfig config;
     config.dem = dem;
     config.det_beam = det_beam;
@@ -266,15 +228,8 @@ struct TesseractSinterDecoder {
         }
       }
 
-      std::vector<int> predictions = decoder.decode(detections);
-
-      // Pack the predictions back into a bit-packed format.
-      std::fill(single_result_data.begin(), single_result_data.end(), 0);
-      for (size_t obs_index : predictions) {
-        if (obs_index >= 0 && obs_index < num_obs) {
-          single_result_data[obs_index / 8] ^= (1 << (obs_index % 8));
-        }
-      }
+      pack_sinter_decode_result(decoder.decode_result(detections), num_obs,
+                                SinterOutputFormat::Predictions, single_result_data);
 
       // Write result to the output file.
       output_file.write(reinterpret_cast<char*>(single_result_data.data()), num_observable_bytes);
@@ -284,6 +239,24 @@ struct TesseractSinterDecoder {
     output_file.close();
   }
 };
+
+TesseractSinterDecoder restore_pickled_tesseract_sinter_decoder(
+    int det_beam, bool beam_climbing, bool no_revisit_dets, bool verbose, bool merge_errors,
+    size_t pqlimit, double det_penalty, bool create_visualization, size_t num_det_orders,
+    DetectorOrder::Method det_order_method, uint64_t seed, bool sparsify_errors,
+    int sparsify_base_degree, int sparsify_max_degree, int sparsify_reactivate_limit) {
+  // Older default instances serialized a zero count, which meant one ascending
+  // detector order through the decoder's former empty-list fallback.
+  if (num_det_orders == 0) {
+    num_det_orders = 1;
+    det_order_method = DetectorOrder::Method::Index;
+    seed = 0;
+  }
+  return TesseractSinterDecoder(det_beam, beam_climbing, no_revisit_dets, verbose, merge_errors,
+                                pqlimit, det_penalty, create_visualization, num_det_orders,
+                                det_order_method, seed, sparsify_errors, sparsify_base_degree,
+                                sparsify_max_degree, sparsify_reactivate_limit);
+}
 
 //--------------------------------------------------------------------------------------------------
 // Expose C++ classes to the Python interpreter.
@@ -339,8 +312,8 @@ void pybind_sinter_compat(py::module& root) {
            py::arg("no_revisit_dets") = true, py::arg("verbose") = false,
            py::arg("merge_errors") = true, py::arg("pqlimit") = DEFAULT_PQLIMIT,
            py::arg("det_penalty") = 0.0, py::arg("create_visualization") = false,
-           py::arg("num_det_orders") = 0,
-           py::arg("det_order_method") = DetectorOrder::Method::Index, py::arg("seed") = 2384753,
+           py::arg("num_det_orders") = 1,
+           py::arg("det_order_method") = DetectorOrder::Method::Index, py::arg("seed") = 0,
            py::arg("sparsify_errors") = false, py::arg("sparsify_base_degree") = -1,
            py::arg("sparsify_max_degree") = -1, py::arg("sparsify_reactivate_limit") = -1,
            R"pbdoc(
@@ -401,7 +374,7 @@ void pybind_sinter_compat(py::module& root) {
           },
           [](py::tuple t) {  // __setstate__
             if (t.size() == 11) {
-              return TesseractSinterDecoder(
+              return restore_pickled_tesseract_sinter_decoder(
                   t[0].cast<int>(), t[1].cast<bool>(), t[2].cast<bool>(), t[3].cast<bool>(),
                   t[4].cast<bool>(), t[5].cast<size_t>(), t[6].cast<double>(), t[7].cast<bool>(),
                   t[8].cast<size_t>(), t[9].cast<DetectorOrder::Method>(), t[10].cast<uint64_t>(),
@@ -412,13 +385,13 @@ void pybind_sinter_compat(py::module& root) {
               throw std::runtime_error("Invalid state for TesseractSinterDecoder!");
             }
             if (py::isinstance<py::bool_>(t[8])) {
-              return TesseractSinterDecoder(
+              return restore_pickled_tesseract_sinter_decoder(
                   t[0].cast<int>(), t[1].cast<bool>(), t[2].cast<bool>(), t[3].cast<bool>(),
                   t[4].cast<bool>(), t[5].cast<size_t>(), t[6].cast<double>(), t[7].cast<bool>(),
                   t[12].cast<size_t>(), t[13].cast<DetectorOrder::Method>(), t[14].cast<uint64_t>(),
                   t[8].cast<bool>(), t[9].cast<int>(), t[10].cast<int>(), t[11].cast<int>());
             }
-            return TesseractSinterDecoder(
+            return restore_pickled_tesseract_sinter_decoder(
                 t[0].cast<int>(), t[1].cast<bool>(), t[2].cast<bool>(), t[3].cast<bool>(),
                 t[4].cast<bool>(), t[5].cast<size_t>(), t[6].cast<double>(), t[7].cast<bool>(),
                 t[8].cast<size_t>(), t[9].cast<DetectorOrder::Method>(), t[10].cast<uint64_t>(),

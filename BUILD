@@ -21,6 +21,7 @@ py_wheel(
     deps=[
         "//src:tesseract_decoder",
         "//src/py:generated_stubs",
+        "//src/py:multi_pass_sinter_decoders",
         "//src/py/_tesseract_py_util:_tesseract_py_util",
         ":package_data",
     ],
@@ -28,6 +29,7 @@ py_wheel(
     requires=[
         "numpy",
         "scipy",
+        "sinter",
         "stim",
     ],
     python_tag="$(ABI_TAG)",

@@ -570,6 +570,154 @@ TEST(tesseract, MoreThan64Observables) {
   }
 }
 
+TEST(tesseract, TemporaryProbabilityUpdatesAffectOneDecodeAndAreRestored) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.2) D0
+        error(0.1) D0
+        detector(0,0,0) D0
+    )DEM");
+
+  TesseractConfig config{dem};
+  config.merge_errors = false;  // Important: do not merge errors for this test
+  TesseractDecoder decoder(config);
+  double original_likelihood_cost = decoder.errors[1].likelihood_cost;
+
+  EXPECT_EQ(decoder.decode_result({0}).predicted_errors, std::vector<size_t>({0}));
+  EXPECT_EQ(decoder.decode_result({0}, {{1, 0.3}}).predicted_errors, std::vector<size_t>({1}));
+  EXPECT_DOUBLE_EQ(decoder.errors[1].likelihood_cost, original_likelihood_cost);
+  EXPECT_EQ(decoder.decode_result({0}).predicted_errors, std::vector<size_t>({0}));
+}
+
+TEST(tesseract, TemporaryProbabilityUpdatesValidateBeforeMutation) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.2) D0
+        error(0.1) D0
+        detector D0
+    )DEM");
+  TesseractConfig config{dem};
+  config.merge_errors = false;
+  TesseractDecoder decoder(config);
+
+  EXPECT_THROW(decoder.decode_result({0}, {{1, 0.3}, {2, 0.4}}), std::out_of_range);
+  EXPECT_THROW(decoder.decode_result({0}, {{1, 0.3}, {0, 1.0}}), std::invalid_argument);
+  EXPECT_EQ(decoder.decode_result({0}).predicted_errors, std::vector<size_t>({0}));
+}
+
+TEST(tesseract, TemporaryProbabilityUpdatesUseOriginalDemIndicesAfterPreprocessing) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0) D1
+        error(0.1) D0 L0
+        error(0.2) D0 L0
+        error(0.15) D0 L1
+        detector D0
+        detector D1
+        logical_observable L0
+        logical_observable L1
+    )DEM");
+  TesseractDecoder decoder(TesseractConfig{dem});
+  const double original_probability = decoder.error_probability(0);
+
+  EXPECT_EQ(decoder.decode_result({0}).predictions, std::vector<int>({0}));
+  EXPECT_EQ(decoder.decode_result({0}, {{1, 0.05}}).predictions, std::vector<int>({1}));
+  EXPECT_EQ(decoder.decode_result({0}, {{2, 0.05}}).predictions, std::vector<int>({1}));
+  EXPECT_DOUBLE_EQ(decoder.error_probability(0), original_probability);
+  EXPECT_THROW(decoder.decode_result({0}, {{0, 0.3}}), std::invalid_argument);
+  EXPECT_THROW(decoder.decode_result({2}, {{2, 0.05}}), std::runtime_error);
+  EXPECT_DOUBLE_EQ(decoder.error_probability(0), original_probability);
+  EXPECT_EQ(decoder.decode_result({0}).predictions, std::vector<int>({0}));
+}
+
+TEST(tesseract, TemporaryProbabilityUpdateTiesUseDeterministicErrorOrder) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 L0
+        error(0.1) D0 L1
+        detector D0
+        logical_observable L0
+        logical_observable L1
+    )DEM");
+  TesseractConfig config{dem};
+  config.merge_errors = false;
+  TesseractDecoder decoder(config);
+
+  EXPECT_EQ(decoder.decode_result({0}).predicted_errors, std::vector<size_t>({0}));
+  EXPECT_EQ(decoder.decode_result({0}, {{1, 0.1}}).predicted_errors, std::vector<size_t>({0}));
+  EXPECT_EQ(decoder.decode_result({0}, {{1, 0.2}}).predicted_errors, std::vector<size_t>({1}));
+  EXPECT_EQ(decoder.decode_result({0}).predicted_errors, std::vector<size_t>({0}));
+}
+
+TEST(tesseract, TemporaryProbabilityUpdatesAreRestoredWhenDecodeThrows) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.2) D0
+        error(0.1) D0
+        detector D0
+    )DEM");
+  TesseractConfig config{dem};
+  config.merge_errors = false;
+  TesseractDecoder decoder(config);
+  double original_likelihood_cost = decoder.errors[1].likelihood_cost;
+
+  EXPECT_THROW(decoder.decode_result({1}, {{1, 0.3}}), std::runtime_error);
+  EXPECT_DOUBLE_EQ(decoder.errors[1].likelihood_cost, original_likelihood_cost);
+  EXPECT_EQ(decoder.decode_result({0}).predicted_errors, std::vector<size_t>({0}));
+}
+
+TEST(tesseract, DecodeResultDistinguishesPopulatedEmptyErrors) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 L0
+        detector D0
+        logical_observable L0
+    )DEM");
+  TesseractDecoder decoder(TesseractConfig{dem});
+
+  DecodeResult empty_result = decoder.decode_result({});
+  EXPECT_TRUE(empty_result.predicted_errors_populated);
+  EXPECT_TRUE(empty_result.predicted_errors.empty());
+  EXPECT_TRUE(empty_result.predictions.empty());
+  EXPECT_FALSE(empty_result.low_confidence);
+  EXPECT_DOUBLE_EQ(empty_result.total_cost, 0);
+
+  DecodeResult fired_result = decoder.decode_result({0});
+  EXPECT_TRUE(fired_result.predicted_errors_populated);
+  EXPECT_EQ(fired_result.predicted_errors, std::vector<size_t>({0}));
+  EXPECT_EQ(fired_result.predictions, std::vector<int>({0}));
+  EXPECT_FALSE(fired_result.low_confidence);
+  EXPECT_DOUBLE_EQ(fired_result.total_cost,
+                   decoder.cost_from_errors(fired_result.predicted_errors));
+}
+
+TEST(decoder, CommonInterfaceSupportsTesseractAndSimplex) {
+  stim::DetectorErrorModel dem(R"DEM(
+        error(0.1) D0 L0
+        detector D0
+        logical_observable L0
+    )DEM");
+  TesseractDecoder tesseract_decoder(TesseractConfig{dem});
+  SimplexDecoder simplex_decoder(SimplexConfig{dem});
+
+  auto expect_decoded_result = [](Decoder& decoder) {
+    DecodeResult empty_result = decoder.decode_result({});
+    EXPECT_TRUE(empty_result.predictions.empty());
+    EXPECT_TRUE(empty_result.predicted_errors.empty());
+    EXPECT_TRUE(empty_result.predicted_errors_populated);
+    EXPECT_FALSE(empty_result.low_confidence);
+    EXPECT_EQ(empty_result.total_cost, 0);
+
+    DecodeResult result = decoder.decode_result({0});
+    EXPECT_EQ(result.predictions, std::vector<int>({0}));
+    EXPECT_EQ(result.predicted_errors, std::vector<size_t>({0}));
+    EXPECT_TRUE(result.predicted_errors_populated);
+    EXPECT_FALSE(result.low_confidence);
+    EXPECT_GT(result.total_cost, 0);
+    return result;
+  };
+  DecodeResult tesseract_result = expect_decoded_result(tesseract_decoder);
+  DecodeResult simplex_result = expect_decoded_result(simplex_decoder);
+  EXPECT_DOUBLE_EQ(tesseract_result.total_cost,
+                   tesseract_decoder.cost_from_errors(tesseract_result.predicted_errors));
+  EXPECT_DOUBLE_EQ(simplex_result.total_cost,
+                   simplex_decoder.cost_from_errors(simplex_result.predicted_errors));
+}
+
 TEST(utils, DuplicateDetectorCoords) {
   std::string dem_str = "detector(0, 0, 1) D0\ndetector(0, 0, 2) D0\nerror(0.1) D0\n";
   stim::DetectorErrorModel dem(dem_str.c_str());
@@ -599,6 +747,14 @@ TEST(utils, BuildDetOrdersCoordinateSparse) {
   auto orders = build_det_orders(dem, 1, DetectorOrder::Method::Coordinate, 0);
   ASSERT_EQ(orders.size(), 1);
   ASSERT_EQ(orders[0].size(), 2);
+}
+
+TEST(utils, ParallelForShotsPropagatesWorkerExceptions) {
+  EXPECT_THROW(
+      parallel_for_shots_in_order(
+          1, 1, [](size_t, size_t) { throw std::invalid_argument("worker construction failed"); },
+          [](size_t) { return true; }),
+      std::invalid_argument);
 }
 
 TEST(simplex, DuplicateDetectorCoords) {
@@ -769,6 +925,7 @@ TEST(utils, DetectorOrdersValidateLiteralPermutations) {
 
   EXPECT_THROW(DetectorOrder(DetectorOrder::Method::Literal, 0), std::invalid_argument);
   EXPECT_THROW(make_detector_orders(1, DetectorOrder::Method::Literal, 0), std::invalid_argument);
+  EXPECT_THROW(make_detector_orders(0, DetectorOrder::Method::Index, 0), std::invalid_argument);
 }
 
 TEST(utils, LoadDetectorOrders) {
@@ -808,6 +965,25 @@ TEST(utils, PreprocessingPreservesAllDetectorOrderEntries) {
   EXPECT_EQ(decoder.num_detectors, 4);
   ASSERT_EQ(decoder.config.detector_orders.size(), 1);
   EXPECT_EQ(decoder.config.detector_orders[0].get_order().size(), 4);
+}
+
+TEST(tesseract, DefaultConfigContainsAnExplicitDetectorOrderSpecification) {
+  TesseractConfig config;
+  ASSERT_EQ(config.detector_orders.size(), 1);
+  config.dem = stim::DetectorErrorModel("error(0.1) D0 D1");
+
+  TesseractDecoder decoder(config);
+  auto order = decoder.config.detector_orders[0].get_order();
+  std::sort(order.begin(), order.end());
+  EXPECT_EQ(order, (std::vector<size_t>{0, 1}));
+}
+
+TEST(tesseract, EmptyDetectorOrderConfigurationIsRejected) {
+  TesseractConfig config;
+  config.dem = stim::DetectorErrorModel("error(0.1) D0");
+  config.detector_orders.clear();
+
+  EXPECT_THROW((void)TesseractDecoder(config), std::invalid_argument);
 }
 
 TEST(utils, BfsOrdersContainDetectorsInTraversalOrder) {

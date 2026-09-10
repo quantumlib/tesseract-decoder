@@ -26,6 +26,7 @@
 #include <utility>
 
 #include "common.h"
+#include "multi_pass/multi_pass_tesseract_decoder.h"
 #include "stim.h"
 #include "tesseract.h"
 #include "utils.h"
@@ -38,13 +39,17 @@ struct DetectorOrderSource {
 };
 
 struct Args {
+  bool multipass = false;
+  bool print_multipass_plan = false;
+  SchedulingStrategy multipass_strategy = SchedulingStrategy::Causal;
+  size_t num_passes = 2;
   std::string circuit_path;
   std::string dem_path;
   bool no_merge_errors = false;
 
   // Manifold orientation options
   uint64_t det_order_seed;
-  size_t num_det_orders = 10;
+  size_t num_orders_per_generated_source = 1;
   std::vector<DetectorOrderSource> detector_order_sources;
 
   // Sampling options
@@ -99,22 +104,44 @@ struct Args {
     return append_observables || !obs_in_fname.empty() || (sample_num_shots > 0);
   }
 
+  std::unique_ptr<Decoder> make_decoder(const TesseractConfig& component_config,
+                                        bool print_plan = false) const {
+    if (!multipass) {
+      return std::make_unique<TesseractDecoder>(component_config);
+    }
+    MultiPassTesseractConfig config;
+    config.component_config = component_config;
+    config.num_passes = num_passes;
+    config.strategy = multipass_strategy;
+    auto decoder = std::make_unique<MultiPassTesseractDecoder>(std::move(config));
+    if (print_plan) {
+      std::cerr << decoder->get_execution_plan().str();
+    }
+    return decoder;
+  }
+
   void validate(const argparse::ArgumentParser& program) {
     if (circuit_path.empty() and dem_path.empty()) {
       throw std::invalid_argument("Must provide at least one of --circuit or --dem");
     }
 
-    const bool has_generated_detector_order_source =
+    if (detector_order_sources.empty()) {
+      detector_order_sources.push_back({DetectorOrder::Method::Index, ""});
+    }
+    const bool uses_generated_orders =
         std::any_of(detector_order_sources.begin(), detector_order_sources.end(),
                     [](const DetectorOrderSource& source) {
                       return source.method != DetectorOrder::Method::Literal;
                     });
-    if (!detector_order_sources.empty() && !has_generated_detector_order_source &&
+    if (!uses_generated_orders &&
         (program.is_used("--num-det-orders") || program.is_used("--det-order-seed"))) {
       throw std::invalid_argument(
           "--num-det-orders and --det-order-seed only apply to generated detector orders. "
           "Select --det-order-bfs, --det-order-index, or --det-order-coordinate to combine "
           "generated orders with --detector-orders files.");
+    }
+    if (uses_generated_orders && num_orders_per_generated_source == 0) {
+      throw std::invalid_argument("--num-det-orders must be at least 1.");
     }
 
     int num_data_sources = int(sample_num_shots > 0) + int(!in_fname.empty());
@@ -143,6 +170,15 @@ struct Args {
     }
     if (num_threads == 0) {
       throw std::invalid_argument("--threads must be at least 1.");
+    }
+    if (num_passes < 1 || num_passes > 2) {
+      throw std::invalid_argument("--num-passes must be 1 or 2.");
+    }
+    if (print_multipass_plan && !multipass) {
+      throw std::invalid_argument("--print-multipass-plan requires --multipass.");
+    }
+    if (multipass && !dem_out_fname.empty()) {
+      throw std::invalid_argument("--dem-out is not supported when --multipass is enabled.");
     }
     if (num_threads > 1000) {
       throw std::invalid_argument(
@@ -224,32 +260,9 @@ struct Args {
 
     config.merge_errors = !no_merge_errors;
 
-    size_t shot_detector_count = config.dem.count_detectors();
-    if (!circuit_path.empty()) {
-      const size_t circuit_detector_count = circuit.count_detectors();
-      const size_t dem_detector_count = config.dem.count_detectors();
-      const size_t circuit_observable_count = circuit.count_observables();
-      const size_t dem_observable_count = config.dem.count_observables();
-
-      // Source-aligned augmented DEMs (currently GARI) preserve the circuit
-      // detectors as a prefix and append virtual detectors whose shot values
-      // are zero. Read circuit-produced shots at the circuit width while
-      // decoding against the full DEM.
-      if (circuit_detector_count > dem_detector_count) {
-        throw std::invalid_argument(
-            "Circuit has " + std::to_string(circuit_detector_count) +
-            " detectors, but the decoding DEM has only " + std::to_string(dem_detector_count) +
-            ". When both are supplied, circuit detector IDs must be preserved in the DEM; the "
-            "DEM may only append detectors whose shot values are implicitly zero.");
-      }
-      if (circuit_observable_count != dem_observable_count) {
-        throw std::invalid_argument("Circuit has " + std::to_string(circuit_observable_count) +
-                                    " observables, but the decoding DEM has " +
-                                    std::to_string(dem_observable_count) +
-                                    "; the counts must match when both are supplied.");
-      }
-      shot_detector_count = circuit_detector_count;
-    }
+    const size_t shot_detector_count = circuit_path.empty()
+                                           ? config.dem.count_detectors()
+                                           : common::shot_detector_count(circuit, config.dem);
 
     // Choose the detector traversal orders.
     {
@@ -265,18 +278,15 @@ struct Args {
           std::cout << ")" << std::endl;
         }
       }
-      if (detector_order_sources.empty()) {
-        config.detector_orders =
-            make_detector_orders(num_det_orders, DetectorOrder::Method::Index, det_order_seed);
-      } else {
-        for (const DetectorOrderSource& source : detector_order_sources) {
-          std::vector<DetectorOrder> orders =
-              source.method == DetectorOrder::Method::Literal
-                  ? load_detector_orders(source.path, config.dem)
-                  : make_detector_orders(num_det_orders, source.method, det_order_seed);
-          for (DetectorOrder& order : orders) {
-            config.detector_orders.push_back(std::move(order));
-          }
+      config.detector_orders.clear();
+      for (const DetectorOrderSource& source : detector_order_sources) {
+        std::vector<DetectorOrder> orders =
+            source.method == DetectorOrder::Method::Literal
+                ? load_detector_orders(source.path, config.dem)
+                : make_detector_orders(num_orders_per_generated_source, source.method,
+                                       det_order_seed);
+        for (DetectorOrder& order : orders) {
+          config.detector_orders.push_back(std::move(order));
         }
       }
     }
@@ -393,13 +403,15 @@ int main(int argc, char* argv[]) {
   program.add_argument("--circuit").help("Stim circuit file path").store_into(args.circuit_path);
   program.add_argument("--dem").help("Stim dem file path").store_into(args.dem_path);
   program.add_argument("--no-merge-errors")
-      .help("If provided, will not merge identical error mechanisms.")
+      .help(
+          "If provided, will not merge identical error mechanisms. Multi-pass supports this "
+          "only with --num-passes=1; two-pass reweighting requires merged mechanisms.")
       .store_into(args.no_merge_errors);
   program.add_argument("--num-det-orders")
       .help("Number of orders generated by each selected detector-order method")
       .metavar("N")
       .default_value(size_t(1))
-      .store_into(args.num_det_orders);
+      .store_into(args.num_orders_per_generated_source);
   program.add_argument("--det-order-bfs")
       .help("Add BFS-based detector orders")
       .flag()
@@ -570,6 +582,28 @@ int main(int argc, char* argv[]) {
           "during decoding.")
       .flag()
       .store_into(args.print_stats);
+  program.add_argument("--multipass")
+      .help("Enable multi-pass graph shattering for correlated error decoding")
+      .flag()
+      .store_into(args.multipass);
+  program.add_argument("--print-multipass-plan")
+      .help("Print the multi-pass components, dependencies, and schedule to stderr")
+      .flag()
+      .store_into(args.print_multipass_plan);
+  program.add_argument("--multipass-strategy", "--multipass_strategy")
+      .help(
+          "Multi-pass scheduling strategy: static or causal (default = causal). Note: static "
+          "scheduling is experimental and was never systematically benchmarked.")
+      .default_value(std::string("causal"))
+      .action([&args](const std::string& value) {
+        args.multipass_strategy = parse_scheduling_strategy(value);
+      });
+  program.add_argument("--num-passes", "--num_passes")
+      .help(
+          "Number of prior propagation passes: 1 (uncorrelated independent CSS decoding) or 2 "
+          "(standard causally reweighted decoding, default = 2).")
+      .default_value(size_t(2))
+      .store_into(args.num_passes);
 
   program.add_argument("--sparsify-errors")
       .help("Enables per-shot sparse error activation.")
@@ -603,6 +637,7 @@ int main(int argc, char* argv[]) {
     return EXIT_FAILURE;
   }
   args.validate(program);
+
   TesseractConfig config;
   std::vector<stim::SparseShot> shots;
   std::unique_ptr<stim::MeasureRecordWriter> writer;
@@ -614,7 +649,7 @@ int main(int argc, char* argv[]) {
   std::vector<double> decoding_time_seconds(shots.size());
   std::vector<std::atomic<bool>> low_confidence(shots.size());
   const stim::DetectorErrorModel original_dem = config.dem.flattened();
-  std::vector<std::unique_ptr<TesseractDecoder>> decoders(args.num_threads);
+  std::vector<std::unique_ptr<Decoder>> decoders(args.num_threads);
   std::vector<std::vector<size_t>> error_use_per_thread(
       args.num_threads, std::vector<size_t>(original_dem.count_errors()));
   bool has_obs = args.has_observables();
@@ -625,25 +660,28 @@ int main(int argc, char* argv[]) {
       shots.size(), args.num_threads,
       [&](size_t thread_index, size_t shot_index) {
         if (!decoders[thread_index]) {
-          decoders[thread_index] = std::make_unique<TesseractDecoder>(config);
+          decoders[thread_index] =
+              args.make_decoder(config, args.print_multipass_plan && thread_index == 0);
         }
         auto& decoder = *decoders[thread_index];
         auto& error_use = error_use_per_thread[thread_index];
         auto start_time = std::chrono::high_resolution_clock::now();
-        decoder.decode_to_errors(shots[shot_index].hits);
+        DecodeResult result = decoder.decode_result(shots[shot_index].hits);
         auto stop_time = std::chrono::high_resolution_clock::now();
         decoding_time_seconds[shot_index] =
             std::chrono::duration_cast<std::chrono::microseconds>(stop_time - start_time).count() /
             1e6;
         obs_predicted[shot_index].clear();
-        for (int obs_idx : decoder.get_flipped_observables(decoder.predicted_errors_buffer)) {
-          obs_predicted[shot_index][obs_idx] ^= 1;
+        validate_observable_predictions(result.predictions, num_observables);
+        for (int observable : result.predictions) {
+          obs_predicted[shot_index][observable] ^= 1;
         }
-        low_confidence[shot_index] = decoder.low_confidence_flag;
-        cost_predicted[shot_index] = decoder.cost_from_errors(decoder.predicted_errors_buffer);
-        if (!has_obs or shots[shot_index].obs_mask == obs_predicted[shot_index]) {
-          for (size_t ei : decoder.predicted_errors_buffer) {
-            ++error_use[ei];
+        low_confidence[shot_index] = result.low_confidence;
+        cost_predicted[shot_index] = result.total_cost;
+        if (result.predicted_errors_populated &&
+            (!has_obs || shots[shot_index].obs_mask == obs_predicted[shot_index])) {
+          for (size_t error : result.predicted_errors) {
+            ++error_use[error];
           }
         }
       },
@@ -673,6 +711,10 @@ int main(int argc, char* argv[]) {
         return !has_obs || num_errors < args.max_errors;
       });
 
+  if (!decoders[0]) {
+    decoders[0] = args.make_decoder(config, args.print_multipass_plan);
+  }
+
   std::vector<size_t> error_use_totals(original_dem.count_errors());
   for (const auto& error_use : error_use_per_thread) {
     for (size_t ei = 0; ei < error_use_totals.size(); ++ei) {
@@ -696,22 +738,6 @@ int main(int argc, char* argv[]) {
     out << est_dem << '\n';
   }
 
-  int effective_sparsify_reactivate_limit = config.sparsify_reactivate_limit;
-  for (const auto& decoder : decoders) {
-    if (decoder) {
-      effective_sparsify_reactivate_limit = decoder->config.sparsify_reactivate_limit;
-      break;
-    }
-  }
-  if (config.sparsify_errors && effective_sparsify_reactivate_limit == -1) {
-    effective_sparsify_reactivate_limit = suggest_sparsify_reactivate_limit(
-        config.dem.count_detectors(), config.sparsify_base_degree);
-    effective_sparsify_reactivate_limit = std::min(
-        effective_sparsify_reactivate_limit,
-        static_cast<int>(std::min<uint64_t>(
-            config.dem.count_errors(), static_cast<uint64_t>(std::numeric_limits<int>::max()))));
-  }
-
   bool print_final_stats = true;
   if (!args.stats_out_fname.empty()) {
     std::vector<std::string> detector_orders_paths;
@@ -731,7 +757,9 @@ int main(int argc, char* argv[]) {
         {"beam_climbing", args.beam_climbing},
         {"no_revisit_dets", args.no_revisit_dets},
         {"pqlimit", args.pqlimit},
-        {"num_det_orders", config.detector_orders.empty() ? 1 : config.detector_orders.size()},
+        // Kept as the effective total for compatibility with existing benchmark data.
+        {"num_det_orders", config.detector_orders.size()},
+        {"num_det_orders_per_generated_source", args.num_orders_per_generated_source},
         {"det_order_seed", args.det_order_seed},
         {"detector_orders_paths", detector_orders_paths},
         {"total_time_seconds", total_time_seconds},
@@ -739,11 +767,14 @@ int main(int argc, char* argv[]) {
         {"num_low_confidence", num_low_confidence},
         {"num_shots", shot},
         {"num_threads", args.num_threads},
+        {"multipass", args.multipass},
+        {"multipass_strategy", scheduling_strategy_name(args.multipass_strategy)},
+        {"multipass_num_passes", args.num_passes},
         {"sample_num_shots", args.sample_num_shots},
         {"sparsify_errors", args.sparsify_errors},
         {"sparsify_base_degree", args.sparsify_base_degree},
         {"sparsify_max_degree", args.sparsify_max_degree},
-        {"sparsify_reactivate_limit", effective_sparsify_reactivate_limit}};
+        {"sparsify_reactivate_limit", config.sparsify_reactivate_limit}};
 
     if (args.stats_out_fname == "-") {
       std::cout << stats_json << std::endl;
@@ -762,4 +793,5 @@ int main(int argc, char* argv[]) {
     std::cout << " total_time_seconds = " << total_time_seconds;
     std::cout << std::endl;
   }
+  return EXIT_SUCCESS;
 }

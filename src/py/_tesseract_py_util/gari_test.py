@@ -63,7 +63,7 @@ def test_tiny_transform():
     np.testing.assert_array_equal(logicals.toarray(), [[1, 1]])
     np.testing.assert_allclose(probabilities, [0.1, 0.1])
 
-    with pytest.raises(ValueError, match="integer from 0 to 2"):
+    with pytest.raises(ValueError, match="nonintegral fourth coordinate"):
         gari._detector_partition_from_fourth_coordinate(
             stim.DetectorErrorModel("detector(0, 0, 0, 2.5) D0")
         )
@@ -262,6 +262,63 @@ def test_build_detector_orders_validates_source_aligned_transform():
     assert unrelated_dem.num_detectors == gari_dem.num_detectors
     with pytest.raises(ValueError, match="source-aligned GARI transform"):
         public_gari.build_detector_orders(circuit, unrelated_dem, 1)
+
+
+def test_public_circuit_conversion_uses_shared_basis_classifier():
+    tagged_circuit = stim.Circuit("""
+        R 0 1 2 3 4 5
+        CORRELATED_ERROR(0.01) X0 X2 X4
+        CORRELATED_ERROR(0.02) X1 X3 X5
+        CORRELATED_ERROR(0.04) X0 X1 X2 X3 X4
+        M 0 1 2 3 4 5
+        DETECTOR[{"basis":"X"}](0, 0, 0) rec[-6]
+        DETECTOR[{"basis":"Z"}](0, 0, 0) rec[-5]
+        DETECTOR[{"basis":"X"}](0, 0, 0) rec[-4]
+        DETECTOR[{"basis":"Z"}](0, 0, 0) rec[-3]
+        OBSERVABLE_INCLUDE(0) rec[-2]
+        OBSERVABLE_INCLUDE(1) rec[-1]
+    """)
+    tagged_dem = gari.circuit_to_gari(
+        tagged_circuit,
+        prior_function=gari.tesseract_xor_prior_probabilities,
+    )
+    tagged_checks, _, _ = gari.dem_to_matrices(tagged_dem)
+    _, tagged_transform, _ = gari._gari_transform_from_circuit(tagged_circuit)
+    expected_tagged_checks = gari._gari_checks_in_row_order(
+        tagged_transform, "source"
+    )
+    assert (tagged_checks != expected_tagged_checks).nnz == 0
+    np.testing.assert_array_equal(
+        tagged_transform.source_to_gari_detectors, [0, 2, 1, 3]
+    )
+
+    custom_classifier = lambda index, _coordinates, _tag: (
+        "X" if index % 2 == 0 else "Z"
+    )
+    custom_dem = gari.circuit_to_gari(
+        _tiny_circuit(),
+        prior_function=gari.tesseract_xor_prior_probabilities,
+        detector_basis_classifier=custom_classifier,
+    )
+    custom_checks, _, _ = gari.dem_to_matrices(custom_dem)
+    _, custom_transform, _ = gari._gari_transform_from_circuit(
+        _tiny_circuit(), detector_basis_classifier=custom_classifier
+    )
+    expected_custom_checks = gari._gari_checks_in_row_order(
+        custom_transform, "source"
+    )
+    assert (custom_checks != expected_custom_checks).nnz == 0
+    np.testing.assert_array_equal(
+        custom_transform.source_to_gari_detectors, [0, 2, 1, 3]
+    )
+    assert len(
+        gari.build_detector_orders(
+            _tiny_circuit(),
+            custom_dem,
+            1,
+            detector_basis_classifier=custom_classifier,
+        )
+    ) == 1
 
 
 if __name__ == "__main__":

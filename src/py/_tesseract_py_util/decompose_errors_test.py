@@ -5,6 +5,7 @@ import stim
 from _tesseract_py_util.decompose_errors import (
     decompose_errors,
     decompose_errors_for_stim_surface_code_coords,
+    decompose_errors_using_detector_basis_classifier,
     decompose_errors_using_detector_coordinate_assignment,
     decompose_errors_using_last_coordinate_index,
     detector_coord_to_basis_for_stim_surface_code_convention,
@@ -41,7 +42,36 @@ def test_decompose_errors_default_method():
     assert actual == expected
 
 
-def test_decompose_errors_strip_undecomposable_errors():
+def test_decompose_errors_using_shared_detector_basis_classifier():
+    dem = stim.DetectorErrorModel("""
+        error(0.1) D0
+        error(0.2) D1 L0
+        error(0.3) D0 D1 L0
+        detector[{"basis":"X"}](5, 6) D0
+        detector[{"md":{"measure_basis":"Z"}}](7, 8) D1
+        logical_observable L0
+    """)
+    actual = decompose_errors_using_detector_basis_classifier(dem)
+    expected = stim.DetectorErrorModel("""
+        error(0.1) D0
+        error(0.2) D1 L0
+        error(0.3) D0 ^ D1 L0
+        detector[{"basis":"X"}](5, 6) D0
+        detector[{"md":{"measure_basis":"Z"}}](7, 8) D1
+        logical_observable L0
+    """)
+    assert actual == expected
+
+    custom = decompose_errors_using_detector_basis_classifier(
+        dem,
+        detector_basis_classifier=lambda index, _coordinates, _tag: (
+            "X" if index == 0 else "Z"
+        ),
+    )
+    assert custom == expected
+
+
+def test_decompose_errors_dispatch_strips_undecomposable_errors():
     dem = stim.DetectorErrorModel("""
 detector(0) D0
 detector(1) D1
@@ -93,6 +123,35 @@ def test_get_component_obs_matching_undecomposed_obs(
     )
 
 
+def test_get_component_obs_matching_undecomposed_obs_rejects_ambiguity():
+    with pytest.raises(ValueError, match="Multiple component observable assignments"):
+        get_component_obs_matching_undecomposed_obs(
+            [{(), (0,)}, {(), (0,)}],
+            (0,),
+        )
+
+
+def test_decompose_errors_rejects_ambiguous_observable_assignment_with_context():
+    dem = stim.DetectorErrorModel("""
+        error[x no logical](0.01) D0
+        error[x logical](0.02) D0 L0
+        error[z no logical](0.03) D1
+        error[z logical](0.04) D1 L0
+        error[ambiguous assignment](0.1) D0 D1 L0
+        detector(0) D0
+        detector(1) D1
+        logical_observable L0
+    """)
+    with pytest.raises(
+        ValueError,
+        match=(
+            r"error\[ambiguous assignment\]\(0\.1\) D0 D1 L0.*multiple "
+            "consistent observable decompositions"
+        ),
+    ):
+        decompose_errors_using_last_coordinate_index(dem)
+
+
 def test_do_decomposition_last_coordinate_index_two_components():
     dem = stim.DetectorErrorModel("""error(0.1) D0 ^ D1 L1
 error(0.01) D0 D3 D3 D1 L5 L4 L4
@@ -103,7 +162,7 @@ detector(0) D1
 detector(1) D2
 detector(1) D3""")
     assert str(decompose_errors_using_last_coordinate_index(dem)) == str(
-        stim.DetectorErrorModel("""error(0.1) D0 D1 L1
+        stim.DetectorErrorModel("""error(0.1) D0 ^ D1 L1
 error(0.01) D0 D1 L5
 error(0.3) D0 D1 L5 ^ D2 D3 L0
 error(0.2) D2 D3 L0
@@ -127,7 +186,7 @@ detector(2,1) D2
 detector(2,1) D3
 detector(2,2) D5""")
     assert str(decompose_errors_using_last_coordinate_index(dem)) == str(
-        stim.DetectorErrorModel("""error(0.1) D0 D1 L1
+        stim.DetectorErrorModel("""error(0.1) D0 ^ D1 L1
 error(0.01) D0 D1 L5
 error(0.3) D0 D1 L5 ^ D2 D3 L0
 error(0.2) D2 D3 L0
@@ -139,6 +198,45 @@ detector(2,1) D2
 detector(2,1) D3
 detector(2,2) D5""")
     )
+
+
+def test_decompose_errors_preserves_valid_existing_groups_and_tags():
+    dem = stim.DetectorErrorModel("""
+        error[existing](0.1) D0 L0 ^ D1 L1
+        error[new](0.2) D0 D1 L0 L1
+        detector(0) D0
+        detector(1) D1
+    """)
+    expected = stim.DetectorErrorModel("""
+        error[existing](0.1) D0 L0 ^ D1 L1
+        error[new](0.2) D0 L0 ^ D1 L1
+        detector(0) D0
+        detector(1) D1
+    """)
+    assert decompose_errors_using_last_coordinate_index(dem) == expected
+
+
+def test_decompose_errors_rejects_mixed_existing_group():
+    dem = stim.DetectorErrorModel("""
+        error(0.1) D0 D1 ^ D2
+        detector(0) D0
+        detector(1) D1
+        detector(1) D2
+    """)
+    with pytest.raises(
+        ValueError, match="group with detectors from multiple components"
+    ):
+        decompose_errors_using_last_coordinate_index(dem)
+
+
+def test_decompose_errors_rejects_detectorless_existing_group():
+    dem = stim.DetectorErrorModel("""
+        error(0.1) D0 ^ L0
+        detector(0) D0
+        logical_observable L0
+    """)
+    with pytest.raises(ValueError, match="detectorless decomposition group"):
+        decompose_errors_using_last_coordinate_index(dem)
 
 
 def test_decompose_undecomposable_error():
@@ -233,7 +331,7 @@ def test_undecompose_errors_surface_code():
     assert dem_decomposed_using_coords_func == dem_decomposed_using_coords
 
 
-def test_decompose_errors_strip_undecomposable_errors():
+def test_last_coordinate_decomposer_strips_undecomposable_errors():
     dem = stim.DetectorErrorModel("""
 detector(0) D0
 detector(1) D1
@@ -249,8 +347,10 @@ error(0.1) D0
         decompose_errors_using_last_coordinate_index(dem)
 
     # Should pass with strip_undecomposable_errors=True, but D0 D1 error is removed
-    decomposed_dem = decompose_errors_using_last_coordinate_index(dem, strip_undecomposable_errors=True)
-    
+    decomposed_dem = decompose_errors_using_last_coordinate_index(
+        dem, strip_undecomposable_errors=True
+    )
+
     expected_dem = stim.DetectorErrorModel("""
 detector(0) D0
 detector(1) D1

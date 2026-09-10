@@ -283,6 +283,123 @@ errors are not capped by degree.
 *   *DEM usage frequency output*: if `--dem-out` is specified, outputs estimated error frequencies.
 *   *Statistics output*: includes number of shots, errors, low confidence shots, and processing time.
 
+---
+
+## Multi-Pass Graph Shattering
+
+Multi-pass graph shattering partitions a correlated detector error model into two detector
+components and decodes the smaller component models separately. With two passes, predictions from
+the first pass update error priors used during the final pass. The current implementation requires
+exactly two components and accepts one or two passes.
+
+Two-pass reweighting is a correlated-matching-style heuristic. A component symptom's XOR marginal
+includes every mechanism that produces it, including one-sided mechanisms, while paired evidence
+includes only mechanisms shared with the other component symptom. Their ratio is therefore not, in
+general, an exact joint or conditional probability. Reweighted probabilities are capped at `0.499`
+so every retained error continues to have positive decoding cost. Because reweighting is defined on
+aggregate component symptoms, two-pass decoding requires `merge_errors=true`. Unmerged mechanisms
+remain supported with one-pass decoding.
+
+### Detector classification
+
+The standalone CLI deliberately accepts one canonical convention only: every detector instruction
+must have a JSON tag with a top-level `"measure_basis"` whose value is exactly `"X"` or `"Z"`:
+
+```stim
+detector[{"measure_basis":"X"}](0, 0, 0) D0
+detector[{"measure_basis":"Z"}](1, 0, 0) D1
+```
+
+The CLI does not infer bases from legacy metadata or coordinates. Tagged `DETECTOR` instructions in
+a `.stim` circuit retain their tags during circuit-to-DEM conversion, so a canonically tagged
+circuit can be passed directly. Otherwise, normalize its DEM in Python first. Automatic
+normalization covers only the named automatic metadata and Chromobius-coordinate conventions. For
+a Stim-generated surface-code circuit, select the explicit parity adapter as shown below. The helper
+preserves coordinates, instruction order, repeats, shifts, errors, tags, and unrelated JSON
+metadata:
+
+```python
+from pathlib import Path
+
+import stim
+import tesseract_decoder
+
+circuit = stim.Circuit(Path("circuit.stim").read_text())
+dem = circuit.detector_error_model()
+canonical_dem = tesseract_decoder.demutil.annotate_detector_bases(
+    dem,
+    detector_basis_classifier=(
+        tesseract_decoder.demutil.stim_surface_code_detector_basis_classifier
+    ),
+)
+Path("canonical.dem").write_text(str(canonical_dem))
+```
+
+`annotate_detector_bases(dem)` writes top-level `measure_basis`, the authoritative field in both
+Python and the CLI. It rejects an invalid or conflicting existing top-level `measure_basis`, but
+preserves lower-priority fields such as `basis` and `md` without requiring agreement. These fields
+may describe something other than the decoding component. Non-JSON detector tags are rejected
+rather than overwritten. To migrate a DEM using the previous CLI convention, top-level `basis`,
+pass it through this helper before using it with the CLI.
+
+Python and Sinter use the shared automatic classifier by default, including its supported legacy
+metadata and Chromobius-coordinate adapters. Multi-pass decoding still requires every detector to
+be classified and the result to contain exactly two components.
+
+### CLI options
+
+* `--multipass`: Enables multi-pass graph shattering.
+* `--num-passes`, `--num_passes`: Selects one or two passes (default: 2). One pass performs no
+  inter-pass prior update; two passes perform one round of prior propagation. Other values are
+  rejected.
+* `--multipass-strategy`, `--multipass_strategy`: Selects `causal` (default), which derives the pass
+  schedule from component dependencies, or experimental `static`, which schedules both components
+  in every pass.
+* `--print-multipass-plan`: Prints the monolithic and component model statistics, dependencies, and
+  pass schedule to standard error. It requires `--multipass`; these statistics are calculated only
+  when this flag is present.
+
+`--dem-out` is not supported with `--multipass`.
+
+### CLI example
+
+When the circuit is not already canonically tagged, sample from the circuit while decoding against
+the normalized DEM:
+
+```bash
+./bazel-bin/src/tesseract \
+    --circuit circuit.stim \
+    --dem canonical.dem \
+    --sample-num-shots 1000 \
+    --multipass \
+    --num-passes 2 \
+    --multipass-strategy causal \
+    --pqlimit 1000000 \
+    --beam 20 \
+    --beam-climbing \
+    --no-revisit-dets \
+    --num-det-orders 21 \
+    --print-multipass-plan \
+    --print-stats
+```
+
+### Python and Sinter
+
+The ordinary Sinter workflows need no normalization or custom callback:
+
+```python
+from multi_pass_sinter_decoders import MultiPassSinterDecoder, get_sinter_decoders
+
+decoder = MultiPassSinterDecoder()
+custom_decoders = get_sinter_decoders()
+```
+
+Pass `detector_basis_classifier=...` to use another X/Z convention. Standard
+`TesseractSinterDecoder` configuration keywords can be supplied directly to
+`MultiPassSinterDecoder`; unknown keywords are rejected.
+
+---
+
 ## Python Interface
 
 [Full Python wrapper documentation](src/py/README.md)

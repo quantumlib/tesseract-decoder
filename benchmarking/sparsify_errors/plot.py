@@ -104,9 +104,37 @@ def _marker_map(metrics):
 def _observed_segments(points):
     """Yields adjacent curve segments whose endpoints are both observations."""
 
-    for first, second in zip(points, points[1:]):
+    known_M_points = [point for point in points if point["M"] is not None]
+    for first, second in zip(known_M_points, known_M_points[1:]):
         if not first["is_upper_limit"] and not second["is_upper_limit"]:
             yield first, second
+
+
+def _M_sort_key(point):
+    M = point["M"]
+    if M is None:
+        return (1, 0)
+    if M == float("inf"):
+        return (2, 0)
+    return (0, M)
+
+
+def _explicit_positive_M(points):
+    return [
+        point
+        for point in points
+        if point["M"] is not None and 0 < point["M"] < float("inf")
+    ]
+
+
+def _automatic_or_nearest_explicit_M(points, target_M):
+    automatic = [point for point in points if point["M"] is None]
+    if automatic:
+        return automatic[0]
+    explicit = _explicit_positive_M(points)
+    if explicit:
+        return min(explicit, key=lambda point: abs(point["M"] - target_M))
+    return None
 
 
 def _validate_plot_sweep(rows):
@@ -214,6 +242,13 @@ def compute_metrics(rows):
             error_high = ci.high - observed_probability
 
         rounds = row["rounds"]
+        if not row["sparsify_errors"]:
+            M = float("inf")
+        elif row["sparsify_reactivate_limit"] == -1:
+            M = None
+        else:
+            M = row["sparsify_reactivate_limit"]
+
         metrics.append(
             {
                 "basis": row["basis"],
@@ -223,9 +258,7 @@ def compute_metrics(rows):
                 "d": row["distance"],
                 "q": row["num_qubits"],
                 "r": rounds,
-                "M": float("inf")
-                if not row["sparsify_errors"]
-                else row["sparsify_reactivate_limit"],
+                "M": M,
                 "k": row["sparsify_base_degree"],
                 "E": row["num_compiled_errors"],
                 "D": row["num_detectors"],
@@ -240,10 +273,14 @@ def compute_metrics(rows):
                 "shots": shots,
             }
         )
-    return sorted(metrics, key=lambda metric: (metric["circuit_path"], metric["M"]))
+    return sorted(
+        metrics, key=lambda metric: (metric["circuit_path"], _M_sort_key(metric))
+    )
 
 
 def get_M_alpha(M):
+    if M is None:
+        return 1.0
     if M == float("inf"):
         return 1.0
     logM = math.log2(M) if M > 0 else 0
@@ -251,11 +288,12 @@ def get_M_alpha(M):
 
 
 def interpolate_required_M(pareto, target_ler):
-    valid_pts = [p for p in pareto if p["M"] > 0 and p["M"] != float("inf")]
+    comparable_pts = [point for point in pareto if point["M"] is not None]
+    valid_pts = _explicit_positive_M(comparable_pts)
     if len(valid_pts) == 0:
         return (
             float("inf")
-            if (len(pareto) > 0 and pareto[-1]["ler"] <= target_ler)
+            if (len(comparable_pts) > 0 and comparable_pts[-1]["ler"] <= target_ler)
             else float("nan")
         )
 
@@ -301,7 +339,11 @@ def fit_power_law(x_vals, y_vals):
 
 
 def extract_fit_data(metrics, p_filter):
-    filtered = [m for m in metrics if m["p"] == p_filter]
+    filtered = [
+        metric
+        for metric in metrics
+        if metric["M"] is not None and metric["p"] == p_filter
+    ]
     code_basis_pairs = sorted(set((m["type"], m["basis"]) for m in filtered))
     fit_data = {}
     for c_type, basis in code_basis_pairs:
@@ -492,11 +534,9 @@ def plot_tradeoff_arrows(metrics, p_filter, filename, title):
             )
         opt_M = get_optimal_reactivate_limit(detector_counts.pop(), k_val, c_type)
 
-        valid_pts = [p for p in points if p["M"] > 0 and p["M"] != float("inf")]
-        if not valid_pts:
+        after_pt = _automatic_or_nearest_explicit_M(points, opt_M)
+        if after_pt is None:
             continue
-
-        after_pt = min(valid_pts, key=lambda x: abs(x["M"] - opt_M))
 
         x0, y0 = before_pt["time_per_round"], before_pt["ler"]
         x1, y1 = after_pt["time_per_round"], after_pt["ler"]
@@ -748,7 +788,7 @@ def plot_ler_vs_time(metrics, p_filter, filename, title, highlight_heuristic=Fal
     marker_map = _marker_map(filtered)
 
     for _, points in circuits.items():
-        points.sort(key=lambda x: x["M"])
+        points.sort(key=_M_sort_key)
         c_type = points[0]["type"]
         c_d = points[0]["d"]
         c_q = points[0]["q"]
@@ -777,8 +817,16 @@ def plot_ler_vs_time(metrics, p_filter, filename, title, highlight_heuristic=Fal
             sz = 80 if M == float("inf") else 50
 
             fc = "white" if is_p002 else base_color
-            ec = "black" if M == float("inf") else (base_color if is_p002 else "none")
-            lw = 1.5 if (M == float("inf") or is_p002) else 0
+            ec = (
+                "tab:purple"
+                if M is None
+                else "black"
+                if M == float("inf")
+                else base_color
+                if is_p002
+                else "none"
+            )
+            lw = 2 if M is None else 1.5 if (M == float("inf") or is_p002) else 0
 
             if not p["is_upper_limit"]:
                 y_err_asym = [[p["ler_err_low"]], [p["ler_err_high"]]]
@@ -814,9 +862,8 @@ def plot_ler_vs_time(metrics, p_filter, filename, title, highlight_heuristic=Fal
                 detector_counts.pop(), k_val[0] if k_val else -1, c_type
             )
 
-            valid_points = [p for p in points if p["M"] > 0 and p["M"] != float("inf")]
-            if valid_points:
-                best_p = min(valid_points, key=lambda x: abs(x["M"] - opt_M))
+            best_p = _automatic_or_nearest_explicit_M(points, opt_M)
+            if best_p is not None:
                 plt.scatter(
                     [best_p["time_per_round"]],
                     [best_p["ler"]],
@@ -942,6 +989,21 @@ def plot_ler_vs_time(metrics, p_filter, filename, title, highlight_heuristic=Fal
         ]
     )
 
+    if any(point["M"] is None for point in filtered):
+        legend_elements.append(
+            mlines.Line2D(
+                [0],
+                [0],
+                color="none",
+                marker="o",
+                markerfacecolor="none",
+                markeredgecolor="tab:purple",
+                markeredgewidth=2,
+                markersize=8,
+                label="M=auto (requested -1)",
+            )
+        )
+
     if highlight_heuristic:
         legend_elements.append(mlines.Line2D([0], [0], color="none", label=""))
         legend_elements.append(
@@ -970,7 +1032,11 @@ def plot_ler_vs_time(metrics, p_filter, filename, title, highlight_heuristic=Fal
 
 
 def plot_stacked_ler_vs_M(metrics, p_filter, filename, title, log_y=False):
-    filtered = [m for m in metrics if m["p"] == p_filter or p_filter == "both"]
+    filtered = [
+        metric
+        for metric in metrics
+        if metric["M"] is not None and (metric["p"] == p_filter or p_filter == "both")
+    ]
     circuits = {}
     for m in filtered:
         ckey = (m["type"], m["d"], m["q"])
@@ -1009,15 +1075,13 @@ def plot_stacked_ler_vs_M(metrics, p_filter, filename, title, log_y=False):
             group_key = (point["basis"], point["p"], point["circuit_path"])
             exact_groups.setdefault(group_key, []).append(point)
 
-        finite_Ms = [
-            p["M"] for p in all_points if p["M"] != float("inf") and p["M"] > 0
-        ]
+        finite_Ms = [point["M"] for point in _explicit_positive_M(all_points)]
         max_M = max(finite_Ms) if finite_Ms else 1
         min_M = min(finite_Ms) if finite_Ms else 1
         color = color_map.get(c_type, "black")
 
         for (basis, p_val, _), pts in sorted(exact_groups.items()):
-            pts.sort(key=lambda x: x["M"])
+            pts.sort(key=_M_sort_key)
             plotted_points = []
             upper_limits = []
             for pt in pts:
@@ -1114,7 +1178,11 @@ def plot_stacked_ler_vs_M(metrics, p_filter, filename, title, log_y=False):
 
 
 def plot_mq_scaling_meta_analysis(metrics, p_filter, filename, title):
-    filtered = [m for m in metrics if m["p"] == p_filter or p_filter == "both"]
+    filtered = [
+        metric
+        for metric in metrics
+        if metric["M"] is not None and (metric["p"] == p_filter or p_filter == "both")
+    ]
     if len(filtered) == 0:
         return
 
@@ -1148,10 +1216,8 @@ def plot_mq_scaling_meta_analysis(metrics, p_filter, filename, title):
         all_finite_fractions = [
             point["M"] / point["E"]
             for points in circuits.values()
-            for point in points
-            if point["M"] > 0
-            and point["M"] != float("inf")
-            and not point["is_upper_limit"]
+            for point in _explicit_positive_M(points)
+            if not point["is_upper_limit"]
         ]
 
         if all_finite_fractions:

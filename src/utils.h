@@ -20,6 +20,8 @@
 #include <cassert>
 #include <chrono>
 #include <cstdint>
+#include <exception>
+#include <mutex>
 #include <random>
 #include <string>
 #include <thread>
@@ -81,8 +83,9 @@ class DetectorOrder {
 
 using DetOrder = DetectorOrder::Method;
 
-// Creates one independently resolvable object per requested order. The object
-// at position k uses seed + k with an independent random-number stream.
+// Creates one independently resolvable object per requested order. The count
+// must be positive. The object at position k uses seed + k with an independent
+// random-number stream.
 std::vector<DetectorOrder> make_detector_orders(
     size_t num_det_orders, DetectorOrder::Method method = DetectorOrder::Method::Index,
     uint64_t seed = 0);
@@ -143,16 +146,26 @@ size_t parallel_for_shots_in_order(size_t num_shots, size_t num_threads, Process
   std::vector<std::atomic<bool>> finished(num_shots);
   std::atomic<bool> worker_threads_please_terminate = false;
   std::atomic<size_t> num_worker_threads_active = 0;
+  std::exception_ptr worker_exception;
+  std::mutex worker_exception_mutex;
   std::vector<std::thread> workers;
   workers.reserve(num_threads);
 
   for (size_t t = 0; t < num_threads; ++t) {
     ++num_worker_threads_active;
     workers.emplace_back([&, t]() {
-      for (size_t shot;
-           !worker_threads_please_terminate && ((shot = next_unclaimed_shot++) < num_shots);) {
-        process_shot(t, shot);
-        finished[shot] = true;
+      try {
+        for (size_t shot;
+             !worker_threads_please_terminate && ((shot = next_unclaimed_shot++) < num_shots);) {
+          process_shot(t, shot);
+          finished[shot] = true;
+        }
+      } catch (...) {
+        worker_threads_please_terminate = true;
+        std::lock_guard lock(worker_exception_mutex);
+        if (!worker_exception) {
+          worker_exception = std::current_exception();
+        }
       }
       --num_worker_threads_active;
     });
@@ -174,6 +187,9 @@ size_t parallel_for_shots_in_order(size_t num_shots, size_t num_threads, Process
 
   for (auto& worker : workers) {
     worker.join();
+  }
+  if (worker_exception) {
+    std::rethrow_exception(worker_exception);
   }
   return shot;
 }

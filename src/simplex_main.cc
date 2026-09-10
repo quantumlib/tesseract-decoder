@@ -172,32 +172,9 @@ struct Args {
 
     config.merge_errors = !no_merge_errors;
 
-    size_t shot_detector_count = config.dem.count_detectors();
-    if (!circuit_path.empty()) {
-      const size_t circuit_detector_count = circuit.count_detectors();
-      const size_t dem_detector_count = config.dem.count_detectors();
-      const size_t circuit_observable_count = circuit.count_observables();
-      const size_t dem_observable_count = config.dem.count_observables();
-
-      // Source-aligned augmented DEMs (currently GARI) preserve the circuit
-      // detectors as a prefix and append virtual detectors whose shot values
-      // are zero. Read circuit-produced shots at the circuit width while
-      // decoding against the full DEM.
-      if (circuit_detector_count > dem_detector_count) {
-        throw std::invalid_argument(
-            "Circuit has " + std::to_string(circuit_detector_count) +
-            " detectors, but the decoding DEM has only " + std::to_string(dem_detector_count) +
-            ". When both are supplied, circuit detector IDs must be preserved in the DEM; the "
-            "DEM may only append detectors whose shot values are implicitly zero.");
-      }
-      if (circuit_observable_count != dem_observable_count) {
-        throw std::invalid_argument("Circuit has " + std::to_string(circuit_observable_count) +
-                                    " observables, but the decoding DEM has " +
-                                    std::to_string(dem_observable_count) +
-                                    "; the counts must match when both are supplied.");
-      }
-      shot_detector_count = circuit_detector_count;
-    }
+    const size_t shot_detector_count = circuit_path.empty()
+                                           ? config.dem.count_detectors()
+                                           : common::shot_detector_count(circuit, config.dem);
 
     if (sample_num_shots > 0) {
       assert(!circuit_path.empty());

@@ -23,6 +23,7 @@
 #include <numeric>
 #include <queue>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -308,6 +309,9 @@ std::vector<DetectorOrder> make_detector_orders(size_t num_det_orders, DetectorO
                                                 uint64_t seed) {
   if (method == DetectorOrder::Method::Literal) {
     throw std::invalid_argument("Literal detector orders cannot be generated.");
+  }
+  if (num_det_orders == 0) {
+    throw std::invalid_argument("The number of detector orders must be at least 1.");
   }
   std::vector<DetectorOrder> result;
   result.reserve(num_det_orders);

@@ -14,6 +14,7 @@
 
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
 
 py_library(
     name = "benchmark_data",
@@ -34,10 +35,30 @@ py_binary(
     deps = [":benchmark_data"],
 )
 
+py_library(
+    name = "plot_lib",
+    srcs = ["plot.py"],
+    deps = [
+        ":benchmark_data",
+        "@pypi//matplotlib",
+        "@pypi//numpy",
+        "@pypi//scipy",
+    ],
+)
+
 py_binary(
     name = "enrich",
     srcs = ["enrich.py"],
     deps = [":benchmark_data"],
+)
+
+py_test(
+    name = "workflow_test",
+    srcs = ["workflow_test.py"],
+    deps = [
+        ":benchmark_data",
+        ":plot_lib",
+    ],
 )
 
 py_binary(
