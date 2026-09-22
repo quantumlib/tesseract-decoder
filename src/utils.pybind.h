@@ -23,6 +23,8 @@
 
 namespace py = pybind11;
 
+namespace tesseract_decoder {
+
 void add_utils_module(py::module& root) {
   auto m = root.def_submodule("utils", "utility methods");
 
@@ -32,11 +34,17 @@ void add_utils_module(py::module& root) {
   m.attr("INF") = INF;
   m.doc() = "A representation of infinity for floating point numbers.";
 
-  py::enum_<DetOrder>(m, "DetOrder", "Detector ordering methods")
-      .value("DetBFS", DetOrder::DetBFS)
-      .value("DetIndex", DetOrder::DetIndex)
-      .value("DetCoordinate", DetOrder::DetCoordinate)
+  py::enum_<DetectorOrder::Method> detector_order_method(m, "DetectorOrderMethod",
+                                                         "Detector ordering methods");
+  detector_order_method.value("BFS", DetectorOrder::Method::BFS)
+      .value("Index", DetectorOrder::Method::Index)
+      .value("Coordinate", DetectorOrder::Method::Coordinate)
+      .value("Literal", DetectorOrder::Method::Literal)
+      .value("DetBFS", DetectorOrder::Method::BFS)
+      .value("DetIndex", DetectorOrder::Method::Index)
+      .value("DetCoordinate", DetectorOrder::Method::Coordinate)
       .export_values();
+  m.attr("DetOrder") = detector_order_method;
 
   m.def(
       "get_detector_coords",
@@ -55,8 +63,10 @@ void add_utils_module(py::module& root) {
         Returns
         -------
         list[list[float]]
-            A list where each inner list contains the 3D coordinates
-            [x, y, z] of a detector.
+            If any detector coordinates are declared, returns one entry per
+            detector, indexed by detector ID. Missing coordinates are empty
+            lists and coordinate vectors may have any dimensionality. Returns
+            an empty list if the model declares no detector coordinates.
     )pbdoc");
   m.def(
       "build_detector_graph",
@@ -80,16 +90,16 @@ void add_utils_module(py::module& root) {
             An adjacency list representation of the detector graph.
             Each inner list contains the indices of detectors connected
             to the detector at the corresponding index.
-            Here we say that two detectors are connected if there exists at
-            least one error in the DEM which flips both detectors.
+            Each positive-probability error's parity-reduced detector symptom
+            induces a clique in the graph.
     )pbdoc");
   m.def(
       "build_det_orders",
-      [](py::object dem, size_t num_det_orders, DetOrder method, uint64_t seed) {
+      [](py::object dem, size_t num_det_orders, DetectorOrder::Method method, uint64_t seed) {
         auto input_dem = parse_py_object<stim::DetectorErrorModel>(dem);
         return build_det_orders(input_dem, num_det_orders, method, seed);
       },
-      py::arg("dem"), py::arg("num_det_orders"), py::arg("method") = DetOrder::DetIndex,
+      py::arg("dem"), py::arg("num_det_orders"), py::arg("method") = DetectorOrder::Method::Index,
       py::arg("seed") = 0, R"pbdoc(
         Generates various detector orderings for decoding.
 
@@ -99,19 +109,22 @@ void add_utils_module(py::module& root) {
             The detector error model to generate orders for.
         num_det_orders : int
             The number of detector orderings to generate.
-        method : tesseract_decoder.utils.DetOrder, default=tesseract_decoder.utils.DetOrder.DetIndex
-            Strategy for ordering detectors. ``DetIndex`` chooses either increasing
-            or decreasing detector index order at random, ``DetBFS`` performs a
-            breadth-first traversal, and ``DetCoordinate`` uses randomized
-            geometric orientations.
+        method : tesseract_decoder.utils.DetectorOrderMethod, default=tesseract_decoder.utils.DetectorOrderMethod.Index
+            Strategy for ordering detectors. ``Index`` chooses either increasing
+            or decreasing detector index order at random, ``BFS`` performs a
+            breadth-first traversal, and ``Coordinate`` projects every declared
+            coordinate dimension onto randomized orientations and places detectors
+            without coordinates last.
         seed : int, default=0
-            A seed for the random number generator.
+            A seed for the random number generator. Exact randomized orders
+            are reproducible only with a fixed C++ standard library and
+            toolchain.
 
         Returns
         -------
         list[list[int]]
-            A list of detector orderings. Each inner list maps a detector index
-            to its position in the ordering.
+            A list of detector traversal permutations. Each inner list gives
+            detector IDs in traversal order: ``order[position] = detector_id``.
     )pbdoc");
   m.def(
       "get_errors_from_dem",
@@ -137,4 +150,7 @@ void add_utils_module(py::module& root) {
   // Not exposing sampling_from_dem and sample_shots because they depend on
   // stim::SparseShot which stim doesn't expose to python.
 }
+
+}  // namespace tesseract_decoder
+
 #endif

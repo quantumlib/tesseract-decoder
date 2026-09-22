@@ -33,6 +33,8 @@
 
 #include "utils.h"
 
+namespace tesseract_decoder {
+
 struct TesseractTrellisWideKernelBase {
   virtual ~TesseractTrellisWideKernelBase() = default;
   virtual void decode_shot(TesseractTrellisDecoder* decoder,
@@ -1187,8 +1189,10 @@ TesseractTrellisDecoder::~TesseractTrellisDecoder() = default;
 
 TesseractTrellisDecoder::TesseractTrellisDecoder(TesseractTrellisConfig config_)
     : config(std::move(config_)) {
+  config.dem = common::flatten(config.dem);
+
   // Maps original flattened DEM error indices to currently preprocessed indices.
-  std::vector<size_t> dem_error_map(config.dem.flattened().count_errors());
+  std::vector<size_t> dem_error_map(config.dem.count_errors());
   std::iota(dem_error_map.begin(), dem_error_map.end(), 0);
 
   if (config.merge_errors) {
@@ -1204,7 +1208,7 @@ TesseractTrellisDecoder::TesseractTrellisDecoder(TesseractTrellisConfig config_)
   dem_error_to_error = std::move(dem_error_map);
   error_to_dem_error = common::invert_error_map(dem_error_to_error, config.dem.count_errors());
 
-  errors = get_errors_from_dem(config.dem.flattened());
+  errors = get_errors_from_dem(config.dem);
   num_detectors = config.dem.count_detectors();
   num_observables = config.dem.count_observables();
   if (num_observables > 1) {
@@ -1286,3 +1290,5 @@ void TesseractTrellisDecoder::decode_shots(std::vector<stim::SparseShot>& shots,
     obs_predicted[i] = decode(shots[i].hits);
   }
 }
+
+}  // namespace tesseract_decoder

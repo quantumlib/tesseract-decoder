@@ -14,8 +14,22 @@
 
 #include "common.h"
 
+#include <limits>
+
 #include "gtest/gtest.h"
 #include "stim.h"
+
+namespace tesseract_decoder {
+namespace {
+
+stim::Circuit source_circuit() {
+  return stim::Circuit(R"CIRCUIT(
+    M 0 1
+    DETECTOR rec[-1]
+    DETECTOR rec[-2]
+    OBSERVABLE_INCLUDE(0) rec[-1]
+  )CIRCUIT");
+}
 
 TEST(common, ErrorsStructFromDemInstruction) {
   // Test a pathological DEM error instruction
@@ -24,6 +38,34 @@ TEST(common, ErrorsStructFromDemInstruction) {
   common::Error ES(instruction);
   EXPECT_EQ(ES.symptom.detectors, std::vector<int>{1});
   EXPECT_EQ(ES.symptom.observables, std::vector<int>{0});
+}
+
+TEST(common, ShotDetectorCountAllowsSourceAlignedDemAugmentation) {
+  const stim::Circuit circuit = source_circuit();
+  const stim::DetectorErrorModel augmented_dem(R"DEM(
+    error(0.1) D0 L0
+    detector D2
+  )DEM");
+
+  EXPECT_EQ(common::shot_detector_count(circuit, augmented_dem), 2);
+}
+
+TEST(common, ShotDetectorCountRejectsMissingCircuitDetectors) {
+  const stim::Circuit circuit = source_circuit();
+  const stim::DetectorErrorModel too_small_dem("error(0.1) D0 L0");
+
+  EXPECT_THROW(common::shot_detector_count(circuit, too_small_dem), std::invalid_argument);
+}
+
+TEST(common, ShotDetectorCountRejectsDifferentObservableCounts) {
+  const stim::Circuit circuit = source_circuit();
+  const stim::DetectorErrorModel wrong_observable_count_dem(R"DEM(
+    error(0.1) D0 L1
+    detector D2
+  )DEM");
+
+  EXPECT_THROW(common::shot_detector_count(circuit, wrong_observable_count_dem),
+               std::invalid_argument);
 }
 
 TEST(common, DemFromCountsHandlesZeroProbabilityErrors) {
@@ -107,6 +149,29 @@ TEST(common, RemoveZeroProbabilityErrors) {
   EXPECT_NEAR(flat.instructions[0].arg_data[0], 0.1, 1e-9);
   ASSERT_EQ(flat.instructions[1].type, stim::DemInstructionType::DEM_ERROR);
   EXPECT_NEAR(flat.instructions[1].arg_data[0], 0.2, 1e-9);
+}
+
+TEST(common, RemoveZeroProbabilityErrorsPreservesIndexSpaces) {
+  stim::DetectorErrorModel dem("error(0) D2 L1");
+
+  std::vector<size_t> error_index_map;
+  stim::DetectorErrorModel cleaned = common::remove_zero_probability_errors(dem, error_index_map);
+
+  EXPECT_EQ(cleaned.count_errors(), 0);
+  EXPECT_EQ(cleaned.count_detectors(), 3);
+  EXPECT_EQ(cleaned.count_observables(), 2);
+  EXPECT_EQ(error_index_map, (std::vector<size_t>{std::numeric_limits<size_t>::max()}));
+}
+
+TEST(common, MergeIndistinguishableErrorsPreservesIndexSpaces) {
+  stim::DetectorErrorModel dem("error(0.1) D2 D2 L1 L1");
+
+  std::vector<size_t> error_index_map;
+  stim::DetectorErrorModel merged = common::merge_indistinguishable_errors(dem, error_index_map);
+
+  EXPECT_EQ(merged.count_errors(), 1);
+  EXPECT_EQ(merged.count_detectors(), 3);
+  EXPECT_EQ(merged.count_observables(), 2);
 }
 
 // Helper function to compare the two methods.
@@ -194,3 +259,6 @@ TEST(CommonTest, merge_indistinguishable_errors_two_errors) {
   auto merged_dem4 = common::merge_indistinguishable_errors(dem4, error_index_map);
   ASSERT_NEAR(get_merged_probability(merged_dem4), expected_merged_p, 1e-9);
 }
+
+}  // namespace
+}  // namespace tesseract_decoder

@@ -26,6 +26,8 @@
 
 namespace py = pybind11;
 
+namespace tesseract_decoder {
+
 void add_common_module(py::module& root) {
   auto m = root.def_submodule("common", "classes commonly used by the decoder");
 
@@ -216,5 +218,7 @@ void add_common_module(py::module& root) {
             A new `DetectorErrorModel` with updated error probabilities.
       )pbdoc");
 }
+
+}  // namespace tesseract_decoder
 
 #endif

@@ -20,6 +20,8 @@
 #include "io/HMPSIO.h"
 #include "utils.h"
 
+namespace tesseract_decoder {
+
 constexpr size_t T_COORD = 2;
 
 std::string SimplexConfig::str() {
@@ -34,9 +36,11 @@ std::string SimplexConfig::str() {
   return ss.str();
 }
 
-SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
+SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(std::move(_config)) {
+  config.dem = common::flatten(config.dem);
+
   // Maps original flattened DEM error indices to currently preprocessed indices.
-  std::vector<size_t> dem_error_map(config.dem.flattened().count_errors());
+  std::vector<size_t> dem_error_map(config.dem.count_errors());
   std::iota(dem_error_map.begin(), dem_error_map.end(), 0);
 
   if (config.merge_errors) {
@@ -52,11 +56,12 @@ SimplexDecoder::SimplexDecoder(SimplexConfig _config) : config(_config) {
   dem_error_to_error = std::move(dem_error_map);
   error_to_dem_error = common::invert_error_map(dem_error_to_error, config.dem.count_errors());
 
-  errors = get_errors_from_dem(config.dem.flattened());
+  errors = get_errors_from_dem(config.dem);
 
   std::vector<double> detector_t_coords(config.dem.count_detectors(), 0);
   std::vector<std::vector<double>> detector_coords = get_detector_coords(config.dem);
-  for (size_t d = 0; d < detector_coords.size(); ++d) {
+  size_t num_dets = std::min(detector_coords.size(), detector_t_coords.size());
+  for (size_t d = 0; d < num_dets; ++d) {
     if (detector_coords[d].size() > T_COORD) {
       detector_t_coords[d] = detector_coords[d][T_COORD];
     }
@@ -390,6 +395,18 @@ std::vector<int> SimplexDecoder::decode(const std::vector<uint64_t>& detections)
   return get_flipped_observables(predicted_errors_buffer);
 }
 
+DecodeResult SimplexDecoder::decode_result(const std::vector<uint64_t>& detections) {
+  decode_to_errors(detections);
+
+  DecodeResult result;
+  result.predictions = get_flipped_observables(predicted_errors_buffer);
+  result.predicted_errors = predicted_errors_buffer;
+  result.predicted_errors_populated = true;
+  result.low_confidence = false;
+  result.total_cost = cost_from_errors(predicted_errors_buffer);
+  return result;
+}
+
 void SimplexDecoder::decode_shots(std::vector<stim::SparseShot>& shots,
                                   std::vector<std::vector<int>>& obs_predicted) {
   obs_predicted.resize(shots.size());
@@ -399,3 +416,5 @@ void SimplexDecoder::decode_shots(std::vector<stim::SparseShot>& shots,
 }
 
 SimplexDecoder::~SimplexDecoder() {}
+
+}  // namespace tesseract_decoder

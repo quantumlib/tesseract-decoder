@@ -22,6 +22,8 @@
 
 #include "stim.h"
 
+namespace tesseract_decoder {
+
 TEST(TesseractTrellisDecoderTest, ComputesObservableProbabilityForAmbiguousSyndrome) {
   stim::DetectorErrorModel dem(R"DEM(
     error(0.1) D0
@@ -221,3 +223,5 @@ TEST(TesseractTrellisDecoderTest, RejectsMoreThanOneObservable) {
     EXPECT_NE(std::string(err.what()).find("supports at most one observable"), std::string::npos);
   }
 }
+
+}  // namespace tesseract_decoder

@@ -126,9 +126,11 @@ class TestStubContents:
         "TesseractDecoder",
         "TesseractSinterCompiledDecoder",
         "TesseractSinterDecoder",
+        "SchedulingStrategy",
         "SimplexConfig",
         "SimplexDecoder",
         "DetOrder",
+        "DetectorOrderMethod",
         "Visualizer",
         "make_tesseract_sinter_decoders_dict",
     ]

@@ -24,6 +24,8 @@
 #include "stim.h"
 #include "utils.h"
 
+using namespace tesseract_decoder;
+
 struct Args {
   std::string circuit_path;
   std::string dem_path;
@@ -170,6 +172,10 @@ struct Args {
 
     config.merge_errors = !no_merge_errors;
 
+    const size_t shot_detector_count = circuit_path.empty()
+                                           ? config.dem.count_detectors()
+                                           : common::shot_detector_count(circuit, config.dem);
+
     if (sample_num_shots > 0) {
       assert(!circuit_path.empty());
       std::mt19937_64 rng(sample_seed);
@@ -196,7 +202,7 @@ struct Args {
       }
       stim::FileFormatData shots_in_format = stim::format_name_to_enum_map().at(in_format);
       auto reader = stim::MeasureRecordReader<stim::MAX_BITWORD_WIDTH>::make(
-          shots_file, shots_in_format.id, 0, config.dem.count_detectors(),
+          shots_file, shots_in_format.id, 0, shot_detector_count,
           append_observables * config.dem.count_observables());
 
       // Load the shots from a file
@@ -472,8 +478,6 @@ int main(int argc, char* argv[]) {
           std::cout << "num_shots = " << (shot_index + 1);
           if (has_obs) {
             std::cout << " num_errors = " << num_errors;
-          } else {
-            std::cout << " num_errors = N/A";
           }
           std::cout << " total_time_seconds = " << total_time_seconds << std::endl;
           std::cout << "cost = " << cost_predicted[shot_index] << std::endl;

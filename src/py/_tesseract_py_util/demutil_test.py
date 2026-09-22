@@ -18,25 +18,32 @@ import tesseract_decoder
 from tesseract_decoder import demutil
 
 
-def _demo_dem() -> stim.DetectorErrorModel:
-    return stim.DetectorErrorModel("""
-        detector(0, 0, 0) D0
-        detector(2, 0, 1) D1
-        error(0.1) D0
-        error(0.2) D1
-        error(0.3) D0 D1
-        """)
+DEMO_DEM = stim.DetectorErrorModel("""
+    detector(0, 0, 0) D0
+    detector(2, 0, 1) D1
+    error(0.1) D0
+    error(0.2) D1
+    error(0.3) D0 D1
+    """)
 
 
 def test_import_exposes_demutil_submodule():
     assert hasattr(tesseract_decoder, "demutil")
     assert hasattr(demutil, "regeneralize_spatial_dem")
     assert hasattr(demutil, "decompose_errors")
+    assert hasattr(demutil, "decompose_errors_using_detector_basis_classifier")
+    assert hasattr(demutil, "automatic_detector_basis_classifier")
+    assert hasattr(demutil, "chromobius_detector_basis_classifier")
+    assert hasattr(demutil, "stim_surface_code_detector_basis_classifier")
+    assert hasattr(demutil, "last_coordinate_component_classifier")
+    assert hasattr(demutil, "classify_detector_bases")
+    assert hasattr(demutil, "annotate_detector_bases")
+    assert hasattr(demutil.gari, "circuit_to_gari")
 
 
 def test_decompose_errors_rejects_unknown_method():
     with pytest.raises(ValueError, match="Unknown decomposition method"):
-        demutil.decompose_errors(_demo_dem(), method="bad-method")
+        demutil.decompose_errors(DEMO_DEM, method="bad-method")
 
 
 def test_regeneralize_spatial_dem_averages_template_probabilities():

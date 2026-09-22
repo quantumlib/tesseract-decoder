@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "numerical_results": {
+    "source_pull_request": "https://github.com/quantumlib/tesseract-decoder/pull/254",
+    "source_attachment": "https://github.com/user-attachments/files/28278501/aggregated_results.jsonl.txt",
+    "imported_aggregate_sha256": "9efa128ff4d25e44e2ac4c448c72af921e80aa9febdce6b653ddea26e5658089",
+    "preserved_numerical_content_sha256": "cd9b4eb3af0c9e71beaca7b1bf0b8e12455c4a4eb0e75f1cf4e52672beaacd54",
+    "original_raw_jobs_located_in_referenced_artifacts": false,
+    "original_aggregation_program_located_in_referenced_artifacts": false,
+    "original_tesseract_commit": null,
+    "original_stim_version": null,
+    "original_hardware": null,
+    "rows": 840,
+    "rows_over_10000000_shots": 178,
+    "maximum_num_shots": 231100000
+  },
+  "historical_configuration_assumptions": {
+    "merge_errors": true,
+    "det_order_method": "index",
+    "evidence": "The checked-in submit.sh selects --det-order-index and does not select --no-merge-errors, but these fields were not recorded in the historical rows."
+  },
+  "metadata_enrichment": {
+    "circuit_source_commit": "cf340cb008db2fc3d541d65f51226707e13e4e03",
+    "stim_version_from_requirements_lock": "1.16.0",
+    "merge_indistinguishable_errors": true,
+    "remove_zero_probability_errors": true,
+    "fields_reconstructed": [
+      "basis",
+      "circuit_sha256",
+      "code_family",
+      "distance",
+      "num_compiled_errors",
+      "num_detectors",
+      "num_mandatory_errors",
+      "num_optional_errors",
+      "num_qubits",
+      "num_raw_dem_errors",
+      "physical_error_rate",
+      "rounds"
+    ]
+  }
+}

@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="500" viewBox="0 0 1080 500">
+<rect width="100%" height="100%" fill="white"/>
+<style>text{font-family:system-ui,-apple-system,sans-serif;fill:#202124}.title{font-size:17px;font-weight:650}.label{font-size:14px}.tick{font-size:12px;fill:#5f6368}.ci{stroke:#5f6368;stroke-width:2}.point{fill:#1a73e8}.speed{fill:#188038}.guide{stroke:#9aa0a6;stroke-dasharray:5 5}.grid{stroke:#e8eaed}</style>
+<text x="20" y="31" class="title">PR #306 detector-order benchmark</text>
+<text x="300" y="60" class="title">Relative error reduction (95% CI)</text>
+<text x="770" y="60" class="title">Summed decode-time speedup</text>
+<line x1="330.0" y1="72" x2="330.0" y2="438" class="grid"/>
+<text x="330.0" y="465" text-anchor="middle" class="tick">-25%</text>
+<line x1="480.0" y1="72" x2="480.0" y2="438" class="grid"/>
+<text x="480.0" y="465" text-anchor="middle" class="tick">+0%</text>
+<line x1="630.0" y1="72" x2="630.0" y2="438" class="grid"/>
+<text x="630.0" y="465" text-anchor="middle" class="tick">+25%</text>
+<line x1="480.0" y1="72" x2="480.0" y2="438" class="guide"/>
+<line x1="770.0" y1="72" x2="770.0" y2="438" class="grid"/>
+<text x="770.0" y="465" text-anchor="middle" class="tick">0.9×</text>
+<line x1="850.0" y1="72" x2="850.0" y2="438" class="grid"/>
+<text x="850.0" y="465" text-anchor="middle" class="tick">1.0×</text>
+<line x1="930.0" y1="72" x2="930.0" y2="438" class="grid"/>
+<text x="930.0" y="465" text-anchor="middle" class="tick">1.1×</text>
+<line x1="1010.0" y1="72" x2="1010.0" y2="438" class="grid"/>
+<text x="1010.0" y="465" text-anchor="middle" class="tick">1.2×</text>
+<line x1="850.0" y1="72" x2="850.0" y2="438" class="guide"/>
+<text x="20" y="91" class="label">Surface code d=7 · BFS</text>
+<line x1="368.4" y1="86" x2="592.7" y2="86" class="ci"/>
+<line x1="368.4" y1="81" x2="368.4" y2="91" class="ci"/>
+<line x1="592.7" y1="81" x2="592.7" y2="91" class="ci"/>
+<circle cx="491.1" cy="86" r="5" class="point"/>
+<circle cx="864.0" cy="86" r="5" class="speed"/>
+<text x="873.0" y="90" class="tick">1.02×</text>
+<text x="20" y="149" class="label">Surface code d=7 · Coordinate</text>
+<line x1="439.0" y1="144" x2="632.7" y2="144" class="ci"/>
+<line x1="439.0" y1="139" x2="439.0" y2="149" class="ci"/>
+<line x1="632.7" y1="139" x2="632.7" y2="149" class="ci"/>
+<circle cx="544.5" cy="144" r="5" class="point"/>
+<circle cx="973.5" cy="144" r="5" class="speed"/>
+<text x="982.5" y="148" class="tick">1.15×</text>
+<text x="20" y="207" class="label">Color code d=7 · BFS</text>
+<line x1="462.8" y1="202" x2="580.2" y2="202" class="ci"/>
+<line x1="462.8" y1="197" x2="462.8" y2="207" class="ci"/>
+<line x1="580.2" y1="197" x2="580.2" y2="207" class="ci"/>
+<circle cx="524.6" cy="202" r="5" class="point"/>
+<circle cx="976.5" cy="202" r="5" class="speed"/>
+<text x="985.5" y="206" class="tick">1.16×</text>
+<text x="20" y="265" class="label">Color code d=7 · Coordinate</text>
+<line x1="517.7" y1="260" x2="613.8" y2="260" class="ci"/>
+<line x1="517.7" y1="255" x2="517.7" y2="265" class="ci"/>
+<line x1="613.8" y1="255" x2="613.8" y2="265" class="ci"/>
+<circle cx="568.0" cy="260" r="5" class="point"/>
+<circle cx="962.6" cy="260" r="5" class="speed"/>
+<text x="971.6" y="264" class="tick">1.14×</text>
+<text x="20" y="323" class="label">BB [[72,12,6]] · BFS</text>
+<line x1="421.2" y1="318" x2="548.1" y2="318" class="ci"/>
+<line x1="421.2" y1="313" x2="421.2" y2="323" class="ci"/>
+<line x1="548.1" y1="313" x2="548.1" y2="323" class="ci"/>
+<circle cx="488.0" cy="318" r="5" class="point"/>
+<circle cx="871.6" cy="318" r="5" class="speed"/>
+<text x="880.6" y="322" class="tick">1.03×</text>
+<text x="20" y="381" class="label">BB [[72,12,6]] · Coordinate</text>
+<line x1="429.1" y1="376" x2="542.6" y2="376" class="ci"/>
+<line x1="429.1" y1="371" x2="429.1" y2="381" class="ci"/>
+<line x1="542.6" y1="371" x2="542.6" y2="381" class="ci"/>
+<circle cx="488.6" cy="376" r="5" class="point"/>
+<circle cx="918.1" cy="376" r="5" class="speed"/>
+<text x="927.1" y="380" class="tick">1.09×</text>
+<text x="20" y="490" class="tick">Intervals use aggregate independent-binomial relative-risk math; timing points have no replicate interval.</text>
+</svg>

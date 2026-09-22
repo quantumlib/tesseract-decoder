@@ -13,7 +13,7 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
-MANYLINUX_VERSION="manylinux_2_17_x86_64.manylinux2014_x86_64"
+MANYLINUX_VERSION="manylinux_2_42_x86_64"
 
 py_wheel(
     name="tesseract_decoder_wheel",
@@ -21,17 +21,21 @@ py_wheel(
     deps=[
         "//src:tesseract_decoder",
         "//src/py:generated_stubs",
+        "//src/py:multi_pass_sinter_decoders",
         "//src/py/_tesseract_py_util:_tesseract_py_util",
         ":package_data",
     ],
     version = "$(VERSION)",
     requires=[
+        "numpy",
+        "scipy",
+        "sinter",
         "stim",
     ],
-    python_tag="$(TARGET_VERSION)",
+    python_tag="$(ABI_TAG)",
+    abi="$(ABI_TAG)",
     platform= select({
         ":macos_arm": "macosx_11_0_arm64",
-        ":macos_x86": "macosx_10_13_x86_64",
         "@platforms//os:windows": "win32",
         "@platforms//os:linux": MANYLINUX_VERSION,
     }),
@@ -49,13 +53,5 @@ config_setting(
     constraint_values = [
         "@platforms//os:macos",
         "@platforms//cpu:arm64",
-    ],
-)
-
-config_setting(
-    name = "macos_x86",
-    constraint_values = [
-        "@platforms//os:macos",
-        "@platforms//cpu:x86_64",
     ],
 )
