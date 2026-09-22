@@ -33,7 +33,9 @@ void add_bp_module(py::module& root) {
       .def_readwrite("random_schedule", &BPParams::random_schedule)
       .def_readwrite("random_seed", &BPParams::random_seed)
       .def_readwrite("osd_truncation_factor", &BPParams::osd_truncation_factor,
-                     "Multiplier defining the maximum number of free columns for the dense OSD Gaussian elimination matrix (e.g. 1.2 bounds to 1.2x the number of defect detectors). Use 0.0 to disable truncation.");
+                     "Multiplier defining the maximum number of free columns for the dense OSD "
+                     "Gaussian elimination matrix (e.g. 1.2 bounds to 1.2x the number of defect "
+                     "detectors). Use 0.0 to disable truncation.");
 
   py::class_<PostProcessor, std::shared_ptr<PostProcessor>>(m, "PostProcessor");
 

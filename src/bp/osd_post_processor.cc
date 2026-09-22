@@ -126,7 +126,6 @@ std::vector<uint8_t> OsdPostProcessor::process(
     num_solved++;
   }
 
-
   // 6. Form the final correction
   std::vector<bool> e_corr_best(num_errors, false);
   double best_weight = -1.0;
@@ -200,7 +199,8 @@ std::vector<uint8_t> OsdPostProcessor::process(
           stim::simd_bits<64> S_trial = S_res;
           S_trial ^= F_columns[idx];
           S_trial ^= F_columns[jdx];
-          evaluate_solution(S_trial, F_costs[idx] + F_costs[jdx], {sorted_cols[F_subset[idx]], sorted_cols[F_subset[jdx]]});
+          evaluate_solution(S_trial, F_costs[idx] + F_costs[jdx],
+                            {sorted_cols[F_subset[idx]], sorted_cols[F_subset[jdx]]});
         }
       }
     }

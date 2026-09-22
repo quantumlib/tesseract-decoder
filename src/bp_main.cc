@@ -227,7 +227,10 @@ int main(int argc, char* argv[]) {
   program.add_argument("--osd-order").default_value(-1).store_into(args.osd_order);
   program.add_argument("--osd-weight").default_value(0).store_into(args.osd_weight);
   program.add_argument("--osd-truncation-factor")
-      .help("Multiplier defining the maximum number of free columns for the dense OSD Gaussian elimination matrix (e.g. 1.2 bounds to 1.2x the number of defect detectors). Use 0.0 to disable truncation.")
+      .help(
+          "Multiplier defining the maximum number of free columns for the dense OSD Gaussian "
+          "elimination matrix (e.g. 1.2 bounds to 1.2x the number of defect detectors). Use 0.0 to "
+          "disable truncation.")
       .default_value(1.2)
       .store_into(args.osd_truncation_factor);
   program.add_argument("--batched")
@@ -407,9 +410,8 @@ int main(int argc, char* argv[]) {
   double wall_throughput = (global_elapsed > 0) ? (double)final_shots / global_elapsed : 0.0;
   double cpu_throughput = (cpu_time > 0) ? (double)final_shots / cpu_time : 0.0;
 
-  std::string decoder_name =
-      std::string(args.use_batched_bp ? "batched-" : "scalar-") +
-      (params.random_schedule ? "random-" : "") + args.schedule + "-bp";
+  std::string decoder_name = std::string(args.use_batched_bp ? "batched-" : "scalar-") +
+                             (params.random_schedule ? "random-" : "") + args.schedule + "-bp";
   if (args.osd_order >= 0) decoder_name += "+osd";
 
   if (!args.stats_out_fname.empty()) {
@@ -462,10 +464,9 @@ int main(int argc, char* argv[]) {
     } else {
       std::cout << " num_errors = N/A";
     }
-    std::cout << " wall_time_seconds = " << global_elapsed
-              << " total_time_seconds = " << cpu_time
-              << " (wall shots/sec = " << std::fixed << std::setprecision(1) << wall_throughput << ")"
-              << std::endl;
+    std::cout << " wall_time_seconds = " << global_elapsed << " total_time_seconds = " << cpu_time
+              << " (wall shots/sec = " << std::fixed << std::setprecision(1) << wall_throughput
+              << ")" << std::endl;
   }
 
   return 0;

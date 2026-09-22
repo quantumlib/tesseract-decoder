@@ -84,8 +84,8 @@ TEST(BpSerialMinSumTest, ConvergesWithRandomSchedulePermutations) {
   std::vector<size_t> detection_events = {1, 2};
   std::vector<float> posteriors(5);
 
-  BPResult result = bp_serial_min_sum(graph, detection_events, posteriors, 20,
-                                      kNormalizationFactor, true, true, 42);
+  BPResult result = bp_serial_min_sum(graph, detection_events, posteriors, 20, kNormalizationFactor,
+                                      true, true, 42);
 
   EXPECT_TRUE(result.converged);
   EXPECT_GT(posteriors[0], 0);

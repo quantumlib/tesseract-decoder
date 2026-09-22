@@ -68,10 +68,8 @@ struct BPParams {
            bool stop_at_convergence = DEFAULT_STOP_AT_CONVERGENCE,
            bool sort_priors = DEFAULT_SORT_PRIORS,
            double variable_node_truncation_fraction = DEFAULT_VARIABLE_NODE_TRUNCATION_FRACTION,
-           float normalization_factor = 0.875f,
-           bool random_schedule = DEFAULT_RANDOM_SCHEDULE,
-           uint64_t random_seed = DEFAULT_RANDOM_SEED,
-           float osd_truncation_factor = 1.2f)
+           float normalization_factor = 0.875f, bool random_schedule = DEFAULT_RANDOM_SCHEDULE,
+           uint64_t random_seed = DEFAULT_RANDOM_SEED, float osd_truncation_factor = 1.2f)
       : max_iter(max_iter),
         update_rule(update_rule),
         schedule(schedule),
@@ -89,8 +87,7 @@ struct BPParams {
            sort_priors == other.sort_priors &&
            variable_node_truncation_fraction == other.variable_node_truncation_fraction &&
            normalization_factor == other.normalization_factor &&
-           random_schedule == other.random_schedule &&
-           random_seed == other.random_seed &&
+           random_schedule == other.random_schedule && random_seed == other.random_seed &&
            osd_truncation_factor == other.osd_truncation_factor;
   }
 };

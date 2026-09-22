@@ -87,7 +87,8 @@ std::vector<uint8_t> TesseractBpDecoder::decode(
     result =
         bp_parallel_min_sum<LLR_INT>(graph_, dets, posteriors, params_.max_iter,
                                      params_.normalization_factor, params_.stop_at_convergence);
-  } else if ((params_.schedule == "serial" || is_random_sched) && params_.update_rule == "min-sum") {
+  } else if ((params_.schedule == "serial" || is_random_sched) &&
+             params_.update_rule == "min-sum") {
     std::vector<size_t> dets(detection_events.begin(), detection_events.end());
     result = bp_serial_min_sum<LLR_INT>(graph_, dets, posteriors, params_.max_iter,
                                         params_.normalization_factor, params_.stop_at_convergence,
@@ -102,7 +103,8 @@ std::vector<uint8_t> TesseractBpDecoder::decode(
 
 std::shared_ptr<PostProcessor> TesseractBpDecoder::create_osd_post_processor(
     size_t osd_order, size_t osd_weight) const {
-  return std::make_shared<OsdPostProcessor>(graph_, osd_order, osd_weight, params_.osd_truncation_factor);
+  return std::make_shared<OsdPostProcessor>(graph_, osd_order, osd_weight,
+                                            params_.osd_truncation_factor);
 }
 
 size_t TesseractBpDecoder::num_observables() const {
