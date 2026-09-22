@@ -14,6 +14,7 @@
 
 # external/boost.BUILD
 package(default_visibility = ["//visibility:public"])
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_binary", "cc_test")
 
 # A cc_library for the Boost headers themselves.
 cc_library(

@@ -34,14 +34,51 @@ def test_module_has_global_constants():
     assert not math.isfinite(tesseract_decoder.utils.INF)
 
 
+def test_detector_order_method_names_and_compatibility_aliases():
+    utils = tesseract_decoder.utils
+    assert utils.DetOrder is utils.DetectorOrderMethod
+    assert utils.DetOrder.DetBFS == utils.DetectorOrderMethod.BFS
+    assert utils.DetOrder.DetIndex == utils.DetectorOrderMethod.Index
+    assert utils.DetOrder.DetCoordinate == utils.DetectorOrderMethod.Coordinate
+    assert utils.DetectorOrderMethod.Literal.name == "Literal"
+
+
+def test_literal_detector_order_method_is_not_generated():
+    with pytest.raises(ValueError, match="Literal detector orders cannot be generated"):
+        tesseract_decoder.utils.build_det_orders(
+            _DETECTOR_ERROR_MODEL,
+            num_det_orders=1,
+            method=tesseract_decoder.utils.DetectorOrderMethod.Literal,
+        )
+
+
 def test_get_detector_coords():
     assert tesseract_decoder.utils.get_detector_coords(_DETECTOR_ERROR_MODEL) == []
+
+
+def test_get_detector_coords_sparse():
+    dem = stim.DetectorErrorModel("detector(1, 2, 3) D1\nerror(0.1) D0 D1\n")
+    assert tesseract_decoder.utils.get_detector_coords(dem) == [[], [1.0, 2.0, 3.0]]
 
 
 def test_build_detector_graph():
     assert tesseract_decoder.utils.build_detector_graph(_DETECTOR_ERROR_MODEL) == [
         [1],
         [0],
+    ]
+
+
+def test_build_detector_graph_uses_positive_parity_reduced_symptoms():
+    dem = stim.DetectorErrorModel("""
+        error(0) D0 D1
+        error(0.1) D0 D0 D1
+        error(0.2) D1 D2 D3
+    """)
+    assert tesseract_decoder.utils.build_detector_graph(dem) == [
+        [],
+        [2, 3],
+        [1, 3],
+        [1, 2],
     ]
 
 
@@ -55,28 +92,98 @@ def test_build_det_orders_default_index():
 
 
 def test_build_det_orders_bfs():
-    assert tesseract_decoder.utils.build_det_orders(
-        _DETECTOR_ERROR_MODEL,
-        num_det_orders=1,
-        method=tesseract_decoder.utils.DetOrder.DetBFS,
+    path_dem = stim.DetectorErrorModel("""
+        error(0.1) D0 D4
+        error(0.1) D4 D1
+        error(0.1) D1 D3
+        error(0.1) D3 D2
+    """)
+    graph = tesseract_decoder.utils.build_detector_graph(path_dem)
+    orders = tesseract_decoder.utils.build_det_orders(
+        path_dem,
+        num_det_orders=16,
+        method=tesseract_decoder.utils.DetectorOrderMethod.BFS,
         seed=0,
-    ) == [[0, 1]]
+    )
+    for order in orders:
+        assert sorted(order) == list(range(5))
+        distance = [None] * len(graph)
+        distance[order[0]] = 0
+        frontier = [order[0]]
+        for detector in frontier:
+            for neighbor in graph[detector]:
+                if distance[neighbor] is None:
+                    distance[neighbor] = distance[detector] + 1
+                    frontier.append(neighbor)
+        assert [distance[detector] for detector in order] == sorted(
+            distance[detector] for detector in order
+        )
+
+
+def test_build_det_orders_bfs_empty_dem():
+    assert tesseract_decoder.utils.build_det_orders(
+        stim.DetectorErrorModel(),
+        num_det_orders=3,
+        method=tesseract_decoder.utils.DetectorOrderMethod.BFS,
+        seed=0,
+    ) == [[], [], []]
 
 
 def test_build_det_orders_coordinate():
-    assert tesseract_decoder.utils.build_det_orders(
-        _DETECTOR_ERROR_MODEL,
+    dem = stim.DetectorErrorModel("""
+        detector(2) D3
+        detector(0) D0
+        detector(3) D1
+        detector(1) D2
+    """)
+    order = tesseract_decoder.utils.build_det_orders(
+        dem,
         num_det_orders=1,
-        method=tesseract_decoder.utils.DetOrder.DetCoordinate,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Coordinate,
         seed=0,
-    ) == [[0, 1]]
+    )[0]
+    assert order in ([0, 2, 3, 1], [1, 3, 2, 0])
+
+
+def test_detector_coords_are_keyed_and_allow_missing_or_short_coordinates():
+    dem = stim.DetectorErrorModel("""
+        detector(2, 20) D2
+        detector(0) D0
+        detector(99) D2
+        error(0.1) D3
+    """)
+    assert tesseract_decoder.utils.get_detector_coords(dem) == [
+        [0],
+        [],
+        [2, 20],
+        [],
+    ]
+    order = tesseract_decoder.utils.build_det_orders(
+        dem,
+        num_det_orders=1,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Coordinate,
+        seed=0,
+    )[0]
+    assert order[2:] == [1, 3]
+
+
+def test_build_det_orders_coordinate_sparse():
+    dem = stim.DetectorErrorModel("detector(1, 2, 3) D1\nerror(0.1) D0 D1\n")
+    orders = tesseract_decoder.utils.build_det_orders(
+        dem,
+        num_det_orders=1,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Coordinate,
+        seed=0,
+    )
+    assert len(orders) == 1
+    assert len(orders[0]) == 2
 
 
 def test_build_det_orders_index():
     res = tesseract_decoder.utils.build_det_orders(
         _DETECTOR_ERROR_MODEL_10,
         num_det_orders=1,
-        method=tesseract_decoder.utils.DetOrder.DetIndex,
+        method=tesseract_decoder.utils.DetectorOrderMethod.Index,
         seed=0,
     )
     expected_asc = list(range(10))

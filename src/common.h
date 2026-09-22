@@ -18,12 +18,22 @@
 
 #include "stim.h"
 
+namespace tesseract_decoder {
 namespace common {
 
 // Represents the effect of an error
 struct Symptom {
   std::vector<int> detectors;
   std::vector<int> observables;
+
+  struct less {
+    bool operator()(const Symptom& lhs, const Symptom& rhs) const {
+      if (lhs.detectors != rhs.detectors) {
+        return lhs.detectors < rhs.detectors;
+      }
+      return lhs.observables < rhs.observables;
+    }
+  };
 
   struct hash {
     size_t operator()(const Symptom& s) const {
@@ -71,15 +81,27 @@ struct Error {
   void set_with_probability(double p);
 };
 
+// True if the DEM has no repeat or shift_detectors instructions.
+bool is_flat(const stim::DetectorErrorModel& dem);
+
+// Validates that shots produced by circuit can be decoded against dem. The DEM
+// may append virtual detectors whose shot values are implicitly zero, but it
+// may not remove circuit detector IDs, and observable counts must agree.
+// Returns the detector width of the circuit-produced shot records.
+size_t shot_detector_count(const stim::Circuit& circuit, const stim::DetectorErrorModel& dem);
+
+// Flatten the DEM, skipping rebuilds if already flat.
+stim::DetectorErrorModel flatten(const stim::DetectorErrorModel& dem);
+
 // Makes a new (flattened) dem where identical error mechanisms have been
-// merged.
+// merged, while preserving detector and observable counts.
 // `error_index_map[old_error_index]` gives the corresponding merged DEM error
 // index in the returned DEM.
 stim::DetectorErrorModel merge_indistinguishable_errors(const stim::DetectorErrorModel& dem,
                                                         std::vector<size_t>& error_index_map);
 
 // Returns a copy of the given error model with any zero-probability DEM_ERROR
-// instructions removed.
+// instructions removed, while preserving detector and observable counts.
 // `error_index_map[old_error_index]` gives the corresponding retained DEM error
 // index in the returned DEM, or `std::numeric_limits<size_t>::max()` if the
 // error was removed.
@@ -107,5 +129,6 @@ stim::DetectorErrorModel dem_from_counts(const stim::DetectorErrorModel& orig_de
 double merge_weights(double a, double b);
 
 }  // namespace common
+}  // namespace tesseract_decoder
 
 #endif

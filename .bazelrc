@@ -5,6 +5,19 @@ common --enable_platform_specific_config
 
 build --cxxopt='-std=c++20'
 
+# Public Linux wheels use a portable x86-64 baseline. Normal builds retain the
+# native CPU tuning in //src:OPT_COPTS.
+build:wheel --define=tesseract_portable_wheel=true
+
+# Published macOS wheels are arm64-only and tagged macosx_11_0. Apply the
+# deployment target to every build action, including external dependencies
+# and final link actions.
+build:macos_arm64_wheel --action_env=MACOSX_DEPLOYMENT_TARGET=11.0
+build:macos_arm64_wheel --host_action_env=MACOSX_DEPLOYMENT_TARGET=11.0
+build:macos_arm64_wheel --repo_env=MACOSX_DEPLOYMENT_TARGET=11.0
+build:macos_arm64_wheel --copt=-mmacosx-version-min=11.0
+build:macos_arm64_wheel --linkopt=-mmacosx-version-min=11.0
+
 # Needed to fix issues like this which arose in GCC 15 on Linux:
 # "error: relocation refers to local symbol [...], which is defined in a discarded section"
 # We keep it linux-only so macos does not receive GNU ld flags

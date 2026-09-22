@@ -31,6 +31,7 @@ updates:
       - dependency-name: pytest
       - dependency-name: sinter
       - dependency-name: pybind11-stubgen
+      - dependency-name: jupytext
     schedule:
       interval: "monthly"
     versioning-strategy: "increase-if-necessary"

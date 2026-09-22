@@ -1,6 +1,8 @@
 
 #include "visualization.h"
 
+namespace tesseract_decoder {
+
 void Visualizer::add_errors(const std::vector<common::Error>& errors) {
   for (auto& error : errors) {
     lines.push_back(error.str());
@@ -55,3 +57,5 @@ void Visualizer::write(const char* fpath) {
 
   fclose(fout);
 }
+
+}  // namespace tesseract_decoder

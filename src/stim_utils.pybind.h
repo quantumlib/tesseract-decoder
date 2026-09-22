@@ -7,6 +7,8 @@
 
 #include "stim.h"
 
+namespace tesseract_decoder {
+
 namespace {
 namespace py = pybind11;
 }
@@ -65,5 +67,7 @@ template <typename T>
 void dem_setter(T& config, py::object dem) {
   config.dem = parse_py_object<stim::DetectorErrorModel>(dem);
 }
+
+}  // namespace tesseract_decoder
 
 #endif
