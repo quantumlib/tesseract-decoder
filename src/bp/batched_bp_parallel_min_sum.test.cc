@@ -34,7 +34,7 @@ TEST(BatchedBpParallelMinSumTest, MatchesUnbatchedImplementation) {
   batched_syndromes.push_back({0, 3});  // Shot 1: Error at V0, V4
   for (size_t i = 2; i < BP_BATCH_SIZE; i++) batched_syndromes.push_back({});  // Other shots empty
 
-  std::vector<std::vector<float>> batched_posteriors(BP_BATCH_SIZE, std::vector<float>(5, 0));
+  std::vector<float> batched_posteriors(5 * BP_BATCH_SIZE, 0.0f);
 
   auto batched_results = batched_bp_parallel_min_sum(
       batched_graph, batched_syndromes, batched_posteriors, 20, kNormalizationFactor, true);
@@ -51,7 +51,7 @@ TEST(BatchedBpParallelMinSumTest, MatchesUnbatchedImplementation) {
         << "Shot " << b << " iter mismatch.";
 
     for (size_t i = 0; i < 5; ++i) {
-      EXPECT_FLOAT_EQ(batched_posteriors[b][i], unbatched_posteriors[i])
+      EXPECT_FLOAT_EQ(batched_posteriors[i * BP_BATCH_SIZE + b], unbatched_posteriors[i])
           << "Shot " << b << " variable " << i << " mismatch.";
     }
   }

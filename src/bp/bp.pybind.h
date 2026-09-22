@@ -29,7 +29,13 @@ void add_bp_module(py::module& root) {
       .def_readwrite("max_iter", &BPParams::max_iter)
       .def_readwrite("update_rule", &BPParams::update_rule)
       .def_readwrite("schedule", &BPParams::schedule)
-      .def_readwrite("normalization_factor", &BPParams::normalization_factor);
+      .def_readwrite("normalization_factor", &BPParams::normalization_factor)
+      .def_readwrite("random_schedule", &BPParams::random_schedule)
+      .def_readwrite("random_seed", &BPParams::random_seed)
+      .def_readwrite("osd_truncation_factor", &BPParams::osd_truncation_factor,
+                     "Multiplier defining the maximum number of free columns for the dense OSD "
+                     "Gaussian elimination matrix (e.g. 1.2 bounds to 1.2x the number of defect "
+                     "detectors). Use 0.0 to disable truncation.");
 
   py::class_<PostProcessor, std::shared_ptr<PostProcessor>>(m, "PostProcessor");
 
@@ -47,7 +53,7 @@ void add_bp_module(py::module& root) {
     )pbdoc")
       .def(py::init([](py::object dem, const BPParams& config) {
              return std::make_unique<TesseractBpDecoder>(
-                 parse_py_object<stim::DetectorErrorModel>(dem), config);
+                 tesseract_decoder::parse_py_object<stim::DetectorErrorModel>(dem), config);
            }),
            py::arg("dem"), py::arg("config"))
       .def("create_osd_post_processor", &TesseractBpDecoder::create_osd_post_processor,

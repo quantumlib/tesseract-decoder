@@ -185,7 +185,7 @@ target_link_libraries(dem_decomposition_test PRIVATE dem_decomposition GTest::gt
 add_test(NAME dem_decomposition_test COMMAND dem_decomposition_test)
 
 add_executable(error_correlations_test ${TESSERACT_SRC_DIR}/multi_pass/error_correlations.test.cc)
-target_link_libraries(error_correlations_test PRIVATE error_correlations GTest::gtest_main libstim)
+target_link_libraries(error_correlations_test PRIVATE error_correlations dem_decomposition GTest::gtest_main libstim)
 add_test(NAME error_correlations_test COMMAND error_correlations_test)
 
 add_executable(multi_pass_tesseract_decoder_test ${TESSERACT_SRC_DIR}/multi_pass/multi_pass_tesseract_decoder.test.cc)

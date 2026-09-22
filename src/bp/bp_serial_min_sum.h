@@ -11,7 +11,8 @@ namespace bp {
 template <typename T>
 BPResult bp_serial_min_sum(TannerGraph<T>& graph, const std::vector<size_t>& detection_events,
                            std::vector<T>& posteriors, size_t max_iters, float normalization_factor,
-                           bool stop_at_convergence = true);
+                           bool stop_at_convergence = true, bool random_schedule = false,
+                           uint64_t random_seed = 0);
 
 }  // namespace bp
 

@@ -10,8 +10,12 @@ class OsdPostProcessor : public PostProcessor {
  public:
   // osd_order specifies the size of the information set subset to perturb.
   // osd_weight specifies the maximum Hamming weight of perturbations to explore.
-  OsdPostProcessor(const TannerGraph<LLR_INT>& graph, size_t osd_order = 0, size_t osd_weight = 0)
-      : graph_(graph), osd_order_(osd_order), osd_weight_(osd_weight) {}
+  OsdPostProcessor(const TannerGraph<LLR_INT>& graph, size_t osd_order = 0, size_t osd_weight = 0,
+                   float osd_truncation_factor = 0.0f)
+      : graph_(graph),
+        osd_order_(osd_order),
+        osd_weight_(osd_weight),
+        osd_truncation_factor_(osd_truncation_factor) {}
   virtual ~OsdPostProcessor() = default;
 
   std::vector<uint8_t> process(const BPResult& bp_result, const std::vector<LLR_INT>& posteriors,
@@ -22,6 +26,7 @@ class OsdPostProcessor : public PostProcessor {
   const TannerGraph<LLR_INT>& graph_;
   size_t osd_order_;
   size_t osd_weight_;
+  float osd_truncation_factor_;
 };
 
 }  // namespace bp

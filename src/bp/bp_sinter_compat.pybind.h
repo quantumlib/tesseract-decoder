@@ -116,7 +116,8 @@ struct TesseractBpSinterDecoder {
       : params(p), osd_order(order), osd_weight(weight), use_osd(osd), use_batched_bp(batched) {}
 
   TesseractBpSinterCompiledDecoder compile_decoder_for_dem(const py::object& dem) {
-    const stim::DetectorErrorModel stim_dem = parse_py_object<stim::DetectorErrorModel>(dem);
+    const stim::DetectorErrorModel stim_dem =
+        tesseract_decoder::parse_py_object<stim::DetectorErrorModel>(dem);
     auto decoder = std::make_unique<TesseractBpDecoder>(stim_dem, params);
 
     std::shared_ptr<PostProcessor> pp;

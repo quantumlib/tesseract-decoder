@@ -70,14 +70,21 @@ std::vector<uint8_t> OsdPostProcessor::process(
   std::sort(sorted_cols.begin(), sorted_cols.end(),
             [&](size_t a, size_t b) { return std::abs(posteriors[a]) < std::abs(posteriors[b]); });
 
+  size_t max_osd_cols = num_errors;
+  if (osd_truncation_factor_ > 0.0f) {
+    max_osd_cols = std::min(num_errors, (size_t)(num_detectors * osd_truncation_factor_));
+  }
+
   // 4. Build parity check matrix H rows using stim::simd_bits.
-  std::vector<stim::simd_bits<64>> H_rows(num_detectors, stim::simd_bits<64>(num_errors));
-  for (size_t c = 0; c < num_errors; ++c) {
+  // We index the columns of H_rows by 'i' (the sorted rank index) to save memory and speed up XORs.
+  std::vector<stim::simd_bits<64>> H_rows(num_detectors, stim::simd_bits<64>(max_osd_cols));
+  for (size_t i = 0; i < max_osd_cols; ++i) {
+    size_t c = sorted_cols[i];
     size_t start = graph_.var_edge_offsets[c];
     size_t end = graph_.var_edge_offsets[c + 1];
     for (size_t e = start; e < end; ++e) {
       uint32_t d = graph_.var_edges[e];
-      H_rows[d][c] = true;
+      H_rows[d][i] = true;
     }
   }
 
@@ -85,12 +92,12 @@ std::vector<uint8_t> OsdPostProcessor::process(
   size_t num_solved = 0;
   std::vector<size_t> col_to_pivot_row(num_errors, SIZE_MAX);
 
-  for (size_t i = 0; i < num_errors && num_solved < num_detectors; ++i) {
+  for (size_t i = 0; i < max_osd_cols && num_solved < num_detectors; ++i) {
     size_t c = sorted_cols[i];
 
     size_t pivot_r = SIZE_MAX;
     for (size_t r = num_solved; r < num_detectors; ++r) {
-      if (H_rows[r][c]) {
+      if (H_rows[r][i]) {
         pivot_r = r;
         break;
       }
@@ -109,7 +116,7 @@ std::vector<uint8_t> OsdPostProcessor::process(
     pivot_r = num_solved;
 
     for (size_t r = 0; r < num_detectors; ++r) {
-      if (r != pivot_r && H_rows[r][c]) {
+      if (r != pivot_r && H_rows[r][i]) {
         H_rows[r] ^= H_rows[pivot_r];
         S_res[r] ^= S_res[pivot_r];
       }
@@ -156,9 +163,10 @@ std::vector<uint8_t> OsdPostProcessor::process(
 
   if (osd_weight_ > 0) {
     std::vector<size_t> free_cols;
-    for (auto c : sorted_cols) {
+    for (size_t i = 0; i < max_osd_cols; ++i) {
+      size_t c = sorted_cols[i];
       if (col_to_pivot_row[c] == SIZE_MAX) {
-        free_cols.push_back(c);
+        free_cols.push_back(i);
       }
     }
 
@@ -167,30 +175,32 @@ std::vector<uint8_t> OsdPostProcessor::process(
 
     std::vector<stim::simd_bits<64>> F_columns;
     std::vector<double> F_costs;
-    for (auto c : F_subset) {
+    for (auto i : F_subset) {
+      size_t c = sorted_cols[i];
       stim::simd_bits<64> col(num_solved);
       for (size_t r = 0; r < num_solved; ++r) {
-        if (H_rows[r][c]) col[r] = true;
+        if (H_rows[r][i]) col[r] = true;
       }
       F_columns.push_back(std::move(col));
       F_costs.push_back(std::abs(llr_int_to_double(posteriors[c])));
     }
 
     // OSD-1
-    for (size_t i = 0; i < F_columns.size(); ++i) {
+    for (size_t idx = 0; idx < F_columns.size(); ++idx) {
       stim::simd_bits<64> S_trial = S_res;
-      S_trial ^= F_columns[i];
-      evaluate_solution(S_trial, F_costs[i], {F_subset[i]});
+      S_trial ^= F_columns[idx];
+      evaluate_solution(S_trial, F_costs[idx], {sorted_cols[F_subset[idx]]});
     }
 
     // OSD-2
     if (osd_weight_ >= 2) {
-      for (size_t i = 0; i < F_columns.size(); ++i) {
-        for (size_t j = i + 1; j < F_columns.size(); ++j) {
+      for (size_t idx = 0; idx < F_columns.size(); ++idx) {
+        for (size_t jdx = idx + 1; jdx < F_columns.size(); ++jdx) {
           stim::simd_bits<64> S_trial = S_res;
-          S_trial ^= F_columns[i];
-          S_trial ^= F_columns[j];
-          evaluate_solution(S_trial, F_costs[i] + F_costs[j], {F_subset[i], F_subset[j]});
+          S_trial ^= F_columns[idx];
+          S_trial ^= F_columns[jdx];
+          evaluate_solution(S_trial, F_costs[idx] + F_costs[jdx],
+                            {sorted_cols[F_subset[idx]], sorted_cols[F_subset[jdx]]});
         }
       }
     }
