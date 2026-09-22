@@ -16,7 +16,8 @@ namespace bp {
 TesseractBpDecoder::TesseractBpDecoder(const stim::DetectorErrorModel& dem, const BPParams& params)
     : params_(params) {
   std::vector<size_t> error_index_map;
-  stim::DetectorErrorModel flat_dem = common::merge_indistinguishable_errors(dem, error_index_map);
+  stim::DetectorErrorModel flat_dem =
+      tesseract_decoder::common::merge_indistinguishable_errors(dem, error_index_map);
 
   // First pass: count detectors and observables to size variables.
   size_t num_vars = 0;

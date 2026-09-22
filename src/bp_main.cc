@@ -30,6 +30,7 @@
 #include "utils.h"
 
 using namespace bp;
+using namespace tesseract_decoder;
 
 struct Args {
   std::string circuit_path;

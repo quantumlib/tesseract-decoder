@@ -53,7 +53,7 @@ void add_bp_module(py::module& root) {
     )pbdoc")
       .def(py::init([](py::object dem, const BPParams& config) {
              return std::make_unique<TesseractBpDecoder>(
-                 parse_py_object<stim::DetectorErrorModel>(dem), config);
+                 tesseract_decoder::parse_py_object<stim::DetectorErrorModel>(dem), config);
            }),
            py::arg("dem"), py::arg("config"))
       .def("create_osd_post_processor", &TesseractBpDecoder::create_osd_post_processor,
