@@ -13,6 +13,7 @@ A Search-Based Decoder for Quantum Error Correction.
 
 [Installation](#installation) &ndash;
 [Usage](#usage) &ndash;
+[Multi-Pass](#multi-pass-graph-shattering) &ndash;
 [Python Interface](#python-interface) &ndash;
 [Paper](https://arxiv.org/pdf/2503.10988) &ndash;
 [Help](#help) &ndash;
@@ -291,6 +292,12 @@ Multi-pass graph shattering partitions a correlated detector error model into tw
 components and decodes the smaller component models separately. With two passes, predictions from
 the first pass update error priors used during the final pass. The current implementation requires
 exactly two components and accepts one or two passes.
+
+![Combined Baseline to GARI to Multi-Pass Tradeoffs](benchmarking/multipass/plots/combined_baseline_gari_multipass_tradeoffs.png)
+
+See [`benchmarking/multipass/README.md`](benchmarking/multipass/README.md) for the full Color Code
+(`d=3, 5, 7, 9`) and Bivariate Bicycle (`[[144, 12, 6]]`) tradeoff plots, benchmark summary table,
+and reproduction scripts comparing monolithic Baseline, GARI, and Multi-Pass decoding.
 
 Two-pass reweighting is a correlated-matching-style heuristic. A component symptom's XOR marginal
 includes every mechanism that produces it, including one-sided mechanisms, while paired evidence
