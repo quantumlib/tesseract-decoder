@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http:#www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -130,14 +130,14 @@ def test_tesseract_merge_errors_affects_cost():
     )
 
 
-def test_simlpex_decode_with_mismatched_syndrome_size():
+def test_simplex_decode_with_mismatched_syndrome_size():
     shared_test_decode_with_mismatched_syndrome_size(
         tesseract_decoder.simplex.SimplexDecoder,
         tesseract_decoder.simplex.SimplexConfig,
     )
 
 
-def test_test_simplex_decode_batch_with_mismatched_syndrome_size():
+def test_simplex_decode_batch_with_mismatched_syndrome_size():
     shared_test_decode_batch_with_mismatched_syndrome_size(
         tesseract_decoder.simplex.SimplexDecoder,
         tesseract_decoder.simplex.SimplexConfig,

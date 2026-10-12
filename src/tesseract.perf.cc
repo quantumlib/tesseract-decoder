@@ -30,7 +30,7 @@ void benchmark_decoder(Decoder& decoder, stim::Circuit& circuit, size_t num_shot
   std::vector<stim::SparseShot> shots;
   sample_shots(test_data_seed, circuit, num_shots, shots);
 
-  // Use volatile to try to ensure compiler does not optimize out the decoding
+  // Use volatile to try to ensure the compiler does not optimize out the decoding
   volatile size_t total_num_errors_used = 0;
   size_t num_low_confidence = 0;
   size_t num_errors = 0;
@@ -59,7 +59,7 @@ void benchmark_decoder(Decoder& decoder, stim::Circuit& circuit, size_t num_shot
     num_milliseconds = std::chrono::duration<double, std::milli>(end_time - start_time).count();
   } while (num_milliseconds < 1000.0);
   std::cout << (num_milliseconds / num_decoded) << " milliseconds per shot " << num_decoded
-            << " shots " << num_low_confidence << " low confidence " << num_errors << " errors "
+            << " shots " << num_low_confidence << " low confidence " << num_errors << " errors"
             << " total_num_errors_used = " << total_num_errors_used << std::endl;
 }
 

@@ -167,7 +167,7 @@ def run_tesseract_decoder(decoder, dets, obs):
 
 
 # %% colab={"base_uri": "https://localhost:8080/"} id="D0Tx2eY3ctFw" outputId="f419743f-f692-4490-fecc-6b7a831dc586"
-# setup the tesseract decoder configuration
+# set up the tesseract decoder configuration
 tesseract_config = tesseract.TesseractConfig(
     dem=dem,
     pqlimit=10000,
@@ -270,7 +270,7 @@ results = run_tesseract_decoder(tesseract_config2.compile_decoder(), dets, obs)
 print_results(results)
 
 # %% [markdown] id="ru-MRctAIq5-"
-# #More heurisitcs
+# #More heuristics
 # * `det_beam` - This integer value represents the beam search cutoff. It specifies a threshold for the number of "residual detection events" a node can have before it is pruned from the search. A lower `det_beam` value makes the search more aggressive, potentially sacrificing accuracy for speed. The default value `INF_DET_BEAM` means no beam cutoff is applied.
 # * `beam_climbing` - A boolean flag that, when set to `True`, enables a heuristic called "beam climbing." This optimization causes the decoder to try different `det_beam` values (up to a maximum) to find a good decoding path. This can improve the decoder's chance of finding the most likely error, even with an initial narrow beam search.
 # * Try replacing `DetIndex` with `DetBFS` or `DetCoordinate` -- this enables different heuristics to assign the ordering of detectors for the traversal, leading to different results.
@@ -394,7 +394,7 @@ print(f"Logical failures: {logical_failures}/{num_shots}")
 #
 #
 #
-# *   checkout https://www.codetables.de/ for a qubit stabilizer code
+# *   check out https://www.codetables.de/ for a qubit stabilizer code
 # *   full table of qubit codes: [here](https://codetables.de/QECC/Tables_color.php?q=4&n0=1&n1=256&k0=0&k1=256)
 # *   copy the stabilizer matrix for a code, such as: [this one used below](https://codetables.de/QECC/QECC.php?q=4&n=21&k=8)
 #
@@ -695,7 +695,7 @@ tesseract_dec.visualizer.write('/content/tmp.txt')
 # !python tesseract-decoder/viz/to_json.py logfile.txt -o logfile.json
 
 # %% [markdown] id="HSdTwXBINjkH"
-# copy the json file and upload it [here to see the visualizaion](https://quantumlib.github.io/tesseract-decoder/viz/)
+# copy the json file and upload it [here to see the visualization](https://quantumlib.github.io/tesseract-decoder/viz/)
 
 # %% [markdown] id="QehTGJcB7-Ca"
 # # Accuracy Comparison between Tesseract and ILP

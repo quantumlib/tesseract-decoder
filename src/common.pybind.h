@@ -74,7 +74,7 @@ void add_common_module(py::module& root) {
       )pbdoc");
 
   py::class_<common::Error>(m, "Error", R"pbdoc(
-        Represents an error, including its cost, and symptom.
+        Represents an error, including its cost and symptom.
 
         An error is a physical event (or set of indistinguishable physical events)
         defined by the detectors and observables that it flips in the circuit.

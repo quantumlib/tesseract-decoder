@@ -1,6 +1,6 @@
 # Citation information for this repository.                         -*- yaml -*-
 #
-# CITATION.cff provide human- & machine-readable citation info for software and
+# CITATION.cff provides human- & machine-readable citation info for software and
 # datasets. GitHub, Zenodo, and the Zotero browser plugin all use CFF files
 # automatically. Tools exist to generate CITATION.cff files from other formats
 # such as BibTeX. For more info, visit https://citation-file-format.github.io/.
