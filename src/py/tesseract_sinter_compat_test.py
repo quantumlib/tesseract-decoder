@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http:#www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -29,7 +29,7 @@ from tesseract_decoder import (
 
 def test_tesseract_sinter_obj_exists():
     """
-    Sanity check to ensure the decoder object exists and has the required methods.
+    Check to ensure the decoder object exists and has the required methods.
     """
 
     decoder = TesseractSinterDecoder()
@@ -257,7 +257,7 @@ def test_decode_via_files_sanity_check():
     with open(dem_path, "w") as f:
         f.write(str(dem))
 
-    # Generate dummy detection events and save to file
+    # Generate fake detection events and save to file
     num_shots = 10
     sampler = circuit.compile_detector_sampler()
     detection_events = sampler.sample(num_shots, bit_packed=True)
@@ -562,7 +562,7 @@ def test_sinter_invincible_observables():
 
 def test_sinter_detector_counting():
     """
-    Tests 'that the decoder's detector count is correctly reported via Sinter'.
+    Tests that the decoder's detector count is correctly reported via Sinter.
     """
     circuit = stim.Circuit("""
         X_ERROR(0.1) 0

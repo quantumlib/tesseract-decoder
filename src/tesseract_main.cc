@@ -57,7 +57,7 @@ struct Args {
   size_t max_errors = SIZE_MAX;
   uint64_t sample_seed;
 
-  // If either of these are nonzero, only the shots in the range
+  // If either of these is nonzero, only the shots in the range
   // [shot_range_begin, shot_range_end) will be decoded.
   size_t shot_range_begin = 0;
   size_t shot_range_end = 0;
@@ -185,7 +185,7 @@ struct Args {
           "There is a maximum limit of 1000 threads imposed to avoid "
           "accidentally overloading a "
           "host. You specified " +
-          std::to_string(num_threads) + "threads.");
+          std::to_string(num_threads) + " threads.");
     }
     if (shot_range_begin or shot_range_end) {
       if (shot_range_end < shot_range_begin) {
@@ -516,7 +516,7 @@ int main(int argc, char* argv[]) {
       .default_value(std::string(""))
       .store_into(args.obs_in_fname);
   program.add_argument("--obs-in-format", "--obs_in_format")
-      .help("Format of the file to observable flips from (" + in_formats + ")")
+      .help("Format of the file to read observable flips from (" + in_formats + ")")
       .metavar(in_formats)
       .default_value(std::string(""))
       .store_into(args.obs_in_format);

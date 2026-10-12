@@ -207,7 +207,7 @@ void add_tesseract_module(py::module& root) {
                  generated-order options.
               det_penalty : float, default=0.0
                  A penalty value added to the cost of each detector visited.
-              create_visualization: bool, defualt=False
+              create_visualization: bool, default=False
                  Whether to record the information needed to create a visualization or not.
              sparsify_errors: bool, default=False
                  If True, enables per-shot sparse error activation.
@@ -259,7 +259,7 @@ void add_tesseract_module(py::module& root) {
                 generated-order options.
             det_penalty : float, default=0.0
                 A penalty value added to the cost of each detector visited.
-            create_visualization: bool, defualt=False
+            create_visualization: bool, default=False
                 Whether to record the information needed to create a visualization or not.
             sparsify_errors: bool, default=False
                 If True, enables per-shot sparse error activation.
@@ -283,7 +283,7 @@ void add_tesseract_module(py::module& root) {
       .def_readwrite("beam_climbing", &TesseractConfig::beam_climbing,
                      "Whether to use a beam climbing heuristic.")
       .def_readwrite("no_revisit_dets", &TesseractConfig::no_revisit_dets,
-                     "Whether to prevent revisiting same syndrome patterns during decoding.")
+                     "Whether to prevent revisiting the same syndrome patterns during decoding.")
 
       .def_readwrite("verbose", &TesseractConfig::verbose,
                      "If True, the decoder will print verbose output.")
@@ -296,7 +296,7 @@ void add_tesseract_module(py::module& root) {
       .def_readwrite("det_penalty", &TesseractConfig::det_penalty,
                      "The penalty cost added for each detector.")
       .def_readwrite("create_visualization", &TesseractConfig::create_visualization,
-                     "If True, records necessary information to create visualization.")
+                     "If True, records necessary information to create a visualization.")
       .def_readwrite("sparsify_errors", &TesseractConfig::sparsify_errors,
                      "If True, enables per-shot sparse error activation.")
       .def_readwrite("sparsify_base_degree", &TesseractConfig::sparsify_base_degree,
@@ -590,15 +590,15 @@ void add_tesseract_module(py::module& root) {
         Parameters
         ----------
         syndromes : np.ndarray
-            A 2D NumPy array of booleans where each row corresponds to a shot and
-            each column corresponds to a logical observable. Each row is the decoder's prediction of which observables were flipped in the shot. The shape is
+            A 2D NumPy array of booleans where each row represents a single shot's
+            detector outcomes. The shape should be (num_shots, num_detectors): each shot has
             a new array with num_detectors size.
 
         Returns
         -------
         np.ndarray
             A 2D NumPy array of booleans where each row corresponds to a shot and
-            that short specifies which logical observable are flipped. The shape is
+            that shot specifies which logical observables are flipped. The shape is
             (num_shots, num_observables).
     )pbdoc")
       .def_readwrite("config", &TesseractDecoder::config,
@@ -616,7 +616,7 @@ void add_tesseract_module(py::module& root) {
                      "The total number of detectors in the detector error model.")
       .def_readonly("visualizer", &TesseractDecoder::visualizer,
                     "An object that can (if config.create_visualization=True) be used to generate "
-                    "visualization of the algorithm");
+                    "a visualization of the algorithm.");
 }
 
 }  // namespace tesseract_decoder

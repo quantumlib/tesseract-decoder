@@ -341,7 +341,7 @@ void pybind_sinter_compat(py::module& root) {
                 :param dets_b8_in_path: The path to a file containing bit-packed detection events.
                 :param obs_predictions_b8_out_path: The path to the output file where
                     bit-packed observable predictions will be written.
-                :param tmp_dir: A temporary directory path. (Currently unused, but required by API)
+                :param tmp_dir: A temporary directory path. (Currently unused, but required by the API.)
             )pbdoc")
       .def_readwrite("det_beam", &TesseractSinterDecoder::det_beam)
       .def_readwrite("beam_climbing", &TesseractSinterDecoder::beam_climbing)
