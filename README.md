@@ -49,7 +49,7 @@ We tested the Tesseract decoder for:
     suitable for large-scale simulations.
 *   **Efficient Beam Search:** implements a [beam search](https://en.wikipedia.org/wiki/Beam_search)
     algorithm to minimize decoding cost and enhance efficiency.
-**Sampling and Shot Range Processing:** supports sampling shots from circuits. When a detection
+*   **Sampling and Shot Range Processing:** supports sampling shots from circuits. When a detection
     error model is provided without an accompanying circuit, Tesseract requires detection events from
     files using `--in`. The decoder can also process specific shot ranges for flexible experiment
     setups.
@@ -58,7 +58,7 @@ We tested the Tesseract decoder for:
 *   **Heuristics**: includes flexible heuristic options: `--beam`, `--det-penalty`,
     `--beam-climbing`, `--no-revisit-dets`, `--at-most-two-errors-per-detector`, and `--pqlimit` to
     improve performance while maintaining a low logical error rate. To learn more about these
-    options, use `./bazel-bin/src/tesseract --help`
+    options, use `./bazel-bin/src/tesseract --help`.
 *   **Visualization tool:** open the [viz directory](viz/) in your browser to view decoding results. See [viz/README.md](viz/README.md) for instructions on generating the visualization JSON.
 
 ## Installation
@@ -490,7 +490,7 @@ if __name__ == "__main__":
         'tesseract-short-beam-sparsify-surface-code-like',
     ]
     decoder_dict = make_tesseract_sinter_decoders_dict()
-    # You can also make your own custom Tesseract Decoder to-be-used with Sinter.
+    # You can also make your own custom Tesseract Decoder to be used with Sinter.
     decoders.append('custom-tesseract-decoder')
     decoder_dict['custom-tesseract-decoder'] = TesseractSinterDecoder(
         det_beam=10,
@@ -535,7 +535,7 @@ if __name__ == "__main__":
     for sample in results:
         print(sample.to_csv_line())
 ```
-should get something like:
+You should get something like:
 ```
     shots,    errors,  discards, seconds,decoder,strong_id,json_metadata,custom_counts  
     10000,        42,         0,   0.071,tesseract,1b3fce6286e438f38c00c8f6a5005947373515ab08e6446a7dd9ecdbef12d4cc,"{""d"":3,""decoder"":""tesseract""}",  
@@ -573,7 +573,7 @@ sinter collect \
 Sinter efficiently manages the execution of these tasks, and Tesseract is used for decoding. For more usage examples, see the tests in `src/py/tesseract_sinter_compat_test.py`.
 
 ## Good Starting Points for Tesseract Configurations:
- The [Tesseract paper](https://arxiv.org/pdf/2503.10988) recommends two setup for starting your exploration with tesseract:
+ The [Tesseract paper](https://arxiv.org/pdf/2503.10988) recommends two setups for starting your exploration with Tesseract:
 
 
 (1) Long-beam setup:
@@ -663,7 +663,7 @@ cite the following:
 ```
 
 ## Hacking on the Python module locally
-To install your own build of Tesseract python module locally so that you can easily modify and hack on it, use something like the following:
+To install your own build of the Tesseract Python module locally so that you can easily modify and hack on it, use something like the following:
 ```bash
 bazel build --define ABI_TAG="cp313" --define TARGET_VERSION="cp3.13" --define VERSION="v0.0.0dev"  :tesseract_decoder_wheel
 pip uninstall --y tesseract_decoder
