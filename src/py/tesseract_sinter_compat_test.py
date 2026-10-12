@@ -29,7 +29,7 @@ from tesseract_decoder import (
 
 def test_tesseract_sinter_obj_exists():
     """
-    Sanity check to ensure the decoder object exists and has the required methods.
+    Check to ensure the decoder object exists and has the required methods.
     """
 
     decoder = TesseractSinterDecoder()
@@ -257,7 +257,7 @@ def test_decode_via_files_sanity_check():
     with open(dem_path, "w") as f:
         f.write(str(dem))
 
-    # Generate dummy detection events and save to file
+    # Generate fake detection events and save to file
     num_shots = 10
     sampler = circuit.compile_detector_sampler()
     detection_events = sampler.sample(num_shots, bit_packed=True)
