@@ -152,9 +152,9 @@ jupyter-core==5.9.1 \
     --hash=sha256:4d09aaff303b9566c3ce657f580bd089ff5c91f5f89cf7d8846c3cdf465b5508 \
     --hash=sha256:ebf87fdc6073d142e114c72c9e29a9d7ca03fad818c5d300ce2adc1fb0743407
     # via nbformat
-jupytext==1.19.5 \
-    --hash=sha256:605026446d605aa54fd7f7fc69df6ae51c7a46053d4cebf05afdc64d66de3df0 \
-    --hash=sha256:af22351202171116b986fe1f4f9233a13ca4a85d5eec57a87900ed48521dbae4
+jupytext==1.19.6 \
+    --hash=sha256:ba1d143bb3751e054d3164376b148ee8fa74e1a860fc9411e1da93ff588b8a17 \
+    --hash=sha256:eb725d66841f1a91707bdcf4703b194a53151a060ecb3fd31d78139cc9ec090a
     # via -r src/py/requirements.in
 kiwisolver==1.4.9 \
     --hash=sha256:0749fd8f4218ad2e851e11cc4dc05c7cbc0cbc4267bdfdb31782e65aace4ee9c \
@@ -504,9 +504,9 @@ pluggy==1.6.0 \
     --hash=sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3 \
     --hash=sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746
     # via pytest
-pybind11-stubgen==2.5.5 \
-    --hash=sha256:10824cd2fc5cbbee032b8fb39e6f6c08de232deb309bc66d786a6c6e8a4601bd \
-    --hash=sha256:758d6d6bbeefc62ad7f78d5e5bbf357ccf6af83cd4504f5f549403f452942708
+pybind11-stubgen==3.0.0 \
+    --hash=sha256:859b7b7dbd31d00f722f19152216b5506e8a5d3fdf586944de0cade80f972298 \
+    --hash=sha256:b0a908ae99204e201a5148c17dc3cb789021a339ab9dc1d0517a23a87490204c
     # via -r src/py/requirements.in
 pygments==2.20.0 \
     --hash=sha256:6757cd03768053ff99f3039c1a36d6c0aa0b263438fcab17520b30a303a82b5f \
