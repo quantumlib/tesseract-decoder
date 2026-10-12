@@ -66,7 +66,7 @@ bool simplex_test_compare(stim::DetectorErrorModel& dem, std::vector<stim::Spars
       }
       std::cout << std::endl;
       std::cout << "Error: For shot " << shot
-                << " tesseract got solution with cost:" << tesseract_cost
+                << " tesseract got solution with cost: " << tesseract_cost
                 << " simplex got solution with cost: " << simplex_cost << std::endl;
       std::cout << "tesseract used errors ";
       for (size_t dem_ei : tesseract_decoder.predicted_errors_buffer) {
