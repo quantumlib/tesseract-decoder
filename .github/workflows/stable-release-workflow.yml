@@ -47,7 +47,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04, macos-14]
+        os: [ubuntu-22.04, ubuntu-24.04, ubuntu-22.04-arm, ubuntu-24.04-arm, macos-14]
         python-version: ['3.12', '3.13', '3.14']
 
     steps:
@@ -85,7 +85,7 @@ jobs:
         glibc_version=$(ldd --version | awk '/ldd/{print $NF}')
         export GLIBC_VERSION="${glibc_version//./_}"
         echo $GLIBC_VERSION
-        sed "s/^MANYLINUX_VERSION.*/MANYLINUX_VERSION=\"manylinux_${GLIBC_VERSION}_x86_64\"/" BUILD -i || true
+        sed "s/^MANYLINUX_VERSION.*/MANYLINUX_VERSION=\"manylinux_${GLIBC_VERSION}_$(uname -m)\"/" BUILD -i || true
         ABI_TAG="$(python -c "print(\"cp${TARGET_PYTHON}\".replace(\".\", \"\"))")"
         echo $ABI_TAG
         bazel build  --define ABI_TAG=$ABI_TAG --define TARGET_VERSION="$(python -c "print(\"py${TARGET_PYTHON}\".replace(\".\", \"\"))")" --define VERSION="$(cat version/version.txt)"  :tesseract_decoder_wheel
