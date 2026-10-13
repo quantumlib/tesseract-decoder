@@ -42,6 +42,14 @@ config_setting(
     ],
 )
 
+config_setting(
+    name = "linux_arm",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:arm64",
+    ],
+)
+
 OPT_COPTS = select({
     "//conditions:default": [
         "-Ofast",
@@ -53,6 +61,7 @@ OPT_COPTS = select({
 }) + select({
     ":portable_linux_wheel": ["-march=x86-64"],
     ":macos_arm": ["-mmacosx-version-min=11.0"],
+    ":linux_arm": ["-march=armv8-a"],
     "//conditions:default": ["-march=native",],
 })
 
