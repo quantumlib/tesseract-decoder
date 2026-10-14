@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import math
+import threading
+import time
 
 import numpy as np
 import pytest
@@ -401,3 +403,39 @@ def shared_test_decode_batch_with_mismatched_syndrome_size(decoder_class, config
         match=r"The number of detectors in the input array \(1\) does not match the number of detectors in the decoder \(2\).",
     ):
         decoder.decode_batch(invalid_syndromes)
+
+
+def shared_test_decode_batch_lets_other_threads_run(decoder_class, config_class):
+    """
+    Tests that other Python threads keep running while `decode_batch` decodes, e.g. a timer
+    thread that renews a lease on the work being decoded.
+    """
+    circuit = stim.Circuit.generated(
+        "surface_code:rotated_memory_x",
+        distance=3,
+        rounds=3,
+        after_clifford_depolarization=0.02,
+    )
+    decoder = decoder_class(config_class(circuit.detector_error_model()))
+    sampler = circuit.compile_detector_sampler(seed=1234)
+
+    # Find a batch that takes at least half a second to decode.
+    num_shots = 16
+    while True:
+        syndromes = sampler.sample(shots=num_shots)
+        start = time.monotonic()
+        decoder.decode_batch(syndromes)
+        if time.monotonic() - start >= 0.5:
+            break
+        num_shots *= 2
+
+    def count_down(steps=3, step_seconds=0.05):
+        for _ in range(steps):
+            time.sleep(step_seconds)
+
+    countdown = threading.Thread(target=count_down)
+    countdown.start()
+    decoder.decode_batch(syndromes)
+    # Had `decode_batch` held the GIL, the countdown would have stalled until it returned.
+    assert not countdown.is_alive()
+    countdown.join()

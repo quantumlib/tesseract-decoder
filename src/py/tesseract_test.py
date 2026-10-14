@@ -24,6 +24,7 @@ from shared_decoding_tests import (
     shared_test_decode_batch_with_complex_model,
     shared_test_decode_batch_with_invalid_dimensions,
     shared_test_decode_batch_with_mismatched_syndrome_size,
+    shared_test_decode_batch_lets_other_threads_run,
     shared_test_decode_complex_dem,
     shared_test_decode_from_detection_events,
     shared_test_decode_with_mismatched_syndrome_size,
@@ -418,6 +419,13 @@ def test_tesseract_decode_with_mismatched_syndrome_size():
 
 def test_tesseract_decode_batch_with_mismatched_syndrome_size():
     shared_test_decode_batch_with_mismatched_syndrome_size(
+        tesseract_decoder.tesseract.TesseractDecoder,
+        tesseract_decoder.tesseract.TesseractConfig,
+    )
+
+
+def test_tesseract_decode_batch_lets_other_threads_run():
+    shared_test_decode_batch_lets_other_threads_run(
         tesseract_decoder.tesseract.TesseractDecoder,
         tesseract_decoder.tesseract.TesseractConfig,
     )
