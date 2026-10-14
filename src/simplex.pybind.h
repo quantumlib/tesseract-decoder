@@ -319,19 +319,23 @@ void add_simplex_module(py::module& root) {
             result.attr("fill")(0);
             auto result_unchecked = result.mutable_unchecked<2>();
 
-            // Process and decode each shot.
-            for (size_t i = 0; i < num_shots; ++i) {
-              std::vector<uint64_t> detections;
-              for (size_t j = 0; j < num_detectors; ++j) {
-                if (syndromes_unchecked(i, j)) {
-                  detections.push_back(j);
+            // Process and decode each shot. This touches no Python objects, so release the GIL
+            // meanwhile to let other Python threads run.
+            {
+              py::gil_scoped_release release;
+              for (size_t i = 0; i < num_shots; ++i) {
+                std::vector<uint64_t> detections;
+                for (size_t j = 0; j < num_detectors; ++j) {
+                  if (syndromes_unchecked(i, j)) {
+                    detections.push_back(j);
+                  }
                 }
-              }
-              self.decode(detections);
+                self.decode(detections);
 
-              // Collect results for the current shot being decoded.
-              for (int obs_index : self.get_flipped_observables(self.predicted_errors_buffer)) {
-                result_unchecked(i, obs_index) ^= 1;
+                // Collect results for the current shot being decoded.
+                for (int obs_index : self.get_flipped_observables(self.predicted_errors_buffer)) {
+                  result_unchecked(i, obs_index) ^= 1;
+                }
               }
             }
 
@@ -340,6 +344,9 @@ void add_simplex_module(py::module& root) {
           py::arg("syndromes"),
           R"pbdoc(
         Decodes a batch of shots.
+
+        Releases the GIL while decoding, so that other Python threads can run meanwhile
+        (they must not use this decoder).
 
         Parameters
         ----------
