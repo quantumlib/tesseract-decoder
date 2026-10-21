@@ -1,0 +1,67 @@
+[
+  {
+    "name": "r12_d12_p0.001_bivariate_bicycle_X",
+    "group": "bivariate_bicycle_X",
+    "path": "benchmarking/testsuite/r=12,d=12,p=0.001,noise=si1000,c=bivariate_bicycle_X,nkd=[[144,12,12]],q=288,iscolored=True,A_poly=x^3+y+y^2,B_poly=y^3+x+x^2.stim"
+  },
+  {
+    "name": "r12_d12_p0.002_bivariate_bicycle_X",
+    "group": "bivariate_bicycle_X",
+    "path": "benchmarking/testsuite/r=12,d=12,p=0.002,noise=si1000,c=bivariate_bicycle_X,nkd=[[144,12,12]],q=288,iscolored=True,A_poly=x^3+y+y^2,B_poly=y^3+x+x^2.stim"
+  },
+  {
+    "name": "r18_d18_p0.001_bivariate_bicycle_X",
+    "group": "bivariate_bicycle_X",
+    "path": "benchmarking/testsuite/r=18,d=18,p=0.001,noise=si1000,c=bivariate_bicycle_X,nkd=[[288,12,18]],q=576,iscolored=True,A_poly=x^3+y^2+y^7,B_poly=y^3+x+x^2.stim"
+  },
+  {
+    "name": "r11_d11_p0.001_superdense_color_code_X",
+    "group": "superdense_color_code_X",
+    "path": "benchmarking/testsuite/r=11,d=11,p=0.001,noise=si1000,c=superdense_color_code_X,q=181,gates=cz.stim"
+  },
+  {
+    "name": "r11_d11_p0.002_superdense_color_code_X",
+    "group": "superdense_color_code_X",
+    "path": "benchmarking/testsuite/r=11,d=11,p=0.002,noise=si1000,c=superdense_color_code_X,q=181,gates=cz.stim"
+  },
+  {
+    "name": "r9_d9_p0.001_superdense_color_code_X",
+    "group": "superdense_color_code_X",
+    "path": "benchmarking/testsuite/r=9,d=9,p=0.001,noise=si1000,c=superdense_color_code_X,q=121,gates=cz.stim"
+  },
+  {
+    "name": "r9_d9_p0.002_superdense_color_code_X",
+    "group": "superdense_color_code_X",
+    "path": "benchmarking/testsuite/r=9,d=9,p=0.002,noise=si1000,c=superdense_color_code_X,q=121,gates=cz.stim"
+  },
+  {
+    "name": "r23_d23_p0.001_surface_code",
+    "group": "surface_code",
+    "path": "benchmarking/testsuite/r=23,d=23,p=0.001,noise=uniform,c=surface_code,q=2025,gates=cx.stim"
+  },
+  {
+    "name": "r23_d23_p0.008_surface_code",
+    "group": "surface_code",
+    "path": "benchmarking/testsuite/r=23,d=23,p=0.008,noise=uniform,c=surface_code,q=2025,gates=cx.stim"
+  },
+  {
+    "name": "r29_d29_p0.001_surface_code",
+    "group": "surface_code",
+    "path": "benchmarking/testsuite/r=29,d=29,p=0.001,noise=uniform,c=surface_code,q=3249,gates=cx.stim"
+  },
+  {
+    "name": "r11_d11_p0.001_surface_code_trans_cx_X",
+    "group": "surface_code_trans_cx_X",
+    "path": "benchmarking/testsuite/r=11,d=11,p=0.001,noise=si1000,c=surface_code_trans_cx_X,q=482,gates=cz.stim"
+  },
+  {
+    "name": "r9_d9_p0.001_surface_code_trans_cx_X",
+    "group": "surface_code_trans_cx_X",
+    "path": "benchmarking/testsuite/r=9,d=9,p=0.001,noise=si1000,c=surface_code_trans_cx_X,q=322,gates=cz.stim"
+  },
+  {
+    "name": "r9_d9_p0.002_surface_code_trans_cx_X",
+    "group": "surface_code_trans_cx_X",
+    "path": "benchmarking/testsuite/r=9,d=9,p=0.002,noise=si1000,c=surface_code_trans_cx_X,q=322,gates=cz.stim"
+  }
+]
