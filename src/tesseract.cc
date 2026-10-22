@@ -248,8 +248,21 @@ std::vector<size_t> TesseractDecoder::collect_affected_detectors(
     }
   }
 
-  std::vector<uint8_t> affected(d2e.size());
   std::vector<size_t> affected_detectors;
+  if (modified_error_indices.size() <= 1024) {
+    affected_detectors.reserve(modified_error_indices.size() * 4);
+    for (size_t error_index : modified_error_indices) {
+      for (int detector : edets[error_index]) {
+        affected_detectors.push_back(static_cast<size_t>(detector));
+      }
+    }
+    std::sort(affected_detectors.begin(), affected_detectors.end());
+    affected_detectors.erase(std::unique(affected_detectors.begin(), affected_detectors.end()),
+                             affected_detectors.end());
+    return affected_detectors;
+  }
+
+  std::vector<uint8_t> affected(d2e.size());
   for (size_t error_index : modified_error_indices) {
     for (int detector : edets[error_index]) {
       if (!affected[detector]) {
@@ -292,14 +305,32 @@ TesseractDecoder::ErrorProbabilityRollback TesseractDecoder::apply_error_probabi
   ErrorProbabilityRollback rollback;
   rollback.previous_likelihood_costs.reserve(probability_updates.size());
   rollback.modified_error_indices.reserve(probability_updates.size());
-  std::vector<uint8_t> modified(errors.size());
-  for (size_t k = 0; k < probability_updates.size(); ++k) {
-    size_t error_index = error_indices[k];
-    if (!modified[error_index]) {
-      rollback.previous_likelihood_costs.emplace_back(error_index,
-                                                      errors[error_index].likelihood_cost);
-      rollback.modified_error_indices.push_back(error_index);
-      modified[error_index] = true;
+  if (probability_updates.size() <= 1024) {
+    for (size_t k = 0; k < probability_updates.size(); ++k) {
+      size_t error_index = error_indices[k];
+      bool already_modified = false;
+      for (size_t prev_ei : rollback.modified_error_indices) {
+        if (prev_ei == error_index) {
+          already_modified = true;
+          break;
+        }
+      }
+      if (!already_modified) {
+        rollback.previous_likelihood_costs.emplace_back(error_index,
+                                                        errors[error_index].likelihood_cost);
+        rollback.modified_error_indices.push_back(error_index);
+      }
+    }
+  } else {
+    std::vector<uint8_t> modified(errors.size());
+    for (size_t k = 0; k < probability_updates.size(); ++k) {
+      size_t error_index = error_indices[k];
+      if (!modified[error_index]) {
+        rollback.previous_likelihood_costs.emplace_back(error_index,
+                                                        errors[error_index].likelihood_cost);
+        rollback.modified_error_indices.push_back(error_index);
+        modified[error_index] = true;
+      }
     }
   }
   rollback.affected_detectors = collect_affected_detectors(rollback.modified_error_indices);
@@ -347,28 +378,41 @@ void TesseractDecoder::initialize_structures(size_t num_detectors) {
 
   eneighbors.resize(num_errors);
 
-  std::vector<boost::dynamic_bitset<>> edets_bitsets(num_errors,
-                                                     boost::dynamic_bitset<>(num_detectors));
+  std::vector<uint32_t> seen_stamp(num_detectors, 0);
+  uint32_t current_stamp = 0;
   for (size_t ei = 0; ei < num_errors; ++ei) {
-    for (int d : edets[ei]) {
-      edets_bitsets[ei][d] = 1;
+    current_stamp++;
+    if (current_stamp == 0) {
+      std::fill(seen_stamp.begin(), seen_stamp.end(), 0);
+      current_stamp = 1;
     }
-  }
-
-  for (size_t ei = 0; ei < num_errors; ++ei) {
-    boost::dynamic_bitset<> neighbor_set(num_detectors, false);
+    for (int d : edets[ei]) {
+      seen_stamp[d] = current_stamp;  // mark own detectors so they are excluded
+    }
     for (int d : edets[ei]) {
       for (int oei : d2e[d]) {
-        // Unify detectors from neighboring errors
-        neighbor_set |= edets_bitsets[oei];
+        for (int nd : edets[oei]) {
+          if (seen_stamp[nd] != current_stamp) {
+            seen_stamp[nd] = current_stamp;
+            eneighbors[ei].push_back(nd);
+          }
+        }
       }
     }
-    // Remove detectors from error's own set
-    neighbor_set &= ~edets_bitsets[ei];
+    std::sort(eneighbors[ei].begin(), eneighbors[ei].end());
+  }
 
-    for (size_t d = neighbor_set.find_first(); d != boost::dynamic_bitset<>::npos;
-         d = neighbor_set.find_next(d)) {
-      eneighbors[ei].push_back(d);
+  workspace_cost_tuples_.assign(num_errors, {0, 0});
+  workspace_next_cost_tuples_.assign(num_errors, {0, 0});
+  workspace_cost_cache_.assign(num_detectors, -1.0);
+  inv_detector_orders_.resize(config.detector_orders.size());
+  for (size_t oi = 0; oi < config.detector_orders.size(); ++oi) {
+    const auto& order = config.detector_orders[oi].get_order();
+    inv_detector_orders_[oi].assign(num_detectors, 0);
+    for (size_t pos = 0; pos < order.size(); ++pos) {
+      if (order[pos] < num_detectors) {
+        inv_detector_orders_[oi][order[pos]] = pos;
+      }
     }
   }
 
@@ -521,24 +565,41 @@ void TesseractDecoder::decode_to_errors_with_graph(
   std::unordered_map<size_t, std::unordered_set<boost::dynamic_bitset<>>> visited_detectors;
 
   boost::dynamic_bitset<> initial_detectors(num_detectors, false);
-  std::vector<DetectorCostTuple> initial_detector_cost_tuples(num_errors);
+  auto& detector_cost_tuples = workspace_cost_tuples_;
+  auto& next_detector_cost_tuples = workspace_next_cost_tuples_;
+  auto& detector_cost_cache = workspace_cost_cache_;
+
+  std::vector<int> touched_errors;
+  touched_errors.reserve(512);
+  std::vector<int> touched_cache_dets;
+  touched_cache_dets.reserve(128);
 
   for (size_t d : detections) {
     if (d >= num_detectors) {
+      for (int ei : touched_errors) {
+        detector_cost_tuples[ei] = {0, 0};
+      }
       throw std::runtime_error(
           "Symptom " + std::to_string(d) +
           " references a detector >= num_detectors (= " + std::to_string(num_detectors) + ").");
     }
     initial_detectors[d] = true;
     for (int ei : active_d2e[d]) {
-      ++initial_detector_cost_tuples[ei].detectors_count;
+      if (detector_cost_tuples[ei].detectors_count == 0) {
+        touched_errors.push_back(ei);
+      }
+      ++detector_cost_tuples[ei].detectors_count;
     }
   }
 
   double initial_cost = 0;
   for (size_t d : detections) {
-    initial_cost += get_detcost(d, initial_detector_cost_tuples, active_d2e);
+    initial_cost += get_detcost(d, detector_cost_tuples, active_d2e);
   }
+  for (int ei : touched_errors) {
+    detector_cost_tuples[ei] = {0, 0};
+  }
+  touched_errors.clear();
 
   if (initial_cost == INF) {
     low_confidence_flag = true;
@@ -548,8 +609,22 @@ void TesseractDecoder::decode_to_errors_with_graph(
   size_t min_num_dets = detections.size();
   size_t max_num_dets = min_num_dets + detector_beam;
 
-  boost::dynamic_bitset<> next_detectors;
-  std::vector<DetectorCostTuple> next_detector_cost_tuples;
+  boost::dynamic_bitset<> detectors(num_detectors, false);
+  boost::dynamic_bitset<> next_detectors(num_detectors, false);
+
+  std::vector<size_t> fallback_pos_of_det;
+  if (detector_order_index >= inv_detector_orders_.size() ||
+      inv_detector_orders_[detector_order_index].size() != num_detectors) {
+    fallback_pos_of_det.assign(num_detectors, 0);
+    for (size_t pos = 0; pos < detector_at_position.size(); ++pos) {
+      if (detector_at_position[pos] < num_detectors) {
+        fallback_pos_of_det[detector_at_position[pos]] = pos;
+      }
+    }
+  }
+  const std::vector<size_t>& position_of_detector =
+      fallback_pos_of_det.empty() ? inv_detector_orders_[detector_order_index]
+                                  : fallback_pos_of_det;
 
   pq.push({initial_cost, min_num_dets, 0, -1});
   size_t num_pq_pushed = 1;
@@ -560,10 +635,17 @@ void TesseractDecoder::decode_to_errors_with_graph(
 
     if (node.num_dets > max_num_dets) continue;
 
-    boost::dynamic_bitset<> detectors = initial_detectors;
-    std::vector<DetectorCostTuple> detector_cost_tuples(num_errors);
-    flip_detectors_and_block_errors(detector_order_index, node.error_chain_idx, detectors,
-                                    detector_cost_tuples, active_d2e);
+    detectors = initial_detectors;
+    {
+      int64_t walker_idx = node.error_chain_idx;
+      while (walker_idx != -1) {
+        const auto& chain_node = error_chain_arena[walker_idx];
+        for (int d : edets[chain_node.error_index]) {
+          detectors[d] = !detectors[d];
+        }
+        walker_idx = chain_node.parent_idx;
+      }
+    }
 
     if (node.num_dets == 0) {
       if (config.create_visualization) {
@@ -637,26 +719,70 @@ void TesseractDecoder::decode_to_errors_with_graph(
       max_num_dets = std::min(max_num_dets, min_num_dets + detector_beam);
     }
 
-    for (size_t d = 0; d < num_detectors; ++d) {
-      if (!detectors[d]) continue;
+    touched_errors.clear();
+    touched_cache_dets.clear();
+    size_t min_detector = std::numeric_limits<size_t>::max();
+    size_t prev_ei = std::numeric_limits<size_t>::max();
+
+    ScopeExit cleanup_node_workspace([&]() {
+      if (prev_ei != std::numeric_limits<size_t>::max()) {
+        for (int d : edets[prev_ei]) {
+          for (int oei : active_d2e[d]) {
+            next_detector_cost_tuples[oei] = {0, 0};
+          }
+        }
+      }
+      if (min_detector < active_d2e.size()) {
+        for (int ei : active_d2e[min_detector]) {
+          next_detector_cost_tuples[ei] = {0, 0};
+        }
+      }
+      for (int ei : touched_errors) {
+        detector_cost_tuples[ei] = {0, 0};
+        next_detector_cost_tuples[ei] = {0, 0};
+      }
+      for (int d : touched_cache_dets) {
+        detector_cost_cache[d] = -1.0;
+      }
+    });
+
+    {
+      int64_t walker_idx = node.error_chain_idx;
+      while (walker_idx != -1) {
+        const auto& chain_node = error_chain_arena[walker_idx];
+        size_t ei = chain_node.error_index;
+        size_t min_det = chain_node.min_detector;
+        for (int oei : active_d2e[min_det]) {
+          if (detector_cost_tuples[oei].error_blocked == 0 &&
+              detector_cost_tuples[oei].detectors_count == 0) {
+            touched_errors.push_back(oei);
+          }
+          detector_cost_tuples[oei].error_blocked = 1;
+          if (static_cast<size_t>(oei) == ei) break;
+        }
+        walker_idx = chain_node.parent_idx;
+      }
+    }
+
+    size_t min_position = std::numeric_limits<size_t>::max();
+    for (size_t d = detectors.find_first(); d != boost::dynamic_bitset<>::npos;
+         d = detectors.find_next(d)) {
+      if (position_of_detector[d] < min_position) {
+        min_position = position_of_detector[d];
+        min_detector = d;
+      }
       for (int ei : active_d2e[d]) {
+        if (detector_cost_tuples[ei].error_blocked == 0 &&
+            detector_cost_tuples[ei].detectors_count == 0) {
+          touched_errors.push_back(ei);
+        }
         ++detector_cost_tuples[ei].detectors_count;
       }
     }
 
-    next_detector_cost_tuples = detector_cost_tuples;
-
-    size_t min_detector = std::numeric_limits<size_t>::max();
-    for (size_t position = 0; position < num_detectors; ++position) {
-      const size_t detector = detector_at_position[position];
-      if (detectors[detector]) {
-        min_detector = detector;
-        break;
-      }
+    for (int ei : touched_errors) {
+      next_detector_cost_tuples[ei] = detector_cost_tuples[ei];
     }
-
-    size_t prev_ei = std::numeric_limits<size_t>::max();
-    std::vector<double> detector_cost_cache(num_detectors, -1);
 
     for (int ei : active_d2e[min_detector]) {
       if (detector_cost_tuples[ei].error_blocked) continue;
@@ -696,6 +822,7 @@ void TesseractDecoder::decode_to_errors_with_graph(
         if (detectors[d]) {
           if (detector_cost_cache[d] == -1) {
             detector_cost_cache[d] = get_detcost(d, detector_cost_tuples, active_d2e);
+            touched_cache_dets.push_back(d);
           }
           next_cost -= detector_cost_cache[d];
         } else {
@@ -707,6 +834,7 @@ void TesseractDecoder::decode_to_errors_with_graph(
         if (!detectors[od] || !next_detectors[od]) continue;
         if (detector_cost_cache[od] == -1) {
           detector_cost_cache[od] = get_detcost(od, detector_cost_tuples, active_d2e);
+          touched_cache_dets.push_back(od);
         }
         next_cost -= detector_cost_cache[od];
         next_cost += get_detcost(od, next_detector_cost_tuples, active_d2e);

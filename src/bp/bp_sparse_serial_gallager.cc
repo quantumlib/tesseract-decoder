@@ -7,8 +7,6 @@
 
 namespace bp {
 
-void print_graph_2(TannerGraph<LLR_INT>& graph) {}
-
 void prepare_tanner_graph_for_bp_sparse_serial_gallager(TannerGraph<LLR_INT>& graph,
                                                         GallagerLookupTable& lut) {
   // Reset parities and totals at check nodes

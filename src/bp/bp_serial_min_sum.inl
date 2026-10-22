@@ -10,12 +10,15 @@ namespace bp {
 template <typename T>
 BPResult bp_serial_min_sum(TannerGraph<T>& graph, const std::vector<size_t>& detection_events,
                            std::vector<T>& posteriors, size_t max_iters, float normalization_factor,
-                           bool stop_at_convergence, bool random_schedule, uint64_t random_seed) {
+                           bool stop_at_convergence, bool random_schedule, uint64_t random_seed,
+                           const std::vector<T>* custom_priors) {
   graph.add_detection_events(detection_events);
 
+  size_t num_vars = graph.variable_nodes.size();
   // Initialize posteriors to priors
-  for (size_t i = 0; i < graph.variable_nodes.size(); ++i) {
-    graph.variable_nodes[i].posterior = graph.variable_nodes[i].prior;
+  for (size_t i = 0; i < num_vars; ++i) {
+    T p = (custom_priors != nullptr) ? (*custom_priors)[i] : graph.variable_nodes[i].prior;
+    graph.variable_nodes[i].posterior = p;
   }
   std::fill(graph.check_to_var_messages.begin(), graph.check_to_var_messages.end(), 0);
 

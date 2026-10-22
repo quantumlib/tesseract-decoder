@@ -46,3 +46,30 @@ MODULE.bazel.lock
 
 # Local CMake build directory
 build/
+
+# Toolchain sysroot extracted by devtools/build_with_custom_toolchain.sh.
+# Regenerable, ~214MB; never commit.
+/custom_sysroot/
+
+# Built Python wheels.
+/wheel_out/
+*.whl
+
+# Local benchmark/profiling output.
+# Use /out/* rather than /out/ so git still descends into the directory and
+# the negation below can re-include the one tracked file.
+/out/*
+!/out/benchmark_osd_truncation.py
+/devtools/benchmarks/
+
+# Micro-benchmark baselines: timings are machine-specific, so the results are
+# local-only. The harness itself (src/bp/benchmarks/microbench.sh) IS tracked.
+/src/bp/benchmarks/results/
+
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.nav
+*.snm

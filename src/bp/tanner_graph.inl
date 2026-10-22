@@ -28,7 +28,6 @@ void TannerGraph<T>::build() {
 
   var_edge_offsets.assign(num_vars + 1, 0);
   check_edge_offsets.assign(num_checks + 1, 0);
-  check_fb_offsets.assign(num_checks + 1, 0);
 
   for (const auto& e : pending_edges) {
     var_edge_offsets[e.var + 1]++;
@@ -42,18 +41,10 @@ void TannerGraph<T>::build() {
   }
 
   size_t check_edge_total = 0;
-  size_t check_fb_total = 0;
   for (size_t i = 1; i <= num_checks; ++i) {
-    size_t deg = check_edge_offsets[i];
     check_edge_offsets[i] += check_edge_offsets[i - 1];
     check_edge_total = check_edge_offsets[i];
-
-    check_fb_offsets[i - 1] = check_fb_total;
-    if (deg > 1) {
-      check_fb_total += 2 * (deg - 1);
-    }
   }
-  check_fb_offsets[num_checks] = check_fb_total;
 
   var_edges.resize(var_edge_total);
   var_edge_rev_indices.resize(var_edge_total);
@@ -62,8 +53,6 @@ void TannerGraph<T>::build() {
   check_edges.resize(check_edge_total);
   check_edge_rev_indices.resize(check_edge_total);
   var_to_check_messages.assign(check_edge_total, 0);
-
-  check_forward_back.assign(check_fb_total, 0);
 
   // Track insertion offsets
   std::vector<size_t> v_cur = var_edge_offsets;
@@ -87,14 +76,18 @@ void TannerGraph<T>::build() {
 template <typename T>
 void TannerGraph<T>::add_detection_events(const std::vector<size_t>& detection_events) {
   for (auto& d : detection_events) {
-    check_nodes[d].syndrome = true;
+    if (d < check_nodes.size()) {
+      check_nodes[d].syndrome = true;
+    }
   }
 }
 
 template <typename T>
 void TannerGraph<T>::remove_detection_events(const std::vector<size_t>& detection_events) {
   for (auto& d : detection_events) {
-    check_nodes[d].syndrome = false;
+    if (d < check_nodes.size()) {
+      check_nodes[d].syndrome = false;
+    }
   }
 }
 

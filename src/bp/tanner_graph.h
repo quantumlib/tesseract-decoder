@@ -26,7 +26,6 @@ struct CheckNode {
   bool message_parity_cached;
   T message_total;
   T message_total_cached;
-  size_t next_idx;
 };
 
 template <typename T>
@@ -47,10 +46,6 @@ struct TannerGraph {
   std::vector<size_t> check_edges;             // var indices
   std::vector<size_t> check_edge_rev_indices;  // reverse index in var_edges
   std::vector<T> var_to_check_messages;        // var->check message (indexed by check_edge)
-
-  // Forward/Back states for Box-Plus (indexed by check node)
-  std::vector<size_t> check_fb_offsets;  // size: num_checks + 1
-  std::vector<T_MAG> check_forward_back;
 
   // Sparse BP state
   std::vector<size_t> syndrome_boundary;  // variable node indices

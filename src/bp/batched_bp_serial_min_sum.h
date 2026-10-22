@@ -12,7 +12,8 @@ template <typename T>
 std::vector<BPResult> batched_bp_serial_min_sum(
     BatchedTannerGraph<T>& graph, const std::vector<std::vector<size_t>>& detection_events_batch,
     std::vector<T>& posteriors_flat, size_t max_iters, float normalization_factor,
-    bool stop_at_convergence = true, bool random_schedule = false, uint64_t random_seed = 0);
+    bool stop_at_convergence = true, bool random_schedule = false, uint64_t random_seed = 0,
+    const std::vector<T>* custom_priors_flat = nullptr);
 
 }  // namespace bp
 

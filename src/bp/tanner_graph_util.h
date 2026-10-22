@@ -8,6 +8,7 @@ namespace bp {
 struct BPResult {
   bool converged;
   size_t num_iters;
+  size_t unsat_checks = 0;
 };
 
 template <typename T>

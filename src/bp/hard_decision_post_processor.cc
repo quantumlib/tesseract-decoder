@@ -8,7 +8,12 @@ namespace bp {
 std::vector<uint8_t> HardDecisionPostProcessor::process(
     [[maybe_unused]] const BPResult& bp_result, const std::vector<LLR_INT>& posteriors,
     [[maybe_unused]] const std::vector<uint64_t>& detection_events,
-    const std::vector<std::vector<int>>& hyperedge_observables) {
+    const std::vector<std::vector<int>>& hyperedge_observables,
+    std::vector<size_t>* predicted_errors,
+    [[maybe_unused]] const std::vector<LLR_INT>* custom_priors) {
+  if (predicted_errors != nullptr) {
+    predicted_errors->clear();
+  }
   // Dynamically find the maximum observable index to size the output vector.
   size_t max_obs_index = 0;
   bool found_any_obs = false;
@@ -26,6 +31,9 @@ std::vector<uint8_t> HardDecisionPostProcessor::process(
 
   for (size_t i = 0; i < posteriors.size(); i++) {
     if (posteriors[i] < 0) {  // Error occurred (negative LLR)
+      if (predicted_errors != nullptr) {
+        predicted_errors->push_back(i);
+      }
       if (i < hyperedge_observables.size()) {
         for (int obs : hyperedge_observables[i]) {
           if (obs >= 0) {

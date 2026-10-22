@@ -30,20 +30,10 @@ const LLR_INT NUM_LUT_BINS = 1 << 14;
 // magnitude higher (e.g. if these are 32 bits).
 const double MAX_BP_LUT_LL = 20.0;
 
-const size_t DEFAULT_MAX_ITER = 4;
-const std::string DEFAULT_UPDATE_RULE = "box-plus";
+const size_t DEFAULT_MAX_ITER = 20;
+const std::string DEFAULT_UPDATE_RULE = "min-sum";
 const std::string DEFAULT_SCHEDULE = "serial";
-const size_t DEFAULT_MIN_ITER = 0;
-const double DEFAULT_ALPHA = 0.6;  // Coefficient for minsum update (check to variable) messages
-const double DEFAULT_BETA = 1.0;   // Coefficient for tanh update (check to variable) messages
-const double DEFAULT_DELTA = 1.0;  // Coefficient for sum update (variable to check) messages
-const bool DEFAULT_STOP_AT_CONVERGENCE = true;  // If true stop once BP converges in serial-box-plus
-// If true, sort the error mechanisms (not edges) by their prior error probability, in descending
-// order
-const bool DEFAULT_SORT_PRIORS = false;
-// The fraction of error mechanisms to use in BP. Determines the maximum variable node index
-// included, specified as the fraction of all error mechanisms.
-const double DEFAULT_VARIABLE_NODE_TRUNCATION_FRACTION = 1.0;
+const bool DEFAULT_STOP_AT_CONVERGENCE = true;
 const bool DEFAULT_RANDOM_SCHEDULE = false;
 const uint64_t DEFAULT_RANDOM_SEED = 0;
 
@@ -52,8 +42,6 @@ struct BPParams {
   std::string update_rule;
   std::string schedule;
   bool stop_at_convergence;
-  bool sort_priors;
-  double variable_node_truncation_fraction;
   float normalization_factor;
   bool random_schedule;
   uint64_t random_seed;
@@ -62,33 +50,53 @@ struct BPParams {
   // A value of 1.2 provides significant speedups without degrading LER.
   // A value of 0.0 disables truncation (falls back to exact OSD width).
   float osd_truncation_factor;
+  // If true, enables early stopping in OSD-0 elimination when residual syndrome is satisfied.
+  bool osd_early_exit;
+  int osd_order;
+  int osd_weight;
+  std::string post_processor;
+  int tesseract_det_beam;
+  size_t tesseract_pqlimit;
+  bool use_soft_reweighting;
 
   BPParams(size_t max_iter = DEFAULT_MAX_ITER, std::string update_rule = DEFAULT_UPDATE_RULE,
            std::string schedule = DEFAULT_SCHEDULE,
            bool stop_at_convergence = DEFAULT_STOP_AT_CONVERGENCE,
-           bool sort_priors = DEFAULT_SORT_PRIORS,
-           double variable_node_truncation_fraction = DEFAULT_VARIABLE_NODE_TRUNCATION_FRACTION,
            float normalization_factor = 0.875f, bool random_schedule = DEFAULT_RANDOM_SCHEDULE,
-           uint64_t random_seed = DEFAULT_RANDOM_SEED, float osd_truncation_factor = 1.2f)
+           uint64_t random_seed = DEFAULT_RANDOM_SEED, float osd_truncation_factor = 1.2f,
+           bool osd_early_exit = true,
+           int osd_order = -1, int osd_weight = 0,
+           std::string post_processor = "osd",
+           int tesseract_det_beam = 5, size_t tesseract_pqlimit = 2000,
+           bool use_soft_reweighting = true)
       : max_iter(max_iter),
         update_rule(update_rule),
         schedule(schedule),
         stop_at_convergence(stop_at_convergence),
-        sort_priors(sort_priors),
-        variable_node_truncation_fraction(variable_node_truncation_fraction),
         normalization_factor(normalization_factor),
         random_schedule(random_schedule),
         random_seed(random_seed),
-        osd_truncation_factor(osd_truncation_factor) {}
+        osd_truncation_factor(osd_truncation_factor),
+        osd_early_exit(osd_early_exit),
+        osd_order(osd_order),
+        osd_weight(osd_weight),
+        post_processor(post_processor),
+        tesseract_det_beam(tesseract_det_beam),
+        tesseract_pqlimit(tesseract_pqlimit),
+        use_soft_reweighting(use_soft_reweighting) {}
 
   bool operator==(const BPParams& other) const {
     return max_iter == other.max_iter && update_rule == other.update_rule &&
            schedule == other.schedule && stop_at_convergence == other.stop_at_convergence &&
-           sort_priors == other.sort_priors &&
-           variable_node_truncation_fraction == other.variable_node_truncation_fraction &&
            normalization_factor == other.normalization_factor &&
            random_schedule == other.random_schedule && random_seed == other.random_seed &&
-           osd_truncation_factor == other.osd_truncation_factor;
+           osd_truncation_factor == other.osd_truncation_factor &&
+           osd_early_exit == other.osd_early_exit &&
+           osd_order == other.osd_order && osd_weight == other.osd_weight &&
+           post_processor == other.post_processor &&
+           tesseract_det_beam == other.tesseract_det_beam &&
+           tesseract_pqlimit == other.tesseract_pqlimit &&
+           use_soft_reweighting == other.use_soft_reweighting;
   }
 };
 }  // namespace bp

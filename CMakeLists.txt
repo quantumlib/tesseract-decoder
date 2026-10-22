@@ -126,10 +126,28 @@ target_include_directories(simplex PUBLIC ${TESSERACT_SRC_DIR})
 target_compile_options(simplex PRIVATE ${OPT_COPTS})
 target_link_libraries(simplex PUBLIC common utils tesseract_lib highs libstim Threads::Threads)
 
+add_library(bp_lib
+  ${TESSERACT_SRC_DIR}/bp/bp_sparse_serial_gallager.cc
+  ${TESSERACT_SRC_DIR}/bp/bp_trace.cc
+  ${TESSERACT_SRC_DIR}/bp/check_update.cc
+  ${TESSERACT_SRC_DIR}/bp/hard_decision_post_processor.cc
+  ${TESSERACT_SRC_DIR}/bp/tesseract_bp_decoder.cc
+  ${TESSERACT_SRC_DIR}/bp/osd_post_processor.cc
+  ${TESSERACT_SRC_DIR}/bp/multi_pass_bp_decoder.cc
+  ${TESSERACT_SRC_DIR}/bp/tesseract_post_processor.cc
+)
+target_include_directories(bp_lib PUBLIC ${TESSERACT_SRC_DIR})
+target_compile_options(bp_lib PRIVATE ${OPT_COPTS})
+target_link_libraries(bp_lib PUBLIC common dem_decomposition error_correlations tesseract_lib libstim nlohmann_json::nlohmann_json Threads::Threads)
+
 # === Executables ===
 add_executable(tesseract ${TESSERACT_SRC_DIR}/tesseract_main.cc)
 target_compile_options(tesseract PRIVATE ${OPT_COPTS})
 target_link_libraries(tesseract PRIVATE tesseract_lib argparse::argparse nlohmann_json::nlohmann_json)
+
+add_executable(bp ${TESSERACT_SRC_DIR}/bp_main.cc)
+target_compile_options(bp PRIVATE ${OPT_COPTS})
+target_link_libraries(bp PRIVATE bp_lib common utils argparse::argparse nlohmann_json::nlohmann_json)
 
 add_executable(tesseract_trellis ${TESSERACT_SRC_DIR}/tesseract_trellis_main.cc)
 target_compile_options(tesseract_trellis PRIVATE ${OPT_COPTS})
@@ -146,7 +164,7 @@ target_link_libraries(simplex_bin PRIVATE common simplex argparse::argparse nloh
 pybind11_add_module(tesseract_decoder MODULE ${TESSERACT_SRC_DIR}/tesseract.pybind.cc)
 target_compile_options(tesseract_decoder PRIVATE ${OPT_COPTS})
 target_include_directories(tesseract_decoder PRIVATE ${TESSERACT_SRC_DIR})
-target_link_libraries(tesseract_decoder PRIVATE common utils simplex tesseract_lib)
+target_link_libraries(tesseract_decoder PRIVATE common utils simplex tesseract_lib bp_lib)
 # Keep statically linked HiGHS symbols private to this extension on every
 # supported Unix platform. Mach-O uses an explicit export list because it has
 # no ELF-style --exclude-libs option; otherwise highspy can resolve symbols to
@@ -192,3 +210,19 @@ add_executable(multi_pass_tesseract_decoder_test ${TESSERACT_SRC_DIR}/multi_pass
 target_link_libraries(multi_pass_tesseract_decoder_test PRIVATE tesseract_lib GTest::gtest_main libstim)
 add_test(NAME multi_pass_tesseract_decoder_test COMMAND multi_pass_tesseract_decoder_test)
 set_tests_properties(multi_pass_tesseract_decoder_test PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_executable(bp_tests
+  ${TESSERACT_SRC_DIR}/bp/batched_bp_parallel_min_sum.test.cc
+  ${TESSERACT_SRC_DIR}/bp/batched_bp_serial_min_sum.test.cc
+  ${TESSERACT_SRC_DIR}/bp/bp_parallel_min_sum.test.cc
+  ${TESSERACT_SRC_DIR}/bp/bp_serial_min_sum.test.cc
+  ${TESSERACT_SRC_DIR}/bp/bp_sparse_serial_gallager.test.cc
+  ${TESSERACT_SRC_DIR}/bp/check_update.test.cc
+  ${TESSERACT_SRC_DIR}/bp/tanner_graph.test.cc
+  ${TESSERACT_SRC_DIR}/bp/hard_decision_post_processor.test.cc
+  ${TESSERACT_SRC_DIR}/bp/osd_post_processor.test.cc
+  ${TESSERACT_SRC_DIR}/bp/bp_test_util.cc
+)
+target_compile_options(bp_tests PRIVATE ${OPT_COPTS})
+target_link_libraries(bp_tests PRIVATE bp_lib GTest::gtest_main libstim)
+add_test(NAME bp_tests COMMAND bp_tests)

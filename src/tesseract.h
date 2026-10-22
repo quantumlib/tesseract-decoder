@@ -156,6 +156,11 @@ struct TesseractDecoder : public Decoder {
   std::vector<ErrorCost> error_costs;
   std::vector<common::ErrorChainNode> error_chain_arena;
 
+  std::vector<DetectorCostTuple> workspace_cost_tuples_;
+  std::vector<DetectorCostTuple> workspace_next_cost_tuples_;
+  std::vector<double> workspace_cost_cache_;
+  std::vector<std::vector<size_t>> inv_detector_orders_;
+
   void initialize_structures(size_t num_detectors);
   double get_detcost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples) const;
   double get_detcost(size_t d, const std::vector<DetectorCostTuple>& detector_cost_tuples,

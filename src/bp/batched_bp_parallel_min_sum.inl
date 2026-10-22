@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
+#include <type_traits>
 #include <vector>
 
 #include "bp/batched_bp_parallel_min_sum.h"
@@ -24,7 +26,9 @@ std::vector<BPResult> batched_bp_parallel_min_sum(
   std::vector<uint8_t> batched_syndromes(graph.num_checks * BP_BATCH_SIZE, 0);
   for (size_t b = 0; b < actual_batch_size; ++b) {
     for (size_t d : detection_events_batch[b]) {
-      batched_syndromes[d * BP_BATCH_SIZE + b] = 1;
+      if (d < graph.num_checks) {
+        batched_syndromes[d * BP_BATCH_SIZE + b] = 1;
+      }
     }
   }
 
@@ -34,6 +38,10 @@ std::vector<BPResult> batched_bp_parallel_min_sum(
   size_t num_active = actual_batch_size;
 
   std::vector<BPResult> results(actual_batch_size, {false, 0});
+
+  using T_MAG = typename llr_traits<T>::magnitude_type;
+  const T_MAG max_mag = std::numeric_limits<T_MAG>::max();
+  const T_MAG alpha_fp = static_cast<T_MAG>(std::lround(normalization_factor * 256.0f));
 
   // Initialize all check-to-variable messages to 0.
   std::fill(graph.check_to_var_messages.begin(), graph.check_to_var_messages.end(), 0);
@@ -46,7 +54,7 @@ std::vector<BPResult> batched_bp_parallel_min_sum(
       size_t end = graph.var_edge_offsets[i + 1];
       T prior_val = graph.priors[i];
 
-      T total_c2v[BP_BATCH_SIZE];
+      alignas(64) T total_c2v[BP_BATCH_SIZE];
 #pragma GCC ivdep
       for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
         total_c2v[b] = prior_val;
@@ -66,16 +74,15 @@ std::vector<BPResult> batched_bp_parallel_min_sum(
         size_t out_idx = c_e * BP_BATCH_SIZE;
 #pragma GCC ivdep
         for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
-          graph.var_to_check_messages[out_idx + b] =
-              total_c2v[b] - graph.check_to_var_messages[msg_idx + b];
+          T msg = total_c2v[b] - graph.check_to_var_messages[msg_idx + b];
+          if (active_shots[b]) {
+            graph.var_to_check_messages[out_idx + b] = msg;
+          }
         }
       }
     }
 
     // --- Phase 2: Check-to-Variable messages (C->V) (Normalized Min-Sum) ---
-    using T_MAG = typename llr_traits<T>::magnitude_type;
-    const T_MAG max_mag = std::numeric_limits<T_MAG>::max();
-
     for (size_t i = 0; i < graph.num_checks; ++i) {
       size_t start = graph.check_edge_offsets[i];
       size_t end = graph.check_edge_offsets[i + 1];
@@ -84,32 +91,33 @@ std::vector<BPResult> batched_bp_parallel_min_sum(
 
       size_t syn_idx = i * BP_BATCH_SIZE;
 
-      T_MAG min1[BP_BATCH_SIZE];
-      T_MAG min2[BP_BATCH_SIZE];
-      size_t min1_idx[BP_BATCH_SIZE];
-      uint8_t total_sign_prod[BP_BATCH_SIZE];
+      alignas(64) T_MAG min1[BP_BATCH_SIZE];
+      alignas(64) T_MAG min2[BP_BATCH_SIZE];
+      alignas(64) uint32_t min1_idx[BP_BATCH_SIZE];
+      alignas(64) uint8_t total_sign_prod[BP_BATCH_SIZE];
 
 #pragma GCC ivdep
       for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
         min1[b] = max_mag;
         min2[b] = max_mag;
-        min1_idx[b] = -1;
+        min1_idx[b] = UINT32_MAX;
         total_sign_prod[b] = 0;
       }
 
       for (size_t e = start; e < end; ++e) {
+        const uint32_t local_e = static_cast<uint32_t>(e - start);
         size_t msg_idx = e * BP_BATCH_SIZE;
 #pragma GCC ivdep
         for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
           T v2c_msg = graph.var_to_check_messages[msg_idx + b];
-          T_MAG mag = (T_MAG)std::abs(v2c_msg);
+          T_MAG mag = static_cast<T_MAG>(std::abs(v2c_msg));
           uint8_t sign = (v2c_msg < 0) ? 1 : 0;
           total_sign_prod[b] ^= sign;
 
           if (mag < min1[b]) {
             min2[b] = min1[b];
             min1[b] = mag;
-            min1_idx[b] = e;
+            min1_idx[b] = local_e;
           } else if (mag < min2[b]) {
             min2[b] = mag;
           }
@@ -117,6 +125,7 @@ std::vector<BPResult> batched_bp_parallel_min_sum(
       }
 
       for (size_t e = start; e < end; ++e) {
+        const uint32_t local_e = static_cast<uint32_t>(e - start);
         size_t msg_idx = e * BP_BATCH_SIZE;
         size_t v_e = graph.check_edge_rev_indices[e];
         size_t out_idx = v_e * BP_BATCH_SIZE;
@@ -127,18 +136,27 @@ std::vector<BPResult> batched_bp_parallel_min_sum(
           uint8_t extrinsic_sign = total_sign_prod[b] ^ v2c_sign;
           uint8_t final_sign = batched_syndromes[syn_idx + b] ^ extrinsic_sign;
 
-          T_MAG mag_to_send = (e == min1_idx[b]) ? min2[b] : min1[b];
-          T_MAG normalized_mag = mag_to_send * normalization_factor;
+          T_MAG mag_to_send = (local_e == min1_idx[b]) ? min2[b] : min1[b];
+          T_MAG normalized_mag;
+          if constexpr (std::is_integral_v<T>) {
+            normalized_mag =
+                static_cast<T_MAG>((static_cast<uint64_t>(mag_to_send) * alpha_fp) >> 8);
+          } else {
+            normalized_mag = mag_to_send * normalization_factor;
+          }
 
           T final_mag;
           if constexpr (std::is_integral_v<T>) {
             final_mag =
-                std::min((T_MAG)normalized_mag, static_cast<T_MAG>(std::numeric_limits<T>::max()));
+                std::min(normalized_mag, static_cast<T_MAG>(std::numeric_limits<T>::max()));
           } else {
             final_mag = normalized_mag;
           }
 
-          graph.check_to_var_messages[out_idx + b] = final_sign ? -final_mag : final_mag;
+          T new_msg = final_sign ? -final_mag : final_mag;
+          if (active_shots[b]) {
+            graph.check_to_var_messages[out_idx + b] = new_msg;
+          }
         }
       }
     }
@@ -152,39 +170,59 @@ std::vector<BPResult> batched_bp_parallel_min_sum(
         T prior_val = graph.priors[i];
         size_t var_post_idx = i * BP_BATCH_SIZE;
 
+        alignas(64) T post[BP_BATCH_SIZE];
 #pragma GCC ivdep
         for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
-          if (!active_shots[b]) continue;
-          T post = prior_val;
-          for (size_t e = start; e < end; ++e) {
-            post += graph.check_to_var_messages[e * BP_BATCH_SIZE + b];
+          post[b] = prior_val;
+        }
+
+        for (size_t e = start; e < end; ++e) {
+          size_t msg_idx = e * BP_BATCH_SIZE;
+#pragma GCC ivdep
+          for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
+            post[b] += graph.check_to_var_messages[msg_idx + b];
           }
-          posteriors_flat[var_post_idx + b] = post;
+        }
+
+#pragma GCC ivdep
+        for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
+          if (active_shots[b]) {
+            posteriors_flat[var_post_idx + b] = post[b];
+          }
         }
       }
 
       // Check convergence
       // A shot is converged if ALL checks are satisfied.
-      std::vector<uint8_t> shot_converged(actual_batch_size, 1);
+      alignas(64) uint8_t shot_converged[BP_BATCH_SIZE];
+#pragma GCC ivdep
+      for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
+        shot_converged[b] = active_shots[b];
+      }
 
       for (size_t i = 0; i < graph.num_checks; ++i) {
+        uint8_t any_candidate = 0;
+#pragma GCC ivdep
+        for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
+          any_candidate |= shot_converged[b];
+        }
+        if (!any_candidate) break;
+
         size_t start = graph.check_edge_offsets[i];
         size_t end = graph.check_edge_offsets[i + 1];
         size_t syn_idx = i * BP_BATCH_SIZE;
 
-        for (size_t b = 0; b < actual_batch_size; ++b) {
-          if (!active_shots[b]) continue;
-          if (!shot_converged[b]) continue;  // Already failed a check
-
-          uint8_t posterior_parity = 0;
-          for (size_t e = start; e < end; ++e) {
-            size_t v_idx = graph.check_edges[e];
-            if (posteriors_flat[v_idx * BP_BATCH_SIZE + b] < 0) {
-              posterior_parity ^= 1;
-            }
+        alignas(64) uint8_t parity[BP_BATCH_SIZE] = {0};
+        for (size_t e = start; e < end; ++e) {
+          size_t v_base = graph.check_edges[e] * BP_BATCH_SIZE;
+#pragma GCC ivdep
+          for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
+            parity[b] ^= static_cast<uint8_t>(posteriors_flat[v_base + b] < 0);
           }
-
-          if (posterior_parity != batched_syndromes[syn_idx + b]) {
+        }
+#pragma GCC ivdep
+        for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
+          if (parity[b] != batched_syndromes[syn_idx + b]) {
             shot_converged[b] = 0;
           }
         }

@@ -1,6 +1,7 @@
 #ifndef BELIEFPROPAGATION_BP_BATCHED_TANNER_GRAPH_H_
 #define BELIEFPROPAGATION_BP_BATCHED_TANNER_GRAPH_H_
 
+#include <array>
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
@@ -42,6 +43,9 @@ struct BatchedTannerGraph {
   std::vector<size_t> check_edge_rev_indices;  // reverse index in var_edges
   std::vector<T> var_to_check_messages;
 
+  // Pre-allocated workspace buffer to avoid per-batch heap allocations in BP
+  std::vector<T> converged_posteriors_flat;
+
   BatchedTannerGraph() = default;
   BatchedTannerGraph(size_t num_variables, size_t num_checks, const std::vector<T>& priors);
 
@@ -72,6 +76,8 @@ void BatchedTannerGraph<T>::build_from_unbatched(const TannerGraph<T>& unbatched
   check_edges = unbatched_graph.check_edges;
   check_edge_rev_indices = unbatched_graph.check_edge_rev_indices;
   var_to_check_messages.assign(check_edges.size() * BP_BATCH_SIZE, 0);
+
+  converged_posteriors_flat.assign(num_variables * BP_BATCH_SIZE, 0);
 }
 
 }  // namespace bp

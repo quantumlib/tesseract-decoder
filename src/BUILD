@@ -412,10 +412,13 @@ cc_library(
     name = "libbp",
     srcs = [
         "bp/bp_sparse_serial_gallager.cc",
+        "bp/bp_trace.cc",
         "bp/check_update.cc",
         "bp/hard_decision_post_processor.cc",
         "bp/tesseract_bp_decoder.cc",
         "bp/osd_post_processor.cc",
+        "bp/multi_pass_bp_decoder.cc",
+        "bp/tesseract_post_processor.cc",
     ],
     hdrs = [
         "bp/batched_bp_parallel_min_sum.h",
@@ -429,6 +432,7 @@ cc_library(
         "bp/bp_serial_min_sum.h",
         "bp/bp_serial_min_sum.inl",
         "bp/bp_sparse_serial_gallager.h",
+        "bp/bp_trace.h",
         "bp/bp_types.h",
         "bp/check_update.h",
         "bp/tanner_graph.h",
@@ -438,6 +442,8 @@ cc_library(
         "bp/hard_decision_post_processor.h",
         "bp/tesseract_bp_decoder.h",
         "bp/osd_post_processor.h",
+        "bp/multi_pass_bp_decoder.h",
+        "bp/tesseract_post_processor.h",
     ],
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
@@ -445,6 +451,10 @@ cc_library(
     deps = [
         "@stim//:stim_lib",
         ":libcommon",
+        ":libdem_decomposition",
+        ":liberror_correlations",
+        ":libtesseract",
+        "@nlohmann_json//:json",
     ],
 )
 
