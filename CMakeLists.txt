@@ -9,6 +9,9 @@ find_package(Threads REQUIRED)
 
 # === External dependencies ===
 # Stim
+if(NOT DEFINED SIMD_WIDTH)
+  set(SIMD_WIDTH 256 CACHE STRING "SIMD width for Stim (256 for AVX2 compatibility)")
+endif()
 FetchContent_Declare(
   stim
   GIT_REPOSITORY https://github.com/quantumlib/stim.git
