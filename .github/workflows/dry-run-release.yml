@@ -89,6 +89,33 @@ jobs:
         echo $ABI_TAG
         bazel build --config=wheel --define ABI_TAG=$ABI_TAG --define GLIBC_VERSION=$GLIBC_VERSION --define TARGET_VERSION="$(python -c "print(\"py${TARGET_PYTHON}\".replace(\".\", \"\"))")" --define VERSION="$(cat version/version.txt)"  :tesseract_decoder_wheel
 
+    - name: Smoke-test wheel
+      run: |
+        pip install ./bazel-bin/*.whl
+        # Run outside the source tree to import the installed wheel.
+        cd "$RUNNER_TEMP"
+        python - <<'EOF'
+        import numpy as np
+        import stim
+        from tesseract_decoder import tesseract
+
+        circuit = stim.Circuit.generated(
+            "surface_code:rotated_memory_x",
+            distance=3,
+            rounds=3,
+            after_clifford_depolarization=0.001,
+        )
+        dem = circuit.detector_error_model()
+        decoder = tesseract.TesseractConfig(dem=dem, det_beam=50).compile_decoder()
+        dets, obs = circuit.compile_detector_sampler(seed=0).sample(
+            1000, separate_observables=True
+        )
+        predictions = decoder.decode_batch(dets)
+        errors = np.count_nonzero(np.any(predictions != obs, axis=1))
+        print(f"{errors} logical errors in 1000 shots")
+        assert errors < 20
+        EOF
+
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: python-wheels-${{ matrix.os }}-${{ matrix.python-version }}
