@@ -43,11 +43,12 @@ config_setting(
 )
 
 config_setting(
-    name = "linux_arm",
+    name = "portable_linux_arm_wheel",
     constraint_values = [
         "@platforms//os:linux",
         "@platforms//cpu:arm64",
     ],
+    define_values = {"tesseract_portable_wheel": "true"},
 )
 
 OPT_COPTS = select({
@@ -61,7 +62,7 @@ OPT_COPTS = select({
 }) + select({
     ":portable_linux_wheel": ["-march=x86-64"],
     ":macos_arm": ["-mmacosx-version-min=11.0"],
-    ":linux_arm": ["-march=armv8-a"],
+    ":portable_linux_arm_wheel": ["-march=armv8-a"],
     "//conditions:default": ["-march=native",],
 })
 

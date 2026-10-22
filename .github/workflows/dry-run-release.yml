@@ -87,7 +87,7 @@ jobs:
         sed "s/^MANYLINUX_VERSION.*/MANYLINUX_VERSION=\"manylinux_${GLIBC_VERSION}_$(uname -m)\"/" BUILD -i || true
         ABI_TAG="$(python -c "print(\"cp${TARGET_PYTHON}\".replace(\".\", \"\"))")"
         echo $ABI_TAG
-        bazel build --define ABI_TAG=$ABI_TAG --define GLIBC_VERSION=$GLIBC_VERSION --define TARGET_VERSION="$(python -c "print(\"py${TARGET_PYTHON}\".replace(\".\", \"\"))")" --define VERSION="$(cat version/version.txt)"  :tesseract_decoder_wheel
+        bazel build --config=wheel --define ABI_TAG=$ABI_TAG --define GLIBC_VERSION=$GLIBC_VERSION --define TARGET_VERSION="$(python -c "print(\"py${TARGET_PYTHON}\".replace(\".\", \"\"))")" --define VERSION="$(cat version/version.txt)"  :tesseract_decoder_wheel
 
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
