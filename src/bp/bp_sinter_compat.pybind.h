@@ -7,14 +7,9 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include <fstream>
-#include <iostream>
-
-#include "bp/hard_decision_post_processor.h"
 #include "bp/multi_pass_bp_decoder.h"
-#include "bp/post_processor.h"
+#include "bp/osd_post_processor.h"
 #include "bp/tesseract_bp_decoder.h"
-#include "bp/tesseract_post_processor.h"
 #include "stim.h"
 #include "stim_utils.pybind.h"
 
@@ -24,7 +19,7 @@ namespace bp {
 
 struct TesseractBpSinterCompiledDecoder {
   std::unique_ptr<TesseractBpDecoder> decoder;
-  std::shared_ptr<PostProcessor> post_processor;
+  std::shared_ptr<OsdPostProcessor> post_processor;
   std::unique_ptr<MultiPassBpDecoder> multipass_decoder;
   uint64_t num_detectors;
   uint64_t num_observables;
@@ -39,120 +34,44 @@ struct TesseractBpSinterCompiledDecoder {
     }
 
     const uint64_t num_detector_bytes = (num_detectors + 7) / 8;
-    if (bit_packed_detection_event_data.shape(1) != (py::ssize_t)num_detector_bytes) {
+    if (bit_packed_detection_event_data.shape(1) != static_cast<py::ssize_t>(num_detector_bytes)) {
       throw std::invalid_argument("Input array dimension does not match number of detector bytes.");
     }
 
     const size_t num_shots = bit_packed_detection_event_data.shape(0);
     const uint64_t num_observable_bytes = (num_observables + 7) / 8;
 
-    auto result_array =
-        py::array_t<uint8_t>({(py::ssize_t)num_shots, (py::ssize_t)num_observable_bytes});
+    auto result_array = py::array_t<uint8_t>(
+        {static_cast<py::ssize_t>(num_shots), static_cast<py::ssize_t>(num_observable_bytes)});
     auto result_buffer = result_array.mutable_data();
 
     const uint8_t* detections_data = bit_packed_detection_event_data.data();
     const size_t detections_stride = bit_packed_detection_event_data.strides(0);
 
-    if (use_multipass && multipass_decoder) {
-      if (use_batched_bp) {
-        std::vector<std::vector<uint64_t>> detection_events_batch;
-        detection_events_batch.reserve(num_shots);
-        for (size_t shot = 0; shot < num_shots; ++shot) {
-          const uint8_t* single_shot_data = detections_data + shot * detections_stride;
-          std::vector<uint64_t> detections;
-          for (uint64_t i = 0; i < num_detectors; ++i) {
-            if ((single_shot_data[i / 8] >> (i % 8)) & 1) {
-              detections.push_back(i);
-            }
-          }
-          detection_events_batch.push_back(std::move(detections));
-        }
-
-        std::vector<std::vector<uint8_t>> predictions_batch =
-            multipass_decoder->decode_batch(detection_events_batch);
-
-        for (size_t shot = 0; shot < num_shots; ++shot) {
-          uint8_t* single_result_buffer = result_buffer + shot * num_observable_bytes;
-          std::fill(single_result_buffer, single_result_buffer + num_observable_bytes, 0);
-
-          for (size_t i = 0; i < num_observables; ++i) {
-            if (predictions_batch[shot][i]) {
-              single_result_buffer[i / 8] ^= (1 << (i % 8));
-            }
-          }
-        }
-      } else {
-        for (size_t shot = 0; shot < num_shots; ++shot) {
-          const uint8_t* single_shot_data = detections_data + shot * detections_stride;
-
-          std::vector<uint64_t> detections;
-          for (uint64_t i = 0; i < num_detectors; ++i) {
-            if ((single_shot_data[i / 8] >> (i % 8)) & 1) {
-              detections.push_back(i);
-            }
-          }
-
-          std::vector<uint8_t> predictions = multipass_decoder->decode(detections);
-
-          uint8_t* single_result_buffer = result_buffer + shot * num_observable_bytes;
-          std::fill(single_result_buffer, single_result_buffer + num_observable_bytes, 0);
-
-          for (size_t i = 0; i < num_observables; ++i) {
-            if (predictions[i]) {
-              single_result_buffer[i / 8] ^= (1 << (i % 8));
-            }
-          }
+    std::vector<std::vector<uint64_t>> detection_events_batch;
+    detection_events_batch.reserve(num_shots);
+    for (size_t shot = 0; shot < num_shots; ++shot) {
+      const uint8_t* single_shot_data = detections_data + shot * detections_stride;
+      std::vector<uint64_t> detections;
+      for (uint64_t i = 0; i < num_detectors; ++i) {
+        if ((single_shot_data[i / 8] >> (i % 8)) & 1) {
+          detections.push_back(i);
         }
       }
-      return result_array;
+      detection_events_batch.push_back(std::move(detections));
     }
 
-    if (use_batched_bp) {
-      std::vector<std::vector<uint64_t>> detection_events_batch;
-      for (size_t shot = 0; shot < num_shots; ++shot) {
-        const uint8_t* single_shot_data = detections_data + shot * detections_stride;
-        std::vector<uint64_t> detections;
-        for (uint64_t i = 0; i < num_detectors; ++i) {
-          if ((single_shot_data[i / 8] >> (i % 8)) & 1) {
-            detections.push_back(i);
-          }
-        }
-        detection_events_batch.push_back(detections);
-      }
+    std::vector<std::vector<uint8_t>> predictions_batch =
+        (use_multipass && multipass_decoder)
+            ? multipass_decoder->decode_batch(detection_events_batch)
+            : decoder->decode_batch(detection_events_batch, post_processor);
 
-      std::vector<std::vector<uint8_t>> predictions_batch =
-          decoder->decode_batch(detection_events_batch, post_processor);
-
-      for (size_t shot = 0; shot < num_shots; ++shot) {
-        uint8_t* single_result_buffer = result_buffer + shot * num_observable_bytes;
-        std::fill(single_result_buffer, single_result_buffer + num_observable_bytes, 0);
-
-        for (size_t i = 0; i < num_observables; ++i) {
-          if (predictions_batch[shot][i]) {
-            single_result_buffer[i / 8] ^= (1 << (i % 8));
-          }
-        }
-      }
-    } else {
-      for (size_t shot = 0; shot < num_shots; ++shot) {
-        const uint8_t* single_shot_data = detections_data + shot * detections_stride;
-
-        std::vector<uint64_t> detections;
-        for (uint64_t i = 0; i < num_detectors; ++i) {
-          if ((single_shot_data[i / 8] >> (i % 8)) & 1) {
-            detections.push_back(i);
-          }
-        }
-
-        std::vector<uint8_t> predictions = decoder->decode(detections, post_processor);
-
-        uint8_t* single_result_buffer = result_buffer + shot * num_observable_bytes;
-        std::fill(single_result_buffer, single_result_buffer + num_observable_bytes, 0);
-
-        for (size_t i = 0; i < num_observables; ++i) {
-          if (predictions[i]) {
-            single_result_buffer[i / 8] ^= (1 << (i % 8));
-          }
+    for (size_t shot = 0; shot < num_shots; ++shot) {
+      uint8_t* single_result_buffer = result_buffer + shot * num_observable_bytes;
+      std::fill(single_result_buffer, single_result_buffer + num_observable_bytes, 0);
+      for (size_t i = 0; i < num_observables; ++i) {
+        if (predictions_batch[shot][i]) {
+          single_result_buffer[i / 8] ^= (1 << (i % 8));
         }
       }
     }
@@ -163,22 +82,16 @@ struct TesseractBpSinterCompiledDecoder {
 
 struct TesseractBpSinterDecoder {
   BPParams params;
-  size_t osd_order;
-  size_t osd_weight;
-  bool use_osd;
-  bool use_batched_bp;
-  bool use_multipass;
-  size_t num_passes;
+  size_t osd_order = 0;
+  size_t osd_weight = 0;
+  bool use_osd = false;
+  bool use_batched_bp = true;
+  bool use_multipass = false;
+  size_t num_passes = 2;
 
-  TesseractBpSinterDecoder()
-      : osd_order(0),
-        osd_weight(0),
-        use_osd(false),
-        use_batched_bp(false),
-        use_multipass(false),
-        num_passes(2) {}
+  TesseractBpSinterDecoder() = default;
   TesseractBpSinterDecoder(const BPParams& p, size_t order = 0, size_t weight = 0,
-                           bool osd = false, bool batched = false, bool multipass = false,
+                           bool osd = false, bool batched = true, bool multipass = false,
                            size_t passes = 2)
       : params(p),
         osd_order(order),
@@ -188,23 +101,30 @@ struct TesseractBpSinterDecoder {
         use_multipass(multipass),
         num_passes(passes) {}
 
+  static TesseractBpSinterDecoder BpOsd(size_t max_iter = DEFAULT_MAX_ITER) {
+    return TesseractBpSinterDecoder(BPParams::Osd(max_iter), 24, 2, true, true, false, 2);
+  }
+  static TesseractBpSinterDecoder BpOsdFast(size_t max_iter = 10) {
+    return TesseractBpSinterDecoder(BPParams::Fast(max_iter), 10, 0, true, true, false, 2);
+  }
+  static TesseractBpSinterDecoder MultiPassBpOsd(size_t max_iter = DEFAULT_MAX_ITER) {
+    return TesseractBpSinterDecoder(BPParams::Osd(max_iter), 24, 2, true, true, true, 2);
+  }
+  static TesseractBpSinterDecoder MultiPassBpOsdFast(size_t max_iter = 10) {
+    return TesseractBpSinterDecoder(BPParams::Fast(max_iter), 10, 0, true, true, true, 2);
+  }
+
   TesseractBpSinterCompiledDecoder compile_decoder_for_dem(const py::object& dem) {
     const stim::DetectorErrorModel stim_dem =
         tesseract_decoder::parse_py_object<stim::DetectorErrorModel>(dem);
 
     if (use_multipass) {
       BPParams mp_params = params;
-      if (use_osd) {
-        mp_params.post_processor = "osd";
+      if (use_osd || osd_order > 0 || osd_weight > 0) {
         mp_params.osd_order = static_cast<int>(osd_order);
         mp_params.osd_weight = static_cast<int>(osd_weight);
       }
-      MultiPassBpConfig mp_config{
-          mp_params,
-          num_passes,
-          {},
-          tesseract_decoder::SchedulingStrategy::Causal,
-          mp_params.use_soft_reweighting};
+      MultiPassBpConfig mp_config{mp_params, num_passes, {}, mp_params.use_soft_reweighting};
       auto mp_dec = std::make_unique<MultiPassBpDecoder>(stim_dem, mp_config);
       return TesseractBpSinterCompiledDecoder{
           .decoder = nullptr,
@@ -220,16 +140,12 @@ struct TesseractBpSinterDecoder {
 
     auto decoder = std::make_unique<TesseractBpDecoder>(stim_dem, params);
 
-    std::shared_ptr<PostProcessor> pp;
-    if (use_osd) {
+    std::shared_ptr<OsdPostProcessor> pp;
+    if (use_osd || osd_order > 0 || osd_weight > 0) {
       pp = decoder->create_osd_post_processor(osd_order, osd_weight);
-    } else if (params.post_processor == "tesseract") {
-      pp = decoder->create_tesseract_post_processor();
-    } else if (params.post_processor == "osd") {
-      pp = decoder->create_osd_post_processor(params.osd_order >= 0 ? params.osd_order : osd_order,
-                                              params.osd_weight);
-    } else {
-      pp = std::make_shared<HardDecisionPostProcessor>();
+    } else if (params.osd_order >= 0) {
+      pp = decoder->create_osd_post_processor(static_cast<size_t>(params.osd_order),
+                                              static_cast<size_t>(std::max(0, params.osd_weight)));
     }
 
     return TesseractBpSinterCompiledDecoder{
@@ -246,9 +162,8 @@ struct TesseractBpSinterDecoder {
 };
 
 void pybind_bp_sinter_compat(py::module& root) {
-  auto m = root.def_submodule("bp_sinter_compat", R"pbdoc(
-        Sinter compatibility for the Belief Propagation decoder.
-    )pbdoc");
+  auto m = root.def_submodule("bp_sinter_compat",
+                              "Sinter compatibility for the Belief Propagation decoder.");
 
   py::class_<TesseractBpSinterCompiledDecoder>(m, "TesseractBpSinterCompiledDecoder")
       .def_readwrite("use_multipass", &TesseractBpSinterCompiledDecoder::use_multipass)
@@ -257,10 +172,18 @@ void pybind_bp_sinter_compat(py::module& root) {
            py::kw_only(), py::arg("bit_packed_detection_event_data"));
 
   py::class_<TesseractBpSinterDecoder>(m, "TesseractBpSinterDecoder")
-      .def(py::init<BPParams, size_t, size_t, bool, bool, bool, size_t>(), py::arg("params"),
-           py::arg("osd_order") = 0, py::arg("osd_weight") = 0, py::arg("use_osd") = false,
-           py::arg("use_batched_bp") = false, py::arg("use_multipass") = false,
-           py::arg("num_passes") = 2)
+      .def(py::init<BPParams, size_t, size_t, bool, bool, bool, size_t>(),
+           py::arg("params") = BPParams(), py::arg("osd_order") = 0, py::arg("osd_weight") = 0,
+           py::arg("use_osd") = false, py::arg("use_batched_bp") = true,
+           py::arg("use_multipass") = false, py::arg("num_passes") = 2)
+      .def_static("BpOsd", &TesseractBpSinterDecoder::BpOsd,
+                  py::arg("max_iter") = DEFAULT_MAX_ITER)
+      .def_static("BpOsdFast", &TesseractBpSinterDecoder::BpOsdFast,
+                  py::arg("max_iter") = 10)
+      .def_static("MultiPassBpOsd", &TesseractBpSinterDecoder::MultiPassBpOsd,
+                  py::arg("max_iter") = DEFAULT_MAX_ITER)
+      .def_static("MultiPassBpOsdFast", &TesseractBpSinterDecoder::MultiPassBpOsdFast,
+                  py::arg("max_iter") = 10)
       .def_readwrite("params", &TesseractBpSinterDecoder::params)
       .def_readwrite("osd_order", &TesseractBpSinterDecoder::osd_order)
       .def_readwrite("osd_weight", &TesseractBpSinterDecoder::osd_weight)

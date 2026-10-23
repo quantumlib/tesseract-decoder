@@ -3,118 +3,98 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <vector>
 
-#include "bp/bp_trace.h"
-#include "bp/post_processor.h"
+#include "bp/bp_serial_min_sum.h"
 #include "bp/tanner_graph.h"
 
 namespace bp {
 
-// Per-phase timings and counters accumulated across all calls to
-// OsdPostProcessor::process on a single instance.
-//
-// OSD is the slow path (it only runs when BP fails to converge), so the cost of
-// the handful of clock reads per call is negligible relative to the work being
-// measured. Counters are plain (non-atomic) members: each decoding thread in
-// bp_main owns its own OsdPostProcessor instance, so there is no sharing.
-// Use OsdProfile::merge to aggregate across threads.
 struct OsdProfile {
-  // Number of times process() was called.
-  uint64_t num_calls = 0;
-  // Calls that returned early because BP had already converged (no OSD work).
-  uint64_t num_converged_early_exits = 0;
-  // Calls that ran the full OSD path.
-  uint64_t num_osd_invocations = 0;
+  uint64_t num_calls = 0, num_converged_early_exits = 0, num_osd_invocations = 0;
+  uint64_t sum_num_errors = 0, sum_num_detectors = 0, sum_max_osd_cols = 0;
+  uint64_t sum_cols_processed = 0, sum_pivots_found = 0;
+  double t_converged_passthrough = 0.0, t_hard_decision = 0.0, t_residual = 0.0;
+  double t_sort = 0.0, t_matrix_build = 0.0, t_elimination = 0.0, t_solution = 0.0, t_total = 0.0;
 
-  // Wall time in seconds for calls that exited early because BP converged.
-  double t_converged_passthrough = 0.0;
+  void merge(const OsdProfile& o) {
+    num_calls += o.num_calls;
+    num_converged_early_exits += o.num_converged_early_exits;
+    num_osd_invocations += o.num_osd_invocations;
+    sum_num_errors += o.sum_num_errors;
+    sum_num_detectors += o.sum_num_detectors;
+    sum_max_osd_cols += o.sum_max_osd_cols;
+    sum_cols_processed += o.sum_cols_processed;
+    sum_pivots_found += o.sum_pivots_found;
+    t_converged_passthrough += o.t_converged_passthrough;
+    t_hard_decision += o.t_hard_decision;
+    t_residual += o.t_residual;
+    t_sort += o.t_sort;
+    t_matrix_build += o.t_matrix_build;
+    t_elimination += o.t_elimination;
+    t_solution += o.t_solution;
+    t_total += o.t_total;
+  }
 
-  // Wall time in seconds, broken down by phase. Only accumulated for calls that
-  // actually run OSD (i.e. excluding converged early exits).
-  double t_hard_decision = 0.0;  // initial hard decision from posteriors
-  double t_residual = 0.0;       // residual syndrome computation
-  double t_sort = 0.0;           // ordering columns by posterior reliability
-  double t_matrix_build = 0.0;   // materializing the dense truncated H
-  double t_elimination = 0.0;    // Gauss-Jordan elimination with column pivoting
-  double t_solution = 0.0;       // correction extraction + OSD-w perturbation search
-  double t_total = 0.0;          // whole OSD invocation (excluding converged early exits)
+  void report(FILE* out = stdout) const {
+    const double inv = num_osd_invocations > 0 ? 1.0 / num_osd_invocations : 0.0;
+    const double tot = t_total > 0.0 ? t_total : 1e-30;
+    const double t_acc =
+        t_hard_decision + t_residual + t_sort + t_matrix_build + t_elimination + t_solution;
+    const double t_other = t_total > t_acc ? t_total - t_acc : 0.0;
 
-  // Problem-size and progress counters, summed over OSD invocations. Divide by
-  // num_osd_invocations for per-call averages.
-  uint64_t sum_num_errors = 0;      // columns available (N)
-  uint64_t sum_num_detectors = 0;   // rows (M)
-  uint64_t sum_max_osd_cols = 0;    // columns retained after truncation
-  uint64_t sum_pivots_found = 0;    // rank reached by elimination
-  uint64_t sum_cols_processed = 0;  // columns actually visited by the pivot loop
+    std::fprintf(out, "\n=== OSD profile ===\n");
+    std::fprintf(out, "  calls                 %llu\n",
+                 static_cast<unsigned long long>(num_calls));
+    std::fprintf(out, "  converged early exits %llu (%.6f s, %.3f us/exit)\n",
+                 static_cast<unsigned long long>(num_converged_early_exits), t_converged_passthrough,
+                 num_converged_early_exits > 0
+                     ? 1e6 * t_converged_passthrough / num_converged_early_exits
+                     : 0.0);
+    std::fprintf(out, "  OSD invocations       %llu\n",
+                 static_cast<unsigned long long>(num_osd_invocations));
+    if (num_osd_invocations == 0) return;
 
-  void merge(const OsdProfile& other) {
-    num_calls += other.num_calls;
-    num_converged_early_exits += other.num_converged_early_exits;
-    num_osd_invocations += other.num_osd_invocations;
-    t_converged_passthrough += other.t_converged_passthrough;
-    t_hard_decision += other.t_hard_decision;
-    t_residual += other.t_residual;
-    t_sort += other.t_sort;
-    t_matrix_build += other.t_matrix_build;
-    t_elimination += other.t_elimination;
-    t_solution += other.t_solution;
-    t_total += other.t_total;
-    sum_num_errors += other.sum_num_errors;
-    sum_num_detectors += other.sum_num_detectors;
-    sum_max_osd_cols += other.sum_max_osd_cols;
-    sum_pivots_found += other.sum_pivots_found;
-    sum_cols_processed += other.sum_cols_processed;
+    std::fprintf(out, "  detectors (M)         %.0f\n", sum_num_detectors * inv);
+    std::fprintf(out, "  errors (N)            %.0f\n", sum_num_errors * inv);
+    std::fprintf(out, "  cols after truncation %.0f\n", sum_max_osd_cols * inv);
+    std::fprintf(out, "  cols processed        %.0f\n", sum_cols_processed * inv);
+    std::fprintf(out, "  pivots found          %.0f\n", sum_pivots_found * inv);
+    std::fprintf(out, "  ---------------------------------------------------------------\n");
+    auto row = [&](const char* label, double t) {
+      std::fprintf(out, "  %-22s %12.6f s  %6.2f %%  %12.3f us/call\n", label, t,
+                   100.0 * t / tot, 1e6 * t * inv);
+    };
+    row("hard_decision", t_hard_decision);
+    row("residual_syndrome", t_residual);
+    row("sort", t_sort);
+    row("matrix_build", t_matrix_build);
+    row("elimination", t_elimination);
+    row("solution", t_solution);
+    row("other", t_other);
+    std::fprintf(out, "  ---------------------------------------------------------------\n");
+    row("TOTAL", t_total);
   }
 };
 
-class OsdPostProcessor : public PostProcessor {
+class OsdPostProcessor {
  public:
-  // osd_order specifies the size of the information set subset to perturb.
-  // osd_weight specifies the maximum Hamming weight of perturbations to explore.
-  OsdPostProcessor(const TannerGraph<LLR_INT>& graph, size_t osd_order = 0, size_t osd_weight = 0,
+  OsdPostProcessor(const TannerGraph& graph, size_t osd_order = 0, size_t osd_weight = 0,
                    float osd_truncation_factor = 0.0f, bool osd_early_exit = true);
-  virtual ~OsdPostProcessor() = default;
 
   std::vector<uint8_t> process(
       const BPResult& bp_result, const std::vector<LLR_INT>& posteriors,
       const std::vector<uint64_t>& detection_events,
       const std::vector<std::vector<int>>& hyperedge_observables,
       std::vector<size_t>* predicted_errors = nullptr,
-      const std::vector<LLR_INT>* custom_priors = nullptr) override;
-
-  // Trace-enabled post-processing (only invoked when tracing is explicitly requested).
-  std::vector<uint8_t> process_with_trace(
-      const BPResult& bp_result, const std::vector<LLR_INT>& posteriors,
-      const std::vector<uint64_t>& detection_events,
-      const std::vector<std::vector<int>>& hyperedge_observables,
-      OsdTrace& trace,
-      std::vector<size_t>* predicted_errors = nullptr,
       const std::vector<LLR_INT>* custom_priors = nullptr);
 
-  // Per-phase timings and counters accumulated by this instance.
-  const OsdProfile& profile() const {
-    return profile_;
-  }
-  void reset_profile() {
-    profile_ = OsdProfile();
-  }
+  const OsdProfile& profile() const { return profile_; }
+  void reset_profile() { profile_ = OsdProfile(); }
 
  private:
-  struct Lut1Entry {
-    uint64_t sig = 0;
-    uint32_t var_id = UINT32_MAX;
-  };
-  uint32_t lookup_lut1(uint64_t sig) const {
-    if (lut1_.empty() || sig == 0) return UINT32_MAX;
-    size_t idx = static_cast<size_t>(sig) & lut1_mask_;
-    while (lut1_[idx].var_id != UINT32_MAX) {
-      if (lut1_[idx].sig == sig) return lut1_[idx].var_id;
-      idx = (idx + 1) & lut1_mask_;
-    }
-    return UINT32_MAX;
-  }
-
-  const TannerGraph<LLR_INT>& graph_;
+  const TannerGraph& graph_;
   size_t osd_order_;
   size_t osd_weight_;
   float osd_truncation_factor_;
@@ -122,16 +102,8 @@ class OsdPostProcessor : public PostProcessor {
   OsdProfile profile_;
 
   size_t num_det_words_ = 0;
-  std::vector<uint64_t> det_sig_;
-  std::vector<uint64_t> var_sig_;
   std::vector<double> base_var_cost_;
-  double min_base_var_cost_ = 0.0;
-  std::vector<Lut1Entry> lut1_;
-  size_t lut1_mask_ = 0;
-  std::vector<size_t> check_sorted_offsets_;
-  std::vector<uint32_t> check_sorted_vars_;
   std::vector<uint64_t> var_mask_words_;
-  std::vector<uint64_t> det_reach1_words_;
   std::vector<uint64_t> det_reach2_words_;
   mutable std::vector<int32_t> det_to_bit_;
   mutable std::vector<uint8_t> var_in_cand_;

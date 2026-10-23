@@ -1,27 +1,30 @@
+#include "bp/bp_serial_min_sum.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <limits>
-#include <type_traits>
+#include <stdexcept>
 #include <vector>
-
-#include "bp/batched_bp_serial_min_sum.h"
 
 namespace bp {
 
-template <typename T>
-std::vector<BPResult> batched_bp_serial_min_sum(
-    BatchedTannerGraph<T>& graph, const std::vector<std::vector<size_t>>& detection_events_batch,
-    std::vector<T>& posteriors_flat, size_t max_iters, float normalization_factor,
+std::vector<BPResult> bp_serial_min_sum(
+    TannerGraph& graph, const std::vector<std::vector<size_t>>& detection_events_batch,
+    std::vector<LLR_INT>& posteriors_flat, size_t max_iters, float normalization_factor,
     bool stop_at_convergence, bool random_schedule, uint64_t random_seed,
-    const std::vector<T>* custom_priors_flat) {
+    const std::vector<LLR_INT>* custom_priors_flat) {
   size_t actual_batch_size = detection_events_batch.size();
   if (actual_batch_size > BP_BATCH_SIZE) {
     throw std::invalid_argument("Provided batch size exceeds BP_BATCH_SIZE");
   }
 
-  // Set up batched syndromes.
-  std::vector<uint8_t> batched_syndromes(graph.num_checks * BP_BATCH_SIZE, 0);
+  if (graph.syndromes.size() < graph.num_checks * BP_BATCH_SIZE) {
+    graph.syndromes.resize(graph.num_checks * BP_BATCH_SIZE, 0);
+  } else {
+    std::fill(graph.syndromes.begin(), graph.syndromes.end(), 0);
+  }
+  uint8_t* __restrict__ batched_syndromes = graph.syndromes.data();
   for (size_t b = 0; b < actual_batch_size; ++b) {
     for (size_t d : detection_events_batch[b]) {
       if (d < graph.num_checks) {
@@ -30,30 +33,27 @@ std::vector<BPResult> batched_bp_serial_min_sum(
     }
   }
 
-  // Track which shots in the batch are still active
-  std::vector<uint8_t> active_shots(BP_BATCH_SIZE, 0);
+  if (graph.converged_mask.size() < BP_BATCH_SIZE) {
+    graph.converged_mask.resize(BP_BATCH_SIZE, 0);
+  }
+  uint8_t* __restrict__ active_shots = graph.converged_mask.data();
   size_t num_active = actual_batch_size;
-  for (size_t b = 0; b < actual_batch_size; ++b) {
-    active_shots[b] = 1;
+  for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
+    active_shots[b] = (b < actual_batch_size) ? 1 : 0;
   }
 
   std::vector<BPResult> results(actual_batch_size, {false, 0, 0});
 
-  using T_MAG = typename llr_traits<T>::magnitude_type;
-  const T_MAG max_mag = std::numeric_limits<T_MAG>::max();
-  const T_MAG alpha_fp = static_cast<T_MAG>(std::lround(normalization_factor * 256.0f));
+  const LLR_UINT max_mag = std::numeric_limits<LLR_UINT>::max();
+  const LLR_UINT alpha_fp = static_cast<LLR_UINT>(std::lround(normalization_factor * 256.0f));
 
-  constexpr T_MAG kMaxSafeMagFp = static_cast<T_MAG>(1u << 23);
-
-  // Initialize check_to_var messages to 0
   std::fill(graph.check_to_var_messages.begin(), graph.check_to_var_messages.end(), 0);
 
-  // Initialize posteriors_flat to priors
   if (custom_priors_flat != nullptr) {
     posteriors_flat = *custom_priors_flat;
   } else {
-    for (size_t i = 0; i < graph.num_variables; ++i) {
-      T prior_val = graph.priors[i];
+    for (size_t i = 0; i < graph.num_vars; ++i) {
+      LLR_INT prior_val = graph.priors[i];
       size_t var_post_idx = i * BP_BATCH_SIZE;
 #pragma GCC ivdep
       for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
@@ -62,13 +62,11 @@ std::vector<BPResult> batched_bp_serial_min_sum(
     }
   }
 
-  // Snapshot buffer for shots that converge early so the hot check-update loop
-  // can execute 100% unmasked 16-lane AVX-512 stores without checking active_shots[b].
-  const size_t total_lanes = graph.num_variables * BP_BATCH_SIZE;
+  const size_t total_lanes = graph.num_vars * BP_BATCH_SIZE;
   if (graph.converged_posteriors_flat.size() < total_lanes) {
     graph.converged_posteriors_flat.resize(total_lanes);
   }
-  T* __restrict__ converged_posteriors_flat = graph.converged_posteriors_flat.data();
+  LLR_INT* __restrict__ converged_posteriors_flat = graph.converged_posteriors_flat.data();
 
   std::vector<size_t> check_order(graph.num_checks);
   for (size_t i = 0; i < graph.num_checks; ++i) {
@@ -83,8 +81,8 @@ std::vector<BPResult> batched_bp_serial_min_sum(
   };
 
   constexpr size_t kMaxStackDeg = 64;
-  alignas(64) T q_stack[kMaxStackDeg * BP_BATCH_SIZE];
-  std::vector<T> q_heap;
+  alignas(64) LLR_INT q_stack[kMaxStackDeg * BP_BATCH_SIZE];
+  std::vector<LLR_INT> q_heap;
 
   size_t iter = 0;
   for (iter = 0; iter < max_iters && num_active > 0; ++iter) {
@@ -105,12 +103,12 @@ std::vector<BPResult> batched_bp_serial_min_sum(
 
       size_t syn_idx = c * BP_BATCH_SIZE;
 
-      alignas(64) T_MAG min1[BP_BATCH_SIZE];
-      alignas(64) T_MAG min2[BP_BATCH_SIZE];
+      alignas(64) LLR_UINT min1[BP_BATCH_SIZE];
+      alignas(64) LLR_UINT min2[BP_BATCH_SIZE];
       alignas(64) uint32_t min1_idx[BP_BATCH_SIZE];
       alignas(64) uint8_t total_sign_prod[BP_BATCH_SIZE];
 
-      T* __restrict__ q_cache = q_stack;
+      LLR_INT* __restrict__ q_cache = q_stack;
       if (deg > kMaxStackDeg) [[unlikely]] {
         if (q_heap.size() < deg * BP_BATCH_SIZE) {
           q_heap.resize(deg * BP_BATCH_SIZE);
@@ -132,15 +130,15 @@ std::vector<BPResult> batched_bp_serial_min_sum(
         const uint32_t local_e = static_cast<uint32_t>(e - start);
         const size_t v_idx = graph.check_edges[e] * BP_BATCH_SIZE;
         const size_t msg_idx = e * BP_BATCH_SIZE;
-        T* __restrict__ q_row = q_cache + local_e * BP_BATCH_SIZE;
+        LLR_INT* __restrict__ q_row = q_cache + local_e * BP_BATCH_SIZE;
 
 #pragma GCC ivdep
         for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
-          T old_r = graph.check_to_var_messages[msg_idx + b];
-          T q_msg = posteriors_flat[v_idx + b] - old_r;
+          LLR_INT old_r = graph.check_to_var_messages[msg_idx + b];
+          LLR_INT q_msg = posteriors_flat[v_idx + b] - old_r;
           q_row[b] = q_msg;
 
-          T_MAG mag = static_cast<T_MAG>(std::abs(q_msg));
+          LLR_UINT mag = static_cast<LLR_UINT>(std::abs(q_msg));
           uint8_t sign = (q_msg < 0) ? 1 : 0;
           total_sign_prod[b] ^= sign;
 
@@ -160,26 +158,22 @@ std::vector<BPResult> batched_bp_serial_min_sum(
         const uint32_t local_e = static_cast<uint32_t>(e - start);
         const size_t v_idx = graph.check_edges[e] * BP_BATCH_SIZE;
         const size_t msg_idx = e * BP_BATCH_SIZE;
-        const T* __restrict__ q_row = q_cache + local_e * BP_BATCH_SIZE;
+        const LLR_INT* __restrict__ q_row = q_cache + local_e * BP_BATCH_SIZE;
 
 #pragma GCC ivdep
         for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
-          T q_msg = q_row[b];
+          LLR_INT q_msg = q_row[b];
 
           uint8_t q_sign = (q_msg < 0) ? 1 : 0;
           uint8_t extrinsic_sign = total_sign_prod[b] ^ q_sign;
           uint8_t final_sign = batched_syndromes[syn_idx + b] ^ extrinsic_sign;
 
-          T_MAG min_mag = (local_e == min1_idx[b]) ? min2[b] : min1[b];
-          T final_mag;
-          if constexpr (std::is_integral_v<T>) {
-            T_MAG clamped_mag = std::min(min_mag, kMaxSafeMagFp);
-            final_mag = static_cast<T>((static_cast<uint64_t>(clamped_mag) * alpha_fp) >> 8);
-          } else {
-            final_mag = min_mag * normalization_factor;
-          }
+          LLR_UINT min_mag = (local_e == min1_idx[b]) ? min2[b] : min1[b];
+          LLR_UINT clamped_mag = std::min(min_mag, MAX_SAFE_LLR_INT);
+          LLR_INT final_mag =
+              static_cast<LLR_INT>((static_cast<uint64_t>(clamped_mag) * alpha_fp) >> LLR_FP_BITS);
 
-          T new_r = final_sign ? -final_mag : final_mag;
+          LLR_INT new_r = final_sign ? -final_mag : final_mag;
           graph.check_to_var_messages[msg_idx + b] = new_r;
           posteriors_flat[v_idx + b] = q_msg + new_r;
         }
@@ -198,8 +192,6 @@ std::vector<BPResult> batched_bp_serial_min_sum(
       alignas(64) uint32_t unsat_count[BP_BATCH_SIZE] = {0};
 
       for (size_t i = 0; i < graph.num_checks; ++i) {
-        // Early exit if no active lane in the batch is still a candidate for convergence,
-        // unless it is the final iteration where exact unsat_checks count is needed.
         if (!is_final_iter) {
           uint8_t any_candidate = 0;
 #pragma GCC ivdep
@@ -240,7 +232,7 @@ std::vector<BPResult> batched_bp_serial_min_sum(
           results[b].converged = true;
           results[b].num_iters = iter + 1;
           results[b].unsat_checks = 0;
-          for (size_t v = 0; v < graph.num_variables; ++v) {
+          for (size_t v = 0; v < graph.num_vars; ++v) {
             converged_posteriors_flat[v * BP_BATCH_SIZE + b] =
                 posteriors_flat[v * BP_BATCH_SIZE + b];
           }
@@ -257,14 +249,12 @@ std::vector<BPResult> batched_bp_serial_min_sum(
     }
   }
 
-  // Restore snapshotted posteriors for shots that converged before the final iteration,
-  // and record results for shots that did not converge.
   for (size_t b = 0; b < actual_batch_size; ++b) {
     if (active_shots[b]) {
       results[b].converged = false;
       results[b].num_iters = iter;
     } else if (results[b].converged && results[b].num_iters < iter) {
-      for (size_t v = 0; v < graph.num_variables; ++v) {
+      for (size_t v = 0; v < graph.num_vars; ++v) {
         posteriors_flat[v * BP_BATCH_SIZE + b] =
             converged_posteriors_flat[v * BP_BATCH_SIZE + b];
       }

@@ -130,18 +130,15 @@ target_compile_options(simplex PRIVATE ${OPT_COPTS})
 target_link_libraries(simplex PUBLIC common utils tesseract_lib highs libstim Threads::Threads)
 
 add_library(bp_lib
-  ${TESSERACT_SRC_DIR}/bp/bp_sparse_serial_gallager.cc
-  ${TESSERACT_SRC_DIR}/bp/bp_trace.cc
-  ${TESSERACT_SRC_DIR}/bp/check_update.cc
-  ${TESSERACT_SRC_DIR}/bp/hard_decision_post_processor.cc
+  ${TESSERACT_SRC_DIR}/bp/bp_serial_min_sum.cc
+  ${TESSERACT_SRC_DIR}/bp/tanner_graph.cc
   ${TESSERACT_SRC_DIR}/bp/tesseract_bp_decoder.cc
   ${TESSERACT_SRC_DIR}/bp/osd_post_processor.cc
   ${TESSERACT_SRC_DIR}/bp/multi_pass_bp_decoder.cc
-  ${TESSERACT_SRC_DIR}/bp/tesseract_post_processor.cc
 )
 target_include_directories(bp_lib PUBLIC ${TESSERACT_SRC_DIR})
 target_compile_options(bp_lib PRIVATE ${OPT_COPTS})
-target_link_libraries(bp_lib PUBLIC common dem_decomposition error_correlations tesseract_lib libstim nlohmann_json::nlohmann_json Threads::Threads)
+target_link_libraries(bp_lib PUBLIC common dem_decomposition error_correlations libstim nlohmann_json::nlohmann_json Threads::Threads)
 
 # === Executables ===
 add_executable(tesseract ${TESSERACT_SRC_DIR}/tesseract_main.cc)
@@ -215,16 +212,9 @@ add_test(NAME multi_pass_tesseract_decoder_test COMMAND multi_pass_tesseract_dec
 set_tests_properties(multi_pass_tesseract_decoder_test PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_executable(bp_tests
-  ${TESSERACT_SRC_DIR}/bp/batched_bp_parallel_min_sum.test.cc
-  ${TESSERACT_SRC_DIR}/bp/batched_bp_serial_min_sum.test.cc
-  ${TESSERACT_SRC_DIR}/bp/bp_parallel_min_sum.test.cc
   ${TESSERACT_SRC_DIR}/bp/bp_serial_min_sum.test.cc
-  ${TESSERACT_SRC_DIR}/bp/bp_sparse_serial_gallager.test.cc
-  ${TESSERACT_SRC_DIR}/bp/check_update.test.cc
   ${TESSERACT_SRC_DIR}/bp/tanner_graph.test.cc
-  ${TESSERACT_SRC_DIR}/bp/hard_decision_post_processor.test.cc
   ${TESSERACT_SRC_DIR}/bp/osd_post_processor.test.cc
-  ${TESSERACT_SRC_DIR}/bp/bp_test_util.cc
 )
 target_compile_options(bp_tests PRIVATE ${OPT_COPTS})
 target_link_libraries(bp_tests PRIVATE bp_lib GTest::gtest_main libstim)
