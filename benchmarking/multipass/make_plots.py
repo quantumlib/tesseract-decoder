@@ -8,8 +8,10 @@ import pathlib
 import sys
 
 RF = "bazel-bin/benchmarking/sparsify_errors/plot.runfiles"
-sys.path[:0] = [f"{RF}/_main/src", f"{RF}/_main/src/py"] + glob.glob(
-    f"{RF}/*/site-packages"
+sys.path[:0] = (
+    [f"{RF}/_main/src", f"{RF}/_main/src/py", "bazel-bin/src", "src/py"]
+    + glob.glob(f"{RF}/*/site-packages")
+    + glob.glob("venv/lib/python*/site-packages")
 )
 
 import matplotlib.lines as mlines
@@ -145,6 +147,86 @@ def draw_point(
     )
 
 
+def draw_external_point(
+    ax,
+    pt,
+    marker,
+    fill_color,
+    ring_color,
+    letter: str,
+    size=110,
+    ring_size=240,
+    outer_ring_size=410,
+    zorder=6,
+):
+    """Draw an external reference point with a double concentric ring and an 'R'/'T' badge."""
+    x = pt["time_per_round"]
+    y = pt["ler"]
+    ax.errorbar(
+        [x],
+        [y],
+        yerr=[[pt["ler_err_minus"]], [pt["ler_err_plus"]]],
+        fmt="none",
+        ecolor=ring_color,
+        elinewidth=1.4,
+        alpha=0.85,
+        zorder=zorder - 1,
+    )
+    # Outer concentric ring (dashed halo)
+    ax.scatter(
+        [x],
+        [y],
+        marker=marker,
+        s=outer_ring_size,
+        facecolors="none",
+        edgecolors=ring_color,
+        linewidths=1.6,
+        linestyle="--",
+        zorder=zorder + 1,
+    )
+    # Inner concentric ring (solid)
+    ax.scatter(
+        [x],
+        [y],
+        marker=marker,
+        s=ring_size,
+        facecolors="none",
+        edgecolors=ring_color,
+        linewidths=2.4,
+        zorder=zorder + 1,
+    )
+    # Core marker encoding the circuit
+    ax.scatter(
+        [x],
+        [y],
+        marker=marker,
+        s=size,
+        facecolors=fill_color,
+        edgecolors=ring_color,
+        linewidths=1.0,
+        zorder=zorder,
+    )
+    # Crisp 'R' or 'T' badge at upper-right rim of the double ring
+    ax.annotate(
+        letter,
+        xy=(x, y),
+        xytext=(8, 8),
+        textcoords="offset points",
+        fontsize=7.8,
+        fontweight="bold",
+        color="white",
+        ha="center",
+        va="center",
+        bbox=dict(
+            boxstyle="circle,pad=0.16",
+            fc=ring_color,
+            ec="white",
+            lw=0.9,
+        ),
+        zorder=zorder + 3,
+    )
+
+
 def draw_arrow_segment(ax, pt_from, pt_to, color="#555555", lw=1.4):
     x0, y0 = pt_from["time_per_round"], pt_from["ler"]
     x1, y1 = pt_to["time_per_round"], pt_to["ler"]
@@ -213,7 +295,7 @@ def annotate_segment_box(
 
 
 def plot_color_codes(by_key):
-    fig, ax = plt.subplots(figsize=(13.0, 9.0), dpi=200)
+    fig, ax = plt.subplots(figsize=(13.5, 9.2), dpi=200)
     style_axes(
         ax,
         "Logical Error Rate per Round vs Time per Round\n"
@@ -223,10 +305,10 @@ def plot_color_codes(by_key):
     # Per-distance customized label offsets to ensure zero overlap
     cc_configs = [
         # (tag, label, marker, fill, gari_x, gari_y, mp_x, mp_y, badge_x, badge_y)
-        ("cc_d3", "cc, d=3", "o", "#f5c242", 1.0, 1.18, 0.85, 0.72, 0.68, 1.0),
-        ("cc_d5", "cc, d=5", "^", "#f5c242", 1.0, 1.18, 1.0, 0.68, 0.68, 1.05),
-        ("cc_d7", "cc, d=7", "*", "#f5c242", 1.0, 1.18, 1.45, 0.56, 0.68, 1.12),
-        ("cc_d9", "cc, d=9", "D", "#f5c242", 1.35, 0.70, 1.95, 0.48, 0.68, 0.95),
+        ("cc_d3", "cc, d=3", "o", "#f5c242", 1.0, 1.18, 0.95, 1.22, 0.68, 1.00),
+        ("cc_d5", "cc, d=5", "^", "#f5c242", 1.0, 1.18, 1.15, 0.64, 0.68, 0.92),
+        ("cc_d7", "cc, d=7", "*", "#f5c242", 1.0, 1.18, 1.45, 0.56, 0.68, 1.00),
+        ("cc_d9", "cc, d=9", "D", "#f5c242", 1.35, 0.70, 1.95, 0.48, 0.68, 0.85),
     ]
 
     for (
@@ -245,17 +327,33 @@ def plot_color_codes(by_key):
         g_pt = by_key[(tag, "gari_b5")]
         m20_pt = by_key[(tag, "mp_2p_b20")]
         m5_pt = by_key[(tag, "mp_2p_b5")]
+        bp_pt = by_key[(tag, "mp_bp_osd")]
+        bpf_pt = by_key[(tag, "mp_bp_osd_fast")]
+        rel_pt = by_key.get((tag, "relay_bp"))
+        tel_pt = by_key.get((tag, "telescoping_bp"))
 
-        # Draw points: Baseline -> GARI -> Multi-Pass (b=20) -> Multi-Pass (b=5)
+        # Draw points: Baseline -> GARI -> MP(b=20) -> MP(b=5) -> MP-BP-OSD -> MP-BP-OSD-Fast
         draw_point(ax, b_pt, marker, fill_color, "#111111", size=110, ring_size=240)
         draw_point(ax, g_pt, marker, fill_color, "#108000", size=110, ring_size=260)
         draw_point(ax, m20_pt, marker, fill_color, "#0055cc", size=95, ring_size=220)
         draw_point(ax, m5_pt, marker, fill_color, "#d62728", size=110, ring_size=260)
+        draw_point(ax, bp_pt, marker, fill_color, "#008080", size=110, ring_size=260)
+        draw_point(ax, bpf_pt, marker, fill_color, "#6a0dad", size=110, ring_size=260)
+        if rel_pt is not None:
+            draw_external_point(
+                ax, rel_pt, marker, fill_color, "#e66100", "R", size=105, ring_size=235, outer_ring_size=400
+            )
+        if tel_pt is not None:
+            draw_external_point(
+                ax, tel_pt, marker, fill_color, "#7b3f00", "T", size=105, ring_size=235, outer_ring_size=400
+            )
 
-        # Connect progression: Baseline -> GARI -> MP(b=20) -> MP(b=5)
+        # Connect progression: Baseline -> GARI -> MP(b=20) -> MP(b=5) -> MP-BP-OSD -> MP-BP-Fast
         draw_arrow_segment(ax, b_pt, g_pt, color="#444444")
         draw_arrow_segment(ax, g_pt, m20_pt, color="#0055cc")
         draw_arrow_segment(ax, m20_pt, m5_pt, color="#d62728")
+        draw_arrow_segment(ax, m5_pt, bp_pt, color="#008080")
+        draw_arrow_segment(ax, bp_pt, bpf_pt, color="#6a0dad")
 
         # Annotate Base -> GARI and GARI -> MP(b=5)
         annotate_segment_box(
@@ -277,37 +375,49 @@ def plot_color_codes(by_key):
             label_prefix="GARI→MP(b=5)",
         )
 
-        # Total speedup badge near Multi-Pass (b=5)
-        tot_spd = b_pt["time_per_round"] / m5_pt["time_per_round"]
-        tot_lo, tot_hi = relative_risk_ci(
+        # Total speedup badge near Multi-Pass BP-OSD-Fast
+        tot_spd_m5 = b_pt["time_per_round"] / m5_pt["time_per_round"]
+        spd_b20 = b_pt["time_per_round"] / m20_pt["time_per_round"]
+        spd_bp = b_pt["time_per_round"] / bp_pt["time_per_round"]
+        spd_bpf = b_pt["time_per_round"] / bpf_pt["time_per_round"]
+        bp_lo, bp_hi = relative_risk_ci(
             b_pt["eff_failures"],
             b_pt["eff_shots"],
-            m5_pt["eff_failures"],
-            m5_pt["eff_shots"],
+            bp_pt["eff_failures"],
+            bp_pt["eff_shots"],
             b_pt["r"],
         )
-        spd_b20 = b_pt["time_per_round"] / m20_pt["time_per_round"]
+        bpf_lo, bpf_hi = relative_risk_ci(
+            b_pt["eff_failures"],
+            b_pt["eff_shots"],
+            bpf_pt["eff_failures"],
+            bpf_pt["eff_shots"],
+            b_pt["r"],
+        )
         ax.text(
-            m5_pt["time_per_round"] * bx,
-            m5_pt["ler"] * by,
-            f"[{label}]\nBase→MP(b=5): {tot_spd:.0f}x spd ({tot_lo:.2f}-{tot_hi:.2f}x err)\nBase→MP(b=20): {spd_b20:.0f}x spd",
-            fontsize=7.8,
+            bpf_pt["time_per_round"] * bx,
+            bpf_pt["ler"] * by,
+            f"[{label}] vs Base:\n"
+            f"• MP(b=20): {spd_b20:.0f}x | MP(b=5): {tot_spd_m5:.0f}x\n"
+            f"• MP-BP-OSD: {spd_bp:.0f}x ({bp_lo:.2f}-{bp_hi:.2f}x err)\n"
+            f"• MP-BP-Fast: {spd_bpf:.0f}x ({bpf_lo:.2f}-{bpf_hi:.2f}x err)",
+            fontsize=7.6,
             fontweight="bold",
-            color="#8c1014",
+            color="#2b1b54",
             ha="right",
             va="center",
             bbox=dict(
                 boxstyle="round,pad=0.24",
-                fc="#fff8f8",
-                ec="#e0b0b0",
+                fc="#f8f7ff",
+                ec="#b8b0d8",
                 lw=0.8,
                 alpha=0.93,
             ),
             zorder=9,
         )
 
-    ax.set_xlim(1.2e-7, 2.5e-1)
-    ax.set_ylim(1.8e-6, 1.5e-2)
+    ax.set_xlim(5.0e-8, 6.0e-1)
+    ax.set_ylim(1.8e-6, 4.8e-2)
 
     legend_handles = [
         mlines.Line2D(
@@ -382,7 +492,7 @@ def plot_color_codes(by_key):
             markeredgecolor="#0055cc",
             markeredgewidth=2.4,
             markersize=10,
-            label="Multi-Pass (2-pass causal, beam=20, climb=True, orders=1)",
+            label="Multi-Pass Tesseract (2-pass causal, beam=20)",
         ),
         mlines.Line2D(
             [],
@@ -393,13 +503,57 @@ def plot_color_codes(by_key):
             markeredgecolor="#d62728",
             markeredgewidth=2.6,
             markersize=10,
-            label="Multi-Pass (2-pass causal, beam=5, climb=True, orders=1)",
+            label="Multi-Pass Tesseract (2-pass causal, beam=5)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#008080",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="Multi-Pass BP-OSD (2-pass causal, max_iter=20, OSD-2)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#6a0dad",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="Multi-Pass BP-OSD-Fast (2-pass causal, max_iter=10, OSD-0)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#e66100",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="[R] Relay-BP (External: trmue/relay, S=5, double ring)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#7b3f00",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="[T] Telescoping-BP (External: a7b/yarn, GARI S3, double ring)",
         ),
     ]
     ax.legend(
         handles=legend_handles,
         loc="upper right",
-        fontsize=8.8,
+        fontsize=8.5,
         frameon=True,
         facecolor="white",
         edgecolor="#dddddd",
@@ -414,7 +568,7 @@ def plot_color_codes(by_key):
 
 
 def plot_bb_code(by_key):
-    fig, ax = plt.subplots(figsize=(11.5, 8.0), dpi=200)
+    fig, ax = plt.subplots(figsize=(12.0, 8.2), dpi=200)
     style_axes(
         ax,
         "Logical Error Rate per Round vs Time per Round\n"
@@ -428,15 +582,31 @@ def plot_bb_code(by_key):
     g_pt = by_key[(tag, "gari_b5")]
     m20_pt = by_key[(tag, "mp_2p_b20")]
     m5_pt = by_key[(tag, "mp_2p_b5")]
+    bp_pt = by_key[(tag, "mp_bp_osd")]
+    bpf_pt = by_key[(tag, "mp_bp_osd_fast")]
+    rel_pt = by_key.get((tag, "relay_bp"))
+    tel_pt = by_key.get((tag, "telescoping_bp"))
 
     draw_point(ax, b_pt, marker, fill_color, "#111111", size=140, ring_size=300)
     draw_point(ax, g_pt, marker, fill_color, "#108000", size=140, ring_size=320)
     draw_point(ax, m20_pt, marker, fill_color, "#0055cc", size=130, ring_size=290)
     draw_point(ax, m5_pt, marker, fill_color, "#d62728", size=140, ring_size=320)
+    draw_point(ax, bp_pt, marker, fill_color, "#008080", size=140, ring_size=320)
+    draw_point(ax, bpf_pt, marker, fill_color, "#6a0dad", size=140, ring_size=320)
+    if rel_pt is not None:
+        draw_external_point(
+            ax, rel_pt, marker, fill_color, "#e66100", "R", size=130, ring_size=280, outer_ring_size=470
+        )
+    if tel_pt is not None:
+        draw_external_point(
+            ax, tel_pt, marker, fill_color, "#7b3f00", "T", size=130, ring_size=280, outer_ring_size=470
+        )
 
     draw_arrow_segment(ax, b_pt, g_pt, color="#444444")
     draw_arrow_segment(ax, g_pt, m20_pt, color="#0055cc")
     draw_arrow_segment(ax, m20_pt, m5_pt, color="#d62728")
+    draw_arrow_segment(ax, m5_pt, bp_pt, color="#008080")
+    draw_arrow_segment(ax, bp_pt, bpf_pt, color="#6a0dad")
 
     annotate_segment_box(
         ax,
@@ -451,7 +621,7 @@ def plot_bb_code(by_key):
         ax,
         g_pt,
         m20_pt,
-        x_factor=1.05,
+        x_factor=1.10,
         y_offset_factor=0.64,
         color="#0044aa",
         label_prefix="GARI → MP (b=20)",
@@ -460,10 +630,28 @@ def plot_bb_code(by_key):
         ax,
         m20_pt,
         m5_pt,
-        x_factor=0.82,
-        y_offset_factor=1.32,
+        x_factor=1.0,
+        y_offset_factor=1.34,
         color="#b01518",
         label_prefix="MP(b=20) → MP(b=5)",
+    )
+    annotate_segment_box(
+        ax,
+        m5_pt,
+        bp_pt,
+        x_factor=0.95,
+        y_offset_factor=0.58,
+        color="#006666",
+        label_prefix="MP(b=5) → MP-BP-OSD",
+    )
+    annotate_segment_box(
+        ax,
+        bp_pt,
+        bpf_pt,
+        x_factor=0.45,
+        y_offset_factor=1.38,
+        color="#550a8a",
+        label_prefix="BP-OSD → BP-Fast",
     )
 
     tot_spd_b5 = b_pt["time_per_round"] / m5_pt["time_per_round"]
@@ -484,19 +672,41 @@ def plot_bb_code(by_key):
         m20_pt["eff_shots"],
         b_pt["r"],
     )
+    tot_spd_bp = b_pt["time_per_round"] / bp_pt["time_per_round"]
+    gari_spd_bp = g_pt["time_per_round"] / bp_pt["time_per_round"]
+    bp_lo, bp_hi = relative_risk_ci(
+        b_pt["eff_failures"],
+        b_pt["eff_shots"],
+        bp_pt["eff_failures"],
+        bp_pt["eff_shots"],
+        b_pt["r"],
+    )
+    tot_spd_bpf = b_pt["time_per_round"] / bpf_pt["time_per_round"]
+    gari_spd_bpf = g_pt["time_per_round"] / bpf_pt["time_per_round"]
+    bpf_lo, bpf_hi = relative_risk_ci(
+        b_pt["eff_failures"],
+        b_pt["eff_shots"],
+        bpf_pt["eff_failures"],
+        bpf_pt["eff_shots"],
+        b_pt["r"],
+    )
 
     info_box = (
         f"Multi-Pass (2-pass causal) [bb, d=6, q=144]\n"
-        f"• beam=20: t/r={m20_pt['time_per_round']:.3e}s, LER/r={m20_pt['ler']:.3e}\n"
+        f"• Tesseract (b=20): t/r={m20_pt['time_per_round']:.3e}s, LER/r={m20_pt['ler']:.3e}\n"
         f"  {tot_spd_b20:.1f}x vs Base ({b20_lo:.2f}-{b20_hi:.2f}x err), {gari_spd_b20:.1f}x vs GARI\n"
-        f"• beam=5:  t/r={m5_pt['time_per_round']:.3e}s, LER/r={m5_pt['ler']:.3e}\n"
-        f"  {tot_spd_b5:.1f}x vs Base ({tot_lo:.2f}-{tot_hi:.2f}x err), {gari_spd_b5:.1f}x vs GARI"
+        f"• Tesseract (b=5):  t/r={m5_pt['time_per_round']:.3e}s, LER/r={m5_pt['ler']:.3e}\n"
+        f"  {tot_spd_b5:.1f}x vs Base ({tot_lo:.2f}-{tot_hi:.2f}x err), {gari_spd_b5:.1f}x vs GARI\n"
+        f"• BP-OSD (Regular): t/r={bp_pt['time_per_round']:.3e}s, LER/r={bp_pt['ler']:.3e}\n"
+        f"  {tot_spd_bp:.0f}x vs Base ({bp_lo:.2f}-{bp_hi:.2f}x err), {gari_spd_bp:.1f}x vs GARI\n"
+        f"• BP-OSD-Fast:      t/r={bpf_pt['time_per_round']:.3e}s, LER/r={bpf_pt['ler']:.3e}\n"
+        f"  {tot_spd_bpf:.0f}x vs Base ({bpf_lo:.2f}-{bpf_hi:.2f}x err), {gari_spd_bpf:.1f}x vs GARI"
     )
     ax.annotate(
         info_box,
-        xy=(m5_pt["time_per_round"], m5_pt["ler"]),
-        xytext=(2.2e-5, 3.2e-4),
-        fontsize=8.8,
+        xy=(bp_pt["time_per_round"], bp_pt["ler"]),
+        xytext=(1.0e-5, 2.8e-4),
+        fontsize=8.3,
         family="monospace",
         color="#222222",
         bbox=dict(
@@ -506,7 +716,7 @@ def plot_bb_code(by_key):
         zorder=10,
     )
 
-    ax.set_xlim(1.0e-5, 2.0e0)
+    ax.set_xlim(6.0e-6, 2.0e0)
     ax.set_ylim(5.0e-6, 2.0e-3)
 
     legend_handles = [
@@ -552,7 +762,7 @@ def plot_bb_code(by_key):
             markeredgecolor="#0055cc",
             markeredgewidth=2.4,
             markersize=10,
-            label="Multi-Pass (2-pass causal, beam=20, climb=True, orders=1)",
+            label="Multi-Pass Tesseract (2-pass causal, beam=20)",
         ),
         mlines.Line2D(
             [],
@@ -563,13 +773,57 @@ def plot_bb_code(by_key):
             markeredgecolor="#d62728",
             markeredgewidth=2.6,
             markersize=10,
-            label="Multi-Pass (2-pass causal, beam=5, climb=True, orders=1)",
+            label="Multi-Pass Tesseract (2-pass causal, beam=5)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#008080",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="Multi-Pass BP-OSD (2-pass causal, max_iter=20, OSD-2)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#6a0dad",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="Multi-Pass BP-OSD-Fast (2-pass causal, max_iter=10, OSD-0)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#e66100",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="[R] Relay-BP (External: trmue/relay, S=5, double ring)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#7b3f00",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="[T] Telescoping-BP (External: a7b/yarn, GARI S3, double ring)",
         ),
     ]
     ax.legend(
         handles=legend_handles,
         loc="upper right",
-        fontsize=9,
+        fontsize=8.6,
         frameon=True,
         facecolor="white",
         edgecolor="#dddddd",
@@ -584,21 +838,21 @@ def plot_bb_code(by_key):
 
 
 def plot_combined_summary(by_key):
-    """Clean progression plot (Baseline -> GARI -> Multi-Pass) across all codes."""
-    fig, ax = plt.subplots(figsize=(13.0, 9.0), dpi=200)
+    """Clean progression plot (Baseline -> GARI -> Multi-Pass -> BP-OSD) across all codes."""
+    fig, ax = plt.subplots(figsize=(13.5, 9.2), dpi=200)
     style_axes(
         ax,
-        "Tesseract Correlated Decoding Progression: Baseline → GARI → Multi-Pass\n"
+        "Tesseract Correlated Decoding Progression: Baseline → GARI → Multi-Pass → BP-OSD\n"
         "(SI1000 p=0.001, Memory-Z, Single-Core Decode Time per Round)",
     )
 
     # Carefully separated offsets so bb_d6 (above) and cc_d7 (below) do not collide
     all_configs = [
-        ("cc_d3", "cc d=3", "o", "#f5c242", 1.0, 1.18, 0.85, 0.72, 0.68, 1.0),
-        ("cc_d5", "cc d=5", "^", "#f5c242", 1.0, 1.18, 1.0, 0.68, 0.68, 1.0),
-        ("cc_d7", "cc d=7", "*", "#f5c242", 0.90, 0.66, 1.45, 0.45, 0.68, 1.05),
-        ("cc_d9", "cc d=9", "D", "#f5c242", 1.35, 0.68, 1.95, 0.48, 0.68, 0.95),
-        ("bb_d6", "bb d=6", "H", "#ff00ff", 1.15, 1.25, 1.55, 1.35, 0.72, 1.68),
+        ("cc_d3", "cc d=3", "o", "#f5c242", 1.0, 1.18, 0.95, 1.22, 0.68, 1.00),
+        ("cc_d5", "cc d=5", "^", "#f5c242", 1.0, 1.18, 1.15, 1.24, 0.68, 0.90),
+        ("cc_d7", "cc d=7", "*", "#f5c242", 1.25, 0.66, 1.45, 0.45, 0.65, 1.05),
+        ("cc_d9", "cc d=9", "D", "#f5c242", 1.35, 0.68, 1.95, 0.48, 0.68, 0.85),
+        ("bb_d6", "bb d=6", "H", "#ff00ff", 1.15, 1.25, 1.55, 1.55, 2.10, 1.70),
     ]
 
     for (
@@ -617,15 +871,31 @@ def plot_combined_summary(by_key):
         g_pt = by_key[(tag, "gari_b5")]
         m20_pt = by_key[(tag, "mp_2p_b20")]
         m5_pt = by_key[(tag, "mp_2p_b5")]
+        bp_pt = by_key[(tag, "mp_bp_osd")]
+        bpf_pt = by_key[(tag, "mp_bp_osd_fast")]
+        rel_pt = by_key.get((tag, "relay_bp"))
+        tel_pt = by_key.get((tag, "telescoping_bp"))
 
         draw_point(ax, b_pt, marker, fill_color, "#111111", size=110, ring_size=245)
         draw_point(ax, g_pt, marker, fill_color, "#108000", size=110, ring_size=265)
         draw_point(ax, m20_pt, marker, fill_color, "#0055cc", size=95, ring_size=220)
         draw_point(ax, m5_pt, marker, fill_color, "#d62728", size=110, ring_size=265)
+        draw_point(ax, bp_pt, marker, fill_color, "#008080", size=110, ring_size=265)
+        draw_point(ax, bpf_pt, marker, fill_color, "#6a0dad", size=110, ring_size=265)
+        if rel_pt is not None:
+            draw_external_point(
+                ax, rel_pt, marker, fill_color, "#e66100", "R", size=105, ring_size=240, outer_ring_size=410
+            )
+        if tel_pt is not None:
+            draw_external_point(
+                ax, tel_pt, marker, fill_color, "#7b3f00", "T", size=105, ring_size=240, outer_ring_size=410
+            )
 
         draw_arrow_segment(ax, b_pt, g_pt, color="#444444")
         draw_arrow_segment(ax, g_pt, m20_pt, color="#0055cc")
         draw_arrow_segment(ax, m20_pt, m5_pt, color="#d62728")
+        draw_arrow_segment(ax, m5_pt, bp_pt, color="#008080")
+        draw_arrow_segment(ax, bp_pt, bpf_pt, color="#6a0dad")
 
         annotate_segment_box(
             ax,
@@ -646,29 +916,32 @@ def plot_combined_summary(by_key):
             label_prefix=f"[{short_lbl}] GARI→MP(b=5)",
         )
 
-        tot_spd = b_pt["time_per_round"] / m5_pt["time_per_round"]
-        gari_spd = g_pt["time_per_round"] / m5_pt["time_per_round"]
+        tot_spd_m5 = b_pt["time_per_round"] / m5_pt["time_per_round"]
+        spd_bp = b_pt["time_per_round"] / bp_pt["time_per_round"]
+        spd_bpf = b_pt["time_per_round"] / bpf_pt["time_per_round"]
         ax.text(
-            m5_pt["time_per_round"] * bx,
-            m5_pt["ler"] * by,
-            f"{short_lbl}: {tot_spd:.0f}x vs Base\n({gari_spd:.1f}x vs GARI)",
-            fontsize=8.0,
+            bpf_pt["time_per_round"] * bx,
+            bpf_pt["ler"] * by,
+            f"{short_lbl} vs Base:\n"
+            f"MP(b=5): {tot_spd_m5:.0f}x | BP-OSD: {spd_bp:.0f}x\n"
+            f"BP-Fast: {spd_bpf:.0f}x",
+            fontsize=7.6,
             fontweight="bold",
-            color="#8c1014" if tag != "bb_d6" else "#660066",
+            color="#2b1b54" if tag != "bb_d6" else "#660066",
             ha="right" if tag != "bb_d6" else "center",
             va="center" if tag != "bb_d6" else "bottom",
             bbox=dict(
                 boxstyle="round,pad=0.22",
-                fc="#fff8f8" if tag != "bb_d6" else "#fdf2ff",
-                ec="#e0b0b0" if tag != "bb_d6" else "#d8a0e0",
+                fc="#f8f7ff" if tag != "bb_d6" else "#fdf2ff",
+                ec="#b8b0d8" if tag != "bb_d6" else "#d8a0e0",
                 lw=0.8,
                 alpha=0.93,
             ),
             zorder=9,
         )
 
-    ax.set_xlim(1.5e-7, 3.0e-1)
-    ax.set_ylim(1.8e-6, 1.5e-2)
+    ax.set_xlim(5.0e-8, 6.0e-1)
+    ax.set_ylim(1.8e-6, 4.8e-2)
 
     legend_handles = [
         mlines.Line2D(
@@ -753,7 +1026,7 @@ def plot_combined_summary(by_key):
             markeredgecolor="#0055cc",
             markeredgewidth=2.4,
             markersize=10,
-            label="Multi-Pass (2-pass causal, beam=20)",
+            label="Multi-Pass Tesseract (2-pass causal, beam=20)",
         ),
         mlines.Line2D(
             [],
@@ -764,13 +1037,57 @@ def plot_combined_summary(by_key):
             markeredgecolor="#d62728",
             markeredgewidth=2.6,
             markersize=10,
-            label="Multi-Pass (2-pass causal, beam=5)",
+            label="Multi-Pass Tesseract (2-pass causal, beam=5)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#008080",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="Multi-Pass BP-OSD (2-pass causal, OSD-2)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#6a0dad",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="Multi-Pass BP-OSD-Fast (2-pass causal, OSD-0)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#e66100",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="[R] Relay-BP (External: trmue/relay, S=5, double ring)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#7b3f00",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="[T] Telescoping-BP (External: a7b/yarn, GARI S3, double ring)",
         ),
     ]
     ax.legend(
         handles=legend_handles,
         loc="upper right",
-        fontsize=8.8,
+        fontsize=8.4,
         frameon=True,
         facecolor="white",
         edgecolor="#dddddd",

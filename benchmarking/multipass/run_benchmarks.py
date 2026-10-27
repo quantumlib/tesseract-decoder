@@ -10,8 +10,10 @@ import subprocess
 import sys
 
 RF = "bazel-bin/benchmarking/sparsify_errors/plot.runfiles"
-sys.path[:0] = [f"{RF}/_main/src", f"{RF}/_main/src/py"] + glob.glob(
-    f"{RF}/*/site-packages"
+sys.path[:0] = (
+    [f"{RF}/_main/src", f"{RF}/_main/src/py", "bazel-bin/src", "src/py"]
+    + glob.glob(f"{RF}/*/site-packages")
+    + glob.glob("venv/lib/python*/site-packages")
 )
 
 import stim
@@ -36,6 +38,8 @@ CIRCUITS = [
             "gari_b5": 50000,
             "mp_2p_b5": 50000,
             "mp_2p_b20": 50000,
+            "mp_bp_osd": 50000,
+            "mp_bp_osd_fast": 50000,
         },
     },
     {
@@ -51,6 +55,8 @@ CIRCUITS = [
             "gari_b5": 30000,
             "mp_2p_b5": 150000,
             "mp_2p_b20": 100000,
+            "mp_bp_osd": 100000,
+            "mp_bp_osd_fast": 150000,
         },
     },
     {
@@ -66,6 +72,8 @@ CIRCUITS = [
             "gari_b5": 50000,
             "mp_2p_b5": 200000,
             "mp_2p_b20": 100000,
+            "mp_bp_osd": 100000,
+            "mp_bp_osd_fast": 200000,
         },
     },
     {
@@ -81,6 +89,8 @@ CIRCUITS = [
             "gari_b5": 50000,
             "mp_2p_b5": 150000,
             "mp_2p_b20": 150000,
+            "mp_bp_osd": 150000,
+            "mp_bp_osd_fast": 150000,
         },
     },
     {
@@ -96,6 +106,8 @@ CIRCUITS = [
             "gari_b5": 50000,
             "mp_2p_b5": 150000,
             "mp_2p_b20": 50000,
+            "mp_bp_osd": 50000,
+            "mp_bp_osd_fast": 150000,
         },
     },
 ]
@@ -149,11 +161,22 @@ def main():
             modes = [
                 (
                     "baseline_b20",
-                    ["--beam", "20", "--beam-climbing", "--no-revisit-dets"],
+                    "bazel-bin/src/tesseract",
+                    [
+                        "--pqlimit",
+                        "1000000",
+                        "--beam",
+                        "20",
+                        "--beam-climbing",
+                        "--no-revisit-dets",
+                    ],
                 ),
                 (
                     "gari_b5",
+                    "bazel-bin/src/tesseract",
                     [
+                        "--pqlimit",
+                        "1000000",
                         "--dem",
                         str(gari_dem_p),
                         "--detector-orders",
@@ -165,7 +188,10 @@ def main():
                 ),
                 (
                     "mp_2p_b5",
+                    "bazel-bin/src/tesseract",
                     [
+                        "--pqlimit",
+                        "1000000",
                         "--dem",
                         str(mp_dem_p),
                         "--multipass",
@@ -179,7 +205,10 @@ def main():
                 ),
                 (
                     "mp_2p_b20",
+                    "bazel-bin/src/tesseract",
                     [
+                        "--pqlimit",
+                        "1000000",
                         "--dem",
                         str(mp_dem_p),
                         "--multipass",
@@ -191,12 +220,35 @@ def main():
                         "--no-revisit-dets",
                     ],
                 ),
+                (
+                    "mp_bp_osd",
+                    "bazel-bin/src/bp",
+                    [
+                        "--dem",
+                        str(mp_dem_p),
+                        "--multipass",
+                        "--num-passes",
+                        "2",
+                    ],
+                ),
+                (
+                    "mp_bp_osd_fast",
+                    "bazel-bin/src/bp",
+                    [
+                        "--dem",
+                        str(mp_dem_p),
+                        "--multipass",
+                        "--num-passes",
+                        "2",
+                        "--fast",
+                    ],
+                ),
             ]
 
-            for mode, extra_args in modes:
+            for mode, binary, extra_args in modes:
                 nshots = cinfo["shots"][mode]
                 cmd = [
-                    "bazel-bin/src/tesseract",
+                    binary,
                     "--circuit",
                     ckt_path,
                     "--sample-num-shots",
@@ -205,14 +257,13 @@ def main():
                     "12345",
                     "--threads",
                     str(args.threads),
-                    "--pqlimit",
-                    "1000000",
                     "--stats-out",
                     "-",
                 ] + extra_args
                 out = json.loads(subprocess.check_output(cmd, text=True))
                 r = cinfo["r"]
-                f = out["num_errors"] + out["num_low_confidence"]
+                num_low_conf = out.get("num_low_confidence", 0)
+                f = out["num_errors"] + num_low_conf
                 p_shot = f / out["num_shots"]
                 ler_round = (
                     0.5 * (1.0 - (1.0 - 2.0 * p_shot) ** (1.0 / r))
@@ -230,7 +281,7 @@ def main():
                     "mode": mode,
                     "num_shots": out["num_shots"],
                     "num_errors": out["num_errors"],
-                    "num_low_confidence": out["num_low_confidence"],
+                    "num_low_confidence": num_low_conf,
                     "total_time_seconds": out["total_time_seconds"],
                     "time_per_round": t_round,
                     "ler_per_round": ler_round,
@@ -238,7 +289,7 @@ def main():
                 results.append(rec)
                 out_file.write_text(json.dumps(results, indent=2))
                 print(
-                    f"{tag:6s} | {mode:13s} | shots={out['num_shots']:7d} errs={out['num_errors']:4d} low_c={out['num_low_confidence']:2d} | LER/r={ler_round:.4e} | t/r={t_round:.4e}s",
+                    f"{tag:6s} | {mode:15s} | shots={out['num_shots']:7d} errs={out['num_errors']:4d} low_c={num_low_conf:2d} | LER/r={ler_round:.4e} | t/r={t_round:.4e}s",
                     flush=True,
                 )
     finally:
