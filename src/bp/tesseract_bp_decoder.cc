@@ -239,13 +239,63 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
   size_t num_vars = graph_.num_vars;
   size_t num_obs = num_observables();
   std::vector<std::vector<size_t>> current_batch;
+  std::vector<size_t> current_shot_indices;
   alignas(64) std::vector<LLR_INT> posteriors_flat(num_vars * BP_BATCH_SIZE);
   alignas(64) std::vector<LLR_INT> custom_priors_flat(num_vars * BP_BATCH_SIZE);
   std::vector<LLR_INT> shot_posteriors(num_vars);
 
+  // Two-stage survivor compaction (Markidis et al., arXiv:2610.28867v1):
+  // If max_iter > 4 and stop_at_convergence is enabled, run a fast Stage-1 pass of 4 iterations
+  // on all batches, immediately retiring converged shots (>82% on bb_d6) and compacting only
+  // the unconverged survivors across batches into dense BP_BATCH_SIZE survivor batches for Stage-2.
+  const bool use_survivor_compaction = params_.stop_at_convergence && (params_.max_iter > 4) &&
+                                       (num_shots > BP_BATCH_SIZE);
+  const size_t stage1_iters = use_survivor_compaction ? 4 : params_.max_iter;
+  std::vector<size_t> survivor_shot_indices;
+
+  auto finalize_shot = [&](size_t real_shot_idx, const BPResult& bp_res,
+                           const std::vector<LLR_INT>& flat_post, size_t lane_b) {
+    const auto t_deint_start = ProfileClock::now();
+    for (size_t v = 0; v < num_vars; ++v) {
+      shot_posteriors[v] = flat_post[v * BP_BATCH_SIZE + lane_b];
+    }
+    profile_.t_deinterleave += seconds_since(t_deint_start);
+
+    profile_.num_shots++;
+    profile_.num_converged += bp_res.converged ? 1 : 0;
+    profile_.record_iters(bp_res.num_iters, bp_res.converged);
+
+    const auto t_post_start = ProfileClock::now();
+    if (post_processor != nullptr) {
+      results[real_shot_idx] = post_processor->process(
+          bp_res, shot_posteriors, detection_events_batch[real_shot_idx],
+          hyperedge_observables_,
+          predicted_errors_batch ? &(*predicted_errors_batch)[real_shot_idx] : nullptr,
+          custom_priors_per_shot ? &(*custom_priors_per_shot)[real_shot_idx] : nullptr);
+    } else {
+      if (predicted_errors_batch != nullptr) {
+        (*predicted_errors_batch)[real_shot_idx].clear();
+      }
+      std::vector<uint8_t> obs_result(num_obs, 0);
+      for (size_t v = 0; v < num_vars; ++v) {
+        if (shot_posteriors[v] < 0) {
+          if (predicted_errors_batch != nullptr) {
+            (*predicted_errors_batch)[real_shot_idx].push_back(v);
+          }
+          for (int obs : hyperedge_observables_[v]) {
+            if (obs >= 0) obs_result[obs] ^= 1;
+          }
+        }
+      }
+      results[real_shot_idx] = std::move(obs_result);
+    }
+    profile_.t_post += seconds_since(t_post_start);
+  };
+
   for (size_t shot = 0; shot < num_shots; ++shot) {
     current_batch.push_back(std::vector<size_t>(detection_events_batch[shot].begin(),
                                                 detection_events_batch[shot].end()));
+    current_shot_indices.push_back(shot);
 
     if (current_batch.size() == BP_BATCH_SIZE || shot == num_shots - 1) {
       size_t actual_size = current_batch.size();
@@ -257,7 +307,56 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
       if (custom_priors_per_shot != nullptr) {
         for (size_t v = 0; v < num_vars; ++v) {
           for (size_t b = 0; b < actual_size; ++b) {
-            size_t real_shot_idx = shot - actual_size + 1 + b;
+            size_t real_shot_idx = current_shot_indices[b];
+            custom_priors_flat[v * BP_BATCH_SIZE + b] =
+                (*custom_priors_per_shot)[real_shot_idx][v];
+          }
+          for (size_t b = actual_size; b < BP_BATCH_SIZE; ++b) {
+            custom_priors_flat[v * BP_BATCH_SIZE + b] = graph_.priors[v];
+          }
+        }
+        priors_flat_ptr = &custom_priors_flat;
+      }
+
+      const auto t_bp_start = ProfileClock::now();
+      std::vector<BPResult> bp_results = bp_serial_min_sum(
+          graph_, current_batch, posteriors_flat, stage1_iters,
+          params_.normalization_factor, params_.stop_at_convergence, params_.random_schedule,
+          params_.random_seed, priors_flat_ptr);
+      profile_.t_bp += seconds_since(t_bp_start);
+      profile_.num_decode_calls++;
+
+      for (size_t b = 0; b < actual_size; ++b) {
+        size_t real_shot_idx = current_shot_indices[b];
+        if (!use_survivor_compaction || bp_results[b].converged) {
+          finalize_shot(real_shot_idx, bp_results[b], posteriors_flat, b);
+        } else {
+          survivor_shot_indices.push_back(real_shot_idx);
+        }
+      }
+      current_batch.clear();
+      current_shot_indices.clear();
+    }
+  }
+
+  // Stage 2: Process compacted unconverged survivor shots in dense BP_BATCH_SIZE batches
+  for (size_t s_idx = 0; s_idx < survivor_shot_indices.size(); ++s_idx) {
+    size_t real_shot = survivor_shot_indices[s_idx];
+    current_batch.push_back(std::vector<size_t>(detection_events_batch[real_shot].begin(),
+                                                detection_events_batch[real_shot].end()));
+    current_shot_indices.push_back(real_shot);
+
+    if (current_batch.size() == BP_BATCH_SIZE || s_idx == survivor_shot_indices.size() - 1) {
+      size_t actual_size = current_batch.size();
+      while (current_batch.size() < BP_BATCH_SIZE) {
+        current_batch.push_back({});
+      }
+
+      const std::vector<LLR_INT>* priors_flat_ptr = nullptr;
+      if (custom_priors_per_shot != nullptr) {
+        for (size_t v = 0; v < num_vars; ++v) {
+          for (size_t b = 0; b < actual_size; ++b) {
+            size_t real_shot_idx = current_shot_indices[b];
             custom_priors_flat[v * BP_BATCH_SIZE + b] =
                 (*custom_priors_per_shot)[real_shot_idx][v];
           }
@@ -277,45 +376,10 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
       profile_.num_decode_calls++;
 
       for (size_t b = 0; b < actual_size; ++b) {
-        size_t real_shot_idx = shot - actual_size + 1 + b;
-
-        const auto t_deint_start = ProfileClock::now();
-        for (size_t v = 0; v < num_vars; ++v) {
-          shot_posteriors[v] = posteriors_flat[v * BP_BATCH_SIZE + b];
-        }
-        profile_.t_deinterleave += seconds_since(t_deint_start);
-
-        profile_.num_shots++;
-        profile_.num_converged += bp_results[b].converged ? 1 : 0;
-        profile_.record_iters(bp_results[b].num_iters, bp_results[b].converged);
-
-        const auto t_post_start = ProfileClock::now();
-        if (post_processor != nullptr) {
-          results[real_shot_idx] = post_processor->process(
-              bp_results[b], shot_posteriors, detection_events_batch[real_shot_idx],
-              hyperedge_observables_,
-              predicted_errors_batch ? &(*predicted_errors_batch)[real_shot_idx] : nullptr,
-              custom_priors_per_shot ? &(*custom_priors_per_shot)[real_shot_idx] : nullptr);
-        } else {
-          if (predicted_errors_batch != nullptr) {
-            (*predicted_errors_batch)[real_shot_idx].clear();
-          }
-          std::vector<uint8_t> obs_result(num_obs, 0);
-          for (size_t v = 0; v < num_vars; ++v) {
-            if (shot_posteriors[v] < 0) {
-              if (predicted_errors_batch != nullptr) {
-                (*predicted_errors_batch)[real_shot_idx].push_back(v);
-              }
-              for (int obs : hyperedge_observables_[v]) {
-                if (obs >= 0) obs_result[obs] ^= 1;
-              }
-            }
-          }
-          results[real_shot_idx] = std::move(obs_result);
-        }
-        profile_.t_post += seconds_since(t_post_start);
+        finalize_shot(current_shot_indices[b], bp_results[b], posteriors_flat, b);
       }
       current_batch.clear();
+      current_shot_indices.clear();
     }
   }
 

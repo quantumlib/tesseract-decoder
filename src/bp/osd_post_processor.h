@@ -101,12 +101,7 @@ class OsdPostProcessor {
   bool osd_early_exit_;
   OsdProfile profile_;
 
-  size_t num_det_words_ = 0;
   std::vector<double> base_var_cost_;
-  std::vector<uint64_t> var_mask_words_;
-  std::vector<uint64_t> det_reach2_words_;
-  mutable std::vector<int32_t> det_to_bit_;
-  mutable std::vector<uint8_t> var_in_cand_;
 };
 
 }  // namespace bp

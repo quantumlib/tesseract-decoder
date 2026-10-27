@@ -225,9 +225,8 @@ int main(int argc, char* argv[]) {
       .flag()
       .store_into(args.profile);
   program.add_argument("--batched")
-      .help("Use 64-shot SIMD batching across shots")
-      .flag()
-      .store_into(args.use_batched_bp);
+      .help("Use 64-shot SIMD batching across shots (enabled by default)")
+      .flag();
   program.add_argument("--random-schedule")
       .help("Use randomized check node permutation in serial BP to prevent trapping sets")
       .flag()
@@ -301,7 +300,7 @@ int main(int argc, char* argv[]) {
   std::atomic<size_t> processed_shots(0);
 
   const auto start_global_time = std::chrono::high_resolution_clock::now();
-  const size_t batch_size = args.use_batched_bp ? 64 : 1;
+  const size_t batch_size = args.use_batched_bp ? 512 : 1;
   const size_t num_batches = (total_shots + batch_size - 1) / batch_size;
   const size_t print_stride = args.use_batched_bp ? 1024 : 100;
   std::vector<std::vector<std::vector<uint8_t>>> all_predictions(num_batches);
