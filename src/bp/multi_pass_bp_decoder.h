@@ -58,6 +58,8 @@ class MultiPassBpDecoder {
 
   size_t num_passes_;
   bool soft_reweight_ = true;
+  // Maps a global detector id to its index within its own component decoder.
+  std::vector<uint32_t> global_to_local_det_;
 
   struct ComponentDecoder {
     int assignment_label = 0;

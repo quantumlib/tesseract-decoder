@@ -226,6 +226,37 @@ void MultiPassBpDecoder::initialize(const stim::DetectorErrorModel& dem,
   global_det_to_comp_id_ = prepared.detector_components;
   for (int c : global_det_to_comp_id_) component_decoders_[c].active_detector_count++;
 
+  // Compact each component onto its own detectors so that its Tanner graph (and the dense OSD
+  // matrix built from it) has no empty rows for the other component's detectors.
+  std::array<std::vector<int>, 2> local_to_global;
+  global_to_local_det_.assign(global_det_to_comp_id_.size(), 0);
+  for (size_t d = 0; d < global_det_to_comp_id_.size(); ++d) {
+    auto& l2g = local_to_global[global_det_to_comp_id_[d]];
+    global_to_local_det_[d] = static_cast<uint32_t>(l2g.size());
+    l2g.push_back(static_cast<int>(d));
+  }
+  auto compact_component_dem = [&](const stim::DetectorErrorModel& comp_dem, size_t c) {
+    stim::DetectorErrorModel out;
+    std::vector<stim::DemTarget> targets;
+    for (const auto& inst : comp_dem.flattened().instructions) {
+      if (inst.type != stim::DemInstructionType::DEM_ERROR) continue;
+      targets.clear();
+      for (const auto& t : inst.target_data) {
+        targets.push_back(t.is_relative_detector_id()
+                              ? stim::DemTarget::relative_detector_id(global_to_local_det_[t.val()])
+                              : t);
+      }
+      out.append_error_instruction(inst.arg_data[0], targets, inst.tag);
+    }
+    if (!local_to_global[c].empty()) {
+      // Pin the detector count so detectors without error mechanisms still get a check row.
+      const std::vector<double> no_coords;
+      out.append_detector_instruction(
+          no_coords, stim::DemTarget::relative_detector_id(local_to_global[c].size() - 1), "");
+    }
+    return out;
+  };
+
   std::array<std::map<tesseract_decoder::common::Symptom, std::pair<size_t, LLR_INT>,
                       tesseract_decoder::common::Symptom::less>,
              2>
@@ -235,13 +266,16 @@ void MultiPassBpDecoder::initialize(const stim::DetectorErrorModel& dem,
   for (size_t c = 0; c < 2; ++c) {
     auto& comp_dec = component_decoders_[c];
     comp_dec.assignment_label = prepared.assignment_labels[c];
-    comp_dec.decoder = std::make_unique<TesseractBpDecoder>(prepared.component_dems[c], params);
+    comp_dec.decoder = std::make_unique<TesseractBpDecoder>(
+        compact_component_dem(prepared.component_dems[c], c), params);
     comp_dec.post_processor = comp_dec.decoder->create_post_processor();
     comp_dec.affects_observable = (comp_dec.decoder->num_observables() > 0);
 
     if (num_passes_ > 1) {
       for (size_t v = 0; v < comp_dec.decoder->num_variables(); ++v) {
         auto sym = comp_dec.decoder->variable_symptom(v);
+        // local_to_global is increasing, so the translated detector list stays sorted.
+        for (int& d : sym.detectors) d = local_to_global[c][d];
         LLR_INT prior = comp_dec.decoder->graph().priors[v];
         symptom_to_var[c][sym] = {v, prior};
         dets_to_var[c][sym.detectors] = {v, prior};
@@ -339,7 +373,8 @@ std::vector<std::vector<uint8_t>> MultiPassBpDecoder::decode_batch(
   for (size_t s = 0; s < num_shots; ++s) {
     for (uint64_t d : detection_events_batch[s]) {
       if (d < global_det_to_comp_id_.size()) {
-        comp_syndromes[global_det_to_comp_id_[d]][s].push_back(d);
+        comp_syndromes[global_det_to_comp_id_[d]][s].push_back(
+            global_to_local_det_.empty() ? d : global_to_local_det_[d]);
       }
     }
   }
