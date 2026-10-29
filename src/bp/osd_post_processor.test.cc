@@ -162,4 +162,48 @@ TEST(OsdPostProcessorTest, MultiClusterDisjointImprovingMoves) {
   EXPECT_EQ(obs2[1], 1);
 }
 
+TEST(OsdPostProcessorTest, GreedyCoordinateDescentRefinement) {
+  // Tests 2-pass greedy coordinate-descent refinement on top of OSD-2/3:
+  // When a 4-free-column toggle across coupled pivots strictly reduces total
+  // error weight beyond OSD-2/3, coordinate descent toggles the remaining free
+  // column to reach the minimum-weight codeword.
+  size_t num_vars = 8;
+  size_t num_checks = 4;
+
+  std::vector<LLR_INT> priors = {
+      llr_double_to_int(5.0), llr_double_to_int(5.0), llr_double_to_int(5.0),
+      llr_double_to_int(5.0), llr_double_to_int(1.2), llr_double_to_int(1.2),
+      llr_double_to_int(1.2), llr_double_to_int(1.2)};
+
+  TannerGraph graph(num_vars, num_checks, priors);
+  // Pivot columns 0..3 on checks 0..3 (cost 5.0 each -> OSD-0 weight = 20.0)
+  for (size_t i = 0; i < 4; ++i) {
+    graph.add_edge(i, i);
+  }
+  // Free columns 4..7 (cost 1.2 each -> flipping all 4 clears checks 0..3 with weight 4.8)
+  graph.add_edge(4, 0);
+  graph.add_edge(5, 1);
+  graph.add_edge(6, 2);
+  graph.add_edge(7, 3);
+  graph.build();
+
+  std::vector<uint64_t> detection_events = {0, 1, 2, 3};
+  std::vector<std::vector<int>> hyperedge_observables = {
+      {}, {}, {}, {}, {0}, {0}, {0}, {1}};
+
+  std::vector<LLR_INT> posteriors = {
+      llr_double_to_int(0.1), llr_double_to_int(0.2), llr_double_to_int(0.3),
+      llr_double_to_int(0.4), llr_double_to_int(1.0), llr_double_to_int(1.1),
+      llr_double_to_int(1.2), llr_double_to_int(1.3)};
+
+  BPResult result{false, 20};
+  OsdPostProcessor osd(graph, 10, 2);
+  std::vector<size_t> errs;
+  auto obs = osd.process(result, posteriors, detection_events, hyperedge_observables, &errs);
+  ASSERT_EQ(obs.size(), 2);
+  EXPECT_EQ(obs[0], 1);
+  EXPECT_EQ(obs[1], 1);
+  EXPECT_EQ(errs.size(), 4u);
+}
+
 }  // namespace bp

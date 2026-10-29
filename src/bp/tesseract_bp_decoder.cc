@@ -32,6 +32,16 @@ double compute_error_set_weight(const TannerGraph& graph,
   return w;
 }
 
+uint64_t isd_order_seed(uint32_t first_det, size_t K, size_t order) {
+  uint64_t z = 0x9E3779B97F4A7C15ULL ^ (static_cast<uint64_t>(first_det) << 20) ^
+               (static_cast<uint64_t>(K) << 1) ^
+               (static_cast<uint64_t>(order) * 0xD1B54A32D192ED03ULL);
+  z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+  z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+  z ^= z >> 31;
+  return z == 0 ? 1 : z;
+}
+
 }  // namespace
 
 TesseractBpDecoder::TesseractBpDecoder(const stim::DetectorErrorModel& dem, const BPParams& params)
@@ -266,7 +276,8 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
                                        (num_shots > BP_BATCH_SIZE);
   const size_t stage1_iters = use_survivor_compaction ? 4 : params_.max_iter;
   const bool enable_unconv_relay =
-      (post_processor != nullptr) && (num_obs > 0) && (params_.max_iter >= 10);
+      (post_processor != nullptr) && (num_obs > 0 || predicted_errors_batch != nullptr) &&
+      (params_.max_iter >= 10);
   std::vector<size_t> survivor_shot_indices;
 
   struct UnconvergedShotState {
@@ -561,7 +572,7 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
       std::vector<uint8_t> cand_obs = post_processor->process(
           res, post_seed, dets, hyperedge_observables_, &cand_errs, shot_priors);
       double w = compute_error_set_weight(graph_, shot_priors, cand_errs);
-      if (w < best_w) {
+      if (w + 1e-5 < best_w) {
         best_w = w;
         best_obs = std::move(cand_obs);
         best_errs = std::move(cand_errs);
@@ -573,6 +584,43 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
     }
     try_seed(uc.r1_res, uc.post_r1);
     try_seed(uc.r2_res, uc.post_r2);
+
+    if (best_errs.size() >= 3 && graph_.num_checks > 24 &&
+        (num_obs > 0 || best_errs.size() >= 4)) {
+      const std::vector<LLR_INT>& base_post =
+          uc.post_tstar.empty() ? uc.post_final : uc.post_tstar;
+      const BPResult& base_res = uc.post_tstar.empty() ? uc.bp_res : uc.tstar_res;
+      const std::vector<LLR_INT>& p_vec = shot_priors ? *shot_priors : graph_.priors;
+      std::vector<LLR_INT> isd_post(num_vars);
+
+      // Order A (alpha = 0.35) & Order B (alpha = 0.65): Prior-blended orderings
+      for (double alpha : {0.35, 0.65}) {
+        if (best_errs.size() < 3) break;
+        const double one_minus_alpha = 1.0 - alpha;
+        for (size_t v = 0; v < num_vars; ++v) {
+          isd_post[v] = static_cast<LLR_INT>(
+              std::lround(one_minus_alpha * base_post[v] + alpha * p_vec[v]));
+        }
+        try_seed(base_res, isd_post);
+      }
+
+      // Orders C, D, E: Deterministic SplitMix64 hash perturbations (+- 2.5 LLR units)
+      const uint32_t first_det = dets.empty() ? 0u : static_cast<uint32_t>(dets[0]);
+      const size_t K = dets.size();
+      for (size_t order = 1; order <= 3; ++order) {
+        if (best_errs.size() < 3) break;
+        const uint64_t seed = isd_order_seed(first_det, K, order);
+        for (size_t v = 0; v < num_vars; ++v) {
+          uint64_t h = seed ^ (static_cast<uint64_t>(v) * 0x9E3779B97F4A7C15ULL);
+          h = (h ^ (h >> 30)) * 0xBF58476D1CE4E5B9ULL;
+          h = (h ^ (h >> 27)) * 0x94D049BB133111EBULL;
+          h ^= h >> 31;
+          const int32_t noise = static_cast<int32_t>(h % 4096) - 2048;
+          isd_post[v] = base_post[v] + noise;
+        }
+        try_seed(base_res, isd_post);
+      }
+    }
 
     results[real_shot_idx] = std::move(best_obs);
     if (predicted_errors_batch != nullptr) {

@@ -239,6 +239,7 @@ std::vector<uint8_t> OsdPostProcessor::process(
   const size_t W = working_cols.size();
   const size_t eff_order =
       (osd_early_exit_ && osd_weight_ >= 2 && osd_order_ >= 30) ? (osd_order_ * 2) : osd_order_;
+  const size_t max_wide_order = std::max<size_t>(eff_order, 120);
 
   stim::simd_bits<64> unpivoted_mask(det_bits);
   for (size_t d = 0; d < num_detectors; ++d) unpivoted_mask[d] = true;
@@ -259,7 +260,7 @@ std::vector<uint8_t> OsdPostProcessor::process(
     std::vector<size_t> piv_rows;
   };
   std::vector<FreeCandidate> free_candidates;
-  free_candidates.reserve(eff_order * 2 + 64);
+  free_candidates.reserve(max_wide_order + 64);
 
   stim::simd_bits<64> v(det_bits);
 
@@ -303,6 +304,7 @@ std::vector<uint8_t> OsdPostProcessor::process(
     }
   };
 
+  size_t active_free_cap = eff_order;
   if (!osd_early_exit_) {
     for (size_t i = 0; i < W; ++i) {
       eliminate_col(i);
@@ -323,9 +325,35 @@ std::vector<uint8_t> OsdPostProcessor::process(
           }
         }
       }
+      size_t local_osd0_faults = 0;
+      double local_osd0_weight = 0.0;
+      for (size_t c = 0; c < num_errors; ++c) {
+        if (e_hard[c] && (!use_interior_pullin || in_V_interior[c])) {
+          local_osd0_faults++;
+          local_osd0_weight += var_cost(c);
+        }
+      }
+      for (size_t r = 0; r < num_solved; ++r) {
+        if (S_res[pivot_det[r]]) {
+          size_t bc = row_to_basis_col[r];
+          if (e_hard[bc] && (!use_interior_pullin || in_V_interior[bc])) {
+            if (local_osd0_faults > 0) local_osd0_faults--;
+            local_osd0_weight -= var_cost(bc);
+          } else if (!e_hard[bc]) {
+            local_osd0_faults++;
+            local_osd0_weight += var_cost(bc);
+          }
+        }
+      }
+      if (local_osd0_faults >= 3 || local_osd0_weight >= 15.0) {
+        active_free_cap = std::max<size_t>(eff_order, std::min<size_t>(eff_order * 2, 120));
+      }
+      const size_t elim_free_limit =
+          (active_free_cap > eff_order) ? std::min<size_t>(active_free_cap * 2, max_wide_order)
+                                        : eff_order;
       for (size_t i = i_sat; i < W; ++i) {
         if (col_eliminated[i]) continue;
-        if ((cols_processed - num_solved) >= eff_order) break;
+        if ((cols_processed - num_solved) >= elim_free_limit) break;
         eliminate_col(i);
       }
     }
@@ -374,15 +402,15 @@ std::vector<uint8_t> OsdPostProcessor::process(
       }
     }
 
-    free_cols.reserve(eff_order);
-    F_columns.reserve(eff_order);
-    F_costs.reserve(eff_order);
+    free_cols.reserve(active_free_cap);
+    F_columns.reserve(active_free_cap);
+    F_costs.reserve(active_free_cap);
 
     for (const auto& fc : free_candidates) {
       size_t i = fc.working_idx;
       size_t c = working_cols[i];
       const bool is_int_ehard = e_hard[c] && (!use_interior_pullin || in_V_interior[c]);
-      if (free_cols.size() >= eff_order && !is_int_ehard) continue;
+      if (free_cols.size() >= active_free_cap && !is_int_ehard) continue;
       if (osd_early_exit_) {
         bool touches = is_int_ehard;
         for (size_t r : fc.piv_rows) {
@@ -541,11 +569,50 @@ std::vector<uint8_t> OsdPostProcessor::process(
           if (total_w < cur_best_w - 1e-6) {
             cur_best_w = total_w;
             cur_set = std::move(u_set);
-            if (total_w < best_weight) {
+            if (total_w < best_weight - 1e-6) {
               best_weight = total_w;
               best_free_indices = cur_set;
             }
           }
+        }
+      }
+    }
+
+    // 2-Pass Greedy Coordinate-Descent Refinement over all N free columns.
+    if (N > 0) {
+      std::vector<uint8_t> in_best_free(N, 0);
+      for (size_t w = 0; w < solved_words; ++w) s_i_words[w] = S_solved.u64[w];
+      double cur_free_cost = 0.0;
+      for (size_t k : best_free_indices) {
+        in_best_free[k] = 1;
+        cur_free_cost += F_costs[k];
+        for (size_t w = 0; w < solved_words; ++w) s_i_words[w] ^= F_columns[k].u64[w];
+      }
+      bool any_refined = false;
+      for (size_t pass = 0; pass < 2; ++pass) {
+        bool improved = false;
+        for (size_t idx = 0; idx < N; ++idx) {
+          for (size_t w = 0; w < solved_words; ++w) {
+            tmp_words[w] = s_i_words[w] ^ F_columns[idx].u64[w];
+          }
+          double cand_fc =
+              in_best_free[idx] ? (cur_free_cost - F_costs[idx]) : (cur_free_cost + F_costs[idx]);
+          double cand_total = base_hard_cost + cand_fc + eval_piv_words(tmp_words.data());
+          if (cand_total < best_weight - 1e-6) {
+            best_weight = cand_total;
+            cur_free_cost = cand_fc;
+            in_best_free[idx] ^= 1;
+            for (size_t w = 0; w < solved_words; ++w) s_i_words[w] = tmp_words[w];
+            improved = true;
+            any_refined = true;
+          }
+        }
+        if (!improved) break;
+      }
+      if (any_refined) {
+        best_free_indices.clear();
+        for (size_t idx = 0; idx < N; ++idx) {
+          if (in_best_free[idx]) best_free_indices.push_back(idx);
         }
       }
     }
