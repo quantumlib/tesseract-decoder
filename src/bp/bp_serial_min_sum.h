@@ -15,7 +15,8 @@ std::vector<BPResult> bp_serial_min_sum(
     TannerGraph& graph, const std::vector<std::vector<size_t>>& detection_events_batch,
     std::vector<LLR_INT>& posteriors_flat, size_t max_iters, float normalization_factor,
     bool stop_at_convergence = true, bool random_schedule = false, uint64_t random_seed = 0,
-    const std::vector<LLR_INT>* custom_priors_flat = nullptr);
+    const std::vector<LLR_INT>* custom_priors_flat = nullptr, int damping_num = 0,
+    std::vector<LLR_INT>* tstar_posteriors_flat = nullptr);
 
 }  // namespace bp
 

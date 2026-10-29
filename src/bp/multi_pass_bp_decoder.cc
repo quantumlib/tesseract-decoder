@@ -398,6 +398,12 @@ std::vector<std::vector<uint8_t>> MultiPassBpDecoder::decode_batch(
           is_final_pass ? nullptr : &comp_predicted_errors[comp]);
     }
     if (!is_final_pass) {
+      if (pass > 0 && pass + 1 < pass_schedule_.size()) {
+        for (size_t next_comp : pass_schedule_[pass + 1]) {
+          custom_priors_per_shot[next_comp].assign(
+              num_shots, component_decoders_[next_comp].decoder->graph().priors);
+        }
+      }
       for (size_t source_comp : pass_schedule_[pass]) {
         const auto& reweight_map = component_decoders_[source_comp].reweight_rules;
         if (reweight_map.empty()) continue;

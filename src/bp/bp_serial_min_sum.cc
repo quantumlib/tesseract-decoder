@@ -13,7 +13,8 @@ std::vector<BPResult> bp_serial_min_sum(
     TannerGraph& graph, const std::vector<std::vector<size_t>>& detection_events_batch,
     std::vector<LLR_INT>& posteriors_flat, size_t max_iters, float normalization_factor,
     bool stop_at_convergence, bool random_schedule, uint64_t random_seed,
-    const std::vector<LLR_INT>* custom_priors_flat) {
+    const std::vector<LLR_INT>* custom_priors_flat, int damping_num,
+    std::vector<LLR_INT>* tstar_posteriors_flat) {
   size_t actual_batch_size = detection_events_batch.size();
   if (actual_batch_size > BP_BATCH_SIZE) {
     throw std::invalid_argument("Provided batch size exceeds BP_BATCH_SIZE");
@@ -67,6 +68,15 @@ std::vector<BPResult> bp_serial_min_sum(
     graph.converged_posteriors_flat.resize(total_lanes);
   }
   LLR_INT* __restrict__ converged_posteriors_flat = graph.converged_posteriors_flat.data();
+
+  const bool track_tstar = (tstar_posteriors_flat != nullptr);
+  if (track_tstar) {
+    *tstar_posteriors_flat = posteriors_flat;
+  }
+  alignas(64) uint32_t min_unsat[BP_BATCH_SIZE];
+  for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
+    min_unsat[b] = std::numeric_limits<uint32_t>::max();
+  }
 
   std::vector<size_t> check_order(graph.num_checks);
   for (size_t i = 0; i < graph.num_checks; ++i) {
@@ -154,34 +164,65 @@ std::vector<BPResult> bp_serial_min_sum(
 
       // Pass 2: Compute new check-to-variable message R'_{c,v}
       // and immediately update posterior L'_v = Q_{c,v} + R'_{c,v} (100% unmasked 32-bit AVX-512).
-      for (size_t e = start; e < end; ++e) {
-        const uint32_t local_e = static_cast<uint32_t>(e - start);
-        const size_t v_idx = graph.check_edges[e] * BP_BATCH_SIZE;
-        const size_t msg_idx = e * BP_BATCH_SIZE;
-        const LLR_INT* __restrict__ q_row = q_cache + local_e * BP_BATCH_SIZE;
+      if (damping_num <= 0) {
+        for (size_t e = start; e < end; ++e) {
+          const uint32_t local_e = static_cast<uint32_t>(e - start);
+          const size_t v_idx = graph.check_edges[e] * BP_BATCH_SIZE;
+          const size_t msg_idx = e * BP_BATCH_SIZE;
+          const LLR_INT* __restrict__ q_row = q_cache + local_e * BP_BATCH_SIZE;
 
 #pragma GCC ivdep
-        for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
-          LLR_INT q_msg = q_row[b];
+          for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
+            LLR_INT q_msg = q_row[b];
 
-          uint8_t q_sign = (q_msg < 0) ? 1 : 0;
-          uint8_t extrinsic_sign = total_sign_prod[b] ^ q_sign;
-          uint8_t final_sign = batched_syndromes[syn_idx + b] ^ extrinsic_sign;
+            uint8_t q_sign = (q_msg < 0) ? 1 : 0;
+            uint8_t extrinsic_sign = total_sign_prod[b] ^ q_sign;
+            uint8_t final_sign = batched_syndromes[syn_idx + b] ^ extrinsic_sign;
 
-          LLR_UINT min_mag = (local_e == min1_idx[b]) ? min2[b] : min1[b];
-          LLR_UINT clamped_mag = std::min(min_mag, MAX_SAFE_LLR_INT);
-          LLR_INT final_mag =
-              static_cast<LLR_INT>((static_cast<uint64_t>(clamped_mag) * alpha_fp) >> LLR_FP_BITS);
+            LLR_UINT min_mag = (local_e == min1_idx[b]) ? min2[b] : min1[b];
+            LLR_UINT clamped_mag = std::min(min_mag, MAX_SAFE_LLR_INT);
+            LLR_INT final_mag =
+                static_cast<LLR_INT>((static_cast<uint64_t>(clamped_mag) * alpha_fp) >> LLR_FP_BITS);
 
-          LLR_INT new_r = final_sign ? -final_mag : final_mag;
-          graph.check_to_var_messages[msg_idx + b] = new_r;
-          posteriors_flat[v_idx + b] = q_msg + new_r;
+            LLR_INT new_r = final_sign ? -final_mag : final_mag;
+            graph.check_to_var_messages[msg_idx + b] = new_r;
+            posteriors_flat[v_idx + b] = q_msg + new_r;
+          }
+        }
+      } else {
+        const LLR_INT w_new = 8 - damping_num;
+        const LLR_INT w_old = damping_num;
+        for (size_t e = start; e < end; ++e) {
+          const uint32_t local_e = static_cast<uint32_t>(e - start);
+          const size_t v_idx = graph.check_edges[e] * BP_BATCH_SIZE;
+          const size_t msg_idx = e * BP_BATCH_SIZE;
+          const LLR_INT* __restrict__ q_row = q_cache + local_e * BP_BATCH_SIZE;
+
+#pragma GCC ivdep
+          for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
+            LLR_INT q_msg = q_row[b];
+
+            uint8_t q_sign = (q_msg < 0) ? 1 : 0;
+            uint8_t extrinsic_sign = total_sign_prod[b] ^ q_sign;
+            uint8_t final_sign = batched_syndromes[syn_idx + b] ^ extrinsic_sign;
+
+            LLR_UINT min_mag = (local_e == min1_idx[b]) ? min2[b] : min1[b];
+            LLR_UINT clamped_mag = std::min(min_mag, MAX_SAFE_LLR_INT);
+            LLR_INT final_mag =
+                static_cast<LLR_INT>((static_cast<uint64_t>(clamped_mag) * alpha_fp) >> LLR_FP_BITS);
+
+            LLR_INT raw_r = final_sign ? -final_mag : final_mag;
+            LLR_INT old_r = graph.check_to_var_messages[msg_idx + b];
+            LLR_INT new_r = (w_new * raw_r + w_old * old_r) / 8;
+            graph.check_to_var_messages[msg_idx + b] = new_r;
+            posteriors_flat[v_idx + b] = q_msg + new_r;
+          }
         }
       }
     }  // End of check loop
 
-    // --- Convergence Check (End of iteration) ---
-    if (stop_at_convergence || (iter == max_iters - 1)) {
+    // --- Convergence & Minimum-Residual-Syndrome Check (End of iteration) ---
+    if (stop_at_convergence || track_tstar || (iter == max_iters - 1)) {
       alignas(64) uint8_t shot_converged[BP_BATCH_SIZE];
 #pragma GCC ivdep
       for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
@@ -189,16 +230,27 @@ std::vector<BPResult> bp_serial_min_sum(
       }
 
       const bool is_final_iter = (iter + 1 == max_iters);
+      const bool do_tstar_this_iter = track_tstar && (iter >= 6 || is_final_iter);
+      const bool need_counts = is_final_iter || do_tstar_this_iter;
       alignas(64) uint32_t unsat_count[BP_BATCH_SIZE] = {0};
 
       for (size_t i = 0; i < graph.num_checks; ++i) {
         if (!is_final_iter) {
-          uint8_t any_candidate = 0;
+          if (!do_tstar_this_iter) {
+            uint8_t any_candidate = 0;
 #pragma GCC ivdep
-          for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
-            any_candidate |= shot_converged[b];
+            for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
+              any_candidate |= shot_converged[b];
+            }
+            if (!any_candidate) break;
+          } else if ((i & 15) == 0 && i > 0) {
+            uint8_t any_candidate = 0;
+#pragma GCC ivdep
+            for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
+              any_candidate |= (active_shots[b] & (unsat_count[b] <= min_unsat[b]));
+            }
+            if (!any_candidate) break;
           }
-          if (!any_candidate) break;
         }
 
         size_t start = graph.check_edge_offsets[i];
@@ -219,11 +271,14 @@ std::vector<BPResult> bp_serial_min_sum(
           if (mismatch) {
             shot_converged[b] = 0;
           }
-          if (is_final_iter) {
+          if (need_counts) {
             unsat_count[b] += mismatch;
           }
         }
       }
+
+      alignas(64) uint8_t update_tstar[BP_BATCH_SIZE] = {0};
+      bool any_update_tstar = false;
 
       for (size_t b = 0; b < actual_batch_size; ++b) {
         if (active_shots[b] && shot_converged[b]) {
@@ -232,9 +287,28 @@ std::vector<BPResult> bp_serial_min_sum(
           results[b].converged = true;
           results[b].num_iters = iter + 1;
           results[b].unsat_checks = 0;
+          min_unsat[b] = 0;
           for (size_t v = 0; v < graph.num_vars; ++v) {
             converged_posteriors_flat[v * BP_BATCH_SIZE + b] =
                 posteriors_flat[v * BP_BATCH_SIZE + b];
+          }
+        } else if (do_tstar_this_iter && active_shots[b] && unsat_count[b] <= min_unsat[b]) {
+          min_unsat[b] = unsat_count[b];
+          update_tstar[b] = 1;
+          any_update_tstar = true;
+        }
+      }
+
+      if (do_tstar_this_iter && any_update_tstar) {
+        LLR_INT* __restrict__ ts_ptr = tstar_posteriors_flat->data();
+        const LLR_INT* __restrict__ post_ptr = posteriors_flat.data();
+        for (size_t v = 0; v < graph.num_vars; ++v) {
+          size_t base = v * BP_BATCH_SIZE;
+#pragma GCC ivdep
+          for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
+            if (update_tstar[b]) {
+              ts_ptr[base + b] = post_ptr[base + b];
+            }
           }
         }
       }
@@ -242,7 +316,7 @@ std::vector<BPResult> bp_serial_min_sum(
       if (is_final_iter) {
         for (size_t b = 0; b < actual_batch_size; ++b) {
           if (active_shots[b]) {
-            results[b].unsat_checks = unsat_count[b];
+            results[b].unsat_checks = track_tstar ? min_unsat[b] : unsat_count[b];
           }
         }
       }
@@ -257,6 +331,12 @@ std::vector<BPResult> bp_serial_min_sum(
       for (size_t v = 0; v < graph.num_vars; ++v) {
         posteriors_flat[v * BP_BATCH_SIZE + b] =
             converged_posteriors_flat[v * BP_BATCH_SIZE + b];
+      }
+    }
+    if (track_tstar && results[b].converged) {
+      for (size_t v = 0; v < graph.num_vars; ++v) {
+        (*tstar_posteriors_flat)[v * BP_BATCH_SIZE + b] =
+            posteriors_flat[v * BP_BATCH_SIZE + b];
       }
     }
   }

@@ -19,6 +19,19 @@ double seconds_since(const ProfileClock::time_point& start) {
   return std::chrono::duration<double>(ProfileClock::now() - start).count();
 }
 
+double compute_error_set_weight(const TannerGraph& graph,
+                                const std::vector<LLR_INT>* custom_priors,
+                                const std::vector<size_t>& errs) {
+  const std::vector<LLR_INT>& p_vec = custom_priors ? *custom_priors : graph.priors;
+  double w = 0.0;
+  for (size_t v : errs) {
+    if (v < p_vec.size()) {
+      w += std::max(1e-3, std::abs(llr_int_to_double(p_vec[v])));
+    }
+  }
+  return w;
+}
+
 }  // namespace
 
 TesseractBpDecoder::TesseractBpDecoder(const stim::DetectorErrorModel& dem, const BPParams& params)
@@ -241,6 +254,7 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
   std::vector<std::vector<size_t>> current_batch;
   std::vector<size_t> current_shot_indices;
   alignas(64) std::vector<LLR_INT> posteriors_flat(num_vars * BP_BATCH_SIZE);
+  alignas(64) std::vector<LLR_INT> tstar_posteriors_flat(num_vars * BP_BATCH_SIZE);
   alignas(64) std::vector<LLR_INT> custom_priors_flat(num_vars * BP_BATCH_SIZE);
   std::vector<LLR_INT> shot_posteriors(num_vars);
 
@@ -251,7 +265,23 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
   const bool use_survivor_compaction = params_.stop_at_convergence && (params_.max_iter > 4) &&
                                        (num_shots > BP_BATCH_SIZE);
   const size_t stage1_iters = use_survivor_compaction ? 4 : params_.max_iter;
+  const bool enable_unconv_relay =
+      (post_processor != nullptr) && (num_obs > 0) && (params_.max_iter >= 10);
   std::vector<size_t> survivor_shot_indices;
+
+  struct UnconvergedShotState {
+    size_t real_shot_idx;
+    BPResult bp_res;
+    std::vector<LLR_INT> post_final;
+    BPResult tstar_res{false, 0, 0};
+    std::vector<LLR_INT> post_tstar;
+    BPResult r1_res{false, 0, 0};
+    std::vector<LLR_INT> post_r1;
+    BPResult r2_res{false, 0, 0};
+    std::vector<LLR_INT> post_r2;
+    bool retired = false;
+  };
+  std::vector<UnconvergedShotState> still_unconv;
 
   auto finalize_shot = [&](size_t real_shot_idx, const BPResult& bp_res,
                            const std::vector<LLR_INT>& flat_post, size_t lane_b) {
@@ -292,6 +322,27 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
     profile_.t_post += seconds_since(t_post_start);
   };
 
+  auto record_unconverged_shot = [&](size_t real_shot_idx, const BPResult& bp_res, size_t lane_b,
+                                     bool has_tstar) {
+    const auto t_deint_start = ProfileClock::now();
+    UnconvergedShotState uc;
+    uc.real_shot_idx = real_shot_idx;
+    uc.bp_res = bp_res;
+    uc.post_final.resize(num_vars);
+    for (size_t v = 0; v < num_vars; ++v) {
+      uc.post_final[v] = posteriors_flat[v * BP_BATCH_SIZE + lane_b];
+    }
+    if (has_tstar) {
+      uc.tstar_res = bp_res;
+      uc.post_tstar.resize(num_vars);
+      for (size_t v = 0; v < num_vars; ++v) {
+        uc.post_tstar[v] = tstar_posteriors_flat[v * BP_BATCH_SIZE + lane_b];
+      }
+    }
+    profile_.t_deinterleave += seconds_since(t_deint_start);
+    still_unconv.push_back(std::move(uc));
+  };
+
   for (size_t shot = 0; shot < num_shots; ++shot) {
     current_batch.push_back(std::vector<size_t>(detection_events_batch[shot].begin(),
                                                 detection_events_batch[shot].end()));
@@ -318,20 +369,26 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
         priors_flat_ptr = &custom_priors_flat;
       }
 
+      const bool track_stage1_tstar = (!use_survivor_compaction && enable_unconv_relay);
       const auto t_bp_start = ProfileClock::now();
       std::vector<BPResult> bp_results = bp_serial_min_sum(
           graph_, current_batch, posteriors_flat, stage1_iters,
           params_.normalization_factor, params_.stop_at_convergence, params_.random_schedule,
-          params_.random_seed, priors_flat_ptr);
+          params_.random_seed, priors_flat_ptr, 0,
+          track_stage1_tstar ? &tstar_posteriors_flat : nullptr);
       profile_.t_bp += seconds_since(t_bp_start);
       profile_.num_decode_calls++;
 
       for (size_t b = 0; b < actual_size; ++b) {
         size_t real_shot_idx = current_shot_indices[b];
-        if (!use_survivor_compaction || bp_results[b].converged) {
+        if (bp_results[b].converged) {
           finalize_shot(real_shot_idx, bp_results[b], posteriors_flat, b);
-        } else {
+        } else if (use_survivor_compaction) {
           survivor_shot_indices.push_back(real_shot_idx);
+        } else if (enable_unconv_relay) {
+          record_unconverged_shot(real_shot_idx, bp_results[b], b, track_stage1_tstar);
+        } else {
+          finalize_shot(real_shot_idx, bp_results[b], posteriors_flat, b);
         }
       }
       current_batch.clear();
@@ -371,16 +428,157 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
       std::vector<BPResult> bp_results = bp_serial_min_sum(
           graph_, current_batch, posteriors_flat, params_.max_iter,
           params_.normalization_factor, params_.stop_at_convergence, params_.random_schedule,
-          params_.random_seed, priors_flat_ptr);
+          params_.random_seed, priors_flat_ptr, 0,
+          enable_unconv_relay ? &tstar_posteriors_flat : nullptr);
       profile_.t_bp += seconds_since(t_bp_start);
       profile_.num_decode_calls++;
 
       for (size_t b = 0; b < actual_size; ++b) {
-        finalize_shot(current_shot_indices[b], bp_results[b], posteriors_flat, b);
+        size_t real_shot_idx = current_shot_indices[b];
+        if (bp_results[b].converged || !enable_unconv_relay) {
+          finalize_shot(real_shot_idx, bp_results[b], posteriors_flat, b);
+        } else {
+          record_unconverged_shot(real_shot_idx, bp_results[b], b, true);
+        }
       }
       current_batch.clear();
       current_shot_indices.clear();
     }
+  }
+
+  if (still_unconv.empty()) {
+    return results;
+  }
+
+  // Stage 3: Damped Relay Legs on compacted still-unconverged survivors.
+  // Any shot that converges in Relay Leg 1 or Relay Leg 2 is immediately retired via
+  // finalize_shot (incurring 0 OSD Gaussian-elimination calls).
+  const size_t relay_iters = std::min<size_t>(params_.max_iter, 30);
+  struct RelayLegSpec {
+    float norm_factor;
+    int damping_num;
+    uint64_t seed_xor;
+    int leg_id;
+  };
+  const RelayLegSpec relay_specs[2] = {
+      {0.875f, 1, 0x9e3779b97f4a7c15ULL, 1},
+      {0.625f, 2, 0xbf58476d1ce4e5b9ULL, 2},
+  };
+
+  for (const auto& spec : relay_specs) {
+    std::vector<size_t> leg_indices;
+    leg_indices.reserve(still_unconv.size());
+    for (size_t idx = 0; idx < still_unconv.size(); ++idx) {
+      if (still_unconv[idx].retired) continue;
+      leg_indices.push_back(idx);
+    }
+
+    for (size_t k = 0; k < leg_indices.size(); ++k) {
+      size_t idx = leg_indices[k];
+      size_t real_shot = still_unconv[idx].real_shot_idx;
+      current_batch.push_back(std::vector<size_t>(detection_events_batch[real_shot].begin(),
+                                                  detection_events_batch[real_shot].end()));
+      current_shot_indices.push_back(idx);
+
+      if (current_batch.size() == BP_BATCH_SIZE || k == leg_indices.size() - 1) {
+        size_t actual_size = current_batch.size();
+        while (current_batch.size() < BP_BATCH_SIZE) {
+          current_batch.push_back({});
+        }
+
+        const std::vector<LLR_INT>* priors_flat_ptr = nullptr;
+        if (custom_priors_per_shot != nullptr) {
+          for (size_t v = 0; v < num_vars; ++v) {
+            for (size_t b = 0; b < actual_size; ++b) {
+              size_t r_shot = still_unconv[current_shot_indices[b]].real_shot_idx;
+              custom_priors_flat[v * BP_BATCH_SIZE + b] = (*custom_priors_per_shot)[r_shot][v];
+            }
+            for (size_t b = actual_size; b < BP_BATCH_SIZE; ++b) {
+              custom_priors_flat[v * BP_BATCH_SIZE + b] = graph_.priors[v];
+            }
+          }
+          priors_flat_ptr = &custom_priors_flat;
+        }
+
+        const auto t_bp_start = ProfileClock::now();
+        std::vector<BPResult> r_results = bp_serial_min_sum(
+            graph_, current_batch, posteriors_flat, relay_iters,
+            spec.norm_factor, params_.stop_at_convergence, true,
+            params_.random_seed ^ spec.seed_xor, priors_flat_ptr, spec.damping_num,
+            &tstar_posteriors_flat);
+        profile_.t_bp += seconds_since(t_bp_start);
+        profile_.num_decode_calls++;
+
+        for (size_t b = 0; b < actual_size; ++b) {
+          size_t u_i = current_shot_indices[b];
+          auto& uc = still_unconv[u_i];
+          if (r_results[b].converged) {
+            finalize_shot(uc.real_shot_idx, r_results[b], posteriors_flat, b);
+            uc.retired = true;
+            continue;
+          }
+          const auto t_deint_start = ProfileClock::now();
+          BPResult& dst_res = (spec.leg_id == 1) ? uc.r1_res : uc.r2_res;
+          std::vector<LLR_INT>& dst_post = (spec.leg_id == 1) ? uc.post_r1 : uc.post_r2;
+          dst_res = r_results[b];
+          dst_post.resize(num_vars);
+          for (size_t v = 0; v < num_vars; ++v) {
+            dst_post[v] = tstar_posteriors_flat[v * BP_BATCH_SIZE + b];
+          }
+          profile_.t_deinterleave += seconds_since(t_deint_start);
+        }
+
+        current_batch.clear();
+        current_shot_indices.clear();
+      }
+    }
+  }
+
+  // Evaluate Multi-Seed OSD across distinct BP trajectories (Stage-2 final/t*, Relay-1 t*,
+  // Relay-2 t*) on truly unconverged shots and select the minimum-prior-weight valid codeword.
+  std::vector<size_t> best_errs;
+  std::vector<size_t> cand_errs;
+  for (size_t u = 0; u < still_unconv.size(); ++u) {
+    auto& uc = still_unconv[u];
+    if (uc.retired) continue;
+    const size_t real_shot_idx = uc.real_shot_idx;
+    const auto& dets = detection_events_batch[real_shot_idx];
+    const std::vector<LLR_INT>* shot_priors =
+        custom_priors_per_shot ? &(*custom_priors_per_shot)[real_shot_idx] : nullptr;
+
+    profile_.num_shots++;
+    profile_.record_iters(uc.bp_res.num_iters, false);
+
+    const auto t_post_start = ProfileClock::now();
+    best_errs.clear();
+    std::vector<uint8_t> best_obs = post_processor->process(
+        uc.bp_res, uc.post_final, dets, hyperedge_observables_, &best_errs, shot_priors);
+    double best_w = compute_error_set_weight(graph_, shot_priors, best_errs);
+
+    auto try_seed = [&](const BPResult& res, const std::vector<LLR_INT>& post_seed) {
+      if (post_seed.empty()) return;
+      cand_errs.clear();
+      std::vector<uint8_t> cand_obs = post_processor->process(
+          res, post_seed, dets, hyperedge_observables_, &cand_errs, shot_priors);
+      double w = compute_error_set_weight(graph_, shot_priors, cand_errs);
+      if (w < best_w) {
+        best_w = w;
+        best_obs = std::move(cand_obs);
+        best_errs = std::move(cand_errs);
+      }
+    };
+
+    if (uc.post_tstar != uc.post_final) {
+      try_seed(uc.tstar_res, uc.post_tstar);
+    }
+    try_seed(uc.r1_res, uc.post_r1);
+    try_seed(uc.r2_res, uc.post_r2);
+
+    results[real_shot_idx] = std::move(best_obs);
+    if (predicted_errors_batch != nullptr) {
+      (*predicted_errors_batch)[real_shot_idx] = std::move(best_errs);
+    }
+    profile_.t_post += seconds_since(t_post_start);
   }
 
   return results;
