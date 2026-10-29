@@ -18,20 +18,14 @@ inline double seconds_since(const ProfileClock::time_point& start) {
   return std::chrono::duration<double>(ProfileClock::now() - start).count();
 }
 
-// Check if residual syndrome S_res has zero bits at or above index num_solved.
-inline bool is_residual_syndrome_satisfied(const stim::simd_bits<64>& S_res, size_t num_solved,
-                                           size_t num_detectors) {
-  if (num_solved >= num_detectors) return true;
-  size_t start_word = num_solved / 64, end_word = (num_detectors + 63) / 64;
-  uint64_t mask = ~((1ULL << (num_solved % 64)) - 1);
-  size_t last_bits = num_detectors % 64;
-  uint64_t last_mask = (last_bits == 0) ? ~0ULL : ((1ULL << last_bits) - 1);
-  if (start_word + 1 == end_word) return (S_res.u64[start_word] & mask & last_mask) == 0;
-  if ((S_res.u64[start_word] & mask) != 0) return false;
-  for (size_t w = start_word + 1; w + 1 < end_word; ++w) {
-    if (S_res.u64[w] != 0) return false;
+// Check if residual syndrome S_res has zero bits at or above index num_solved (unpivoted detectors).
+inline bool is_residual_syndrome_satisfied(const stim::simd_bits<64>& S_res,
+                                           const stim::simd_bits<64>& unpivoted_mask,
+                                           size_t det_words) {
+  for (size_t w = 0; w < det_words; ++w) {
+    if ((S_res.u64[w] & unpivoted_mask.u64[w]) != 0) return false;
   }
-  return (S_res.u64[end_word - 1] & last_mask) == 0;
+  return true;
 }
 
 }  // namespace
@@ -101,14 +95,16 @@ std::vector<uint8_t> OsdPostProcessor::process(
   };
 
   auto t_phase = t_osd_start;
-  std::vector<bool> e_hard(num_errors, false);
+  std::vector<uint8_t> e_hard(num_errors, 0);
   for (size_t i = 0; i < num_errors; ++i) {
-    if (posteriors[i] < 0) e_hard[i] = true;
+    if (posteriors[i] < 0) e_hard[i] = 1;
   }
   profile_.t_hard_decision += seconds_since(t_phase);
 
   t_phase = ProfileClock::now();
-  stim::simd_bits<64> S_res(num_detectors);
+  const size_t det_words = (std::max<size_t>(1, num_detectors) + 63) / 64;
+  const size_t det_bits = det_words * 64;
+  stim::simd_bits<64> S_res(det_bits);
   for (uint64_t d : detection_events) {
     if (d < num_detectors) S_res[d] ^= true;
   }
@@ -116,6 +112,84 @@ std::vector<uint8_t> OsdPostProcessor::process(
     if (e_hard[i]) {
       for (size_t e = graph_.var_edge_offsets[i]; e < graph_.var_edge_offsets[i + 1]; ++e) {
         S_res[graph_.var_edges[e]] ^= true;
+      }
+    }
+  }
+
+  // Construct the Interior Local Subgraph (D_local, V_interior) around the residual syndrome:
+  // 1. D_0 = {d : S_res[d] == 1}
+  // 2. D_1 = {d : touched by any v in N(D_0)}
+  // 3. Close D_local = D_0 U D_1 under connected e_hard[v] == 1 variables
+  // 4. V_interior = {v : N(v) != empty and N(v) subset of D_local}
+  std::vector<uint8_t> in_D_local(num_detectors, 0);
+  std::vector<uint8_t> in_V_interior(num_errors, 0);
+  std::vector<size_t> unsat_dets;
+  std::vector<size_t> d_queue;
+  for (size_t d = 0; d < num_detectors; ++d) {
+    if (S_res[d]) {
+      unsat_dets.push_back(d);
+      in_D_local[d] = 1;
+      d_queue.push_back(d);
+    }
+  }
+
+  const bool use_interior_pullin = osd_early_exit_ && (osd_weight_ > 0) && (osd_order_ > 0);
+  size_t v_interior_size = 0;
+  if (use_interior_pullin && !unsat_dets.empty()) {
+    for (size_t d0 : unsat_dets) {
+      for (size_t e = graph_.check_edge_offsets[d0]; e < graph_.check_edge_offsets[d0 + 1]; ++e) {
+        size_t v = graph_.check_edges[e];
+        for (size_t ve = graph_.var_edge_offsets[v]; ve < graph_.var_edge_offsets[v + 1]; ++ve) {
+          size_t d1 = graph_.var_edges[ve];
+          if (!in_D_local[d1]) {
+            in_D_local[d1] = 1;
+            d_queue.push_back(d1);
+          }
+        }
+      }
+    }
+    std::vector<uint8_t> eh_visited(num_errors, 0);
+    size_t q_head = 0;
+    while (q_head < d_queue.size()) {
+      size_t d = d_queue[q_head++];
+      for (size_t e = graph_.check_edge_offsets[d]; e < graph_.check_edge_offsets[d + 1]; ++e) {
+        size_t v = graph_.check_edges[e];
+        if (e_hard[v] && !eh_visited[v]) {
+          eh_visited[v] = 1;
+          for (size_t ve = graph_.var_edge_offsets[v]; ve < graph_.var_edge_offsets[v + 1]; ++ve) {
+            size_t d2 = graph_.var_edges[ve];
+            if (!in_D_local[d2]) {
+              in_D_local[d2] = 1;
+              d_queue.push_back(d2);
+            }
+          }
+        }
+      }
+    }
+
+    std::vector<size_t> cand_vars;
+    std::vector<uint8_t> seen_var(num_errors, 0);
+    for (size_t d : d_queue) {
+      for (size_t e = graph_.check_edge_offsets[d]; e < graph_.check_edge_offsets[d + 1]; ++e) {
+        size_t v = graph_.check_edges[e];
+        if (!seen_var[v]) {
+          seen_var[v] = 1;
+          cand_vars.push_back(v);
+        }
+      }
+    }
+    for (size_t v : cand_vars) {
+      if (graph_.var_edge_offsets[v] == graph_.var_edge_offsets[v + 1]) continue;
+      bool all_in = true;
+      for (size_t ve = graph_.var_edge_offsets[v]; ve < graph_.var_edge_offsets[v + 1]; ++ve) {
+        if (!in_D_local[graph_.var_edges[ve]]) {
+          all_in = false;
+          break;
+        }
+      }
+      if (all_in) {
+        in_V_interior[v] = 1;
+        v_interior_size++;
       }
     }
   }
@@ -137,138 +211,354 @@ std::vector<uint8_t> OsdPostProcessor::process(
   } else {
     std::sort(sorted_cols.begin(), sorted_cols.end(), cmp);
   }
+
+  std::vector<size_t> working_cols;
+  working_cols.reserve(max_osd_cols + v_interior_size);
+  if (use_interior_pullin && max_osd_cols < num_errors) {
+    std::vector<uint8_t> in_working(num_errors, 0);
+    for (size_t i = 0; i < max_osd_cols; ++i) {
+      size_t v = sorted_cols[i];
+      working_cols.push_back(v);
+      in_working[v] = 1;
+    }
+    std::vector<size_t> extra_int;
+    for (size_t v = 0; v < num_errors; ++v) {
+      if (in_V_interior[v] && !in_working[v]) {
+        extra_int.push_back(v);
+        in_working[v] = 1;
+      }
+    }
+    std::sort(extra_int.begin(), extra_int.end(), cmp);
+    for (size_t v : extra_int) working_cols.push_back(v);
+  } else {
+    working_cols.assign(sorted_cols.begin(), sorted_cols.begin() + max_osd_cols);
+  }
   profile_.t_sort += seconds_since(t_phase);
 
   t_phase = ProfileClock::now();
-  std::vector<stim::simd_bits<64>> H_rows(num_detectors, stim::simd_bits<64>(max_osd_cols));
-  for (size_t i = 0; i < max_osd_cols; ++i) {
-    size_t c = sorted_cols[i];
-    for (size_t e = graph_.var_edge_offsets[c]; e < graph_.var_edge_offsets[c + 1]; ++e) {
-      H_rows[graph_.var_edges[e]][i] = true;
-    }
-  }
+  const size_t W = working_cols.size();
+  const size_t eff_order =
+      (osd_early_exit_ && osd_weight_ >= 2 && osd_order_ >= 30) ? (osd_order_ * 2) : osd_order_;
+
+  stim::simd_bits<64> unpivoted_mask(det_bits);
+  for (size_t d = 0; d < num_detectors; ++d) unpivoted_mask[d] = true;
   profile_.t_matrix_build += seconds_since(t_phase);
 
   t_phase = ProfileClock::now();
   size_t num_solved = 0, cols_processed = 0;
-  std::vector<size_t> col_to_pivot_row(num_errors, SIZE_MAX);
+  std::vector<size_t> row_to_basis_col;
+  row_to_basis_col.reserve(std::min<size_t>(num_detectors, 512));
+  std::vector<size_t> pivot_det;
+  pivot_det.reserve(std::min<size_t>(num_detectors, 512));
+  std::vector<stim::simd_bits<64>> pivot_elim_vec;
+  pivot_elim_vec.reserve(std::min<size_t>(num_detectors, 512));
 
-  for (size_t i = 0; i < max_osd_cols && num_solved < num_detectors; ++i) {
-    if (osd_early_exit_ && is_residual_syndrome_satisfied(S_res, num_solved, num_detectors) &&
-        (osd_weight_ == 0 || (cols_processed - num_solved) >= osd_order_)) {
-      break;
+  std::vector<uint8_t> col_eliminated(W, 0);
+  struct FreeCandidate {
+    size_t working_idx;
+    std::vector<size_t> piv_rows;
+  };
+  std::vector<FreeCandidate> free_candidates;
+  free_candidates.reserve(eff_order * 2 + 64);
+
+  stim::simd_bits<64> v(det_bits);
+
+  auto eliminate_col = [&](size_t i) {
+    col_eliminated[i] = 1;
+    cols_processed++;
+    size_t c = working_cols[i];
+    v.clear();
+    for (size_t e = graph_.var_edge_offsets[c]; e < graph_.var_edge_offsets[c + 1]; ++e) {
+      v[graph_.var_edges[e]] = true;
     }
-    cols_processed = i + 1;
-    size_t pivot_r = SIZE_MAX;
-    for (size_t r = num_solved; r < num_detectors; ++r) {
-      if (H_rows[r][i]) {
-        pivot_r = r;
+    for (size_t q = 0; q < num_solved; ++q) {
+      if (v[pivot_det[q]]) {
+        v ^= pivot_elim_vec[q];
+      }
+    }
+    size_t d_piv = SIZE_MAX;
+    for (size_t w = 0; w < det_words; ++w) {
+      uint64_t m = v.u64[w] & unpivoted_mask.u64[w];
+      if (m != 0) {
+        d_piv = (w << 6) + __builtin_ctzll(m);
         break;
       }
     }
-    if (pivot_r == SIZE_MAX) continue;
-
-    if (pivot_r != num_solved) {
-      std::swap(H_rows[pivot_r], H_rows[num_solved]);
-      bool temp_S = S_res[pivot_r];
-      S_res[pivot_r] = S_res[num_solved];
-      S_res[num_solved] = temp_S;
+    if (d_piv != SIZE_MAX) {
+      num_solved++;
+      unpivoted_mask[d_piv] = false;
+      pivot_det.push_back(d_piv);
+      row_to_basis_col.push_back(c);
+      v[d_piv] = false;
+      if (S_res[d_piv]) {
+        S_res ^= v;
+      }
+      pivot_elim_vec.push_back(v);
+    } else if (osd_weight_ > 0) {
+      std::vector<size_t> rows;
+      for (size_t q = 0; q < num_solved; ++q) {
+        if (v[pivot_det[q]]) rows.push_back(q);
+      }
+      free_candidates.push_back({i, std::move(rows)});
     }
-    pivot_r = num_solved++;
-    col_to_pivot_row[sorted_cols[i]] = pivot_r;
+  };
 
-    for (size_t r = 0; r < num_detectors; ++r) {
-      if (r != pivot_r && H_rows[r][i]) {
-        H_rows[r] ^= H_rows[pivot_r];
-        S_res[r] ^= S_res[pivot_r];
+  if (!osd_early_exit_) {
+    for (size_t i = 0; i < W; ++i) {
+      eliminate_col(i);
+    }
+  } else {
+    size_t i_sat = 0;
+    for (size_t i = 0; i < W && num_solved < num_detectors &&
+                       !is_residual_syndrome_satisfied(S_res, unpivoted_mask, det_words);
+         ++i) {
+      eliminate_col(i);
+      i_sat = i + 1;
+    }
+    if (osd_weight_ > 0) {
+      if (use_interior_pullin) {
+        for (size_t i = i_sat; i < W; ++i) {
+          if (in_V_interior[working_cols[i]]) {
+            eliminate_col(i);
+          }
+        }
+      }
+      for (size_t i = i_sat; i < W; ++i) {
+        if (col_eliminated[i]) continue;
+        if ((cols_processed - num_solved) >= eff_order) break;
+        eliminate_col(i);
       }
     }
   }
+
   profile_.t_elimination += seconds_since(t_phase);
   profile_.sum_pivots_found += num_solved;
   profile_.sum_cols_processed += cols_processed;
 
   t_phase = ProfileClock::now();
-  std::vector<bool> e_corr_best(num_errors, false);
-  double best_weight = std::numeric_limits<double>::infinity(), base_hard_cost = 0.0;
+  double base_hard_cost = 0.0;
   for (size_t c = 0; c < num_errors; ++c) {
     if (e_hard[c]) base_hard_cost += var_cost(c);
   }
   auto flip_delta = [&](size_t c) -> double { return e_hard[c] ? -var_cost(c) : var_cost(c); };
 
-  std::vector<double> basis_costs(num_solved);
-  std::vector<size_t> row_to_basis_col(num_solved);
-  for (size_t c = 0; c < num_errors; ++c) {
-    size_t r = col_to_pivot_row[c];
-    if (r != SIZE_MAX) {
-      basis_costs[r] = flip_delta(c);
-      row_to_basis_col[r] = c;
-    }
-  }
-
-  auto evaluate_solution = [&](const stim::simd_bits<64>& current_S, double perturbation_cost,
-                               const std::vector<size_t>& perturbed_indices) {
-    double total_w = base_hard_cost + perturbation_cost;
-    for (size_t r = 0; r < num_solved; ++r) {
-      if (current_S[r]) total_w += basis_costs[r];
-    }
-    if (total_w < best_weight) {
-      best_weight = total_w;
-      std::fill(e_corr_best.begin(), e_corr_best.end(), false);
-      for (size_t idx : perturbed_indices) e_corr_best[idx] = true;
-      for (size_t r = 0; r < num_solved; ++r) {
-        if (current_S[r]) e_corr_best[row_to_basis_col[r]] = true;
-      }
-    }
-  };
-
-  const size_t solved_bits = std::max<size_t>(1, num_solved);
-  stim::simd_bits<64> S_solved(solved_bits);
+  const size_t solved_words = (std::max<size_t>(1, num_solved) + 63) / 64;
+  const size_t solved_bits = solved_words * 64;
+  std::vector<double> basis_costs(solved_bits, 0.0);
   for (size_t r = 0; r < num_solved; ++r) {
-    if (S_res[r]) S_solved[r] = true;
+    basis_costs[r] = flip_delta(row_to_basis_col[r]);
   }
-  evaluate_solution(S_solved, 0.0, {});
 
-  if (osd_weight_ > 0 && num_solved > 0) {
-    std::vector<size_t> free_cols;
-    for (size_t i = 0; i < max_osd_cols && free_cols.size() < osd_order_; ++i) {
-      if (col_to_pivot_row[sorted_cols[i]] == SIZE_MAX) {
-        bool in_span = (i < cols_processed || num_solved == num_detectors);
-        for (size_t r = num_solved; !in_span && r < num_detectors; ++r) {
-          if (H_rows[r][i]) break;
-          if (r + 1 == num_detectors) in_span = true;
+  stim::simd_bits<64> S_solved(solved_bits);
+  double osd0_piv_cost = 0.0;
+  for (size_t r = 0; r < num_solved; ++r) {
+    if (S_res[pivot_det[r]]) {
+      S_solved[r] = true;
+      osd0_piv_cost += basis_costs[r];
+    }
+  }
+  const double osd0_weight = base_hard_cost + osd0_piv_cost;
+  double best_weight = osd0_weight;
+
+  std::vector<size_t> free_cols;
+  std::vector<stim::simd_bits<64>> F_columns;
+  std::vector<double> F_costs;
+  std::vector<size_t> best_free_indices;
+
+  if (osd_weight_ > 0 && num_solved > 0 && eff_order > 0) {
+    std::vector<uint8_t> active_pivot(num_solved, 0);
+    for (size_t r = 0; r < num_solved; ++r) {
+      size_t bc = row_to_basis_col[r];
+      if (S_solved[r] || (basis_costs[r] < 0.0 && (!use_interior_pullin || in_V_interior[bc]))) {
+        active_pivot[r] = 1;
+      }
+    }
+
+    free_cols.reserve(eff_order);
+    F_columns.reserve(eff_order);
+    F_costs.reserve(eff_order);
+
+    for (const auto& fc : free_candidates) {
+      size_t i = fc.working_idx;
+      size_t c = working_cols[i];
+      const bool is_int_ehard = e_hard[c] && (!use_interior_pullin || in_V_interior[c]);
+      if (free_cols.size() >= eff_order && !is_int_ehard) continue;
+      if (osd_early_exit_) {
+        bool touches = is_int_ehard;
+        for (size_t r : fc.piv_rows) {
+          if (active_pivot[r]) {
+            touches = true;
+            break;
+          }
         }
-        if (in_span) free_cols.push_back(i);
+        if (!touches) continue;
       }
+      free_cols.push_back(i);
+      stim::simd_bits<64> f_col(solved_bits);
+      for (size_t r : fc.piv_rows) f_col[r] = true;
+      F_columns.push_back(std::move(f_col));
+      F_costs.push_back(flip_delta(c));
     }
 
-    size_t N = std::min(osd_order_, free_cols.size());
-    std::vector<stim::simd_bits<64>> F_columns(N, stim::simd_bits<64>(solved_bits));
-    std::vector<double> F_costs(N);
-    for (size_t k = 0; k < N; ++k) {
-      size_t i = free_cols[k];
-      for (size_t r = 0; r < num_solved; ++r) {
-        if (H_rows[r][i]) F_columns[k][r] = true;
+    const size_t N = free_cols.size();
+    struct ImprovingMove {
+      double weight;
+      uint32_t count;
+      size_t f_idx[4];
+    };
+    std::vector<ImprovingMove> imp_moves;
+    imp_moves.reserve(256);
+
+    auto eval_piv_words = [&](const uint64_t* words) -> double {
+      double piv_w = 0.0;
+      for (size_t w_idx = 0; w_idx < solved_words; ++w_idx) {
+        uint64_t w = words[w_idx];
+        size_t base_r = w_idx << 6;
+        while (w) {
+          size_t b = __builtin_ctzll(w);
+          piv_w += basis_costs[base_r + b];
+          w &= w - 1;
+        }
       }
-      F_costs[k] = flip_delta(sorted_cols[i]);
-    }
+      return piv_w;
+    };
+
+    std::vector<uint64_t> tmp_words(solved_words);
+    std::vector<uint64_t> s_i_words(solved_words);
+    std::vector<uint64_t> s_ij_words(solved_words);
+    std::vector<double> w1_weight(N, osd0_weight);
 
     for (size_t idx = 0; idx < N; ++idx) {
-      stim::simd_bits<64> S_trial = S_solved;
-      S_trial ^= F_columns[idx];
-      evaluate_solution(S_trial, F_costs[idx], {sorted_cols[free_cols[idx]]});
+      for (size_t w = 0; w < solved_words; ++w) {
+        tmp_words[w] = S_solved.u64[w] ^ F_columns[idx].u64[w];
+      }
+      double total_w = base_hard_cost + F_costs[idx] + eval_piv_words(tmp_words.data());
+      w1_weight[idx] = total_w;
+      if (total_w < osd0_weight - 1e-6) {
+        imp_moves.push_back({total_w, 1, {idx, 0, 0, 0}});
+      }
+      if (total_w < best_weight) {
+        best_weight = total_w;
+        best_free_indices = {idx};
+      }
     }
+
     if (osd_weight_ >= 2) {
       for (size_t idx = 0; idx < N; ++idx) {
+        for (size_t w = 0; w < solved_words; ++w) {
+          s_i_words[w] = S_solved.u64[w] ^ F_columns[idx].u64[w];
+        }
+        double base_i = base_hard_cost + F_costs[idx];
+        double bound_i = std::min(osd0_weight, w1_weight[idx]);
         for (size_t jdx = idx + 1; jdx < N; ++jdx) {
-          stim::simd_bits<64> S_trial = S_solved;
-          S_trial ^= F_columns[idx];
-          S_trial ^= F_columns[jdx];
-          evaluate_solution(S_trial, F_costs[idx] + F_costs[jdx],
-                            {sorted_cols[free_cols[idx]], sorted_cols[free_cols[jdx]]});
+          for (size_t w = 0; w < solved_words; ++w) {
+            tmp_words[w] = s_i_words[w] ^ F_columns[jdx].u64[w];
+          }
+          double total_w = base_i + F_costs[jdx] + eval_piv_words(tmp_words.data());
+          if (total_w < std::min(bound_i, w1_weight[jdx]) - 1e-6) {
+            imp_moves.push_back({total_w, 2, {idx, jdx, 0, 0}});
+          }
+          if (total_w < best_weight) {
+            best_weight = total_w;
+            best_free_indices = {idx, jdx};
+          }
+        }
+      }
+
+      if (N >= 3) {
+        std::vector<size_t> w3_cols;
+        w3_cols.reserve(40);
+        for (size_t idx = 0; idx < N && w3_cols.size() < 40; ++idx) {
+          if (F_costs[idx] < 0.0 ||
+              std::abs(llr_int_to_double(posteriors[working_cols[free_cols[idx]]])) < 12.0) {
+            w3_cols.push_back(idx);
+          }
+        }
+        const size_t N3 = w3_cols.size();
+        for (size_t a3 = 0; a3 < N3; ++a3) {
+          size_t idx = w3_cols[a3];
+          for (size_t w = 0; w < solved_words; ++w) {
+            s_i_words[w] = S_solved.u64[w] ^ F_columns[idx].u64[w];
+          }
+          double base_i = base_hard_cost + F_costs[idx];
+          double bound_i = std::min(osd0_weight, w1_weight[idx]);
+          for (size_t b3 = a3 + 1; b3 < N3; ++b3) {
+            size_t jdx = w3_cols[b3];
+            for (size_t w = 0; w < solved_words; ++w) {
+              s_ij_words[w] = s_i_words[w] ^ F_columns[jdx].u64[w];
+            }
+            double base_ij = base_i + F_costs[jdx];
+            double w2_ij = base_ij + eval_piv_words(s_ij_words.data());
+            double bound_ij = std::min({bound_i, w1_weight[jdx], w2_ij});
+            for (size_t c3 = b3 + 1; c3 < N3; ++c3) {
+              size_t kdx = w3_cols[c3];
+              for (size_t w = 0; w < solved_words; ++w) {
+                tmp_words[w] = s_ij_words[w] ^ F_columns[kdx].u64[w];
+              }
+              double total_w = base_ij + F_costs[kdx] + eval_piv_words(tmp_words.data());
+              if (total_w < std::min(bound_ij, w1_weight[kdx]) - 1e-6) {
+                imp_moves.push_back({total_w, 3, {idx, jdx, kdx, 0}});
+              }
+              if (total_w < best_weight) {
+                best_weight = total_w;
+                best_free_indices = {idx, jdx, kdx};
+              }
+            }
+          }
         }
       }
     }
+
+    if (!imp_moves.empty()) {
+      std::sort(imp_moves.begin(), imp_moves.end(),
+                [](const ImprovingMove& a, const ImprovingMove& b) { return a.weight < b.weight; });
+      size_t K = std::min<size_t>(imp_moves.size(), 64);
+      for (size_t a = 0; a < K; ++a) {
+        std::vector<size_t> cur_set(imp_moves[a].f_idx, imp_moves[a].f_idx + imp_moves[a].count);
+        double cur_best_w = imp_moves[a].weight;
+        for (size_t b = 0; b < K; ++b) {
+          if (a == b) continue;
+          bool disjoint = true;
+          for (uint32_t m = 0; m < imp_moves[b].count; ++m) {
+            size_t k = imp_moves[b].f_idx[m];
+            if (std::find(cur_set.begin(), cur_set.end(), k) != cur_set.end()) {
+              disjoint = false;
+              break;
+            }
+          }
+          if (!disjoint) continue;
+          std::vector<size_t> u_set = cur_set;
+          for (uint32_t m = 0; m < imp_moves[b].count; ++m) {
+            u_set.push_back(imp_moves[b].f_idx[m]);
+          }
+          for (size_t w = 0; w < solved_words; ++w) tmp_words[w] = S_solved.u64[w];
+          double pert_cost = 0.0;
+          for (size_t k : u_set) {
+            pert_cost += F_costs[k];
+            for (size_t w = 0; w < solved_words; ++w) tmp_words[w] ^= F_columns[k].u64[w];
+          }
+          double total_w = base_hard_cost + pert_cost + eval_piv_words(tmp_words.data());
+          if (total_w < cur_best_w - 1e-6) {
+            cur_best_w = total_w;
+            cur_set = std::move(u_set);
+            if (total_w < best_weight) {
+              best_weight = total_w;
+              best_free_indices = cur_set;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  stim::simd_bits<64> S_best = S_solved;
+  std::vector<uint8_t> e_corr_best(num_errors, 0);
+  for (size_t k : best_free_indices) {
+    S_best ^= F_columns[k];
+    e_corr_best[working_cols[free_cols[k]]] = 1;
+  }
+  for (size_t r = 0; r < num_solved; ++r) {
+    if (S_best[r]) e_corr_best[row_to_basis_col[r]] = 1;
   }
 
   if (predicted_errors != nullptr) predicted_errors->clear();
