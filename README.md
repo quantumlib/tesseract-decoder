@@ -293,10 +293,12 @@ components and decodes the smaller component models separately. With two passes,
 the first pass update error priors used during the final pass. The current implementation requires
 exactly two components and accepts one or two passes.
 
-![Combined Baseline to GARI to Multi-Pass Tradeoffs](benchmarking/multipass/plots/combined_baseline_gari_multipass_tradeoffs.png)
+![Color Code Baseline to GARI to Multi-Pass Tradeoffs](benchmarking/multipass/plots/cc_baseline_gari_multipass_tradeoffs.png)
 
-See [`benchmarking/multipass/README.md`](benchmarking/multipass/README.md) for the full Color Code
-(`d=3, 5, 7, 9`) and Bivariate Bicycle (`[[144, 12, 6]]`) tradeoff plots, benchmark summary table,
+![Bivariate Bicycle Baseline to GARI to Multi-Pass Tradeoffs](benchmarking/multipass/plots/bb_baseline_gari_multipass_tradeoffs.png)
+
+See [`benchmarking/multipass/README.md`](benchmarking/multipass/README.md) for the Color Code
+(`d=3, 5, 7, 9`) and Bivariate Bicycle (`[[144, 12, 6]]`) benchmark summary table
 and reproduction scripts comparing monolithic Baseline, GARI, and Multi-Pass decoding.
 
 Two-pass reweighting is a correlated-matching-style heuristic. A component symptom's XOR marginal

@@ -68,11 +68,11 @@
     "q": 13,
     "mode": "mp_bp_osd",
     "num_shots": 50000,
-    "num_errors": 282,
+    "num_errors": 287,
     "num_low_confidence": 0,
-    "total_time_seconds": 0.4947180000000002,
-    "time_per_round": 3.2981200000000012e-06,
-    "ler_per_round": 0.0018871134337128392
+    "total_time_seconds": 0.34018599999999993,
+    "time_per_round": 2.2679066666666663e-06,
+    "ler_per_round": 0.0019207020787435636
   },
   {
     "tag": "cc_d3",
@@ -83,11 +83,11 @@
     "q": 13,
     "mode": "mp_bp_osd_fast",
     "num_shots": 50000,
-    "num_errors": 338,
+    "num_errors": 302,
     "num_low_confidence": 0,
-    "total_time_seconds": 0.25962199999999996,
-    "time_per_round": 1.730813333333333e-06,
-    "ler_per_round": 0.002263565325441086
+    "total_time_seconds": 0.20379500000000003,
+    "time_per_round": 1.3586333333333336e-06,
+    "ler_per_round": 0.002021495204759527
   },
   {
     "tag": "cc_d3",
@@ -188,11 +188,11 @@
     "q": 37,
     "mode": "mp_bp_osd",
     "num_shots": 100000,
-    "num_errors": 213,
+    "num_errors": 218,
     "num_low_confidence": 0,
-    "total_time_seconds": 12.395304000000028,
-    "time_per_round": 2.4790608000000056e-05,
-    "ler_per_round": 0.00042672776496144316
+    "total_time_seconds": 8.067071999999998,
+    "time_per_round": 1.6134143999999996e-05,
+    "ler_per_round": 0.00043676237925566186
   },
   {
     "tag": "cc_d5",
@@ -203,11 +203,11 @@
     "q": 37,
     "mode": "mp_bp_osd_fast",
     "num_shots": 150000,
-    "num_errors": 577,
+    "num_errors": 522,
     "num_low_confidence": 0,
-    "total_time_seconds": 8.755334000000003,
-    "time_per_round": 1.1673778666666671e-05,
-    "ler_per_round": 0.0007717118160009417
+    "total_time_seconds": 6.6975810000000084,
+    "time_per_round": 8.930108000000012e-06,
+    "ler_per_round": 0.0006979457953172341
   },
   {
     "tag": "cc_d5",
@@ -308,11 +308,11 @@
     "q": 73,
     "mode": "mp_bp_osd",
     "num_shots": 100000,
-    "num_errors": 90,
+    "num_errors": 79,
     "num_low_confidence": 0,
-    "total_time_seconds": 46.63994800000001,
-    "time_per_round": 6.662849714285715e-05,
-    "ler_per_round": 0.00012867072290612125
+    "total_time_seconds": 34.611790000000006,
+    "time_per_round": 4.9445414285714294e-05,
+    "ler_per_round": 0.00011293363809622425
   },
   {
     "tag": "cc_d7",
@@ -323,11 +323,11 @@
     "q": 73,
     "mode": "mp_bp_osd_fast",
     "num_shots": 200000,
-    "num_errors": 291,
+    "num_errors": 260,
     "num_low_confidence": 0,
-    "total_time_seconds": 50.31796100000002,
-    "time_per_round": 3.594140071428573e-05,
-    "ler_per_round": 0.00020811683836091666
+    "total_time_seconds": 40.99976999999998,
+    "time_per_round": 2.9285549999999983e-05,
+    "ler_per_round": 0.00018592155818247802
   },
   {
     "tag": "cc_d7",
@@ -428,11 +428,11 @@
     "q": 121,
     "mode": "mp_bp_osd",
     "num_shots": 150000,
-    "num_errors": 62,
+    "num_errors": 52,
     "num_low_confidence": 0,
-    "total_time_seconds": 196.65385199999955,
-    "time_per_round": 0.00014566951999999967,
-    "ler_per_round": 4.594280823910779e-05
+    "total_time_seconds": 163.6908000000001,
+    "time_per_round": 0.00012125244444444453,
+    "ler_per_round": 3.8530393112801153e-05
   },
   {
     "tag": "cc_d9",
@@ -443,11 +443,11 @@
     "q": 121,
     "mode": "mp_bp_osd_fast",
     "num_shots": 150000,
-    "num_errors": 80,
+    "num_errors": 70,
     "num_low_confidence": 0,
-    "total_time_seconds": 101.36822100000002,
-    "time_per_round": 7.508757111111113e-05,
-    "ler_per_round": 5.928737141985829e-05
+    "total_time_seconds": 95.55569299999998,
+    "time_per_round": 7.07819948148148e-05,
+    "ler_per_round": 5.18733734165e-05
   },
   {
     "tag": "cc_d9",
@@ -548,11 +548,11 @@
     "q": 144,
     "mode": "mp_bp_osd",
     "num_shots": 50000,
-    "num_errors": 23,
+    "num_errors": 24,
     "num_low_confidence": 0,
-    "total_time_seconds": 36.76035599999999,
-    "time_per_round": 0.00012253451999999997,
-    "ler_per_round": 7.669607208943274e-05
+    "total_time_seconds": 24.289178,
+    "time_per_round": 8.096392666666666e-05,
+    "ler_per_round": 8.003201878609145e-05
   },
   {
     "tag": "bb_d6",
@@ -563,11 +563,11 @@
     "q": 144,
     "mode": "mp_bp_osd_fast",
     "num_shots": 150000,
-    "num_errors": 105,
+    "num_errors": 101,
     "num_low_confidence": 0,
-    "total_time_seconds": 66.34035400000002,
-    "time_per_round": 7.371150444444447e-05,
-    "ler_per_round": 0.00011673478050533426
+    "total_time_seconds": 44.94412000000004,
+    "time_per_round": 4.993791111111116e-05,
+    "ler_per_round": 0.00011228524322876021
   },
   {
     "tag": "bb_d6",
