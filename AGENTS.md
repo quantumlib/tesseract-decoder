@@ -3,9 +3,12 @@
 - Use the Bazel build system when interacting with this repository.
 - The CMake build system is available to help users who need it.
 - Keep both the CMake and Bazel builds working at all times.
-- Use at most one CPU core for all builds, tests, and other expensive commands.
-  For Bazel, pass `--jobs=1`. For CMake builds, pass `--parallel 1`. For
+- Use at most one CPU core for builds (`bazel build`, `cmake --build`, `make`).
+  For Bazel builds, pass `--jobs=1`. For CMake builds, pass `--parallel 1`. For
   `make`, pass `-j1`.
+- This single-core limit applies **only to builds**, NOT to benchmarks or
+  decoding runs. When running benchmarks or simulations, use all available CPU
+  cores (e.g., `--threads 64` or multi-process parallelism).
 
 ## Building with Bazel
 

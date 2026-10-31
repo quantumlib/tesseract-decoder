@@ -270,4 +270,44 @@ TEST(BpSerialMinSumTest, BpParamsPresetsAndClusterOsd) {
   EXPECT_EQ(res[0], 1);
 }
 
+TEST(BpSerialMinSumTest, WavefrontBpMatchesFullBpOnSingleAndDisconnectedClusters) {
+  stim::DetectorErrorModel dem(R"DEM(
+    error(0.001) D0
+    error(0.001) D0 D1 L0
+    error(0.001) D1 D2
+    error(0.001) D2 D3
+    error(0.001) D3 D4
+    error(0.001) D4 D5
+    error(0.001) D5 D6
+    error(0.001) D6 D7 L0
+    error(0.001) D7
+    detector D0
+    detector D1
+    detector D2
+    detector D3
+    detector D4
+    detector D5
+    detector D6
+    detector D7
+    logical_observable L0
+  )DEM");
+
+  std::vector<std::vector<uint64_t>> batch = {
+      {0, 1},
+      {6, 7},
+      {0, 1, 6, 7},
+      {}
+  };
+
+  BPParams full_params = BPParams::Osd(15);
+  TesseractBpDecoder dec_full(dem, full_params);
+  auto expected = dec_full.decode_batch(batch);
+
+  BPParams wf_params = full_params;
+  wf_params.bp_mode = BpMode::kWavefront;
+  TesseractBpDecoder dec_wf(dem, wf_params);
+  auto actual = dec_wf.decode_batch(batch);
+  EXPECT_EQ(actual, expected);
+}
+
 }  // namespace bp

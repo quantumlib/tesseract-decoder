@@ -248,19 +248,212 @@ std::vector<uint8_t> TesseractBpDecoder::decode(
   return batch_res.empty() ? std::vector<uint8_t>{} : std::move(batch_res[0]);
 }
 
+double TesseractBpDecoder::cost_from_errors(const std::vector<size_t>& predicted_errors) const {
+  double total_cost = 0.0;
+  for (size_t v : predicted_errors) {
+    if (v < graph_.priors.size()) {
+      total_cost += std::max(1e-3, std::abs(llr_int_to_double(graph_.priors[v])));
+    }
+  }
+  return total_cost;
+}
+
 std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
     const std::vector<std::vector<uint64_t>>& detection_events_batch,
     const std::shared_ptr<OsdPostProcessor>& post_processor,
     const std::vector<std::vector<LLR_INT>>* custom_priors_per_shot,
-    std::vector<std::vector<size_t>>* predicted_errors_batch) {
+    std::vector<std::vector<size_t>>* predicted_errors_batch,
+    const std::vector<std::vector<std::pair<size_t, LLR_INT>>>* sparse_custom_priors_per_shot,
+    std::vector<uint8_t>* low_confidence_shots) {
   size_t num_shots = detection_events_batch.size();
   std::vector<std::vector<uint8_t>> results(num_shots);
   if (predicted_errors_batch != nullptr) {
     predicted_errors_batch->resize(num_shots);
   }
+  if (low_confidence_shots != nullptr) {
+    low_confidence_shots->assign(num_shots, 0);
+  }
+  last_shot_iters_.assign(num_shots, 0);
+  last_shot_min_abs_llr_.assign(num_shots, 32767);
+  if (num_shots == 0) return results;
 
   size_t num_vars = graph_.num_vars;
   size_t num_obs = num_observables();
+
+  std::vector<LLR_INT> temp_custom_priors;
+  auto get_shot_dense_priors = [&](size_t s) -> const std::vector<LLR_INT>* {
+    if (custom_priors_per_shot != nullptr) {
+      return &(*custom_priors_per_shot)[s];
+    }
+    if (sparse_custom_priors_per_shot != nullptr && !(*sparse_custom_priors_per_shot)[s].empty()) {
+      temp_custom_priors = graph_.priors;
+      for (const auto& [v, p] : (*sparse_custom_priors_per_shot)[s]) {
+        if (v < num_vars) temp_custom_priors[v] = p;
+      }
+      return &temp_custom_priors;
+    }
+    return nullptr;
+  };
+
+  std::vector<std::pair<size_t, LLR_INT>> temp_sparse_priors;
+  auto get_shot_sparse_priors =
+      [&](size_t s) -> const std::vector<std::pair<size_t, LLR_INT>>* {
+    if (sparse_custom_priors_per_shot != nullptr) {
+      return &(*sparse_custom_priors_per_shot)[s];
+    }
+    if (custom_priors_per_shot != nullptr) {
+      temp_sparse_priors.clear();
+      const auto& p_shot = (*custom_priors_per_shot)[s];
+      for (size_t v = 0; v < num_vars; ++v) {
+        if (p_shot[v] != graph_.priors[v]) {
+          temp_sparse_priors.push_back({v, p_shot[v]});
+        }
+      }
+      return &temp_sparse_priors;
+    }
+    return nullptr;
+  };
+
+  if (params_.bp_mode == BpMode::kWavefront) {
+    std::vector<size_t> dets_size_t;
+    std::vector<LLR_INT> unconv_post_final;
+    std::vector<LLR_INT> unconv_post_tstar;
+    const bool need_unconv_post = (post_processor != nullptr);
+
+    for (size_t shot = 0; shot < num_shots; ++shot) {
+      const auto& evs = detection_events_batch[shot];
+      dets_size_t.assign(evs.begin(), evs.end());
+      const auto* sp_priors = get_shot_sparse_priors(shot);
+
+      const auto t_bp_start = ProfileClock::now();
+      SparseShotBpResult s_res = bp_wavefront_min_sum_shot(
+          graph_, dets_size_t, params_.max_iter, params_.normalization_factor,
+          params_.stop_at_convergence, sp_priors,
+          need_unconv_post ? &unconv_post_final : nullptr,
+          need_unconv_post ? &unconv_post_tstar : nullptr);
+      profile_.t_bp += seconds_since(t_bp_start);
+      profile_.num_decode_calls++;
+
+      if (s_res.bp_res.converged || post_processor == nullptr) {
+        last_shot_iters_[shot] = static_cast<int>(s_res.bp_res.num_iters);
+        profile_.num_shots++;
+        if (s_res.bp_res.converged) {
+          profile_.num_converged++;
+        }
+        profile_.record_iters(s_res.bp_res.num_iters, s_res.bp_res.converged);
+        profile_.sum_active_checks += s_res.active_checks_visited;
+
+        const auto t_post_start = ProfileClock::now();
+        std::vector<uint8_t> obs_result(num_obs, 0);
+        for (size_t v : s_res.flipped_vars) {
+          for (int obs : hyperedge_observables_[v]) {
+            if (obs >= 0) obs_result[obs] ^= 1;
+          }
+        }
+        results[shot] = std::move(obs_result);
+        if (predicted_errors_batch != nullptr) {
+          (*predicted_errors_batch)[shot] = std::move(s_res.flipped_vars);
+        }
+        profile_.t_post += seconds_since(t_post_start);
+      } else {
+        last_shot_iters_[shot] = 200 + static_cast<int>(s_res.bp_res.num_iters);
+        int min_m = 32767;
+        for (LLR_INT x : unconv_post_final) {
+          min_m = std::min(min_m, std::abs(static_cast<int>(x)));
+        }
+        last_shot_min_abs_llr_[shot] = min_m;
+        profile_.num_shots++;
+        profile_.record_iters(s_res.bp_res.num_iters, false);
+        profile_.sum_active_checks += s_res.active_checks_visited;
+
+        const auto t_post_start = ProfileClock::now();
+        struct CandidateSolution {
+          std::vector<uint8_t> obs;
+          double weight = 0.0;
+        };
+        std::vector<CandidateSolution> candidates;
+        candidates.reserve(4);
+
+        const auto* shot_priors = get_shot_dense_priors(shot);
+        std::vector<size_t> best_errs;
+        std::vector<size_t> cand_errs;
+        std::vector<uint8_t> best_obs = post_processor->process(
+            s_res.bp_res, unconv_post_final, evs, hyperedge_observables_, &best_errs, shot_priors);
+        double best_w = compute_error_set_weight(graph_, shot_priors, best_errs);
+        candidates.push_back({best_obs, best_w});
+
+        auto try_sparse_seed = [&](const std::vector<LLR_INT>& post_seed) {
+          if (post_seed.empty()) return;
+          cand_errs.clear();
+          std::vector<uint8_t> cand_obs = post_processor->process(
+              s_res.bp_res, post_seed, evs, hyperedge_observables_, &cand_errs, shot_priors);
+          double w = compute_error_set_weight(graph_, shot_priors, cand_errs);
+          candidates.push_back({cand_obs, w});
+          if (w + 1e-5 < best_w) {
+            best_w = w;
+            best_obs = std::move(cand_obs);
+            best_errs = std::move(cand_errs);
+          }
+        };
+
+        if (num_obs > 0) {
+          if (!unconv_post_tstar.empty() && unconv_post_tstar != unconv_post_final) {
+            try_sparse_seed(unconv_post_tstar);
+          }
+          if (best_errs.size() >= 3 && graph_.num_checks > 24) {
+            const std::vector<LLR_INT>& base_post =
+                unconv_post_tstar.empty() ? unconv_post_final : unconv_post_tstar;
+            const std::vector<LLR_INT>& p_vec = shot_priors ? *shot_priors : graph_.priors;
+            std::vector<LLR_INT> isd_post(num_vars);
+            for (double alpha : {0.35, 0.65}) {
+              if (best_errs.size() < 3) break;
+              const double one_minus_alpha = 1.0 - alpha;
+              for (size_t v = 0; v < num_vars; ++v) {
+                isd_post[v] = static_cast<LLR_INT>(
+                    std::lround(one_minus_alpha * base_post[v] + alpha * p_vec[v]));
+              }
+              try_sparse_seed(isd_post);
+            }
+          }
+        }
+
+        const size_t total_valid_candidates = candidates.size();
+        bool low_confidence = false;
+        if (total_valid_candidates < 2) {
+          low_confidence = true;
+        } else {
+          size_t agree_count = 0;
+          double min_diff_w = std::numeric_limits<double>::infinity();
+          for (const auto& cand : candidates) {
+            if (cand.obs == best_obs) {
+              agree_count++;
+            } else {
+              if (cand.weight < min_diff_w) {
+                min_diff_w = cand.weight;
+              }
+            }
+          }
+          double agreement_fraction = static_cast<double>(agree_count) / total_valid_candidates;
+          double delta_w = std::isinf(min_diff_w)
+                               ? std::numeric_limits<double>::infinity()
+                               : (min_diff_w - best_w);
+          const double fallback_margin = params_.fallback_margin;
+          low_confidence = (agreement_fraction < 0.999 || delta_w < fallback_margin);
+        }
+        if (low_confidence_shots != nullptr) {
+          (*low_confidence_shots)[shot] = low_confidence ? 1 : 2;
+        }
+
+        results[shot] = std::move(best_obs);
+        if (predicted_errors_batch != nullptr) {
+          (*predicted_errors_batch)[shot] = std::move(best_errs);
+        }
+        profile_.t_post += seconds_since(t_post_start);
+      }
+    }
+    return results;
+  }
+
   std::vector<std::vector<size_t>> current_batch;
   std::vector<size_t> current_shot_indices;
   alignas(64) std::vector<LLR_INT> posteriors_flat(num_vars * BP_BATCH_SIZE);
@@ -295,11 +488,16 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
   std::vector<UnconvergedShotState> still_unconv;
 
   auto finalize_shot = [&](size_t real_shot_idx, const BPResult& bp_res,
-                           const std::vector<LLR_INT>& flat_post, size_t lane_b) {
+                           const std::vector<LLR_INT>& flat_post, size_t lane_b, int iter_offset = 0) {
     const auto t_deint_start = ProfileClock::now();
+    int min_m = 32767;
     for (size_t v = 0; v < num_vars; ++v) {
-      shot_posteriors[v] = flat_post[v * BP_BATCH_SIZE + lane_b];
+      LLR_INT val = flat_post[v * BP_BATCH_SIZE + lane_b];
+      shot_posteriors[v] = val;
+      min_m = std::min(min_m, std::abs(static_cast<int>(val)));
     }
+    last_shot_iters_[real_shot_idx] = iter_offset + static_cast<int>(bp_res.num_iters);
+    last_shot_min_abs_llr_[real_shot_idx] = min_m;
     profile_.t_deinterleave += seconds_since(t_deint_start);
 
     profile_.num_shots++;
@@ -307,12 +505,13 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
     profile_.record_iters(bp_res.num_iters, bp_res.converged);
 
     const auto t_post_start = ProfileClock::now();
+    const auto* shot_priors = get_shot_dense_priors(real_shot_idx);
     if (post_processor != nullptr) {
       results[real_shot_idx] = post_processor->process(
           bp_res, shot_posteriors, detection_events_batch[real_shot_idx],
           hyperedge_observables_,
           predicted_errors_batch ? &(*predicted_errors_batch)[real_shot_idx] : nullptr,
-          custom_priors_per_shot ? &(*custom_priors_per_shot)[real_shot_idx] : nullptr);
+          shot_priors);
     } else {
       if (predicted_errors_batch != nullptr) {
         (*predicted_errors_batch)[real_shot_idx].clear();
@@ -365,20 +564,43 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
         current_batch.push_back({});
       }
 
-      const std::vector<LLR_INT>* priors_flat_ptr = nullptr;
-      if (custom_priors_per_shot != nullptr) {
-        for (size_t v = 0; v < num_vars; ++v) {
-          for (size_t b = 0; b < actual_size; ++b) {
-            size_t real_shot_idx = current_shot_indices[b];
-            custom_priors_flat[v * BP_BATCH_SIZE + b] =
-                (*custom_priors_per_shot)[real_shot_idx][v];
+      auto populate_batch_custom_priors =
+          [&](size_t actual_size, auto get_real_shot_fn) -> const std::vector<LLR_INT>* {
+        if (custom_priors_per_shot != nullptr) {
+          for (size_t v = 0; v < num_vars; ++v) {
+            for (size_t b = 0; b < actual_size; ++b) {
+              size_t real_shot_idx = get_real_shot_fn(b);
+              custom_priors_flat[v * BP_BATCH_SIZE + b] =
+                  (*custom_priors_per_shot)[real_shot_idx][v];
+            }
+            for (size_t b = actual_size; b < BP_BATCH_SIZE; ++b) {
+              custom_priors_flat[v * BP_BATCH_SIZE + b] = graph_.priors[v];
+            }
           }
-          for (size_t b = actual_size; b < BP_BATCH_SIZE; ++b) {
-            custom_priors_flat[v * BP_BATCH_SIZE + b] = graph_.priors[v];
-          }
+          return &custom_priors_flat;
         }
-        priors_flat_ptr = &custom_priors_flat;
-      }
+        if (sparse_custom_priors_per_shot != nullptr) {
+          for (size_t v = 0; v < num_vars; ++v) {
+            const LLR_INT p = graph_.priors[v];
+            for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
+              custom_priors_flat[v * BP_BATCH_SIZE + b] = p;
+            }
+          }
+          for (size_t b = 0; b < actual_size; ++b) {
+            size_t real_shot_idx = get_real_shot_fn(b);
+            for (const auto& [v, p] : (*sparse_custom_priors_per_shot)[real_shot_idx]) {
+              if (v < num_vars) {
+                custom_priors_flat[v * BP_BATCH_SIZE + b] = p;
+              }
+            }
+          }
+          return &custom_priors_flat;
+        }
+        return nullptr;
+      };
+
+      const std::vector<LLR_INT>* priors_flat_ptr = populate_batch_custom_priors(
+          actual_size, [&](size_t b) { return current_shot_indices[b]; });
 
       const bool track_stage1_tstar = (!use_survivor_compaction && enable_unconv_relay);
       const auto t_bp_start = ProfileClock::now();
@@ -420,20 +642,43 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
         current_batch.push_back({});
       }
 
-      const std::vector<LLR_INT>* priors_flat_ptr = nullptr;
-      if (custom_priors_per_shot != nullptr) {
-        for (size_t v = 0; v < num_vars; ++v) {
-          for (size_t b = 0; b < actual_size; ++b) {
-            size_t real_shot_idx = current_shot_indices[b];
-            custom_priors_flat[v * BP_BATCH_SIZE + b] =
-                (*custom_priors_per_shot)[real_shot_idx][v];
+      auto populate_batch_custom_priors =
+          [&](size_t actual_size, auto get_real_shot_fn) -> const std::vector<LLR_INT>* {
+        if (custom_priors_per_shot != nullptr) {
+          for (size_t v = 0; v < num_vars; ++v) {
+            for (size_t b = 0; b < actual_size; ++b) {
+              size_t real_shot_idx = get_real_shot_fn(b);
+              custom_priors_flat[v * BP_BATCH_SIZE + b] =
+                  (*custom_priors_per_shot)[real_shot_idx][v];
+            }
+            for (size_t b = actual_size; b < BP_BATCH_SIZE; ++b) {
+              custom_priors_flat[v * BP_BATCH_SIZE + b] = graph_.priors[v];
+            }
           }
-          for (size_t b = actual_size; b < BP_BATCH_SIZE; ++b) {
-            custom_priors_flat[v * BP_BATCH_SIZE + b] = graph_.priors[v];
-          }
+          return &custom_priors_flat;
         }
-        priors_flat_ptr = &custom_priors_flat;
-      }
+        if (sparse_custom_priors_per_shot != nullptr) {
+          for (size_t v = 0; v < num_vars; ++v) {
+            const LLR_INT p = graph_.priors[v];
+            for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
+              custom_priors_flat[v * BP_BATCH_SIZE + b] = p;
+            }
+          }
+          for (size_t b = 0; b < actual_size; ++b) {
+            size_t real_shot_idx = get_real_shot_fn(b);
+            for (const auto& [v, p] : (*sparse_custom_priors_per_shot)[real_shot_idx]) {
+              if (v < num_vars) {
+                custom_priors_flat[v * BP_BATCH_SIZE + b] = p;
+              }
+            }
+          }
+          return &custom_priors_flat;
+        }
+        return nullptr;
+      };
+
+      const std::vector<LLR_INT>* priors_flat_ptr = populate_batch_custom_priors(
+          actual_size, [&](size_t b) { return current_shot_indices[b]; });
 
       const auto t_bp_start = ProfileClock::now();
       std::vector<BPResult> bp_results = bp_serial_min_sum(
@@ -509,6 +754,22 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
             }
           }
           priors_flat_ptr = &custom_priors_flat;
+        } else if (sparse_custom_priors_per_shot != nullptr) {
+          for (size_t v = 0; v < num_vars; ++v) {
+            const LLR_INT p = graph_.priors[v];
+            for (size_t b = 0; b < BP_BATCH_SIZE; ++b) {
+              custom_priors_flat[v * BP_BATCH_SIZE + b] = p;
+            }
+          }
+          for (size_t b = 0; b < actual_size; ++b) {
+            size_t r_shot = still_unconv[current_shot_indices[b]].real_shot_idx;
+            for (const auto& [v, p] : (*sparse_custom_priors_per_shot)[r_shot]) {
+              if (v < num_vars) {
+                custom_priors_flat[v * BP_BATCH_SIZE + b] = p;
+              }
+            }
+          }
+          priors_flat_ptr = &custom_priors_flat;
         }
 
         const auto t_bp_start = ProfileClock::now();
@@ -524,7 +785,7 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
           size_t u_i = current_shot_indices[b];
           auto& uc = still_unconv[u_i];
           if (r_results[b].converged) {
-            finalize_shot(uc.real_shot_idx, r_results[b], posteriors_flat, b);
+            finalize_shot(uc.real_shot_idx, r_results[b], posteriors_flat, b, 100);
             uc.retired = true;
             continue;
           }
@@ -554,17 +815,32 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
     if (uc.retired) continue;
     const size_t real_shot_idx = uc.real_shot_idx;
     const auto& dets = detection_events_batch[real_shot_idx];
-    const std::vector<LLR_INT>* shot_priors =
-        custom_priors_per_shot ? &(*custom_priors_per_shot)[real_shot_idx] : nullptr;
+    const std::vector<LLR_INT>* shot_priors = get_shot_dense_priors(real_shot_idx);
 
     profile_.num_shots++;
     profile_.record_iters(uc.bp_res.num_iters, false);
+    last_shot_iters_[real_shot_idx] = 200 + static_cast<int>(uc.bp_res.num_iters);
+    {
+      int min_m = 32767;
+      for (LLR_INT x : uc.post_final) {
+        min_m = std::min(min_m, std::abs(static_cast<int>(x)));
+      }
+      last_shot_min_abs_llr_[real_shot_idx] = min_m;
+    }
 
     const auto t_post_start = ProfileClock::now();
+    struct CandidateSolution {
+      std::vector<uint8_t> obs;
+      double weight = 0.0;
+    };
+    std::vector<CandidateSolution> candidates;
+    candidates.reserve(8);
+
     best_errs.clear();
     std::vector<uint8_t> best_obs = post_processor->process(
         uc.bp_res, uc.post_final, dets, hyperedge_observables_, &best_errs, shot_priors);
     double best_w = compute_error_set_weight(graph_, shot_priors, best_errs);
+    candidates.push_back({best_obs, best_w});
 
     auto try_seed = [&](const BPResult& res, const std::vector<LLR_INT>& post_seed) {
       if (post_seed.empty()) return;
@@ -572,6 +848,7 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
       std::vector<uint8_t> cand_obs = post_processor->process(
           res, post_seed, dets, hyperedge_observables_, &cand_errs, shot_priors);
       double w = compute_error_set_weight(graph_, shot_priors, cand_errs);
+      candidates.push_back({cand_obs, w});
       if (w + 1e-5 < best_w) {
         best_w = w;
         best_obs = std::move(cand_obs);
@@ -609,7 +886,8 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
       const size_t K = dets.size();
       for (size_t order = 1; order <= 3; ++order) {
         if (best_errs.size() < 3) break;
-        const uint64_t seed = isd_order_seed(first_det, K, order);
+        const uint64_t seed = isd_order_seed(first_det, K, order) ^
+                              ((params_.random_seed > (1ULL << 32)) ? params_.random_seed : 0ULL);
         for (size_t v = 0; v < num_vars; ++v) {
           uint64_t h = seed ^ (static_cast<uint64_t>(v) * 0x9E3779B97F4A7C15ULL);
           h = (h ^ (h >> 30)) * 0xBF58476D1CE4E5B9ULL;
@@ -620,6 +898,33 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
         }
         try_seed(base_res, isd_post);
       }
+    }
+
+    const size_t total_valid_candidates = candidates.size();
+    bool low_confidence = false;
+    if (total_valid_candidates < 2) {
+      low_confidence = true;
+    } else {
+      size_t agree_count = 0;
+      double min_diff_w = std::numeric_limits<double>::infinity();
+      for (const auto& cand : candidates) {
+        if (cand.obs == best_obs) {
+          agree_count++;
+        } else {
+          if (cand.weight < min_diff_w) {
+            min_diff_w = cand.weight;
+          }
+        }
+      }
+      double agreement_fraction = static_cast<double>(agree_count) / total_valid_candidates;
+      double delta_w = std::isinf(min_diff_w)
+                           ? std::numeric_limits<double>::infinity()
+                           : (min_diff_w - best_w);
+      const double fallback_margin = params_.fallback_margin;
+      low_confidence = (agreement_fraction < 0.999 || delta_w < fallback_margin);
+    }
+    if (low_confidence_shots != nullptr) {
+      (*low_confidence_shots)[real_shot_idx] = low_confidence ? 1 : 2;
     }
 
     results[real_shot_idx] = std::move(best_obs);

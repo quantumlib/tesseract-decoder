@@ -40,6 +40,11 @@ constexpr bool DEFAULT_STOP_AT_CONVERGENCE = true;
 constexpr bool DEFAULT_RANDOM_SCHEDULE = false;
 constexpr uint64_t DEFAULT_RANDOM_SEED = 0;
 
+enum class BpMode {
+  kFull = 0,
+  kWavefront = 2,
+};
+
 struct BPParams {
   size_t max_iter = DEFAULT_MAX_ITER;
   bool stop_at_convergence = DEFAULT_STOP_AT_CONVERGENCE;
@@ -51,6 +56,8 @@ struct BPParams {
   int osd_order = -1;
   int osd_weight = 0;
   bool use_soft_reweighting = true;
+  BpMode bp_mode = BpMode::kFull;
+  double fallback_margin = 1.0;
 
   static BPParams Osd(size_t max_iter = DEFAULT_MAX_ITER, int osd_order = 24, int osd_weight = 2) {
     BPParams p;

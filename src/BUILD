@@ -463,6 +463,7 @@ cc_binary(
     deps = [
         ":libbp",
         ":libcommon",
+        ":libtesseract",
         ":libutils",
         "@argparse",
         "@nlohmann_json//:json",

@@ -38,7 +38,9 @@ class MultiPassBpDecoder {
 
   std::vector<uint8_t> decode(const std::vector<uint64_t>& detection_events);
   std::vector<std::vector<uint8_t>> decode_batch(
-      const std::vector<std::vector<uint64_t>>& detection_events_batch);
+      const std::vector<std::vector<uint64_t>>& detection_events_batch,
+      std::vector<uint8_t>* low_confidence_shots = nullptr,
+      std::vector<double>* predicted_costs_batch = nullptr);
 
   size_t num_observables() const;
   size_t total_detectors() const;

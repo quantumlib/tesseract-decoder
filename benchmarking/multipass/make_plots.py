@@ -226,6 +226,7 @@ def plot_color_codes(by_key):
         g_pt = by_key[(tag, "gari_b5")]
         m20_pt = by_key[(tag, "mp_2p_b20")]
         bp_pt = by_key[(tag, "mp_bp_osd")]
+        cas_pt = by_key.get((tag, "mp_bp_osd_cascade"))
         rel_pt = by_key.get((tag, "relay_bp"))
         tel_pt = by_key.get((tag, "telescoping_bp"))
 
@@ -237,15 +238,21 @@ def plot_color_codes(by_key):
         )
         draw_point(ax, m20_pt, marker, fill_color, "#0055cc", "M", size=110, ring_size=260)
         draw_point(ax, bp_pt, marker, fill_color, "#008080", "O", size=110, ring_size=260)
+        if cas_pt is not None:
+            draw_point(ax, cas_pt, marker, fill_color, "#c9184a", "C", size=110, ring_size=260, badge_offset=(-8, -8))
         if rel_pt is not None:
             draw_point(ax, rel_pt, marker, fill_color, "#e66100", "R", size=110, ring_size=260)
         if tel_pt is not None:
             draw_point(ax, tel_pt, marker, fill_color, "#7b3f00", "T", size=110, ring_size=260)
 
-        # Solid main progression: Baseline -> GARI -> MP(b=20) -> MP-BP-OSD
+        # Solid main progression: Baseline -> GARI -> MP(b=20) -> 3-Stage Cascade -> MP-BP-OSD
         draw_arrow_segment(ax, b_pt, g_pt, color="#444444", lw=1.8, linestyle="-")
         draw_arrow_segment(ax, g_pt, m20_pt, color="#0055cc", lw=1.8, linestyle="-")
-        draw_arrow_segment(ax, m20_pt, bp_pt, color="#008080", lw=1.8, linestyle="-")
+        if cas_pt is not None:
+            draw_arrow_segment(ax, m20_pt, cas_pt, color="#c9184a", lw=1.8, linestyle="-")
+            draw_arrow_segment(ax, cas_pt, bp_pt, color="#008080", lw=1.8, linestyle="-")
+        else:
+            draw_arrow_segment(ax, m20_pt, bp_pt, color="#008080", lw=1.8, linestyle="-")
 
         # Secondary dashed progression: Baseline -> Relay-BP -> Telescoping-BP
         if rel_pt is not None and tel_pt is not None:
@@ -340,6 +347,17 @@ def plot_color_codes(by_key):
             color="none",
             marker="o",
             markerfacecolor="#cccccc",
+            markeredgecolor="#c9184a",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="[C] 3-Stage Cascade (MP-BP-OSD -> Monolithic BP-OSD -> Tesseract)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
             markeredgecolor="#008080",
             markeredgewidth=2.6,
             markersize=10,
@@ -394,12 +412,13 @@ def plot_bb_code(by_key):
     )
 
     tag = "bb_d6"
-    marker = "H"
+    marker = "o"
     fill_color = "#ff00ff"
     b_pt = by_key[(tag, "baseline_b20")]
     g_pt = by_key[(tag, "gari_b5")]
     m20_pt = by_key[(tag, "mp_2p_b20")]
     bp_pt = by_key[(tag, "mp_bp_osd")]
+    cas_pt = by_key.get((tag, "mp_bp_osd_cascade"))
     rel_pt = by_key.get((tag, "relay_bp"))
     tel_pt = by_key.get((tag, "telescoping_bp"))
 
@@ -407,15 +426,21 @@ def plot_bb_code(by_key):
     draw_point(ax, g_pt, marker, fill_color, "#108000", "G", size=140, ring_size=320)
     draw_point(ax, m20_pt, marker, fill_color, "#0055cc", "M", size=140, ring_size=320)
     draw_point(ax, bp_pt, marker, fill_color, "#008080", "O", size=140, ring_size=320)
+    if cas_pt is not None:
+        draw_point(ax, cas_pt, marker, fill_color, "#c9184a", "C", size=140, ring_size=320, badge_offset=(-8, -8))
     if rel_pt is not None:
         draw_point(ax, rel_pt, marker, fill_color, "#e66100", "R", size=140, ring_size=320)
     if tel_pt is not None:
         draw_point(ax, tel_pt, marker, fill_color, "#7b3f00", "T", size=140, ring_size=320)
 
-    # Solid main progression: Baseline -> GARI -> MP(b=20) -> MP-BP-OSD
+    # Solid main progression: Baseline -> GARI -> MP(b=20) -> 3-Stage Cascade -> MP-BP-OSD
     draw_arrow_segment(ax, b_pt, g_pt, color="#444444", lw=1.8, linestyle="-")
     draw_arrow_segment(ax, g_pt, m20_pt, color="#0055cc", lw=1.8, linestyle="-")
-    draw_arrow_segment(ax, m20_pt, bp_pt, color="#008080", lw=1.8, linestyle="-")
+    if cas_pt is not None:
+        draw_arrow_segment(ax, m20_pt, cas_pt, color="#c9184a", lw=1.8, linestyle="-")
+        draw_arrow_segment(ax, cas_pt, bp_pt, color="#008080", lw=1.8, linestyle="-")
+    else:
+        draw_arrow_segment(ax, m20_pt, bp_pt, color="#008080", lw=1.8, linestyle="-")
 
     # Secondary dashed progression: Baseline -> Relay-BP -> Telescoping-BP
     if rel_pt is not None and tel_pt is not None:
@@ -434,7 +459,7 @@ def plot_bb_code(by_key):
             [],
             [],
             color="none",
-            marker="H",
+            marker="o",
             markerfacecolor="#ff00ff",
             markeredgecolor="#aa00aa",
             markersize=10,
@@ -473,6 +498,17 @@ def plot_bb_code(by_key):
             markeredgewidth=2.6,
             markersize=10,
             label="[M] Multi-Pass Tesseract (2-pass causal, beam=20)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#c9184a",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="[C] 3-Stage Cascade (MP-BP-OSD -> Monolithic BP-OSD -> Tesseract)",
         ),
         mlines.Line2D(
             [],
@@ -525,10 +561,172 @@ def plot_bb_code(by_key):
     print(f"Saved {out_path}")
 
 
+def plot_mitten_code(by_key):
+    tag = "mitten_d10"
+    if (tag, "baseline_b20") not in by_key:
+        return
+
+    fig, ax = plt.subplots(figsize=(11.5, 7.8), dpi=200)
+    style_axes(
+        ax,
+        "Logical Error Rate per Round vs Time per Round\n"
+        "(r=10, d=10, p=0.001, noise=xyz_hookfree, c=mitten_X, [[150, 30, 10]], q=270)",
+    )
+
+    marker = "o"
+    fill_color = "#38bdf8"
+    b_pt = by_key[(tag, "baseline_b20")]
+    g_pt = by_key[(tag, "gari_b5")]
+    m20_pt = by_key[(tag, "mp_2p_b20")]
+    bp_pt = by_key[(tag, "mp_bp_osd")]
+    cas_pt = by_key.get((tag, "mp_bp_osd_cascade"))
+    rel_pt = by_key.get((tag, "relay_bp"))
+    tel_pt = by_key.get((tag, "telescoping_bp"))
+
+    draw_point(ax, b_pt, marker, fill_color, "#111111", "B", size=125, ring_size=300)
+    draw_point(ax, g_pt, marker, fill_color, "#108000", "G", size=125, ring_size=300)
+    draw_point(ax, m20_pt, marker, fill_color, "#0055cc", "M", size=125, ring_size=300)
+    draw_point(ax, bp_pt, marker, fill_color, "#008080", "O", size=125, ring_size=300)
+    if cas_pt is not None:
+        draw_point(ax, cas_pt, marker, fill_color, "#c9184a", "C", size=125, ring_size=300, badge_offset=(-8, -8))
+    if rel_pt is not None:
+        draw_point(ax, rel_pt, marker, fill_color, "#e66100", "R", size=125, ring_size=300)
+    if tel_pt is not None:
+        draw_point(ax, tel_pt, marker, fill_color, "#7b3f00", "T", size=125, ring_size=300)
+
+    # Solid main progression: Baseline -> GARI -> MP(b=20) -> 3-Stage Cascade -> MP-BP-OSD
+    draw_arrow_segment(ax, b_pt, g_pt, color="#444444", lw=1.8, linestyle="-")
+    draw_arrow_segment(ax, g_pt, m20_pt, color="#0055cc", lw=1.8, linestyle="-")
+    if cas_pt is not None:
+        draw_arrow_segment(ax, m20_pt, cas_pt, color="#c9184a", lw=1.8, linestyle="-")
+        draw_arrow_segment(ax, cas_pt, bp_pt, color="#008080", lw=1.8, linestyle="-")
+    else:
+        draw_arrow_segment(ax, m20_pt, bp_pt, color="#008080", lw=1.8, linestyle="-")
+
+    # Secondary dashed progression: Baseline -> Relay-BP -> Telescoping-BP
+    if rel_pt is not None and tel_pt is not None:
+        draw_arrow_segment(
+            ax, b_pt, rel_pt, color="#e66100", lw=1.35, linestyle="--", alpha=0.75
+        )
+        draw_arrow_segment(
+            ax, rel_pt, tel_pt, color="#7b3f00", lw=1.35, linestyle="--", alpha=0.75
+        )
+
+    ax.set_xlim(1.0e-4, 2.0e1)
+    ax.set_ylim(1.2e-7, 2.2e-2)
+
+    legend_handles = [
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#38bdf8",
+            markeredgecolor="#0284c7",
+            markersize=9.5,
+            label="mitten, d=10, q=270, [[150, 30, 10]]",
+        ),
+        mlines.Line2D([], [], color="none", label=""),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#111111",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="[B] Baseline (beam=20, climb=True, no_revisit=True, orders=1)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#108000",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="[G] GARI (prior=xor, beam=5, climb=True, orders=1)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#0055cc",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="[M] Multi-Pass Tesseract (2-pass causal, beam=20)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#c9184a",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="[C] 3-Stage Cascade (MP-BP-OSD -> Random-Sched BP-OSD -> MP-Tesseract)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#008080",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="[O] Multi-Pass BP-OSD (2-pass causal, max_iter=20, OSD-2)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#e66100",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="[R] Relay-BP (External: trmue/relay, S=5)",
+        ),
+        mlines.Line2D(
+            [],
+            [],
+            color="none",
+            marker="o",
+            markerfacecolor="#cccccc",
+            markeredgecolor="#7b3f00",
+            markeredgewidth=2.6,
+            markersize=10,
+            label="[T] Telescoping-BP (External: a7b/yarn, GARI S3)",
+        ),
+    ]
+    ax.legend(
+        handles=legend_handles,
+        loc="upper left",
+        fontsize=8.6,
+        frameon=True,
+        facecolor="white",
+        edgecolor="#dddddd",
+        borderpad=0.75,
+    )
+
+    plt.tight_layout()
+    out_path = ARTIFACT_DIR / "mitten_baseline_gari_multipass_tradeoffs.png"
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
+
+
 def main():
     by_key = load_enriched_results()
     plot_color_codes(by_key)
     plot_bb_code(by_key)
+    plot_mitten_code(by_key)
 
 
 if __name__ == "__main__":

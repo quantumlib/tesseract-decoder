@@ -147,7 +147,7 @@ target_link_libraries(tesseract PRIVATE tesseract_lib argparse::argparse nlohman
 
 add_executable(bp ${TESSERACT_SRC_DIR}/bp_main.cc)
 target_compile_options(bp PRIVATE ${OPT_COPTS})
-target_link_libraries(bp PRIVATE bp_lib common utils argparse::argparse nlohmann_json::nlohmann_json)
+target_link_libraries(bp PRIVATE bp_lib common utils tesseract_lib argparse::argparse nlohmann_json::nlohmann_json)
 
 add_executable(tesseract_trellis ${TESSERACT_SRC_DIR}/tesseract_trellis_main.cc)
 target_compile_options(tesseract_trellis PRIVATE ${OPT_COPTS})

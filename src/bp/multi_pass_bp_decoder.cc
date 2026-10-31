@@ -362,9 +362,17 @@ void MultiPassBpDecoder::build_causal_schedule() {
 }
 
 std::vector<std::vector<uint8_t>> MultiPassBpDecoder::decode_batch(
-    const std::vector<std::vector<uint64_t>>& detection_events_batch) {
+    const std::vector<std::vector<uint64_t>>& detection_events_batch,
+    std::vector<uint8_t>* low_confidence_shots,
+    std::vector<double>* predicted_costs_batch) {
   size_t num_shots = detection_events_batch.size();
   std::vector<std::vector<uint8_t>> results(num_shots);
+  if (low_confidence_shots != nullptr) {
+    low_confidence_shots->assign(num_shots, 0);
+  }
+  if (predicted_costs_batch != nullptr) {
+    predicted_costs_batch->assign(num_shots, 0.0);
+  }
   if (num_shots == 0) return results;
 
   std::array<std::vector<std::vector<uint64_t>>, 2> comp_syndromes;
@@ -379,29 +387,42 @@ std::vector<std::vector<uint8_t>> MultiPassBpDecoder::decode_batch(
     }
   }
 
-  std::array<std::vector<std::vector<LLR_INT>>, 2> custom_priors_per_shot;
+  std::array<std::vector<std::vector<std::pair<size_t, LLR_INT>>>, 2> sparse_custom_priors_per_shot;
   if (pass_schedule_.size() > 1) {
-    for (size_t c = 0; c < 2; ++c) {
-      custom_priors_per_shot[c].assign(num_shots, component_decoders_[c].decoder->graph().priors);
-    }
+    sparse_custom_priors_per_shot[0].resize(num_shots);
+    sparse_custom_priors_per_shot[1].resize(num_shots);
   }
 
   std::array<std::vector<std::vector<size_t>>, 2> comp_predicted_errors;
+  comp_predicted_errors[0].resize(num_shots);
+  comp_predicted_errors[1].resize(num_shots);
   std::array<std::vector<std::vector<uint8_t>>, 2> comp_results;
+
+  std::array<std::vector<uint8_t>, 2> comp_lc_saved;
+  comp_lc_saved[0].assign(num_shots, 0);
+  comp_lc_saved[1].assign(num_shots, 0);
+  const bool want_diag = (std::getenv("MP_DIAG") != nullptr);
 
   for (size_t pass = 0; pass < pass_schedule_.size(); ++pass) {
     const bool is_final_pass = (pass + 1 == pass_schedule_.size());
     for (size_t comp : pass_schedule_[pass]) {
+      std::vector<uint8_t> comp_low_conf;
       comp_results[comp] = component_decoders_[comp].decoder->decode_batch(
           comp_syndromes[comp], component_decoders_[comp].post_processor,
-          (pass == 0) ? nullptr : &custom_priors_per_shot[comp],
-          is_final_pass ? nullptr : &comp_predicted_errors[comp]);
+          /*custom_priors_per_shot=*/nullptr,
+          &comp_predicted_errors[comp],
+          (pass == 0) ? nullptr : &sparse_custom_priors_per_shot[comp],
+          (low_confidence_shots != nullptr || want_diag) ? &comp_low_conf : nullptr);
+      if (!comp_low_conf.empty()) {
+        comp_lc_saved[comp] = comp_low_conf;
+      }
     }
     if (!is_final_pass) {
       if (pass > 0 && pass + 1 < pass_schedule_.size()) {
         for (size_t next_comp : pass_schedule_[pass + 1]) {
-          custom_priors_per_shot[next_comp].assign(
-              num_shots, component_decoders_[next_comp].decoder->graph().priors);
+          for (size_t s = 0; s < num_shots; ++s) {
+            sparse_custom_priors_per_shot[next_comp][s].clear();
+          }
         }
       }
       for (size_t source_comp : pass_schedule_[pass]) {
@@ -412,10 +433,27 @@ std::vector<std::vector<uint8_t>> MultiPassBpDecoder::decode_batch(
             auto it = reweight_map.find(v_src);
             if (it == reweight_map.end()) continue;
             for (const auto& rule : it->second) {
-              LLR_INT& cur_p = custom_priors_per_shot[rule.target_comp_idx][s][rule.target_var_idx];
-              cur_p = soft_reweight_
-                          ? std::min(cur_p, static_cast<LLR_INT>((cur_p + 3 * rule.reweight_llr) / 4))
-                          : std::min(cur_p, rule.reweight_llr);
+              const size_t t_comp = rule.target_comp_idx;
+              const size_t t_var = rule.target_var_idx;
+              auto& shot_sp = sparse_custom_priors_per_shot[t_comp][s];
+              LLR_INT* cur_p_ptr = nullptr;
+              for (auto& kv : shot_sp) {
+                if (kv.first == t_var) {
+                  cur_p_ptr = &kv.second;
+                  break;
+                }
+              }
+              if (cur_p_ptr == nullptr) {
+                const LLR_INT base_p =
+                    component_decoders_[t_comp].decoder->graph().priors[t_var];
+                shot_sp.push_back({t_var, base_p});
+                cur_p_ptr = &shot_sp.back().second;
+              }
+              *cur_p_ptr =
+                  soft_reweight_
+                      ? std::min(*cur_p_ptr,
+                                 static_cast<LLR_INT>((*cur_p_ptr + 3 * rule.reweight_llr) / 4))
+                      : std::min(*cur_p_ptr, rule.reweight_llr);
             }
           }
         }
@@ -429,6 +467,73 @@ std::vector<std::vector<uint8_t>> MultiPassBpDecoder::decode_batch(
     for (size_t comp : pass_schedule_.back()) {
       const auto& c_corr = comp_results[comp][s];
       for (size_t o = 0; o < c_corr.size() && o < num_obs; ++o) results[s][o] ^= c_corr[o];
+    }
+  }
+  if (predicted_costs_batch != nullptr) {
+    const size_t dst_c = pass_schedule_.back().front();
+    const size_t src_c = (pass_schedule_.size() >= 2)
+                             ? pass_schedule_[pass_schedule_.size() - 2].front()
+                             : dst_c;
+    const auto& reweight_map = component_decoders_[src_c].reweight_rules;
+    const auto& dst_priors = component_decoders_[dst_c].decoder->graph().priors;
+    for (size_t s = 0; s < num_shots; ++s) {
+      double cost = component_decoders_[src_c].decoder->cost_from_errors(
+          comp_predicted_errors[src_c][s]);
+      if (dst_c != src_c) {
+        std::map<size_t, LLR_INT> cond_llr;
+        for (size_t v_src : comp_predicted_errors[src_c][s]) {
+          auto it = reweight_map.find(v_src);
+          if (it == reweight_map.end()) continue;
+          for (const auto& rule : it->second) {
+            if (rule.target_comp_idx != dst_c) continue;
+            auto [mit, ins] = cond_llr.try_emplace(rule.target_var_idx, rule.reweight_llr);
+            if (!ins) mit->second = std::min(mit->second, rule.reweight_llr);
+          }
+        }
+        for (size_t v_dst : comp_predicted_errors[dst_c][s]) {
+          LLR_INT p = dst_priors[v_dst];
+          auto it = cond_llr.find(v_dst);
+          if (it != cond_llr.end()) p = std::min(p, it->second);
+          cost += llr_int_to_double(p);
+        }
+      }
+      (*predicted_costs_batch)[s] = cost;
+    }
+  }
+  if (low_confidence_shots != nullptr) {
+    const size_t dst_c = pass_schedule_.back().front();
+    const size_t src_c = (pass_schedule_.size() >= 2)
+                             ? pass_schedule_[pass_schedule_.size() - 2].front()
+                             : dst_c;
+    const auto& src_iters = component_decoders_[src_c].decoder->last_shot_iters();
+    const auto& dst_iters = component_decoders_[dst_c].decoder->last_shot_iters();
+    const size_t tot_dets = total_detectors();
+    const bool is_small_expander = (tot_dets <= 480 && num_obs > 1);
+    for (size_t s = 0; s < num_shots; ++s) {
+      const uint8_t lc0 = comp_lc_saved[src_c][s];
+      const uint8_t lc1 = comp_lc_saved[dst_c][s];
+      const int it0 = (s < src_iters.size()) ? src_iters[s] : 0;
+      const int it1 = (s < dst_iters.size()) ? dst_iters[s] : 0;
+      const double s1_cost =
+          (predicted_costs_batch != nullptr && s < predicted_costs_batch->size())
+              ? (*predicted_costs_batch)[s]
+              : 1e9;
+      if (lc1 == 1 || (tot_dets > 1500 && lc0 == 1)) {
+        (*low_confidence_shots)[s] = 1;
+      } else if (tot_dets > 1500 && tot_dets <= 6000 && (lc0 > 0 || lc1 > 0)) {
+        (*low_confidence_shots)[s] = 2;
+      } else if (lc0 > 0 && lc1 > 0 && tot_dets <= 6000) {
+        (*low_confidence_shots)[s] = 2;
+      } else if (lc1 > 0 && num_obs == 1 && tot_dets > 50 &&
+                 s1_cost >= (tot_dets > 350 ? 95.0 : (tot_dets > 200 ? 65.0 : 35.0))) {
+        (*low_confidence_shots)[s] = 3;
+      } else if (num_obs > 1 && tot_dets <= 1500 && lc1 > 0) {
+        (*low_confidence_shots)[s] = 3;
+      } else if (is_small_expander && lc0 > 0 && s1_cost >= 52.0) {
+        (*low_confidence_shots)[s] = 4;
+      } else if (is_small_expander && (it1 >= 5 || it0 >= 5) && s1_cost >= 52.0) {
+        (*low_confidence_shots)[s] = 5;
+      }
     }
   }
   return results;
@@ -462,6 +567,7 @@ BpDecodeProfile MultiPassBpDecoder::profile() const {
     agg.t_deinterleave += cp.t_deinterleave;
     agg.t_post += cp.t_post;
     agg.sum_iters += cp.sum_iters;
+    agg.sum_active_checks += cp.sum_active_checks;
     agg.num_decode_calls += cp.num_decode_calls;
     for (size_t i = 0; i < BpDecodeProfile::kNumIterBuckets; ++i) {
       agg.iter_hist[i] += cp.iter_hist[i];

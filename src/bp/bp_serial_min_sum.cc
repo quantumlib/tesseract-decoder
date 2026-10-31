@@ -344,4 +344,404 @@ std::vector<BPResult> bp_serial_min_sum(
   return results;
 }
 
+namespace {
+
+inline void touch_var(TannerGraph& graph, size_t v) {
+  if (graph.var_dirty_stamp[v] != graph.dirty_gen) {
+    graph.var_dirty_stamp[v] = graph.dirty_gen;
+    graph.dirty_vars.push_back(v);
+  }
+}
+
+inline void touch_check(TannerGraph& graph, size_t c) {
+  if (graph.check_dirty_stamp[c] != graph.check_dirty_gen) {
+    graph.check_dirty_stamp[c] = graph.check_dirty_gen;
+    graph.dirty_checks.push_back(c);
+  }
+}
+
+void apply_sparse_custom_priors(
+    TannerGraph& graph, const std::vector<std::pair<size_t, LLR_INT>>* sparse_custom_priors,
+    LLR_INT alpha_fp) {
+  if (!sparse_custom_priors || sparse_custom_priors->empty()) return;
+
+  for (const auto& [v, new_prior] : *sparse_custom_priors) {
+    if (v >= graph.num_vars) continue;
+    touch_var(graph, v);
+    graph.work_posteriors[v] += (new_prior - graph.work_priors[v]);
+    graph.work_priors[v] = new_prior;
+    const size_t v_start = graph.var_edge_offsets[v];
+    const size_t v_end = graph.var_edge_offsets[v + 1];
+    for (size_t ve = v_start; ve < v_end; ++ve) {
+      touch_check(graph, graph.var_edges[ve]);
+    }
+  }
+
+  const size_t num_reweighted_checks = graph.dirty_checks.size();
+  for (size_t idx = 0; idx < num_reweighted_checks; ++idx) {
+    const size_t c = graph.dirty_checks[idx];
+    LLR_UINT m1 = MAX_SAFE_LLR_INT;
+    LLR_UINT m2 = MAX_SAFE_LLR_INT;
+    size_t argmin = 0;
+    uint8_t sp = 0;
+    const size_t start = graph.check_edge_offsets[c];
+    const size_t end = graph.check_edge_offsets[c + 1];
+    for (size_t e = start; e < end; ++e) {
+      const size_t v = graph.check_edges[e];
+      const LLR_INT p = graph.work_priors[v];
+      if (p < 0) sp ^= 1;
+      LLR_UINT mag = static_cast<LLR_UINT>(std::abs(p));
+      if (mag > MAX_SAFE_LLR_INT) mag = MAX_SAFE_LLR_INT;
+      if (mag < m1) {
+        m2 = m1;
+        m1 = mag;
+        argmin = e - start;
+      } else if (mag < m2) {
+        m2 = mag;
+      }
+    }
+    graph.work_min2_vac[c] = m2;
+    for (size_t e = start; e < end; ++e) {
+      const size_t v = graph.check_edges[e];
+      const size_t local_idx = e - start;
+      const LLR_UINT ext_min = (local_idx == argmin) ? m2 : m1;
+      const LLR_INT scaled_mag =
+          static_cast<LLR_INT>((static_cast<int64_t>(ext_min) * alpha_fp) >> LLR_FP_BITS);
+      const uint8_t v_sign = (graph.work_priors[v] < 0) ? 1u : 0u;
+      const uint8_t r_sign = sp ^ v_sign;
+      const LLR_INT r_val = r_sign ? -scaled_mag : scaled_mag;
+      const LLR_INT old_m = graph.work_m_vac[e];
+      if (r_val != old_m) {
+        touch_var(graph, v);
+        graph.work_posteriors[v] += (r_val - old_m);
+        graph.work_m_vac[e] = r_val;
+        graph.work_check_to_var[e] = r_val;
+      }
+    }
+  }
+}
+
+size_t compute_global_unsat_and_flipped(
+    TannerGraph& graph, const std::vector<size_t>& unique_fired_checks,
+    std::vector<size_t>& out_flipped_vars) {
+  out_flipped_vars.clear();
+  size_t unsat = unique_fired_checks.size();
+  for (size_t c : unique_fired_checks) {
+    graph.check_parity[c] = 1;
+  }
+  for (size_t v : graph.dirty_vars) {
+    if (graph.work_posteriors[v] < 0) {
+      out_flipped_vars.push_back(v);
+      const size_t v_start = graph.var_edge_offsets[v];
+      const size_t v_end = graph.var_edge_offsets[v + 1];
+      for (size_t ve = v_start; ve < v_end; ++ve) {
+        const size_t c = graph.var_edges[ve];
+        if (graph.check_parity[c]) {
+          graph.check_parity[c] = 0;
+          unsat--;
+        } else {
+          graph.check_parity[c] = 1;
+          unsat++;
+        }
+      }
+    }
+  }
+  for (size_t c : unique_fired_checks) {
+    graph.check_parity[c] = 0;
+  }
+  for (size_t v : out_flipped_vars) {
+    const size_t v_start = graph.var_edge_offsets[v];
+    const size_t v_end = graph.var_edge_offsets[v + 1];
+    for (size_t ve = v_start; ve < v_end; ++ve) {
+      graph.check_parity[graph.var_edges[ve]] = 0;
+    }
+  }
+  return unsat;
+}
+
+void restore_sparse_workspace(
+    TannerGraph& graph, const std::vector<size_t>& unique_fired_checks) {
+  for (size_t c : unique_fired_checks) {
+    graph.work_syndromes[c] = 0;
+  }
+  for (size_t c : graph.dirty_checks) {
+    graph.work_min2_vac[c] = graph.min2_vac[c];
+    const size_t start = graph.check_edge_offsets[c];
+    const size_t end = graph.check_edge_offsets[c + 1];
+    for (size_t e = start; e < end; ++e) {
+      graph.work_m_vac[e] = graph.m_vac[e];
+      graph.work_check_to_var[e] = graph.m_vac[e];
+    }
+  }
+  for (size_t v : graph.dirty_vars) {
+    graph.work_priors[v] = graph.priors[v];
+    graph.work_posteriors[v] = graph.v_posterior_vac[v];
+  }
+  graph.dirty_vars.clear();
+  graph.dirty_checks.clear();
+  if (++graph.dirty_gen == 0) {
+    std::fill(graph.var_dirty_stamp.begin(), graph.var_dirty_stamp.end(), 0);
+    graph.dirty_gen = 1;
+  }
+  if (++graph.check_dirty_gen == 0) {
+    std::fill(graph.check_dirty_stamp.begin(), graph.check_dirty_stamp.end(), 0);
+    graph.check_dirty_gen = 1;
+  }
+}
+
+}  // namespace
+
+SparseShotBpResult bp_wavefront_min_sum_shot(
+    TannerGraph& graph, const std::vector<size_t>& detection_events, size_t max_iters,
+    float normalization_factor, bool stop_at_convergence,
+    const std::vector<std::pair<size_t, LLR_INT>>* sparse_custom_priors,
+    std::vector<LLR_INT>* out_unconverged_posteriors,
+    std::vector<LLR_INT>* out_tstar_posteriors) {
+  graph.ensure_vacuum_state(normalization_factor);
+  const LLR_INT alpha_fp = graph.cached_alpha_fp;
+
+  SparseShotBpResult result;
+  if (detection_events.empty() && (!sparse_custom_priors || sparse_custom_priors->empty())) {
+    result.bp_res = {true, 1, 0};
+    return result;
+  }
+
+  apply_sparse_custom_priors(graph, sparse_custom_priors, alpha_fp);
+
+  std::vector<size_t> unique_fired;
+  unique_fired.reserve(detection_events.size());
+  for (size_t c : detection_events) {
+    if (c < graph.num_checks) {
+      if (graph.work_syndromes[c] == 0) {
+        unique_fired.push_back(c);
+      }
+      graph.work_syndromes[c] ^= 1;
+    }
+  }
+  size_t write_idx = 0;
+  for (size_t read_idx = 0; read_idx < unique_fired.size(); ++read_idx) {
+    const size_t c = unique_fired[read_idx];
+    if (graph.work_syndromes[c] != 0) {
+      unique_fired[write_idx++] = c;
+    }
+  }
+  unique_fired.resize(write_idx);
+
+  if (unique_fired.empty()) {
+    size_t unsat = compute_global_unsat_and_flipped(graph, unique_fired, result.flipped_vars);
+    result.bp_res = {unsat == 0, 1, unsat};
+    restore_sparse_workspace(graph, unique_fired);
+    return result;
+  }
+
+  result.active_checks_visited += unique_fired.size();
+  for (size_t c : unique_fired) {
+    touch_check(graph, c);
+    const size_t start = graph.check_edge_offsets[c];
+    const size_t end = graph.check_edge_offsets[c + 1];
+    for (size_t e = start; e < end; ++e) {
+      const size_t v = graph.check_edges[e];
+      touch_var(graph, v);
+      graph.work_posteriors[v] -= graph.work_check_to_var[e];
+      graph.work_check_to_var[e] = 0;
+    }
+  }
+  for (size_t c : unique_fired) {
+    const size_t start = graph.check_edge_offsets[c];
+    const size_t end = graph.check_edge_offsets[c + 1];
+    LLR_UINT m1 = MAX_SAFE_LLR_INT;
+    LLR_UINT m2 = MAX_SAFE_LLR_INT;
+    size_t min1_idx = 0;
+    uint8_t sign_prod = 1u;
+
+    for (size_t e = start; e < end; ++e) {
+      const size_t v = graph.check_edges[e];
+      const LLR_INT raw_q = graph.work_posteriors[v];
+      const LLR_INT q_val = std::min(raw_q, graph.v_posterior_vac[v]);
+      if (q_val < 0) sign_prod ^= 1;
+      LLR_UINT mag = static_cast<LLR_UINT>(std::abs(q_val));
+      if (mag > MAX_SAFE_LLR_INT) mag = MAX_SAFE_LLR_INT;
+      if (mag < m1) {
+        m2 = m1;
+        m1 = mag;
+        min1_idx = e - start;
+      } else if (mag < m2) {
+        m2 = mag;
+      }
+    }
+
+    for (size_t e = start; e < end; ++e) {
+      const size_t v = graph.check_edges[e];
+      const size_t local_idx = e - start;
+      const LLR_INT raw_q = graph.work_posteriors[v];
+      const uint8_t q_sign = (raw_q < 0) ? 1u : 0u;
+      const uint8_t r_sign = sign_prod ^ q_sign;
+      const LLR_UINT ext_min = (local_idx == min1_idx) ? m2 : m1;
+      const LLR_INT scaled_mag =
+          static_cast<LLR_INT>((static_cast<int64_t>(ext_min) * alpha_fp) >> LLR_FP_BITS);
+      const LLR_INT r_val = r_sign ? -scaled_mag : scaled_mag;
+      graph.work_check_to_var[e] = r_val;
+      graph.work_posteriors[v] = raw_q + r_val;
+    }
+  }
+
+  size_t unsat = compute_global_unsat_and_flipped(graph, unique_fired, result.flipped_vars);
+  if (stop_at_convergence && unsat == 0) {
+    result.bp_res = {true, 1, 0};
+    restore_sparse_workspace(graph, unique_fired);
+    return result;
+  }
+
+  size_t min_unsat = std::numeric_limits<size_t>::max();
+  std::vector<size_t> best_flipped = result.flipped_vars;
+  std::vector<std::pair<size_t, LLR_INT>> best_dirty_posteriors;
+  best_dirty_posteriors.reserve(graph.dirty_vars.size() * 2);
+
+  std::fill(graph.active_checks_words.begin(), graph.active_checks_words.end(), 0ULL);
+  for (size_t v : graph.dirty_vars) {
+    const size_t v_start = graph.var_edge_offsets[v];
+    const size_t v_end = graph.var_edge_offsets[v + 1];
+    const LLR_INT vac_drop = graph.v_posterior_vac[v] - graph.work_posteriors[v];
+    for (size_t ve = v_start; ve < v_end; ++ve) {
+      const size_t c = graph.var_edges[ve];
+      const size_t ce = graph.var_edge_to_check_edge[ve];
+      const LLR_INT q_vc = graph.work_posteriors[v] - graph.work_check_to_var[ce];
+      const LLR_INT thresh = static_cast<LLR_INT>(graph.work_min2_vac[c]);
+      const LLR_INT abs_mv = std::abs(graph.work_m_vac[ce]);
+      if (q_vc < 0 || q_vc <= thresh || vac_drop > 2 * abs_mv) {
+        graph.active_checks_words[c >> 6] |= (1ULL << (c & 63));
+      }
+    }
+  }
+
+  size_t iter = 1;
+  for (; iter < max_iters; ++iter) {
+    bool any_active = false;
+    for (size_t w = 0; w < graph.num_check_words; ++w) {
+      if (graph.active_checks_words[w] != 0ULL) {
+        any_active = true;
+        break;
+      }
+    }
+    if (!any_active) break;
+
+    std::fill(graph.next_active_checks_words.begin(), graph.next_active_checks_words.end(), 0ULL);
+
+    for (size_t w = 0; w < graph.num_check_words; ++w) {
+      uint64_t word = graph.active_checks_words[w];
+      if (word == 0ULL) continue;
+      graph.active_checks_words[w] = 0ULL;
+
+      while (word != 0ULL) {
+        const int bit = __builtin_ctzll(word);
+        word &= (word - 1ULL);
+        const size_t c = (w << 6) + static_cast<size_t>(bit);
+        if (c >= graph.num_checks) break;
+
+        touch_check(graph, c);
+        result.active_checks_visited++;
+
+        const size_t start = graph.check_edge_offsets[c];
+        const size_t end = graph.check_edge_offsets[c + 1];
+        LLR_UINT m1 = MAX_SAFE_LLR_INT;
+        LLR_UINT m2 = MAX_SAFE_LLR_INT;
+        size_t min1_idx = 0;
+        uint8_t sign_prod = graph.work_syndromes[c];
+
+        for (size_t e = start; e < end; ++e) {
+          const size_t v = graph.check_edges[e];
+          const LLR_INT raw_q = graph.work_posteriors[v] - graph.work_check_to_var[e];
+          const LLR_INT q_val = std::min(raw_q, graph.v_posterior_vac[v]);
+          if (q_val < 0) sign_prod ^= 1;
+          LLR_UINT mag = static_cast<LLR_UINT>(std::abs(q_val));
+          if (mag > MAX_SAFE_LLR_INT) mag = MAX_SAFE_LLR_INT;
+          if (mag < m1) {
+            m2 = m1;
+            m1 = mag;
+            min1_idx = e - start;
+          } else if (mag < m2) {
+            m2 = mag;
+          }
+        }
+
+        for (size_t e = start; e < end; ++e) {
+          const size_t v = graph.check_edges[e];
+          const size_t local_idx = e - start;
+          const LLR_INT old_r = graph.work_check_to_var[e];
+          const LLR_INT old_post = graph.work_posteriors[v];
+          const LLR_INT raw_q = old_post - old_r;
+          const uint8_t q_sign = (raw_q < 0) ? 1u : 0u;
+          const uint8_t r_sign = sign_prod ^ q_sign;
+          const LLR_UINT ext_min = (local_idx == min1_idx) ? m2 : m1;
+          const LLR_INT scaled_mag =
+              static_cast<LLR_INT>((static_cast<int64_t>(ext_min) * alpha_fp) >> LLR_FP_BITS);
+          const LLR_INT r_val = r_sign ? -scaled_mag : scaled_mag;
+          const LLR_INT diff = r_val - old_r;
+          if (diff != 0) {
+            touch_var(graph, v);
+            const LLR_INT new_post = raw_q + r_val;
+            graph.work_check_to_var[e] = r_val;
+            graph.work_posteriors[v] = new_post;
+
+            const size_t v_start = graph.var_edge_offsets[v];
+            const size_t v_end = graph.var_edge_offsets[v + 1];
+            for (size_t ve = v_start; ve < v_end; ++ve) {
+              const size_t c2 = graph.var_edges[ve];
+              if (c2 == c) continue;
+              const size_t ce2 = graph.var_edge_to_check_edge[ve];
+              const LLR_INT r_c2 = graph.work_check_to_var[ce2];
+              const LLR_INT old_q_vc2 = old_post - r_c2;
+              const LLR_INT new_q_vc2 = new_post - r_c2;
+              const LLR_INT thresh2 = static_cast<LLR_INT>(graph.work_min2_vac[c2]);
+              if (new_q_vc2 < 0 || new_q_vc2 <= thresh2 || old_q_vc2 <= thresh2) {
+                graph.next_active_checks_words[c2 >> 6] |= (1ULL << (c2 & 63));
+              }
+            }
+          }
+        }
+      }
+    }
+
+    unsat = compute_global_unsat_and_flipped(graph, unique_fired, result.flipped_vars);
+    if ((iter >= 4 || iter + 1 == max_iters || best_dirty_posteriors.empty()) &&
+        unsat <= min_unsat) {
+      min_unsat = unsat;
+      best_flipped = result.flipped_vars;
+      best_dirty_posteriors.clear();
+      for (size_t v : graph.dirty_vars) {
+        best_dirty_posteriors.push_back({v, graph.work_posteriors[v]});
+      }
+    }
+
+    if (stop_at_convergence && unsat == 0) {
+      ++iter;
+      break;
+    }
+
+    std::swap(graph.active_checks_words, graph.next_active_checks_words);
+  }
+
+  result.bp_res.converged = (min_unsat == 0 && stop_at_convergence) ? true : (unsat == 0);
+  result.bp_res.num_iters = iter;
+  result.bp_res.unsat_checks = min_unsat;
+  if (!result.bp_res.converged) {
+    result.flipped_vars = std::move(best_flipped);
+    if (out_unconverged_posteriors) {
+      *out_unconverged_posteriors = graph.v_posterior_vac;
+      for (size_t v : graph.dirty_vars) {
+        (*out_unconverged_posteriors)[v] = graph.work_posteriors[v];
+      }
+    }
+    if (out_tstar_posteriors) {
+      *out_tstar_posteriors = graph.v_posterior_vac;
+      for (const auto& [v, post] : best_dirty_posteriors) {
+        (*out_tstar_posteriors)[v] = post;
+      }
+    }
+  }
+
+  restore_sparse_workspace(graph, unique_fired);
+  return result;
+}
+
 }  // namespace bp

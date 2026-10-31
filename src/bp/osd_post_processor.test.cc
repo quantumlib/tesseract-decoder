@@ -3,6 +3,9 @@
 #include <gtest/gtest.h>
 
 #include "bp/bp_params.h"
+#include "bp/multi_pass_bp_decoder.h"
+#include "bp/tesseract_bp_decoder.h"
+#include "stim.h"
 
 namespace bp {
 
@@ -204,6 +207,55 @@ TEST(OsdPostProcessorTest, GreedyCoordinateDescentRefinement) {
   EXPECT_EQ(obs[0], 1);
   EXPECT_EQ(obs[1], 1);
   EXPECT_EQ(errs.size(), 4u);
+}
+
+TEST(OsdPostProcessorTest, CostFromErrors) {
+  stim::DetectorErrorModel dem(R"DEM(
+    error(0.1) D0
+    error(0.01) D1
+  )DEM");
+  BPParams params;
+  TesseractBpDecoder decoder(dem, params);
+  EXPECT_EQ(decoder.num_variables(), 2u);
+  double c0 = decoder.cost_from_errors({0});
+  double c1 = decoder.cost_from_errors({1});
+  EXPECT_NEAR(c0, std::log((1.0 - 0.1) / 0.1), 1e-2);
+  EXPECT_NEAR(c1, std::log((1.0 - 0.01) / 0.01), 1e-2);
+  EXPECT_NEAR(decoder.cost_from_errors({0, 1}), c0 + c1, 1e-2);
+}
+
+TEST(OsdPostProcessorTest, LowConfidenceShotsPropagation) {
+  stim::DetectorErrorModel dem(R"DEM(
+    error(0.001) D0 D1 L0
+    error(0.001) D1 D2
+    error(0.001) D2 D3 L0
+    error(0.001) D3 D0
+    detector D0
+    detector D1
+    detector D2
+    detector D3
+    logical_observable L0
+  )DEM");
+
+  BPParams params = BPParams::Osd(0, 10, 1);
+  params.fallback_margin = 10.0;
+  TesseractBpDecoder decoder(dem, params);
+  auto pp = decoder.create_post_processor();
+
+  std::vector<std::vector<uint64_t>> batch = {{0, 2}};
+  std::vector<uint8_t> low_conf;
+  std::vector<std::vector<size_t>> pred_errors;
+  auto res = decoder.decode_batch(batch, pp, nullptr, &pred_errors, nullptr, &low_conf);
+  ASSERT_EQ(res.size(), 1u);
+  ASSERT_EQ(low_conf.size(), 1u);
+
+  MultiPassBpDecoder mp_decoder(dem, params);
+  std::vector<uint8_t> mp_low_conf;
+  std::vector<double> mp_costs;
+  auto mp_res = mp_decoder.decode_batch(batch, &mp_low_conf, &mp_costs);
+  ASSERT_EQ(mp_res.size(), 1u);
+  ASSERT_EQ(mp_low_conf.size(), 1u);
+  ASSERT_EQ(mp_costs.size(), 1u);
 }
 
 }  // namespace bp
