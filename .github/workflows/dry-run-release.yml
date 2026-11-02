@@ -91,7 +91,7 @@ jobs:
 
     - name: Smoke-test wheel
       run: |
-        pip install ./bazel-bin/*.whl
+        python -m pip install ./bazel-bin/*.whl
         # Run outside the source tree to import the installed wheel.
         cd "$RUNNER_TEMP"
         python - <<'EOF'
