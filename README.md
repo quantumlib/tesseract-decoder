@@ -566,7 +566,7 @@ sinter collect \
     --max_shots 100_000 \
     --max_errors 100 \
     --processes auto \
-    --save_resume_filepath "stats.csv" \
+    --save_resume_filepath "stats.csv"
 ```
 
 Sinter efficiently manages the execution of these tasks, and Tesseract is used for decoding. For more usage examples, see the tests in `src/py/tesseract_sinter_compat_test.py`.
