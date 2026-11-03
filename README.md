@@ -571,8 +571,9 @@ sinter collect \
 
 Sinter efficiently manages the execution of these tasks, and Tesseract is used for decoding. For more usage examples, see the tests in `src/py/tesseract_sinter_compat_test.py`.
 
-## Good Starting Points for Tesseract Configurations:
- The [Tesseract paper](https://arxiv.org/pdf/2503.10988) recommends two setups for starting your exploration with Tesseract:
+## Good Starting Points for Tesseract Configurations
+
+The [Tesseract paper](https://arxiv.org/pdf/2503.10988) recommends two setups for starting your exploration with Tesseract:
 
 
 (1) Long-beam setup:
