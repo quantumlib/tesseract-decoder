@@ -630,6 +630,7 @@ short-beam variants when runtime matters more. See the
 Equivalent Python configs can enable sparsification with `sparsify_errors=True`,
 `sparsify_base_degree=2` or `3`, and `sparsify_reactivate_limit=-1` to use the built-in heuristic
 clamped to the compiled error count.
+
 ## Help
 
 *   Do you have a feature request or want to report a bug? [Open an issue on
@@ -663,6 +664,7 @@ cite the following:
 ```
 
 ## Hacking on the Python module locally
+
 To install your own build of the Tesseract Python module locally so that you can easily modify and hack on it, use something like the following:
 ```bash
 bazel build --define ABI_TAG="cp313" --define TARGET_VERSION="cp3.13" --define VERSION="v0.0.0dev"  :tesseract_decoder_wheel
