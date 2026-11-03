@@ -143,8 +143,9 @@ Using a Detection Event File:
 Using a Detection Event File and Observable Flips:
 
 ```bash
-./tesseract --in events.01 --in-format 01 --obs_in obs.01 --obs-in-format 01 \
-            --dem surface_code.dem --out decoded.txt --out-format 01
+./tesseract --in events.01 --in-format 01 --dem surface_code.dem \
+            --obs_in obs.01 --obs-in-format 01 \
+            --out decoded.txt --out-format 01
 ```
 
 Tesseract can combine generated detector-order methods with explicit detector
