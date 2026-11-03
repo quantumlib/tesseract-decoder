@@ -56,7 +56,7 @@ We tested the Tesseract decoder for:
 *   **Detailed Statistics:** provides comprehensive statistics output, including shot counts, error
     counts, and processing times.
 *   **Heuristics**: includes flexible heuristic options: `--beam`, `--det-penalty`,
-    `--beam-climbing`, `--no-revisit-dets`, `--at-most-two-errors-per-detector`, and `--pqlimit` to
+    `--beam-climbing`, `--no-revisit-dets`, and `--pqlimit` to
     improve performance while maintaining a low logical error rate. To learn more about these
     options, use `./bazel-bin/src/tesseract --help`.
 *   **Visualization tool:** open the [viz directory](viz/) in your browser to view decoding results. See [viz/README.md](viz/README.md) for instructions on generating the visualization JSON.
@@ -244,8 +244,6 @@ Here are some tips for improving performance:
 *   *Beam Search*: use `--beam` to control the trade-off between accuracy and speed. Smaller beam sizes
     result in faster decoding but potentially lower accuracy.
 *   *Beam Climbing*: enable `--beam-climbing` for enhanced cost-based decoding.
-*   *At most two errors per detector*: enable `--at-most-two-errors-per-detector` to improve
-    performance.
 *   *Priority Queue limit*: use `--pqlimit` to limit the size of the priority queue.
 *   *Error sparsification*: enable `--sparsify-errors` to always keep low-degree errors while
     selectively reactivating high-degree errors per shot. This can improve runtime on DEMs with
@@ -475,7 +473,7 @@ import sinter
 from tesseract_decoder import make_tesseract_sinter_decoders_dict, TesseractSinterDecoder
 import tesseract_decoder
 
-if __name__ == "__main__":  
+if __name__ == "__main__":
     # Define a list of Sinter task(s) with different circuits/decoders.
     tasks = []
     # Depolarizing noise probability.
@@ -537,25 +535,25 @@ if __name__ == "__main__":
 ```
 You should get something like:
 ```
-    shots,    errors,  discards, seconds,decoder,strong_id,json_metadata,custom_counts  
-    10000,        42,         0,   0.071,tesseract,1b3fce6286e438f38c00c8f6a5005947373515ab08e6446a7dd9ecdbef12d4cc,"{""d"":3,""decoder"":""tesseract""}",  
-    10000,        49,         0,   0.546,custom-tesseract-decoder,7b082bec7541be858e239d7828a432e329cd448356bbdf051b8b8aa76c86625a,"{""d"":3,""decoder"":""custom-tesseract-decoder""}", 
-    10000,        13,         0,    7.64,tesseract-long-beam,217a3542f56319924576658a6da7081ea2833f5167cf6d77fbc7071548e386a9,"{""d"":5,""decoder"":""tesseract-long-beam""}",  
+    shots,    errors,  discards, seconds,decoder,strong_id,json_metadata,custom_counts
+    10000,        42,         0,   0.071,tesseract,1b3fce6286e438f38c00c8f6a5005947373515ab08e6446a7dd9ecdbef12d4cc,"{""d"":3,""decoder"":""tesseract""}",
+    10000,        49,         0,   0.546,custom-tesseract-decoder,7b082bec7541be858e239d7828a432e329cd448356bbdf051b8b8aa76c86625a,"{""d"":3,""decoder"":""custom-tesseract-decoder""}",
+    10000,        13,         0,    7.64,tesseract-long-beam,217a3542f56319924576658a6da7081ea2833f5167cf6d77fbc7071548e386a9,"{""d"":5,""decoder"":""tesseract-long-beam""}",
     10000,        14,         0,    4.12,tesseract-long-beam-sparsify-color-code-like,14fa5f9f08381d760f6c1f59805b75f2c70cfb83e50d9f1f40d92820a20eeb13,"{""d"":5,""decoder"":""tesseract-long-beam-sparsify-color-code-like""}",
-    10000,        42,         0,   0.743,tesseract-short-beam,cf4a4b0ce0e4c7beec1171f58eddffe403ed7359db5016fca2e16174ea577057,"{""d"":3,""decoder"":""tesseract-short-beam""}",  
-    10000,        34,         0,   0.924,tesseract-long-beam,8cfa0f2e4061629e13bc98fe213285dc00eb90f21bba36e08c76bcdf213a1c09,"{""d"":3,""decoder"":""tesseract-long-beam""}",  
+    10000,        42,         0,   0.743,tesseract-short-beam,cf4a4b0ce0e4c7beec1171f58eddffe403ed7359db5016fca2e16174ea577057,"{""d"":3,""decoder"":""tesseract-short-beam""}",
+    10000,        34,         0,   0.924,tesseract-long-beam,8cfa0f2e4061629e13bc98fe213285dc00eb90f21bba36e08c76bcdf213a1c09,"{""d"":3,""decoder"":""tesseract-long-beam""}",
     10000,        35,         0,   0.681,tesseract-long-beam-sparsify-color-code-like,f41bdb1bde3f5cf4893a9a9e33fc7d4c47d742f22b13dfec9195347e780119bc,"{""d"":3,""decoder"":""tesseract-long-beam-sparsify-color-code-like""}",
-    10000,        10,         0,   0.439,tesseract,8274ea5ffec15d6e71faed5ee1057cdd7e497cbaee4c6109784f8a74669d7f96,"{""d"":5,""decoder"":""tesseract""}",  
-    10000,         8,         0,    3.93,custom-tesseract-decoder,8e4f5ab5dde00fec74127eea39ea52d5a98ae6ccfc277b5d9be450f78acc1c45,"{""d"":5,""decoder"":""custom-tesseract-decoder""}",  
-    10000,        10,         0,    5.74,tesseract-short-beam,bf696535d62a25720c3a0c624ec5624002efe3f6cb0468963eee702efb48abc1,"{""d"":5,""decoder"":""tesseract-short-beam""}",  
-    10000,         5,         0,    1.27,tesseract,3f94c61f1503844df6cf0d200b74ac01bfbc5e29e70cedbfc2faad67047e7887,"{""d"":7,""decoder"":""tesseract""}",  
-    10000,         4,         0,    25.0,tesseract-long-beam,4d510f0acf511e24a833a93c956b683346696d8086866fadc73063fb09014c23,"{""d"":7,""decoder"":""tesseract-long-beam""}",  
+    10000,        10,         0,   0.439,tesseract,8274ea5ffec15d6e71faed5ee1057cdd7e497cbaee4c6109784f8a74669d7f96,"{""d"":5,""decoder"":""tesseract""}",
+    10000,         8,         0,    3.93,custom-tesseract-decoder,8e4f5ab5dde00fec74127eea39ea52d5a98ae6ccfc277b5d9be450f78acc1c45,"{""d"":5,""decoder"":""custom-tesseract-decoder""}",
+    10000,        10,         0,    5.74,tesseract-short-beam,bf696535d62a25720c3a0c624ec5624002efe3f6cb0468963eee702efb48abc1,"{""d"":5,""decoder"":""tesseract-short-beam""}",
+    10000,         5,         0,    1.27,tesseract,3f94c61f1503844df6cf0d200b74ac01bfbc5e29e70cedbfc2faad67047e7887,"{""d"":7,""decoder"":""tesseract""}",
+    10000,         4,         0,    25.0,tesseract-long-beam,4d510f0acf511e24a833a93c956b683346696d8086866fadc73063fb09014c23,"{""d"":7,""decoder"":""tesseract-long-beam""}",
     10000,         4,         0,    14.8,tesseract-long-beam-sparsify-color-code-like,80868acc6e43c62cb73b242b66ae27d3ea08fe970ea879db5a8425c2454fc8a1,"{""d"":7,""decoder"":""tesseract-long-beam-sparsify-color-code-like""}",
-    10000,         1,         0,    18.6,tesseract-short-beam,75782ce4593022fcedad4c73104711f05c9c635db92869531f78da336945b121,"{""d"":7,""decoder"":""tesseract-short-beam""}",  
-    10000,         4,         0,    11.6,custom-tesseract-decoder,48f256a28fff47c58af7bffdf98fdee1d41a721751ee965c5d3c5712ac795dc8,"{""d"":7,""decoder"":""custom-tesseract-decoder""}",  
+    10000,         1,         0,    18.6,tesseract-short-beam,75782ce4593022fcedad4c73104711f05c9c635db92869531f78da336945b121,"{""d"":7,""decoder"":""tesseract-short-beam""}",
+    10000,         4,         0,    11.6,custom-tesseract-decoder,48f256a28fff47c58af7bffdf98fdee1d41a721751ee965c5d3c5712ac795dc8,"{""d"":7,""decoder"":""custom-tesseract-decoder""}",
 ```
 
-This example runs simulations for a repetition code with different distances [3, 5, 7] with different Tesseract default decoders. 
+This example runs simulations for a repetition code with different distances [3, 5, 7] with different Tesseract default decoders.
 
 Sinter can also be used at the command line. Here is an example of this using Tesseract:
 
