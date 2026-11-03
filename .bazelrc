@@ -5,8 +5,8 @@ common --enable_platform_specific_config
 
 build --cxxopt='-std=c++20'
 
-# Public Linux wheels use a portable x86-64 baseline. Normal builds retain the
-# native CPU tuning in //src:OPT_COPTS.
+# Public Linux wheels use a portable CPU baseline (x86-64 or armv8-a). Normal
+# builds retain the native CPU tuning in //src:OPT_COPTS.
 build:wheel --define=tesseract_portable_wheel=true
 
 # Published macOS wheels are arm64-only and tagged macosx_11_0. Apply the
