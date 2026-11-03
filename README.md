@@ -129,13 +129,15 @@ Example with Advanced Options:
 Sampling Shots from a Circuit:
 
 ```bash
-./tesseract --circuit surface_code.stim --sample-num-shots 1000 --out predictions.01 --out-format 01
+./tesseract --circuit surface_code.stim --sample-num-shots 1000 \
+            --out predictions.01 --out-format 01
 ```
 
 Using a Detection Event File:
 
 ```bash
-./tesseract --in events.01 --in-format 01 --dem surface_code.dem --out decoded.txt --out-format 01
+./tesseract --in events.01 --in-format 01 --dem surface_code.dem \
+            --out decoded.txt --out-format 01
 ```
 
 Using a Detection Event File and Observable Flips:
