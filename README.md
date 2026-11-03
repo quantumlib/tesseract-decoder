@@ -564,7 +564,7 @@ sinter collect \
     --decoders tesseract \
     --custom_decoders_module_function "tesseract_decoder:make_tesseract_sinter_decoders_dict" \
     --max_shots 100_000 \
-    --max_errors 100
+    --max_errors 100 \
     --processes auto \
     --save_resume_filepath "stats.csv" \
 ```
