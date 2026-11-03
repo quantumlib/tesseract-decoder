@@ -37,29 +37,29 @@ We tested the Tesseract decoder for:
 
 ## Features
 
-*   **A\* search:** deploys [A\* search](https://en.wikipedia.org/wiki/A*_search_algorithm) while
+*   **A\* search**: deploys [A\* search](https://en.wikipedia.org/wiki/A*_search_algorithm) while
     running a [Dijkstra algorithm](https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm) with early
     stop for high performance.
-*   **Stim and DEM Support:** processes [Stim](https://github.com/quantumlib/stim) circuit files and
+*   **Stim and DEM Support**: processes [Stim](https://github.com/quantumlib/stim) circuit files and
     [Detector Error Model
     (DEM)](https://github.com/quantumlib/Stim/blob/main/doc/file_format_dem_detector_error_model.md)
     files with arbitrary error models. Zero-probability error instructions are
     automatically removed when a DEM is loaded.
-*   **Parallel Decoding:** uses multithreading to accelerate the decoding process, making it
+*   **Parallel Decoding**: uses multithreading to accelerate the decoding process, making it
     suitable for large-scale simulations.
-*   **Efficient Beam Search:** implements a [beam search](https://en.wikipedia.org/wiki/Beam_search)
+*   **Efficient Beam Search**: implements a [beam search](https://en.wikipedia.org/wiki/Beam_search)
     algorithm to minimize decoding cost and enhance efficiency.
-*   **Sampling and Shot Range Processing:** supports sampling shots from circuits. When a detection
+*   **Sampling and Shot Range Processing**: supports sampling shots from circuits. When a detection
     error model is provided without an accompanying circuit, Tesseract requires detection events from
     files using `--in`. The decoder can also process specific shot ranges for flexible experiment
     setups.
-*   **Detailed Statistics:** provides comprehensive statistics output, including shot counts, error
+*   **Detailed Statistics**: provides comprehensive statistics output, including shot counts, error
     counts, and processing times.
 *   **Heuristics**: includes flexible heuristic options: `--beam`, `--det-penalty`,
     `--beam-climbing`, `--no-revisit-dets`, and `--pqlimit` to
     improve performance while maintaining a low logical error rate. To learn more about these
     options, use `./bazel-bin/src/tesseract --help`.
-*   **Visualization tool:** open the [viz directory](viz/) in your browser to view decoding results. See [viz/README.md](viz/README.md) for instructions on generating the visualization JSON.
+*   **Visualization tool**: open the [viz directory](viz/) in your browser to view decoding results. See [viz/README.md](viz/README.md) for instructions on generating the visualization JSON.
 
 ## Installation
 
