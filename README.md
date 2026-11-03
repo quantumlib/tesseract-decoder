@@ -554,7 +554,7 @@ You should get something like:
     10000,         4,         0,    11.6,custom-tesseract-decoder,48f256a28fff47c58af7bffdf98fdee1d41a721751ee965c5d3c5712ac795dc8,"{""d"":7,""decoder"":""custom-tesseract-decoder""}",
 ```
 
-This example runs simulations for a repetition code with different distances [3, 5, 7] with different Tesseract default decoders.
+This example runs simulations for a repetition code with different distances [3, 5, 7] and different Tesseract default decoders.
 
 Sinter can also be used at the command line. Here is an example of this using Tesseract:
 
