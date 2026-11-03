@@ -135,13 +135,14 @@ Sampling Shots from a Circuit:
 Using a Detection Event File:
 
 ```bash
-./tesseract --in events.01 --in-format 01 --dem surface_code.dem --out decoded.txt
+./tesseract --in events.01 --in-format 01 --dem surface_code.dem --out decoded.txt --out-format 01
 ```
 
 Using a Detection Event File and Observable Flips:
 
 ```bash
-./tesseract --in events.01 --in-format 01 --obs_in obs.01 --obs-in-format 01 --dem surface_code.dem --out decoded.txt
+./tesseract --in events.01 --in-format 01 --obs_in obs.01 --obs-in-format 01 \
+            --dem surface_code.dem --out decoded.txt --out-format 01
 ```
 
 Tesseract can combine generated detector-order methods with explicit detector
@@ -664,7 +665,7 @@ cite the following:
 To install your own build of the Tesseract Python module locally so that you can easily modify and hack on it, use something like the following:
 ```bash
 bazel build --define ABI_TAG="cp313" --define TARGET_VERSION="cp3.13" --define VERSION="v0.0.0dev"  :tesseract_decoder_wheel
-pip uninstall --y tesseract_decoder
+pip uninstall -y tesseract_decoder
 pip install bazel-bin/tesseract_decoder-0.0.0.dev0-py3.12.9-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
 python testscript.py
 ```
