@@ -2057,6 +2057,495 @@ def plot_dem_transforms(
     }
 
 
+def _find_ablation_json() -> Optional[pathlib.Path]:
+    candidates = [
+        DATA_DIR / "ablation_4circuits_results.json",
+        pathlib.Path(
+            "/usr/local/google/home/ariash/.gemini/jetski/brain/67c42a3b-49c1-44cb-a2ce-ec1851dd8f89/scratch/ablation_audit/ablation_4circuits_results.json"
+        ),
+        pathlib.Path("/tmp/ablation_audit/ablation_4circuits_results.json"),
+    ]
+    existing = []
+    for p in candidates:
+        try:
+            if p.exists():
+                existing.append((p.stat().st_mtime, p))
+        except Exception:
+            continue
+    if not existing:
+        return None
+    existing.sort(key=lambda x: x[0], reverse=True)
+    return existing[0][1]
+
+
+def _fmt_ms_short(ms: float) -> str:
+    if ms >= 100.0:
+        return f"{ms:.0f}ms"
+    if ms >= 10.0:
+        return f"{ms:.1f}ms"
+    return f"{ms:.2f}ms"
+
+
+def _fmt_ler_short(ler: float, errors: int, shots: int, rounds: int) -> str:
+    if errors == 0 or ler <= 0.0:
+        return f"0/{shots}"
+    exp = int(math.floor(math.log10(ler)))
+    mant = ler / (10.0 ** exp)
+    return f"{mant:.2f}e{exp}"
+
+
+def plot_ablation_4circuits_suite(
+    out_dirs: List[pathlib.Path],
+    target_figure: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    jpath = _find_ablation_json()
+    if jpath is None:
+        return []
+    raw = json.loads(jpath.read_text())
+    circuits_dict = raw.get("circuits", {})
+    c_order = [
+        ("cc_d11", "Color Code\nd=11 (r=11)"),
+        ("bb_d6", "Bivariate Bicycle\n[[72, 12, 6]]"),
+        ("mitten_d10", "Mitten Code\n[[150, 30, 10]]"),
+        ("hyp_iter40", "Hyperbolic Oct.\niter=40 [[288,12,8]]"),
+    ]
+    entries: List[Dict[str, Any]] = []
+
+    def should_run(stem: str) -> bool:
+        return target_figure is None or target_figure == stem
+
+    # -------------------------------------------------------------------------
+    # 1. fig_ablation_bp_comp (Progression A — 3 bars per circuit)
+    # -------------------------------------------------------------------------
+    stem_a = "fig_ablation_bp_comp"
+    if should_run(stem_a):
+        a_labels = [
+            ("A1", "A1: Scalar Monolithic BP (1.00×)", "#64748B"),
+            ("A2", "A2: +16-Lane AVX2 SIMD Batching (--bp-simd-batch) [0.0% LER Δ]", "#1967D2"),
+            ("A3", "A3: +Multi-Pass DEM/Tanner Compression (--multipass, default)", "#1E8E3E"),
+        ]
+        fig, ax = plt.subplots(figsize=(12.2, 6.2), dpi=220)
+        fig.suptitle(
+            "BP Computational Ablation Across 4 Quantum Code Families (16-Lane SIMD: 0.0% LER Change)",
+            fontsize=13.5,
+            fontweight="bold",
+            color="#0f172a",
+            y=0.98,
+        )
+        x = np.arange(len(c_order))
+        width = 0.24
+        max_sp = 10.0
+        cmds_a: List[str] = []
+
+        for s_idx, (s_key, s_label, s_color) in enumerate(a_labels):
+            vals = []
+            ms_vals = []
+            for cid, _ in c_order:
+                steps = circuits_dict[cid]["progressions"]["A_bp_computational"]
+                if len(steps) > 3:
+                    steps = [st for st in steps if "compaction" not in st["step_id"]]
+                st0 = steps[0]
+                st = steps[min(s_idx, len(steps) - 1)]
+                cmds_a.append(st.get("full_command", ""))
+                sp = st0["bp_ms_per_shot"] / max(1e-9, st["bp_ms_per_shot"])
+                vals.append(sp)
+                ms_vals.append(st["bp_ms_per_shot"])
+                max_sp = max(max_sp, sp)
+
+            offset = (s_idx - 1.0) * (width + 0.02)
+            bars = ax.bar(
+                x + offset,
+                vals,
+                width=width,
+                color=s_color,
+                edgecolor="#1e293b",
+                linewidth=1.1 if s_idx == 2 else 0.8,
+                label=s_label,
+                zorder=3,
+            )
+            for b, sp, ms in zip(bars, vals, ms_vals):
+                sp_str = f"{sp:.1f}×" if sp >= 10.0 else f"{sp:.2f}×"
+                lbl = f"{sp_str}\n({_fmt_ms_short(ms)})"
+                ax.text(
+                    b.get_x() + b.get_width() / 2.0,
+                    sp * 1.08,
+                    lbl,
+                    ha="center",
+                    va="bottom",
+                    fontsize=8.6,
+                    fontweight="bold" if s_idx == 2 else "normal",
+                    color="#14532D" if s_idx == 2 else "#1e293b",
+                )
+
+        ax.set_yscale("log")
+        ax.set_ylim(0.7, max_sp * 2.3)
+        ax.set_ylabel("Cumulative BP Speedup vs. A1 (×, log)", fontsize=11.5, fontweight="bold", color="#0f172a")
+        ax.set_xticks(x)
+        ax.set_xticklabels([lbl for _, lbl in c_order], fontsize=11, fontweight="bold", color="#0f172a")
+        ax.grid(True, which="both", axis="y", linestyle="--", color="#cbd5e1", alpha=0.65, zorder=0)
+        for spine in ax.spines.values():
+            spine.set_edgecolor("#cbd5e1")
+            spine.set_linewidth(1.1)
+        ax.legend(
+            loc="upper center",
+            bbox_to_anchor=(0.5, 1.15),
+            ncol=3,
+            fontsize=8.6,
+            frameon=True,
+            facecolor="#f8fafc",
+            edgecolor="#cbd5e1",
+        )
+        plt.tight_layout(rect=[0.0, 0.0, 1.0, 0.90])
+        save_figure_everywhere(fig, stem_a, out_dirs)
+        entries.append(
+            {
+                "stem": stem_a,
+                "tags": [c for c, _ in c_order],
+                "decoders": ["O"],
+                "json_sources": ["benchmarking/data/ablation_4circuits_results.json"],
+                "commands": [c for c in cmds_a if c][:6],
+                "export_cmd": f"python3 benchmarking/viz/export_static.py --figure {stem_a}",
+            }
+        )
+
+    # -------------------------------------------------------------------------
+    # 2. fig_ablation_bp_algo (Progression B — 3 bars per circuit, dual plot)
+    # -------------------------------------------------------------------------
+    stem_b = "fig_ablation_bp_algo"
+    if should_run(stem_b):
+        b_labels = [
+            ("B1", "B1: Flooding + Unweighted (--no-bp-serial --bp-reweight=none)", "#64748B"),
+            ("B2", "B2: +Serial Check Schedule (--bp-serial --bp-reweight=none)", "#1967D2"),
+            ("B3", "B3: +Soft-Power Edge Reweighting (--bp-serial --bp-reweight=soft, default)", "#1E8E3E"),
+        ]
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15.4, 6.0), dpi=220)
+        x = np.arange(len(c_order))
+        width = 0.25
+        max_gain = 15.0
+        cmds_b: List[str] = []
+
+        for s_idx, (s_key, s_label, s_color) in enumerate(b_labels):
+            convs = []
+            gains = []
+            gain_labels = []
+            for cid, _ in c_order:
+                steps = circuits_dict[cid]["progressions"]["B_bp_algorithmic"]
+                if len(steps) > 3:
+                    steps = [st for st in steps if "random_noreweight" not in st["step_id"]]
+                st0 = steps[0]
+                st = steps[min(s_idx, len(steps) - 1)]
+                cmds_b.append(st.get("full_command", ""))
+                conv = float(st["primary_bp_convergence_rate_pct"])
+                convs.append(conv)
+                ler0 = float(st0["ler_per_round"])
+                ler_cur = float(st["ler_per_round"])
+                errs = int(st["errors"])
+                shots = int(st["shots"])
+                rounds = int(st["rounds"])
+                if errs == 0 or ler_cur <= 0.0:
+                    ub_ler = shot_to_round_ler(wilson_interval(0, shots)[1], rounds)
+                    g = max(2.0, ler0 / max(1e-9, ub_ler))
+                    gains.append(g)
+                    exp_u = int(math.floor(math.log10(ub_ler)))
+                    mant_u = ub_ler / (10.0 ** exp_u)
+                    gain_labels.append(f"0 errs\n(<{mant_u:.1f}e{exp_u})")
+                else:
+                    g = ler0 / ler_cur if ler0 > 0 else 1.0
+                    gains.append(g)
+                    gain_labels.append(f"{g:.2f}×\n{_fmt_ler_short(ler_cur, errs, shots, rounds)}")
+                max_gain = max(max_gain, gains[-1])
+
+            offset = (s_idx - 1.0) * (width + 0.03)
+            b1 = ax1.bar(
+                x + offset,
+                convs,
+                width=width,
+                color=s_color,
+                edgecolor="#1e293b",
+                linewidth=1.1 if s_idx == 2 else 0.8,
+                label=s_label,
+                zorder=3,
+            )
+            for bar, cv in zip(b1, convs):
+                ax1.text(
+                    bar.get_x() + bar.get_width() / 2.0,
+                    cv + 1.8,
+                    f"{cv:.1f}%",
+                    ha="center",
+                    va="bottom",
+                    fontsize=8.2,
+                    fontweight="bold" if s_idx == 2 else "normal",
+                    color="#14532D" if s_idx == 2 else "#1e293b",
+                )
+
+            b2 = ax2.bar(
+                x + offset,
+                gains,
+                width=width,
+                color=s_color,
+                edgecolor="#1e293b",
+                linewidth=1.1 if s_idx == 2 else 0.8,
+                label=s_label,
+                zorder=3,
+            )
+            for bar, gn, glbl in zip(b2, gains, gain_labels):
+                ax2.text(
+                    bar.get_x() + bar.get_width() / 2.0,
+                    gn * 1.08,
+                    glbl,
+                    ha="center",
+                    va="bottom",
+                    fontsize=7.3,
+                    fontweight="bold" if s_idx == 2 else "normal",
+                    color="#14532D" if s_idx == 2 else "#1e293b",
+                )
+
+        ax1.set_ylim(0, 114)
+        ax1.set_ylabel("Primary Pure-BP Convergence Rate (%)", fontsize=11, fontweight="bold", color="#0f172a")
+        ax1.set_title("(a) Primary Pure-BP Convergence Rate (Cuts OSD Load)", fontsize=11.5, fontweight="bold", pad=10)
+        ax1.set_xticks(x)
+        ax1.set_xticklabels([lbl for _, lbl in c_order], fontsize=10, fontweight="bold", color="#0f172a")
+        ax1.grid(True, axis="y", linestyle="--", color="#cbd5e1", alpha=0.65, zorder=0)
+
+        ax2.set_yscale("log")
+        ax2.set_ylim(0.45, max_gain * 2.4)
+        ax2.set_ylabel("End-to-End LER Reduction vs. B1 (×, log)", fontsize=11, fontweight="bold", color="#0f172a")
+        ax2.set_title("(b) End-to-End LER Reduction Factor (with LER/round)", fontsize=11.5, fontweight="bold", pad=10)
+        ax2.set_xticks(x)
+        ax2.set_xticklabels([lbl for _, lbl in c_order], fontsize=10, fontweight="bold", color="#0f172a")
+        ax2.grid(True, which="both", axis="y", linestyle="--", color="#cbd5e1", alpha=0.65, zorder=0)
+
+        for ax in (ax1, ax2):
+            for spine in ax.spines.values():
+                spine.set_edgecolor("#cbd5e1")
+                spine.set_linewidth(1.1)
+
+        handles, labels = ax1.get_legend_handles_labels()
+        fig.legend(
+            handles,
+            labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.99),
+            ncol=3,
+            fontsize=8.8,
+            frameon=True,
+            facecolor="#f8fafc",
+            edgecolor="#cbd5e1",
+        )
+        plt.tight_layout(rect=[0.0, 0.0, 1.0, 0.90])
+        save_figure_everywhere(fig, stem_b, out_dirs)
+        entries.append(
+            {
+                "stem": stem_b,
+                "tags": [c for c, _ in c_order],
+                "decoders": ["O"],
+                "json_sources": ["benchmarking/data/ablation_4circuits_results.json"],
+                "commands": [c for c in cmds_b if c][:6],
+                "export_cmd": f"python3 benchmarking/viz/export_static.py --figure {stem_b}",
+            }
+        )
+
+    # -------------------------------------------------------------------------
+    # 3. fig_ablation_osd_comp (Progression C — 3 bars per circuit)
+    # -------------------------------------------------------------------------
+    stem_c = "fig_ablation_osd_comp"
+    if should_run(stem_c):
+        c_labels = [
+            ("C1", "C1: Full RREF + Full Sort (1.00×)", "#64748B"),
+            ("C2", "C2: +Dynamic Zero-Remainder Early Exit (--osd-early-exit) [0.0% LER Δ]", "#1967D2"),
+            ("C3", "C3: +Horizon-Bounded Partial Sort (K=1.2M, nth_element) (--osd-col-truncation --osd-partial-sort)", "#1E8E3E"),
+        ]
+        fig, ax = plt.subplots(figsize=(12.2, 6.2), dpi=220)
+        fig.suptitle(
+            "OSD Computational Ablation Across 4 Quantum Code Families (0.0% LER Change — Bit-for-Bit Identical Codewords)",
+            fontsize=13.0,
+            fontweight="bold",
+            color="#0f172a",
+            y=0.98,
+        )
+        x = np.arange(len(c_order))
+        width = 0.24
+        max_sp = 10.0
+        cmds_c: List[str] = []
+
+        for s_idx, (s_key, s_label, s_color) in enumerate(c_labels):
+            vals = []
+            ms_vals = []
+            for cid, _ in c_order:
+                steps = circuits_dict[cid]["progressions"]["C_osd_computational"]
+                if len(steps) > 3:
+                    steps = [st for st in steps if st["step_id"] != "C3_col_truncation"]
+                st0 = steps[0]
+                st = steps[min(s_idx, len(steps) - 1)]
+                cmds_c.append(st.get("full_command", ""))
+                sp = st0["osd_ms_per_osd_shot"] / max(1e-9, st["osd_ms_per_osd_shot"])
+                vals.append(sp)
+                ms_vals.append(st["osd_ms_per_osd_shot"])
+                max_sp = max(max_sp, sp)
+
+            offset = (s_idx - 1.0) * (width + 0.02)
+            bars = ax.bar(
+                x + offset,
+                vals,
+                width=width,
+                color=s_color,
+                edgecolor="#1e293b",
+                linewidth=1.1 if s_idx == 2 else 0.8,
+                label=s_label,
+                zorder=3,
+            )
+            for b, sp, ms in zip(bars, vals, ms_vals):
+                lbl = f"{sp:.2f}×\n({_fmt_ms_short(ms)})"
+                ax.text(
+                    b.get_x() + b.get_width() / 2.0,
+                    sp * 1.07,
+                    lbl,
+                    ha="center",
+                    va="bottom",
+                    fontsize=8.6,
+                    fontweight="bold" if s_idx == 2 else "normal",
+                    color="#14532D" if s_idx == 2 else "#1e293b",
+                )
+
+        ax.set_yscale("log")
+        ax.set_ylim(0.75, max_sp * 2.15)
+        ax.set_ylabel("Cumulative Isolated OSD Speedup vs. C1 (×, log)", fontsize=11.5, fontweight="bold", color="#0f172a")
+        ax.set_xticks(x)
+        ax.set_xticklabels([lbl for _, lbl in c_order], fontsize=11, fontweight="bold", color="#0f172a")
+        ax.grid(True, which="both", axis="y", linestyle="--", color="#cbd5e1", alpha=0.65, zorder=0)
+        for spine in ax.spines.values():
+            spine.set_edgecolor("#cbd5e1")
+            spine.set_linewidth(1.1)
+        ax.legend(
+            loc="upper center",
+            bbox_to_anchor=(0.5, 1.15),
+            ncol=2,
+            fontsize=8.4,
+            frameon=True,
+            facecolor="#f8fafc",
+            edgecolor="#cbd5e1",
+        )
+        plt.tight_layout(rect=[0.0, 0.0, 1.0, 0.89])
+        save_figure_everywhere(fig, stem_c, out_dirs)
+        entries.append(
+            {
+                "stem": stem_c,
+                "tags": [c for c, _ in c_order],
+                "decoders": ["O"],
+                "json_sources": ["benchmarking/data/ablation_4circuits_results.json"],
+                "commands": [c for c in cmds_c if c][:6],
+                "export_cmd": f"python3 benchmarking/viz/export_static.py --figure {stem_c}",
+            }
+        )
+
+    # -------------------------------------------------------------------------
+    # 4. fig_ablation_osd_algo (Progression D — 4 bars per circuit D0..D3)
+    # -------------------------------------------------------------------------
+    stem_d = "fig_ablation_osd_algo"
+    if should_run(stem_d):
+        d_labels = [
+            ("D0", "D0: Pure BP (--osd-order -1, no OSD)", "#64748B"),
+            ("D1", "D1: +Naive OSD-0 (Final Iteration L^(T))", "#1967D2"),
+            ("D2", "D2: +Trajectory Seed Diversification (Min-Syndrome L^(t*) + 2 Damped Relay Legs)", "#00796B"),
+            ("D3", "D3: +Higher-Order OSD(O10/W2) & α-ISD (Default)", "#1E8E3E"),
+        ]
+        fig, ax = plt.subplots(figsize=(12.6, 6.3), dpi=220)
+        fig.suptitle(
+            "OSD Algorithmic Ablation Across 4 Quantum Code Families (LER Reduction vs. Pure BP D0, LER/round & Total ms/shot)",
+            fontsize=12.6,
+            fontweight="bold",
+            color="#0f172a",
+            y=0.98,
+        )
+        x = np.arange(len(c_order))
+        width = 0.195
+        max_gain = 20.0
+        cmds_d: List[str] = []
+
+        for s_idx, (s_key, s_label, s_color) in enumerate(d_labels):
+            vals = []
+            top_lbls = []
+            for cid, _ in c_order:
+                steps = circuits_dict[cid]["progressions"]["D_osd_algorithmic"]
+                if len(steps) > 4:
+                    steps = [st for st in steps if st["step_id"] != "D2_min_syndrome_osd0"]
+                st0 = steps[0]
+                st = steps[min(s_idx, len(steps) - 1)]
+                cmds_d.append(st.get("full_command", ""))
+                ler0 = float(st0["ler_per_round"])
+                ler_cur = float(st["ler_per_round"])
+                errs = int(st["errors"])
+                shots = int(st["shots"])
+                rounds = int(st["rounds"])
+                ms = float(st["total_decode_ms_per_shot"])
+                if errs == 0 or ler_cur <= 0.0:
+                    ub_ler = shot_to_round_ler(wilson_interval(0, shots)[1], rounds)
+                    gain = max(2.0, ler0 / max(1e-9, ub_ler))
+                else:
+                    gain = ler0 / ler_cur if ler0 > 0 else 1.0
+                vals.append(gain)
+                max_gain = max(max_gain, gain)
+                g_str = f"{gain:.0f}×" if gain >= 100.0 else (f"{gain:.1f}×" if gain >= 10.0 else f"{gain:.2f}×")
+                ler_s = _fmt_ler_short(ler_cur, errs, shots, rounds)
+                top_lbls.append(f"{g_str}\n{ler_s}\n[{_fmt_ms_short(ms)}]")
+
+            offset = (s_idx - 1.5) * (width + 0.022)
+            bars = ax.bar(
+                x + offset,
+                vals,
+                width=width,
+                color=s_color,
+                edgecolor="#1e293b",
+                linewidth=1.1 if s_idx == 3 else 0.8,
+                label=s_label,
+                zorder=3,
+            )
+            for b, gn, lbl in zip(bars, vals, top_lbls):
+                ax.text(
+                    b.get_x() + b.get_width() / 2.0,
+                    gn * 1.09,
+                    lbl,
+                    ha="center",
+                    va="bottom",
+                    fontsize=7.1,
+                    fontweight="bold" if s_idx == 3 else "normal",
+                    color="#14532D" if s_idx == 3 else "#1e293b",
+                )
+
+        ax.set_yscale("log")
+        ax.set_ylim(0.55, max_gain * 3.2)
+        ax.set_ylabel("Cumulative LER Reduction vs. D0 Pure BP (×, log)", fontsize=11.5, fontweight="bold", color="#0f172a")
+        ax.set_xticks(x)
+        ax.set_xticklabels([lbl for _, lbl in c_order], fontsize=11, fontweight="bold", color="#0f172a")
+        ax.grid(True, which="both", axis="y", linestyle="--", color="#cbd5e1", alpha=0.65, zorder=0)
+        for spine in ax.spines.values():
+            spine.set_edgecolor("#cbd5e1")
+            spine.set_linewidth(1.1)
+        ax.legend(
+            loc="upper center",
+            bbox_to_anchor=(0.5, 1.15),
+            ncol=2,
+            fontsize=8.3,
+            frameon=True,
+            facecolor="#f8fafc",
+            edgecolor="#cbd5e1",
+        )
+        plt.tight_layout(rect=[0.0, 0.0, 1.0, 0.89])
+        save_figure_everywhere(fig, stem_d, out_dirs)
+        entries.append(
+            {
+                "stem": stem_d,
+                "tags": [c for c, _ in c_order],
+                "decoders": ["O"],
+                "json_sources": ["benchmarking/data/ablation_4circuits_results.json"],
+                "commands": [c for c in cmds_d if c][:6],
+                "export_cmd": f"python3 benchmarking/viz/export_static.py --figure {stem_d}",
+            }
+        )
+
+    return entries
+
+
 def write_provenance_tex(provenance_entries: List[Dict[str, Any]], out_dirs: List[pathlib.Path]) -> str:
     lines = [
         "% =============================================================================",
@@ -2358,6 +2847,12 @@ def generate_all(target_figure: Optional[str] = None) -> List[Dict[str, Any]]:
                 out_dirs,
             )
         )
+
+    # 13. 4-Circuit Cumulative Ablation Suite (fig_ablation_{bp_comp,bp_algo,osd_comp,osd_algo})
+    ablation_dirs = out_dirs + [
+        pathlib.Path("/usr/local/google/home/ariash/.gemini/jetski/brain/67c42a3b-49c1-44cb-a2ce-ec1851dd8f89"),
+    ]
+    provenance_entries.extend(plot_ablation_4circuits_suite(ablation_dirs, target_figure))
 
     if target_figure is None:
         write_provenance_tex(provenance_entries, out_dirs)

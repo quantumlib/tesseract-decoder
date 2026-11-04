@@ -374,6 +374,14 @@
 
   function mountVizPlot(container, props) {
     if (!container) return;
+    const pView = String((props && (props.view || props.plotType || props.preset)) || "").toLowerCase();
+    if (
+      (pView.includes("ablation_") || pView === "bp_comp" || pView === "bp_algo" || pView === "osd_comp" || pView === "osd_algo") &&
+      window.TesseractViz &&
+      typeof window.TesseractViz["bp_osd_isd_pipeline"] === "function"
+    ) {
+      return window.TesseractViz["bp_osd_isd_pipeline"](container, props);
+    }
     injectStylesOnce();
 
     const dataset = window.TESSERACT_VIZ_DATASETS;

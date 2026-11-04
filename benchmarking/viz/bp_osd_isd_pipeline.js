@@ -2,10 +2,10 @@
    Animation Module: bp_osd_isd_pipeline
    Clean, Spacious Static 2D Mechanism Diagrams (with CLI Flags) +
    Multi-Circuit 4-Family Ablation SVG Charts Separated into Four Visuals:
-     - "bp_comp"  (Slide 8):  BP Computational Optimizations (1 Plot: Speedup & ms/shot)
-     - "bp_algo"  (Slide 9):  BP Algorithmic Optimizations (Dual Plot: BP Conv % & LER Reduction)
-     - "osd_comp" (Slide 11): OSD Computational Optimizations (1 Plot: Log Speedup, 0.0% LER Loss)
-     - "osd_algo" (Slide 12): OSD Algorithmic Optimizations (LER Reduction & Multi-Seed Runtime)
+     - "bp_comp"  / "ablation_bp_comp"  (Slide 8):  BP Computational Optimizations (3 Steps A1..A3, 1 Plot: Speedup & ms/shot)
+     - "bp_algo"  / "ablation_bp_algo"  (Slide 9):  BP Algorithmic Optimizations (3 Steps B1..B3, Dual Plot: BP Conv % & LER/round)
+     - "osd_comp" / "ablation_osd_comp" (Slide 11): OSD Computational Optimizations (3 Steps C1..C3, 1 Plot: Log Speedup, 0.0% LER Loss)
+     - "osd_algo" / "ablation_osd_algo" (Slide 12): OSD Algorithmic Optimizations (4 Steps D0..D3, LER/round & Error Reduction)
    Zero continuous animation, zero toggle buttons, zero Tesseract-Hybrid references.
    ========================================================================== */
 
@@ -25,143 +25,128 @@
       { id: "mitten_d10", label: "Mitten ⟦150, 30, 10⟧", sub: "r=10, p=0.001" },
       { id: "hyp_iter40", label: "Hyperbolic iter=40", sub: "⟦288, 12, 8⟧, R=16" }
     ],
-    // Progression A: BP Computational (Speedup vs A1 & BP ms/shot; A2 & A3 have 0.0% LER change)
+    // Progression A: BP Computational (3 Steps A1..A3: Speedup vs A1 & BP ms/shot; A2 has 0.0% LER change)
     bp_comp: {
       steps: [
-        { key: "A1", name: "A1: Scalar Monolithic", flag: "--no-multipass --no-bp-simd-batch --no-bp-compaction", color: "#64748B" },
-        { key: "A2", name: "A2: +16-Lane SIMD CSR (0% LER Δ)", flag: "--bp-simd-batch", color: "#1967D2" },
-        { key: "A3", name: "A3: +2-Stage Compaction (0% LER Δ)", flag: "--bp-compaction", color: "#00796B" },
-        { key: "A4", name: "A4: +Multi-Pass Compression", flag: "--multipass --bp-merge-duplicates", color: "#1E8E3E" }
+        { key: "A1", name: "A1: Scalar Monolithic BP (1.00×)", flag: "--no-multipass --no-bp-simd-batch", color: "#64748B" },
+        { key: "A2", name: "A2: +16-Lane AVX2 SIMD Batching (0% LER Δ)", flag: "--bp-simd-batch", color: "#1967D2" },
+        { key: "A3", name: "A3: +Multi-Pass DEM/Tanner Compression", flag: "--multipass (default)", color: "#1E8E3E" }
       ],
       byCircuit: {
         cc_d11: [
-          { speedup: 1.00, ms: 171.90 },
-          { speedup: 12.49, ms: 13.77 },
-          { speedup: 13.50, ms: 12.73 },
-          { speedup: 139.28, ms: 1.23 }
+          { speedup: 1.00, ms: 166.55 },
+          { speedup: 13.53, ms: 12.31 },
+          { speedup: 101.31, ms: 1.64 }
         ],
         bb_d6: [
-          { speedup: 1.00, ms: 95.85 },
-          { speedup: 12.72, ms: 7.53 },
-          { speedup: 13.99, ms: 6.85 },
-          { speedup: 305.15, ms: 0.31 }
+          { speedup: 1.00, ms: 93.18 },
+          { speedup: 12.24, ms: 7.62 },
+          { speedup: 98.56, ms: 0.95 }
         ],
         mitten_d10: [
-          { speedup: 1.00, ms: 1226.47 },
-          { speedup: 14.47, ms: 84.76 },
-          { speedup: 20.66, ms: 59.36 },
-          { speedup: 301.35, ms: 4.07 }
+          { speedup: 1.00, ms: 1026.72 },
+          { speedup: 15.28, ms: 67.21 },
+          { speedup: 135.76, ms: 7.56 }
         ],
         hyp_iter40: [
-          { speedup: 1.00, ms: 805.06 },
-          { speedup: 13.50, ms: 59.64 },
-          { speedup: 14.09, ms: 57.12 },
-          { speedup: 93.90, ms: 8.57 }
+          { speedup: 1.00, ms: 634.90 },
+          { speedup: 13.75, ms: 46.17 },
+          { speedup: 77.94, ms: 8.15 }
         ]
       }
     },
-    // Progression B: BP Algorithmic (Primary Pure-BP Convergence % AND End-to-End LER Reduction vs B1)
+    // Progression B: BP Algorithmic (3 Steps B1..B3: Primary Pure-BP Convergence % AND End-to-End LER Reduction vs B1)
     bp_algo: {
       steps: [
-        { key: "B1", name: "B1: Parallel Flooding", flag: "--no-bp-serial --no-bp-random-order --bp-reweight=none", color: "#64748B" },
-        { key: "B2", name: "B2: +Layered Serial", flag: "--bp-serial", color: "#1967D2" },
-        { key: "B3", name: "B3: +Random Check Order", flag: "--bp-random-order", color: "#00796B" },
-        { key: "B4", name: "B4: +Soft 75%/25% Reweight", flag: "--bp-reweight=soft", color: "#1E8E3E" }
+        { key: "B1", name: "B1: Flooding + Unweighted", flag: "--no-bp-serial --bp-reweight=none", color: "#64748B" },
+        { key: "B2", name: "B2: +Serial Check Schedule", flag: "--bp-serial --bp-reweight=none", color: "#1967D2" },
+        { key: "B3", name: "B3: +Soft-Power Edge Reweighting", flag: "--bp-serial --bp-reweight=soft (default)", color: "#1E8E3E" }
       ],
       byCircuit: {
         cc_d11: [
-          { conv: 36.49, ler_gain: 1.00, ler_top: "1.00×", ler_str: "1.78e-5" },
-          { conv: 41.17, ler_gain: 0.67, ler_top: "0.67×", ler_str: "2.66e-5" },
-          { conv: 41.76, ler_gain: 1.00, ler_top: "1.00×", ler_str: "1.78e-5" },
-          { conv: 45.39, ler_gain: 4.00, ler_top: "0 errs", ler_str: "0/10240" }
+          { conv: 36.60, ler_gain: 1.00, ler_top: "1.00×", ler_str: "3.33e-5" },
+          { conv: 41.49, ler_gain: 1.71, ler_top: "1.71×", ler_str: "1.94e-5" },
+          { conv: 44.49, ler_gain: 4.00, ler_top: "4.00×", ler_str: "8.32e-6" }
         ],
         bb_d6: [
-          { conv: 74.27, ler_gain: 1.00, ler_top: "1.00×", ler_str: "2.28e-4" },
-          { conv: 82.45, ler_gain: 0.87, ler_top: "0.87×", ler_str: "2.61e-4" },
-          { conv: 82.67, ler_gain: 0.87, ler_top: "0.87×", ler_str: "2.61e-4" },
-          { conv: 82.77, ler_gain: 3.50, ler_top: "3.50×", ler_str: "6.51e-5" }
+          { conv: 75.24, ler_gain: 1.00, ler_top: "1.00×", ler_str: "2.44e-4" },
+          { conv: 82.84, ler_gain: 1.20, ler_top: "1.20×", ler_str: "2.04e-4" },
+          { conv: 82.89, ler_gain: 3.00, ler_top: "3.00×", ler_str: "8.14e-5" }
         ],
         mitten_d10: [
-          { conv: 21.97, ler_gain: 1.00, ler_top: "1.00×", ler_str: "2.25e-4" },
-          { conv: 90.91, ler_gain: 1.53, ler_top: "1.53×", ler_str: "1.47e-4" },
-          { conv: 91.18, ler_gain: 2.30, ler_top: "2.30×", ler_str: "9.77e-5" },
-          { conv: 92.66, ler_gain: 11.52, ler_top: "11.52×", ler_str: "1.95e-5" }
+          { conv: 22.18, ler_gain: 1.00, ler_top: "1.00×", ler_str: "1.77e-4" },
+          { conv: 90.52, ler_gain: 1.76, ler_top: "1.76×", ler_str: "1.01e-4" },
+          { conv: 91.89, ler_gain: 14.52, ler_top: "14.52×", ler_str: "1.22e-5" }
         ],
         hyp_iter40: [
-          { conv: 1.56, ler_gain: 1.00, ler_top: "1.00×", ler_str: "1.43e-3" },
-          { conv: 5.37, ler_gain: 0.96, ler_top: "0.96×", ler_str: "1.50e-3" },
-          { conv: 5.08, ler_gain: 0.96, ler_top: "0.96×", ler_str: "1.50e-3" },
-          { conv: 8.01, ler_gain: 23.48, ler_top: "23.48×", ler_str: "6.11e-5" }
+          { conv: 1.61, ler_gain: 1.00, ler_top: "1.00×", ler_str: "1.24e-3" },
+          { conv: 6.15, ler_gain: 1.00, ler_top: "1.00×", ler_str: "1.24e-3" },
+          { conv: 8.37, ler_gain: 3.69, ler_top: "3.69×", ler_str: "3.37e-4" }
         ]
       }
     },
-    // Progression C: OSD Computational (Isolated OSD Speedup vs C1 & ms/OSD-shot; 0.0% LER Change)
+    // Progression C: OSD Computational (3 Steps C1..C3: Isolated OSD Speedup vs C1 & ms/OSD-shot; 0.0% LER Change)
     osd_comp: {
       steps: [
-        { key: "C1", name: "C1: Full RREF + Full Sort", flag: "--no-osd-early-exit --no-osd-col-truncation --no-osd-partial-sort", color: "#64748B" },
-        { key: "C2", name: "C2: +Residual Early Exit (0% LER Δ)", flag: "--osd-early-exit", color: "#1967D2" },
-        { key: "C3", name: "C3: +1.2M Col Truncation (0% LER Δ)", flag: "--osd-col-truncation", color: "#00796B" },
-        { key: "C4", name: "C4: +Top-K Partial Sort (0% LER Δ)", flag: "--osd-partial-sort", color: "#1E8E3E" }
+        { key: "C1", name: "C1: Full RREF + Full Sort (1.00×)", flag: "--no-osd-early-exit --no-osd-col-truncation --no-osd-partial-sort", color: "#64748B" },
+        { key: "C2", name: "C2: +Dynamic Zero-Remainder Early Exit (0% LER Δ)", flag: "--osd-early-exit", color: "#1967D2" },
+        { key: "C3", name: "C3: +Horizon-Bounded Partial Sort (K=1.2M, nth_element)", flag: "--osd-col-truncation --osd-partial-sort (default)", color: "#1E8E3E" }
       ],
       byCircuit: {
         cc_d11: [
-          { speedup: 1.00, ms: 86.47 },
-          { speedup: 8.99, ms: 9.62 },
-          { speedup: 12.03, ms: 7.19 },
-          { speedup: 20.57, ms: 4.20 }
+          { speedup: 1.00, ms: 98.96 },
+          { speedup: 7.77, ms: 12.73 },
+          { speedup: 14.89, ms: 6.64 }
         ],
         bb_d6: [
-          { speedup: 1.00, ms: 14.05 },
-          { speedup: 2.17, ms: 6.49 },
-          { speedup: 2.38, ms: 5.91 },
-          { speedup: 2.73, ms: 5.14 }
+          { speedup: 1.00, ms: 16.51 },
+          { speedup: 1.96, ms: 8.42 },
+          { speedup: 2.49, ms: 6.64 }
         ],
         mitten_d10: [
-          { speedup: 1.00, ms: 172.40 },
-          { speedup: 4.71, ms: 36.64 },
-          { speedup: 5.89, ms: 29.27 },
-          { speedup: 7.38, ms: 23.37 }
+          { speedup: 1.00, ms: 192.47 },
+          { speedup: 3.83, ms: 50.32 },
+          { speedup: 4.98, ms: 38.69 }
         ],
         hyp_iter40: [
-          { speedup: 1.00, ms: 1272.08 },
-          { speedup: 19.27, ms: 66.02 },
-          { speedup: 23.56, ms: 53.99 },
-          { speedup: 29.20, ms: 43.56 }
+          { speedup: 1.00, ms: 1314.35 },
+          { speedup: 16.01, ms: 82.10 },
+          { speedup: 22.35, ms: 58.80 }
         ]
       }
     },
-    // Progression D: OSD Algorithmic (Cumulative LER Reduction vs D1, LER/round, & Total ms/shot)
+    // Progression D: OSD Algorithmic (4 Steps D0..D3: Cumulative LER Reduction vs D0 Pure BP, LER/round, & Total ms/shot)
     osd_algo: {
       steps: [
-        { key: "D1", name: "D1: Final-Iter OSD-0", flag: "--no-osd-min-syndrome --no-osd-relay --no-osd-alpha-isd --osd-order 0", color: "#64748B" },
-        { key: "D2", name: "D2: +Min-Syndrome t* Snapshot", flag: "--osd-min-syndrome", color: "#1967D2" },
-        { key: "D3", name: "D3: +Damped Relay Legs (R₁, R₂)", flag: "--osd-relay", color: "#00796B" },
-        { key: "D4", name: "D4: +Signed α-Blended ISD + OSD-10", flag: "--osd-alpha-isd --osd-order 10", color: "#1E8E3E" }
+        { key: "D0", name: "D0: Pure BP (No OSD)", flag: "--osd-order -1", color: "#64748B" },
+        { key: "D1", name: "D1: +Naive OSD-0 (Final Iter L^(T))", flag: "--no-osd-min-syndrome --osd-order 0", color: "#1967D2" },
+        { key: "D2", name: "D2: +Trajectory Seed Diversification (L^(t*) + 2 Relay Legs)", flag: "--osd-min-syndrome --osd-relay", color: "#00796B" },
+        { key: "D3", name: "D3: +Higher-Order OSD(O10/W2) & α-ISD", flag: "--osd-alpha-isd --osd-order 10 (default)", color: "#1E8E3E" }
       ],
       byCircuit: {
         cc_d11: [
-          { ler_gain: 1.00, ler_str: "2.50e-5", ms: 1.11 },
-          { ler_gain: 1.80, ler_str: "1.39e-5", ms: 1.23 },
-          { ler_gain: 1.13, ler_str: "2.22e-5", ms: 2.58 },
-          { ler_gain: 4.50, ler_str: "5.55e-6", ms: 5.46 }
+          { ler_gain: 1.00, d1_gain: 0.00, ler_str: "1.13e-2", ms: 1.68 },
+          { ler_gain: 407.61, d1_gain: 1.00, ler_str: "2.78e-5", ms: 1.75 },
+          { ler_gain: 582.36, d1_gain: 1.43, ler_str: "1.94e-5", ms: 3.29 },
+          { ler_gain: 1358.98, d1_gain: 3.33, ler_str: "8.32e-6", ms: 6.02 }
         ],
         bb_d6: [
-          { ler_gain: 1.00, ler_str: "6.61e-5", ms: 0.29 },
-          { ler_gain: 1.00, ler_str: "6.61e-5", ms: 0.32 },
-          { ler_gain: 0.93, ler_str: "7.12e-5", ms: 0.50 },
-          { ler_gain: 1.00, ler_str: "6.61e-5", ms: 1.02 }
+          { ler_gain: 1.00, d1_gain: 0.29, ler_str: "2.85e-4", ms: 0.91 },
+          { ler_gain: 3.50, d1_gain: 1.00, ler_str: "8.14e-5", ms: 0.98 },
+          { ler_gain: 3.50, d1_gain: 1.00, ler_str: "8.14e-5", ms: 1.69 },
+          { ler_gain: 3.50, d1_gain: 1.00, ler_str: "8.14e-5", ms: 2.15 }
         ],
         mitten_d10: [
-          { ler_gain: 1.00, ler_str: "1.19e-4", ms: 2.45 },
-          { ler_gain: 1.70, ler_str: "7.02e-5", ms: 2.58 },
-          { ler_gain: 19.52, ler_str: "6.10e-6", ms: 4.11 },
-          { ler_gain: 19.52, ler_str: "6.10e-6", ms: 6.08 }
+          { ler_gain: 1.00, d1_gain: 0.58, ler_str: "2.11e-4", ms: 7.67 },
+          { ler_gain: 1.73, d1_gain: 1.00, ler_str: "1.22e-4", ms: 7.55 },
+          { ler_gain: 9.87, d1_gain: 5.72, ler_str: "2.14e-5", ms: 9.78 },
+          { ler_gain: 17.28, d1_gain: 10.01, ler_str: "1.22e-5", ms: 11.34 }
         ],
         hyp_iter40: [
-          { ler_gain: 1.00, ler_str: "6.16e-4", ms: 9.19 },
-          { ler_gain: 1.11, ler_str: "5.54e-4", ms: 10.50 },
-          { ler_gain: 1.67, ler_str: "3.68e-4", ms: 29.85 },
-          { ler_gain: 2.87, ler_str: "2.14e-4", ms: 81.53 }
+          { ler_gain: 1.00, d1_gain: 0.02, ler_str: "4.76e-2", ms: 8.17 },
+          { ler_gain: 50.44, d1_gain: 1.00, ler_str: "9.44e-4", ms: 8.79 },
+          { ler_gain: 71.85, d1_gain: 1.42, ler_str: "6.63e-4", ms: 28.68 },
+          { ler_gain: 141.12, d1_gain: 2.80, ler_str: "3.37e-4", ms: 81.79 }
         ]
       }
     }
@@ -350,7 +335,7 @@
     svg += `<line x1="${padL}" y1="${yBase}" x2="${W - padR}" y2="${yBase}" stroke="#94A3B8" stroke-width="1.3" />`;
 
     const groupW = plotW / circuits.length;
-    const barW = Math.min(34, (groupW - 36) / steps.length);
+    const barW = Math.min(36, (groupW - 36) / steps.length);
 
     circuits.forEach((c, cIdx) => {
       const gCenter = padL + groupW * (cIdx + 0.5);
@@ -360,7 +345,7 @@
         const val = opts.getValue(row);
         const topLabel = opts.getTopLabel(row);
         const subLabel = opts.getSubLabel ? opts.getSubLabel(row) : "";
-        const x = gCenter + (sIdx - (steps.length - 1) / 2) * (barW + 3) - barW / 2;
+        const x = gCenter + (sIdx - (steps.length - 1) / 2) * (barW + 4) - barW / 2;
         const y = yPos(val);
         const h = Math.max(2, yBase - y);
         const color = steps[sIdx].color;
@@ -395,12 +380,12 @@
   }
 
   /* ==========================================================================
-     1. BP COMPUTATIONAL OPTIMIZATIONS ("bp_comp")
+     1. BP COMPUTATIONAL OPTIMIZATIONS ("bp_comp" / "ablation_bp_comp")
      ========================================================================== */
   function renderBpComp(container) {
     const d = ABLATION_DATA.bp_comp;
     const allSpeedups = Object.values(d.byCircuit).flat().map(r => r.speedup);
-    const maxSp = Math.max(...allSpeedups, 310.0);
+    const maxSp = Math.max(...allSpeedups, 150.0);
 
     const chartSvg = buildSingleGroupedChartSvg({
       steps: d.steps,
@@ -409,7 +394,7 @@
       minVal: 0.7,
       yLabel: "BP Speedup (×, log)",
       maxVal: maxSp,
-      ticks: [1, 10, 50, 100, 300],
+      ticks: [1, 10, 50, 100],
       getValue: r => r.speedup,
       getTopLabel: r => `${r.speedup >= 10 ? r.speedup.toFixed(1) : r.speedup.toFixed(2)}×`,
       getSubLabel: r => fmtMs(r.ms)
@@ -417,61 +402,63 @@
 
     container.innerHTML = `
       <div class="ca-root">
-        <!-- Top Card: 3-Stage Systems & Graph Compression Pipeline -->
+        <!-- Top Card: 3-Step BP Computational Pipeline (A1 -> A2 -> A3) -->
         <div class="ca-card" style="flex:0.95;">
           <div class="ca-card-header">
             <span class="ca-card-title" style="color:var(--qai-deep-blue);">
-              1. Three-Stage BP Computational Pipeline: Vectorized CSR &rarr; Compaction &rarr; Graph Compression
+              1. BP Computational Pipeline: Scalar Monolithic &rarr; 16-Lane AVX2 SIMD Batching &rarr; Multi-Pass DEM/Tanner Compression
             </span>
             <span class="ca-badge" style="background:var(--qai-badge-green); color:var(--qai-green);">
-              SIMD &amp; Compaction: 0.0% LER Change &nbsp;&middot;&nbsp; Multi-Pass: Shrinks Graph &amp; Cuts LER
+              16-Lane SIMD: 0.0% LER Change &nbsp;&middot;&nbsp; Multi-Pass: Shrinks Graph &amp; Cuts LER
             </span>
           </div>
           <div class="ca-svg-wrap">
             <svg viewBox="0 0 860 154" style="max-height:158px;" xmlns="http://www.w3.org/2000/svg">
-              <!-- Box 1: 16-Lane SIMD CSR -->
+              <!-- Box 1: A1 Scalar Monolithic BP -->
               <rect x="8" y="4" width="262" height="145" rx="8" fill="#FAF8F5" stroke="#CBD5E1" stroke-width="1.4" />
-              <text x="139" y="23" text-anchor="middle" font-family="'Space Mono',monospace" font-size="10.2" font-weight="700" fill="#1967D2">
-                1. 16-LANE SIMD BATCHED CSR
+              <text x="139" y="23" text-anchor="middle" font-family="'Space Mono',monospace" font-size="10.2" font-weight="700" fill="#475569">
+                A1. SCALAR MONOLITHIC BP
               </text>
-              <rect x="26" y="31" width="226" height="24" rx="4" fill="#E8F0FE" stroke="#1967D2" stroke-width="1.3" />
-              <text x="139" y="47" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.6" font-weight="700" fill="#1967D2">
-                Flag: --bp-simd-batch (16 &times; int32 = 64B)
+              <rect x="20" y="31" width="238" height="24" rx="4" fill="#F1F5F9" stroke="#64748B" stroke-width="1.3" />
+              <text x="139" y="47" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.0" font-weight="700" fill="#334155">
+                --no-multipass --no-bp-simd-batch
               </text>
               <text x="139" y="73" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10.5" font-weight="600" fill="#1E2022">
-                Flat cache-aligned bidirectional CSR arrays
+                Single-shot scalar min-sum on full DEM
               </text>
               <text x="139" y="92" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" fill="#5F6368">
-                12.5&times;&ndash;14.5&times; faster than scalar across all 4 codes
+                93.2 ms &ndash; 1,026.7 ms per shot across 4 codes
               </text>
               <text x="139" y="110" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" fill="#5F6368">
-                Unmasked Q8 fixed-point min-sum instructions
+                Uncompressed cross-basis Tanner graph
               </text>
-              <text x="139" y="136" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.8" font-weight="700" fill="#1967D2">
-                0.0% LER Change (Pure Throughput)
+              <text x="139" y="136" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.8" font-weight="700" fill="#475569">
+                1.00&times; Throughput Baseline Reference
               </text>
 
               <!-- Arrow 1 -> 2 -->
               <line x1="273" y1="76" x2="293" y2="76" stroke="#1967D2" stroke-width="2.2" />
               <polygon points="296,76 288,71 288,81" fill="#1967D2" />
 
-              <!-- Box 2: 2-Stage Survivor Compaction -->
+              <!-- Box 2: A2 16-Lane AVX2 SIMD Batching -->
               <rect x="299" y="4" width="262" height="145" rx="8" fill="#FAF8F5" stroke="#CBD5E1" stroke-width="1.4" />
-              <text x="430" y="23" text-anchor="middle" font-family="'Space Mono',monospace" font-size="10.2" font-weight="700" fill="#00796B">
-                2. 2-STAGE SURVIVOR COMPACTION
+              <text x="430" y="23" text-anchor="middle" font-family="'Space Mono',monospace" font-size="10.2" font-weight="700" fill="#1967D2">
+                A2. +16-LANE AVX2 SIMD BATCHING
               </text>
-              <rect x="317" y="31" width="226" height="24" rx="4" fill="#E0F2F1" stroke="#00796B" stroke-width="1.3" />
-              <text x="430" y="47" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.6" font-weight="700" fill="#00796B">
-                Flag: --bp-compaction (Retire at Iter 4)
+              <rect x="317" y="31" width="226" height="24" rx="4" fill="#E8F0FE" stroke="#1967D2" stroke-width="1.3" />
+              <text x="430" y="47" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.5" font-weight="700" fill="#1967D2">
+                Flag: --bp-simd-batch (16 &times; int32 = 64B)
               </text>
-              <rect x="325" y="63" width="210" height="23" rx="4" fill="#FEF7E0" stroke="#D97706" stroke-width="1.2" />
-              <text x="430" y="78" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.5" font-weight="700" fill="#B45309">
-                Repack Survivors into Dense SIMD Lanes
+              <text x="430" y="73" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10.5" font-weight="600" fill="#1E2022">
+                Flat cache-aligned bidirectional CSR arrays
               </text>
-              <text x="430" y="106" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" fill="#5F6368">
-                13.5&times;&ndash;20.7&times; cumulative monolithic speedup
+              <text x="430" y="92" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" fill="#5F6368">
+                12.2&times;&ndash;15.3&times; faster than scalar across all 4 codes
               </text>
-              <text x="430" y="136" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.8" font-weight="700" fill="#00796B">
+              <text x="430" y="110" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" fill="#5F6368">
+                On-the-fly Q8 fixed-point min-sum updates
+              </text>
+              <text x="430" y="136" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.8" font-weight="700" fill="#1967D2">
                 0.0% LER Change (Pure Throughput)
               </text>
 
@@ -479,10 +466,10 @@
               <line x1="564" y1="76" x2="584" y2="76" stroke="#1967D2" stroke-width="2.2" />
               <polygon points="587,76 579,71 579,81" fill="#1967D2" />
 
-              <!-- Box 3: Multi-Pass Graph Compression -->
+              <!-- Box 3: A3 Multi-Pass DEM/Tanner Compression -->
               <rect x="590" y="4" width="262" height="145" rx="8" fill="#FAF8F5" stroke="#CBD5E1" stroke-width="1.4" />
-              <text x="721" y="23" text-anchor="middle" font-family="'Space Mono',monospace" font-size="10.2" font-weight="700" fill="#1E8E3E">
-                3. MULTI-PASS GRAPH COMPRESSION
+              <text x="721" y="23" text-anchor="middle" font-family="'Space Mono',monospace" font-size="10.0" font-weight="700" fill="#1E8E3E">
+                A3. +MULTI-PASS GRAPH COMPRESSION
               </text>
               <rect x="604" y="31" width="234" height="24" rx="4" fill="#E6F4EA" stroke="#1E8E3E" stroke-width="1.3" />
               <text x="721" y="47" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.3" font-weight="700" fill="#14532D">
@@ -492,10 +479,10 @@
                 Single-basis projection merges duplicate cols
               </text>
               <text x="721" y="92" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" fill="#5F6368">
-                93.9&times;&ndash;305.2&times; total BP speedup vs. A1!
+                77.9&times;&ndash;135.8&times; cumulative BP speedup vs. A1!
               </text>
               <text x="721" y="110" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" fill="#5F6368">
-                6.7&times;&ndash;21.8&times; additional step speedup over A3
+                5.7&times;&ndash;8.9&times; additional step speedup over A2
               </text>
               <text x="721" y="136" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.8" font-weight="700" fill="#1E8E3E">
                 Boosts Speed AND Breaks Cross-Basis 4-Cycles
@@ -511,7 +498,7 @@
               2. Multi-Circuit BP Computational Speedup Across 4 Code Families (Log Scale, with BP ms/shot)
             </span>
             <span class="ca-badge" style="background:var(--qai-badge-blue); color:var(--qai-deep-blue);">
-              93.9&times;&ndash;305.2&times; Cumulative BP Speedup &nbsp;&middot;&nbsp; A2 &amp; A3: 0.0% LER Change
+              77.9&times;&ndash;135.8&times; Cumulative BP Speedup &nbsp;&middot;&nbsp; A2 (SIMD): 0.0% LER Change
             </span>
           </div>
           <div class="ca-svg-wrap">
@@ -525,7 +512,7 @@
   }
 
   /* ==========================================================================
-     2. BP ALGORITHMIC OPTIMIZATIONS ("bp_algo")
+     2. BP ALGORITHMIC OPTIMIZATIONS ("bp_algo" / "ablation_bp_algo")
      ========================================================================== */
   function renderBpAlgo(container) {
     const d = ABLATION_DATA.bp_algo;
@@ -543,10 +530,10 @@
     // Right panel geometry (x: 472 .. 848)
     const L2 = 472, R2 = 848, W2 = R2 - L2;
 
-    const minLog2 = Math.log10(0.5);
-    const maxLog2 = Math.log10(35.0);
+    const minLog2 = Math.log10(0.6);
+    const maxLog2 = Math.log10(25.0);
     function yPos2(val) {
-      const vLog = Math.log10(Math.max(0.5, val));
+      const vLog = Math.log10(Math.max(0.6, val));
       return padT + plotH * (1 - (vLog - minLog2) / (maxLog2 - minLog2));
     }
 
@@ -562,17 +549,17 @@
     dualSvg += `<line x1="${L1}" y1="${yBase}" x2="${R1}" y2="${yBase}" stroke="#94A3B8" stroke-width="1.3" />`;
 
     const gW1 = W1 / circuits.length;
-    const bW1 = Math.min(18, (gW1 - 16) / steps.length);
+    const bW1 = Math.min(22, (gW1 - 18) / steps.length);
     circuits.forEach((c, cIdx) => {
       const gCenter = L1 + gW1 * (cIdx + 0.5);
       const rows = d.byCircuit[c.id] || [];
       rows.forEach((row, sIdx) => {
-        const x = gCenter + (sIdx - (steps.length - 1) / 2) * (bW1 + 2) - bW1 / 2;
+        const x = gCenter + (sIdx - (steps.length - 1) / 2) * (bW1 + 3) - bW1 / 2;
         const y = padT + plotH * (1 - row.conv / 112);
         const h = Math.max(2, yBase - y);
         const isFinal = sIdx === steps.length - 1;
         dualSvg += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bW1.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${steps[sIdx].color}" stroke="#1E2022" stroke-width="${isFinal ? 1.0 : 0.5}" />`;
-        dualSvg += `<text x="${(x + bW1 / 2).toFixed(1)}" y="${(y - 3).toFixed(1)}" text-anchor="middle" font-family="'Space Mono',monospace" font-size="7.0" font-weight="${isFinal ? 700 : 600}" fill="${isFinal ? '#14532D' : '#1E2022'}">${row.conv.toFixed(1)}%</text>`;
+        dualSvg += `<text x="${(x + bW1 / 2).toFixed(1)}" y="${(y - 3).toFixed(1)}" text-anchor="middle" font-family="'Space Mono',monospace" font-size="7.2" font-weight="${isFinal ? 700 : 600}" fill="${isFinal ? '#14532D' : '#1E2022'}">${row.conv.toFixed(1)}%</text>`;
       });
       dualSvg += `<text x="${gCenter.toFixed(1)}" y="${yBase + 14}" text-anchor="middle" font-family="'Space Mono',monospace" font-size="8.5" font-weight="700" fill="#1E2022">${c.label}</text>`;
       dualSvg += `<text x="${gCenter.toFixed(1)}" y="${yBase + 25}" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="7.6" fill="#64748B">${c.sub}</text>`;
@@ -580,7 +567,7 @@
 
     // Right Panel: End-to-End LER Reduction Factor (x, log) & LER/round
     dualSvg += `<text x="${(L2 + R2) / 2}" y="12" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.3" font-weight="700" fill="#1E8E3E">(B) LER REDUCTION FACTOR vs. B1 (&times;, LOG) &amp; LER/ROUND</text>`;
-    for (const t of [1, 2, 5, 10, 20]) {
+    for (const t of [1, 2, 5, 10, 15]) {
       const y = yPos2(t);
       dualSvg += `<line x1="${L2}" y1="${y.toFixed(1)}" x2="${R2}" y2="${y.toFixed(1)}" stroke="#E2E8F0" stroke-width="1" stroke-dasharray="3,3" />`;
       dualSvg += `<text x="${L2 - 5}" y="${(y + 3).toFixed(1)}" text-anchor="end" font-family="'Space Mono',monospace" font-size="8.5" fill="#64748B">${t}×</text>`;
@@ -588,18 +575,18 @@
     dualSvg += `<line x1="${L2}" y1="${yBase}" x2="${R2}" y2="${yBase}" stroke="#94A3B8" stroke-width="1.3" />`;
 
     const gW2 = W2 / circuits.length;
-    const bW2 = Math.min(18, (gW2 - 16) / steps.length);
+    const bW2 = Math.min(22, (gW2 - 18) / steps.length);
     circuits.forEach((c, cIdx) => {
       const gCenter = L2 + gW2 * (cIdx + 0.5);
       const rows = d.byCircuit[c.id] || [];
       rows.forEach((row, sIdx) => {
-        const x = gCenter + (sIdx - (steps.length - 1) / 2) * (bW2 + 2) - bW2 / 2;
+        const x = gCenter + (sIdx - (steps.length - 1) / 2) * (bW2 + 3) - bW2 / 2;
         const y = yPos2(row.ler_gain);
         const h = Math.max(2, yBase - y);
         const isFinal = sIdx === steps.length - 1;
         dualSvg += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bW2.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${steps[sIdx].color}" stroke="#1E2022" stroke-width="${isFinal ? 1.0 : 0.5}" />`;
-        dualSvg += `<text x="${(x + bW2 / 2).toFixed(1)}" y="${(y - 10).toFixed(1)}" text-anchor="middle" font-family="'Space Mono',monospace" font-size="6.9" font-weight="${isFinal ? 700 : 600}" fill="${isFinal ? '#14532D' : '#1E2022'}">${row.ler_top}</text>`;
-        dualSvg += `<text x="${(x + bW2 / 2).toFixed(1)}" y="${(y - 2).toFixed(1)}" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="6.5" fill="#5F6368">${row.ler_str}</text>`;
+        dualSvg += `<text x="${(x + bW2 / 2).toFixed(1)}" y="${(y - 10).toFixed(1)}" text-anchor="middle" font-family="'Space Mono',monospace" font-size="7.1" font-weight="${isFinal ? 700 : 600}" fill="${isFinal ? '#14532D' : '#1E2022'}">${row.ler_top}</text>`;
+        dualSvg += `<text x="${(x + bW2 / 2).toFixed(1)}" y="${(y - 2).toFixed(1)}" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="6.8" fill="#5F6368">${row.ler_str}</text>`;
       });
       dualSvg += `<text x="${gCenter.toFixed(1)}" y="${yBase + 14}" text-anchor="middle" font-family="'Space Mono',monospace" font-size="8.5" font-weight="700" fill="#1E2022">${c.label}</text>`;
       dualSvg += `<text x="${gCenter.toFixed(1)}" y="${yBase + 25}" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="7.6" fill="#64748B">${c.sub}</text>`;
@@ -609,25 +596,25 @@
 
     container.innerHTML = `
       <div class="ca-root">
-        <!-- Top Card: Parallel Flooding vs. Layered Serial Schedule + Soft Reweighting -->
+        <!-- Top Card: Parallel Flooding vs. Layered Serial Schedule + Soft-Power Edge Reweighting -->
         <div class="ca-card" style="flex:0.95;">
           <div class="ca-card-header">
             <span class="ca-card-title" style="color:var(--qai-green);">
-              1. Breaking 4-Cycle Symmetry: Randomized Layered Serial Schedule &amp; Soft Reweighting
+              1. Breaking 4-Cycle Symmetry: Layered Serial Check Schedule &amp; Soft-Power Edge Reweighting
             </span>
             <span class="ca-badge" style="background:var(--qai-badge-green); color:var(--qai-green);">
-              Affects Both Convergence (Throughput) &amp; Logical Accuracy (Up to 23.5&times; Lower LER)
+              Affects Both Convergence (+69.7 pp on Mitten) &amp; Logical Accuracy (Up to 14.5&times; Lower LER)
             </span>
           </div>
           <div class="ca-svg-wrap">
             <svg viewBox="0 0 860 156" style="max-height:160px;" xmlns="http://www.w3.org/2000/svg">
-              <!-- Panel 1: Parallel Flooding (Oscillates) -->
+              <!-- Panel 1: B1 Parallel Flooding + Unweighted (Oscillates) -->
               <rect x="8" y="4" width="268" height="148" rx="8" fill="#FEF2F2" stroke="#FCA5A5" stroke-width="1.4" />
-              <text x="142" y="22" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.8" font-weight="700" fill="#D93025">
-                A. PARALLEL FLOODING (OSCILLATES)
+              <text x="142" y="22" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.6" font-weight="700" fill="#D93025">
+                B1. FLOODING + UNWEIGHTED
               </text>
-              <text x="142" y="36" text-anchor="middle" font-family="'Space Mono',monospace" font-size="8.8" font-weight="700" fill="#991B1B">
-                Flags: --no-bp-serial --no-bp-random-order
+              <text x="142" y="36" text-anchor="middle" font-family="'Space Mono',monospace" font-size="8.6" font-weight="700" fill="#991B1B">
+                --no-bp-serial --bp-reweight=none
               </text>
               <line x1="92" y1="68" x2="142" y2="112" stroke="#D93025" stroke-width="2.4" />
               <line x1="192" y1="68" x2="142" y2="112" stroke="#D93025" stroke-width="2.4" />
@@ -641,13 +628,13 @@
                 Frozen iteration scores oscillate (0,0)&harr;(1,1)
               </text>
 
-              <!-- Panel 2: Layered Serial Schedule (Converges) -->
+              <!-- Panel 2: B2 +Serial Check Schedule (Converges) -->
               <rect x="292" y="4" width="276" height="148" rx="8" fill="#F0FDF4" stroke="#86EFAC" stroke-width="1.5" />
-              <text x="430" y="22" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.8" font-weight="700" fill="#14532D">
-                B. RANDOMIZED LAYERED SERIAL
+              <text x="430" y="22" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.6" font-weight="700" fill="#14532D">
+                B2. +SERIAL CHECK SCHEDULE
               </text>
-              <text x="430" y="36" text-anchor="middle" font-family="'Space Mono',monospace" font-size="8.8" font-weight="700" fill="#1E8E3E">
-                Flags: --bp-serial --bp-random-order
+              <text x="430" y="36" text-anchor="middle" font-family="'Space Mono',monospace" font-size="8.6" font-weight="700" fill="#1E8E3E">
+                --bp-serial --bp-reweight=none
               </text>
               <line x1="378" y1="68" x2="430" y2="112" stroke="#1E8E3E" stroke-width="2.6" />
               <line x1="482" y1="68" x2="430" y2="112" stroke="#94A3B8" stroke-width="1.8" stroke-dasharray="4,3" />
@@ -658,16 +645,16 @@
               <rect x="416" y="104" width="28" height="24" fill="#E6F4EA" stroke="#1E8E3E" stroke-width="2" />
               <text x="430" y="120" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.5" font-weight="700" fill="#14532D">c&check;</text>
               <text x="430" y="143" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" font-weight="600" fill="#14532D">
-                +69.2 pp convergence on Mitten d=10 (22% &rarr; 91.2%)
+                +68.3 pp convergence on Mitten d=10 (22.2% &rarr; 90.5%)
               </text>
 
-              <!-- Panel 3: Soft 75%/25% Cross-Pass Reweighting -->
+              <!-- Panel 3: B3 +Soft-Power Edge Reweighting -->
               <rect x="584" y="4" width="268" height="148" rx="8" fill="#FAF8F5" stroke="#CBD5E1" stroke-width="1.4" />
-              <text x="718" y="22" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.8" font-weight="700" fill="#1967D2">
-                C. SOFT (75% / 25%) LLR REWEIGHTING
+              <text x="718" y="22" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.6" font-weight="700" fill="#1967D2">
+                B3. +SOFT-POWER EDGE REWEIGHTING
               </text>
-              <text x="718" y="36" text-anchor="middle" font-family="'Space Mono',monospace" font-size="8.8" font-weight="700" fill="#1967D2">
-                Flag: --bp-reweight=soft
+              <text x="718" y="36" text-anchor="middle" font-family="'Space Mono',monospace" font-size="8.6" font-weight="700" fill="#1967D2">
+                --bp-serial --bp-reweight=soft (Default)
               </text>
               <rect x="600" y="44" width="236" height="40" rx="5" fill="#E8F0FE" stroke="#1967D2" stroke-width="1.3" />
               <text x="718" y="60" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.5" font-weight="700" fill="#1967D2">
@@ -681,7 +668,7 @@
                 75% Conditional + 25% Channel Prior
               </text>
               <text x="718" y="126" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="9.6" font-weight="600" fill="#14532D">
-                3.5&times;&ndash;23.5&times; lower LER across all 4 families!
+                3.0&times;&ndash;14.5&times; lower LER across all 4 families!
               </text>
             </svg>
           </div>
@@ -694,7 +681,7 @@
               2. Multi-Circuit BP Algorithmic Ablation Across 4 Quantum Code Families
             </span>
             <span class="ca-badge" style="background:var(--qai-badge-blue); color:var(--qai-deep-blue);">
-              Dual Effect: Higher Pure-BP Convergence + Up to 23.5&times; Lower End-to-End LER
+              Dual Effect: Higher Pure-BP Convergence + 3.0&times;&ndash;14.5&times; Lower End-to-End LER
             </span>
           </div>
           <div class="ca-svg-wrap">
@@ -708,12 +695,12 @@
   }
 
   /* ==========================================================================
-     3. OSD COMPUTATIONAL OPTIMIZATIONS ("osd_comp")
+     3. OSD COMPUTATIONAL OPTIMIZATIONS ("osd_comp" / "ablation_osd_comp")
      ========================================================================== */
   function renderOsdComp(container) {
     const d = ABLATION_DATA.osd_comp;
     const allSpeedups = Object.values(d.byCircuit).flat().map(r => r.speedup);
-    const maxSp = Math.max(...allSpeedups, 32.0);
+    const maxSp = Math.max(...allSpeedups, 25.0);
 
     const chartSvg = buildSingleGroupedChartSvg({
       steps: d.steps,
@@ -722,7 +709,7 @@
       minVal: 0.7,
       yLabel: "OSD Speedup (×, log)",
       maxVal: maxSp,
-      ticks: [1, 2, 5, 10, 20, 30],
+      ticks: [1, 2, 5, 10, 20],
       getValue: r => r.speedup,
       getTopLabel: r => `${r.speedup.toFixed(2)}×`,
       getSubLabel: r => fmtMs(r.ms)
@@ -730,11 +717,11 @@
 
     container.innerHTML = `
       <div class="ca-root">
-        <!-- Top Card: Matrix Diagram of Top-K Sort + 1.2M Truncation + Residual Early Exit -->
+        <!-- Top Card: Matrix Diagram of Zero-Remainder Early Exit + Horizon-Bounded Partial Sort -->
         <div class="ca-card" style="flex:0.95;">
           <div class="ca-card-header">
             <span class="ca-card-title" style="color:var(--qai-deep-blue);">
-              1. Exact Gauss&ndash;Jordan RREF Acceleration: Early Exit + 1.2M Truncation + Top-K Partial Sort
+              1. Exact Gauss&ndash;Jordan RREF Acceleration: Dynamic Zero-Remainder Early Exit + Horizon-Bounded Partial Sort
             </span>
             <span class="ca-badge" style="background:var(--qai-badge-green); color:var(--qai-green);">
               0.0% LER Change Across All 4 Circuits (Bit-for-Bit Identical Codewords)
@@ -752,7 +739,7 @@
               <rect x="22" y="30" width="412" height="22" rx="4" fill="#F1F5F9" stroke="#94A3B8" stroke-width="1.2" />
               <rect x="22" y="30" width="166" height="22" rx="4" fill="#DBEAFE" stroke="#1967D2" stroke-width="1.5" />
               <text x="105" y="45" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9" font-weight="700" fill="#1967D2">
-                Top-K = 1.2M Cols
+                Horizon K = 1.2M Cols
               </text>
               <text x="310" y="45" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="9.3" font-weight="600" fill="#64748B">
                 Remaining N &minus; 1.2M columns skipped completely!
@@ -793,34 +780,34 @@
                 reduced to 0, later pivots get 0 coefficient!
               </text>
 
-              <!-- Right Box: 3 Key Speedup Pillars with CLI Flags -->
+              <!-- Right Box: 3 Progression C Steps with CLI Flags -->
               <rect x="462" y="4" width="390" height="148" rx="8" fill="#FAF8F5" stroke="#CBD5E1" stroke-width="1.4" />
               <text x="657" y="22" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.8" font-weight="700" fill="#1E8E3E">
-                THREE MULTIPLICATIVE OSD SPEEDUPS (CLI FLAGS)
+                PROGRESSION C: OSD COMPUTATIONAL STEPS
               </text>
 
-              <rect x="476" y="30" width="362" height="35" rx="5" fill="#E8F0FE" stroke="#1967D2" stroke-width="1.2" />
-              <text x="486" y="45" font-family="'Space Mono',monospace" font-size="9.2" font-weight="700" fill="#1967D2">
-                1. Residual Early Exit (--osd-early-exit):
+              <rect x="476" y="30" width="362" height="35" rx="5" fill="#F1F5F9" stroke="#64748B" stroke-width="1.2" />
+              <text x="486" y="45" font-family="'Space Mono',monospace" font-size="9.1" font-weight="700" fill="#334155">
+                C1. Full RREF + Full Sort (1.00&times; Baseline):
               </text>
-              <text x="486" y="58" font-family="'DM Sans',sans-serif" font-size="9.5" fill="#1E2022">
-                8.99&times; speedup on Color d=11 &amp; 19.27&times; on Hyperbolic iter=40
+              <text x="486" y="58" font-family="'DM Sans',sans-serif" font-size="9.4" fill="#1E2022">
+                Full O(N log N) sort + all N columns (16.5&ndash;1,314 ms/OSD-shot)
               </text>
 
-              <rect x="476" y="71" width="362" height="35" rx="5" fill="#E0F2F1" stroke="#00796B" stroke-width="1.2" />
-              <text x="486" y="86" font-family="'Space Mono',monospace" font-size="9.2" font-weight="700" fill="#00796B">
-                2. 1.2M Column Truncation (--osd-col-truncation):
+              <rect x="476" y="71" width="362" height="35" rx="5" fill="#E8F0FE" stroke="#1967D2" stroke-width="1.2" />
+              <text x="486" y="86" font-family="'Space Mono',monospace" font-size="9.1" font-weight="700" fill="#1967D2">
+                C2. +Dynamic Zero-Remainder Early Exit (--osd-early-exit):
               </text>
-              <text x="486" y="99" font-family="'DM Sans',sans-serif" font-size="9.5" fill="#1E2022">
-                Caps bit-packed RREF width at K = 1.2M columns (12.0&times;&ndash;23.6&times; cum.)
+              <text x="486" y="99" font-family="'DM Sans',sans-serif" font-size="9.4" fill="#1E2022">
+                7.77&times; speedup on Color d=11 &amp; 16.01&times; on Hyperbolic iter=40 (0% LER &Delta;)
               </text>
 
               <rect x="476" y="112" width="362" height="34" rx="5" fill="#E6F4EA" stroke="#1E8E3E" stroke-width="1.4" />
-              <text x="486" y="127" font-family="'Space Mono',monospace" font-size="9.2" font-weight="700" fill="#14532D">
-                3. Top-K Partial Sort (--osd-partial-sort):
+              <text x="486" y="127" font-family="'Space Mono',monospace" font-size="8.9" font-weight="700" fill="#14532D">
+                C3. +Horizon-Bounded Partial Sort (K=1.2M, nth_element):
               </text>
-              <text x="486" y="140" font-family="'DM Sans',sans-serif" font-size="9.5" font-weight="600" fill="#14532D">
-                O(N + K log K) std::nth_element &rArr; up to 29.2&times; isolated OSD speedup
+              <text x="486" y="140" font-family="'DM Sans',sans-serif" font-size="9.4" font-weight="600" fill="#14532D">
+                --osd-col-truncation --osd-partial-sort &rArr; up to 22.35&times; OSD speedup
               </text>
             </svg>
           </div>
@@ -847,68 +834,68 @@
   }
 
   /* ==========================================================================
-     4. OSD ALGORITHMIC OPTIMIZATIONS ("osd_algo")
+     4. OSD ALGORITHMIC OPTIMIZATIONS ("osd_algo" / "ablation_osd_algo")
      ========================================================================== */
   function renderOsdAlgo(container) {
     const d = ABLATION_DATA.osd_algo;
     const allGains = Object.values(d.byCircuit).flat().map(r => r.ler_gain);
-    const maxGain = Math.max(...allGains, 20.0);
+    const maxGain = Math.max(...allGains, 1400.0);
 
     const chartSvg = buildSingleGroupedChartSvg({
       steps: d.steps,
       byCircuit: d.byCircuit,
       logScale: true,
-      minVal: 0.6,
-      yLabel: "LER Reduction (×, log)",
+      minVal: 0.7,
+      yLabel: "LER Reduction vs D0 (×, log)",
       maxVal: maxGain,
-      ticks: [1, 2, 5, 10, 20],
+      ticks: [1, 10, 100, 1000],
       getValue: r => r.ler_gain,
-      getTopLabel: r => `${r.ler_gain.toFixed(2)}×`,
+      getTopLabel: r => r.ler_gain >= 100 ? `${r.ler_gain.toFixed(0)}×` : (r.ler_gain >= 10 ? `${r.ler_gain.toFixed(1)}×` : `${r.ler_gain.toFixed(2)}×`),
       getSubLabel: r => `${r.ler_str} [${fmtMs(r.ms)}]`
     });
 
     container.innerHTML = `
       <div class="ca-root">
-        <!-- Top Card: Multi-Seed OSD + Signed Alpha-Blended ISD -->
+        <!-- Top Card: Trajectory Seed Diversification + Higher-Order OSD & Signed Alpha-ISD -->
         <div class="ca-card" style="flex:0.95;">
           <div class="ca-card-header">
             <span class="ca-card-title" style="color:var(--qai-green);">
-              1. Multi-Seed OSD (t* Snapshot + Relay Legs) &amp; Signed &alpha;-Blended ISD in Tesseract-BP-OSD
+              1. Trajectory Seed Diversification (L^(t*) + 2 Relay Legs) &amp; Higher-Order OSD(O10/W2) + &alpha;-ISD
             </span>
             <span class="ca-badge" style="background:var(--qai-badge-blue); color:var(--qai-deep-blue);">
-              Up to 19.52&times; Lower LER vs. Final-Iter OSD-0 (1,877&times; vs. Pure BP)
+              Up to 1,359&times; Lower LER vs. Pure BP D0 (Up to 10.01&times; vs. Naive OSD-0 D1)
             </span>
           </div>
           <div class="ca-svg-wrap">
             <svg viewBox="0 0 860 156" style="max-height:160px;" xmlns="http://www.w3.org/2000/svg">
-              <!-- Panel 1: Multi-Seed Basis Selection -->
+              <!-- Panel 1: Progression D Algorithmic Steps -->
               <rect x="8" y="4" width="395" height="148" rx="8" fill="#FAF8F5" stroke="#CBD5E1" stroke-width="1.4" />
-              <text x="205" y="22" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.8" font-weight="700" fill="#1967D2">
-                A. MULTI-SEED OSD ENSEMBLE (CLI FLAGS)
+              <text x="205" y="22" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.6" font-weight="700" fill="#1967D2">
+                A. PROGRESSION D: OSD ALGORITHMIC STEPS
               </text>
 
               <rect x="22" y="30" width="367" height="35" rx="5" fill="#E8F0FE" stroke="#1967D2" stroke-width="1.3" />
-              <text x="32" y="45" font-family="'Space Mono',monospace" font-size="9.2" font-weight="700" fill="#1967D2">
-                Seed 1 &mdash; Min-Syndrome Snapshot (--osd-min-syndrome):
+              <text x="32" y="45" font-family="'Space Mono',monospace" font-size="9.0" font-weight="700" fill="#1967D2">
+                D0 &rarr; D1: +Naive OSD-0 (Final Iteration L^(T)):
               </text>
-              <text x="32" y="58" font-family="'DM Sans',sans-serif" font-size="9.5" fill="#1E2022">
-                1.80&times; LER reduction on Color d=11 &amp; 1.70&times; on Mitten d=10
-              </text>
-
-              <rect x="22" y="71" width="367" height="35" rx="5" fill="#E6F4EA" stroke="#1E8E3E" stroke-width="1.3" />
-              <text x="32" y="86" font-family="'Space Mono',monospace" font-size="9.2" font-weight="700" fill="#14532D">
-                Seeds 2 &amp; 3 &mdash; Damped Relay Legs (--osd-relay):
-              </text>
-              <text x="32" y="99" font-family="'DM Sans',sans-serif" font-size="9.5" fill="#1E2022">
-                11.51&times; step LER reduction on Mitten d=10 (39 &rarr; 2 errs)
+              <text x="32" y="58" font-family="'DM Sans',sans-serif" font-size="9.4" fill="#1E2022">
+                407.6&times; LER reduction on Color d=11 &amp; 50.4&times; on Hyperbolic iter=40
               </text>
 
-              <rect x="22" y="112" width="367" height="34" rx="5" fill="#FEF7E0" stroke="#D97706" stroke-width="1.3" />
-              <text x="32" y="127" font-family="'Space Mono',monospace" font-size="9.2" font-weight="700" fill="#B45309">
-                Seeds 4 &amp; 5 &mdash; Signed &alpha;-Blended ISD (--osd-alpha-isd):
+              <rect x="22" y="71" width="367" height="35" rx="5" fill="#E0F2F1" stroke="#00796B" stroke-width="1.3" />
+              <text x="32" y="86" font-family="'Space Mono',monospace" font-size="8.9" font-weight="700" fill="#00796B">
+                D2: +Trajectory Seed Diversification (L^(t*) + 2 Relay Legs):
               </text>
-              <text x="32" y="140" font-family="'DM Sans',sans-serif" font-size="9.5" fill="#1E2022">
-                4.00&times; step LER reduction on Color d=11 &amp; 1.72&times; on Hyperbolic
+              <text x="32" y="99" font-family="'DM Sans',sans-serif" font-size="9.4" fill="#1E2022">
+                5.72&times; step LER reduction on Mitten d=10 (40 &rarr; 7 errs) &amp; 1.43&times; on CC d=11
+              </text>
+
+              <rect x="22" y="112" width="367" height="34" rx="5" fill="#E6F4EA" stroke="#1E8E3E" stroke-width="1.3" />
+              <text x="32" y="127" font-family="'Space Mono',monospace" font-size="9.0" font-weight="700" fill="#14532D">
+                D3: +Higher-Order OSD(O10/W2) &amp; &alpha;-ISD (Default):
+              </text>
+              <text x="32" y="140" font-family="'DM Sans',sans-serif" font-size="9.4" fill="#1E2022">
+                2.33&times; step LER reduction on Color d=11 &amp; 1.96&times; on Hyperbolic iter=40
               </text>
 
               <!-- Arrow A -> B -->
@@ -948,14 +935,14 @@
           </div>
         </div>
 
-        <!-- Bottom Card: Multi-Circuit OSD Algorithmic LER Reduction & Total ms/shot -->
+        <!-- Bottom Card: Multi-Circuit OSD Algorithmic LER Reduction (D0..D3) & Total ms/shot -->
         <div class="ca-card" style="flex:1.05;">
           <div class="ca-card-header">
             <span class="ca-card-title" style="color:var(--qai-deep-blue);">
-              2. Multi-Circuit OSD Algorithmic LER Reduction vs. D1 Across 4 Code Families (Log Scale)
+              2. Multi-Circuit OSD Algorithmic LER Reduction vs. D0 Pure BP Across 4 Code Families (D0..D3, Log Scale)
             </span>
             <span class="ca-badge" style="background:var(--qai-badge-green); color:var(--qai-green);">
-              D0 &rarr; D1 Already Cuts LER by 6.24&times; on BB d=6 &amp; 417&times; on Color d=11
+              D1 &rarr; D3 Cuts LER by Additional 3.33&times; (CC d=11), 10.01&times; (Mitten d=10), &amp; 2.80&times; (iter=40)
             </span>
           </div>
           <div class="ca-svg-wrap">
@@ -994,7 +981,7 @@
 
   function mountBpOsdIsdPipeline(container, props) {
     props = props || {};
-    const raw = String(props.preset || props.mode || props.view || props.id || "").toLowerCase();
+    const raw = String(props.preset || props.mode || props.view || props.plotType || props.id || "").toLowerCase();
     if (raw.includes("osd_algo")) return mountOsdAlgo(container, props);
     if (raw.includes("osd")) return mountOsdComp(container, props);
     if (raw.includes("bp_algo")) return mountBpAlgo(container, props);
@@ -1006,6 +993,10 @@
   window.TesseractViz["bp_algo"] = mountBpAlgo;
   window.TesseractViz["osd_comp"] = mountOsdComp;
   window.TesseractViz["osd_algo"] = mountOsdAlgo;
+  window.TesseractViz["ablation_bp_comp"] = mountBpComp;
+  window.TesseractViz["ablation_bp_algo"] = mountBpAlgo;
+  window.TesseractViz["ablation_osd_comp"] = mountOsdComp;
+  window.TesseractViz["ablation_osd_algo"] = mountOsdAlgo;
   window.TesseractViz["bp_comp_algo"] = mountBpComp;
   window.TesseractViz["osd_comp_algo"] = mountOsdComp;
   window.TesseractViz["bp_osd_isd_pipeline"] = mountBpOsdIsdPipeline;
@@ -1016,6 +1007,10 @@
       window.SlideEngine.registerAnimation("bp_algo", mountBpAlgo);
       window.SlideEngine.registerAnimation("osd_comp", mountOsdComp);
       window.SlideEngine.registerAnimation("osd_algo", mountOsdAlgo);
+      window.SlideEngine.registerAnimation("ablation_bp_comp", mountBpComp);
+      window.SlideEngine.registerAnimation("ablation_bp_algo", mountBpAlgo);
+      window.SlideEngine.registerAnimation("ablation_osd_comp", mountOsdComp);
+      window.SlideEngine.registerAnimation("ablation_osd_algo", mountOsdAlgo);
       window.SlideEngine.registerAnimation("bp_comp_algo", mountBpComp);
       window.SlideEngine.registerAnimation("osd_comp_algo", mountOsdComp);
       window.SlideEngine.registerAnimation("bp_osd_isd_pipeline", mountBpOsdIsdPipeline);

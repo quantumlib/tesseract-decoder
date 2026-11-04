@@ -67,7 +67,7 @@ struct BPParams {
 
   // BP Computational ablation flags:
   bool bp_simd_batch = true;
-  bool bp_compaction = true;
+  bool bp_compaction = false;
   bool bp_merge_duplicates = true;
 
   // BP Algorithmic ablation flags:

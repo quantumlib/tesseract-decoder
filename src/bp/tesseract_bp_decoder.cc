@@ -842,7 +842,7 @@ std::vector<std::vector<uint8_t>> TesseractBpDecoder::decode_batch(
           const auto t_bp_start = ProfileClock::now();
           std::vector<BPResult> r_results = bp_serial_min_sum(
               graph_, current_batch, posteriors_flat, relay_iters,
-              spec.norm_factor, params_.stop_at_convergence, params_.random_schedule,
+              spec.norm_factor, params_.stop_at_convergence, /*random_schedule=*/true,
               params_.random_seed ^ spec.seed_xor, priors_flat_ptr, spec.damping_num,
               params_.osd_min_syndrome_snapshot ? &tstar_posteriors_flat : nullptr,
               params_.bp_serial_schedule, params_.bp_simd_batch);

@@ -115,9 +115,10 @@ struct Args {
   double normalization_factor = 0.75;
   int osd_order = 10;
   int osd_weight = 2;
+  int osd_w2_limit = 60;
   bool fast = false;
   bool use_batched_bp = true;
-  bool random_schedule = true;
+  bool random_schedule = false;
   double osd_truncation_factor = 1.2;
   bool profile = false;
   bool multipass_soft_reweight = true;
@@ -128,7 +129,7 @@ struct Args {
   std::string sinter_csv_out = "";
 
   bool bp_simd_batch = true;
-  bool bp_compaction = true;
+  bool bp_compaction = false;
   bool bp_merge_duplicates = true;
   bool bp_serial_schedule = true;
   BpReweightMode bp_reweight_mode = BpReweightMode::kSoft;
@@ -689,6 +690,7 @@ int main(int argc, char* argv[]) {
       .store_into(args.normalization_factor);
   program.add_argument("--osd-order").default_value(10).store_into(args.osd_order);
   program.add_argument("--osd-weight").default_value(2).store_into(args.osd_weight);
+  program.add_argument("--osd-w2-limit").default_value(60).store_into(args.osd_w2_limit);
   program.add_argument("--osd-truncation-factor")
       .help("Multiplier defining the maximum number of columns for OSD Gaussian elimination (default: 1.2)")
       .default_value(1.2)
@@ -718,7 +720,7 @@ int main(int argc, char* argv[]) {
       .flag()
       .action([&args](const std::string&) { args.bp_simd_batch = false; });
   program.add_argument("--bp-compaction")
-      .help("Enable 2-stage screening and unconverged survivor compaction in BP (default: enabled)")
+      .help("Enable 2-stage screening and unconverged survivor compaction in BP (default: disabled)")
       .flag()
       .action([&args](const std::string&) { args.bp_compaction = true; });
   program.add_argument("--no-bp-compaction")
@@ -753,7 +755,7 @@ int main(int argc, char* argv[]) {
         }
       });
   program.add_argument("--bp-random-order")
-      .help("Enable per-iteration randomized check permutation in BP (default: enabled)")
+      .help("Enable per-iteration randomized check permutation in BP (default: disabled)")
       .flag()
       .action([&args](const std::string&) { args.random_schedule = true; });
   program.add_argument("--no-bp-random-order")
@@ -925,7 +927,7 @@ int main(int argc, char* argv[]) {
       "--osd-col-truncation", "--no-osd-col-truncation", "--osd-partial-sort",
       "--no-osd-partial-sort", "--osd-min-syndrome", "--no-osd-min-syndrome",
       "--osd-relay", "--no-osd-relay", "--osd-alpha-isd", "--no-osd-alpha-isd",
-      "--max-iter", "--normalization-factor", "--osd-order", "--osd-weight",
+      "--max-iter", "--normalization-factor", "--osd-order", "--osd-weight", "--osd-w2-limit",
       "--osd-truncation-factor", "--fast", "--profile", "--batched", "--bp-mode",
       "--tesseract-fallback", "--fallback-det-beam", "--fallback-margin", "--sinter-csv-out"};
   static const std::set<std::string> kAstarFlags = {
