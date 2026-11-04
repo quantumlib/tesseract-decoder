@@ -1,0 +1,11 @@
+{
+  "command_line": "TelescopingDecoder(TelescopeConfig.preset_balanced(num_threads=64)) --circuit \"testdata/bivariatebicyclecodes/r=12,d=12,p=0.002,noise=si1000,c=bivariate_bicycle_Z,nkd=[[144,12,12]],q=288,iscolored=True,A_poly=x^3+y+y^2,B_poly=y^3+x+x^2.stim\" --sample-num-shots 3000 --sample-seed 42",
+  "stats": {
+    "num_shots": 3000,
+    "num_errors": 1,
+    "num_low_confidence": 0,
+    "total_time_seconds": 320.18192700000003,
+    "wall_time_seconds": 37.66314488789067,
+    "sample_seed": 42
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "command_line": "./bazel-bin/src/tesseract --circuit testdata/colorcodes/r=17,d=17,p=0.001,noise=si1000,c=superdense_color_code_Z,q=433,gates=cz.stim --sample-num-shots 16 --sample-seed 42 --threads 64 --stats-out - --beam 20 --beam-climbing --no-revisit-dets --num-det-orders 16 --pqlimit 200000",
+  "stats": {
+    "beam_climbing": true,
+    "circuit_path": "testdata/colorcodes/r=17,d=17,p=0.001,noise=si1000,c=superdense_color_code_Z,q=433,gates=cz.stim",
+    "dem_path": "",
+    "det_beam": 20,
+    "det_order_seed": 518278944,
+    "det_penalty": 0.0,
+    "detector_orders_paths": [],
+    "max_errors": 18446744073709551615,
+    "multipass": false,
+    "multipass_num_passes": 2,
+    "multipass_strategy": "causal",
+    "no_revisit_dets": true,
+    "num_det_orders": 16,
+    "num_det_orders_per_generated_source": 16,
+    "num_errors": 0,
+    "num_low_confidence": 0,
+    "num_shots": 16,
+    "num_threads": 64,
+    "pqlimit": 200000,
+    "sample_num_shots": 16,
+    "sample_seed": 42,
+    "sparsify_base_degree": -1,
+    "sparsify_errors": false,
+    "sparsify_max_degree": -1,
+    "sparsify_reactivate_limit": -1,
+    "total_time_seconds": 129.18512,
+    "wall_time_seconds": 36.51104699377902
+  }
+}

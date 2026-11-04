@@ -1,0 +1,41 @@
+{
+  "command_line": "./bazel-bin/src/bp --circuit cat-flagged-circuits-octagon-L2-aug13-2026/r=8,g=8,b=8,iter=32,side_length=2,module_size=8,module_color=0,logical_basis=X,num_rounds=16,total_qubits=144,k=8,canonical_layout=OCTAGON_canonical,noise=SI1000,p=0.00100,p_seam=0.01000.stim --sample-num-shots 20480 --sample-seed 42 --threads 64 --stats-out - --multipass --num-passes 2 --random-schedule --max-iter 20 --normalization-factor 0.75 --osd-order 10 --osd-weight 2",
+  "stats": {
+    "circuit_path": "cat-flagged-circuits-octagon-L2-aug13-2026/r=8,g=8,b=8,iter=32,side_length=2,module_size=8,module_color=0,logical_basis=X,num_rounds=16,total_qubits=144,k=8,canonical_layout=OCTAGON_canonical,noise=SI1000,p=0.00100,p_seam=0.01000.stim",
+    "cpu_time_seconds": 308.2750550000001,
+    "decoder": "multipass-batched-random-serial-bp+osd",
+    "dem_path": "",
+    "max_errors": 18446744073709551615,
+    "num_discards": 0,
+    "num_errors": 445,
+    "num_fallback_substituted": 0,
+    "num_fallback_triggered": 0,
+    "num_shots": 20480,
+    "num_stage2_by_reason": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "num_stage2_from_bp_converged": 0,
+    "num_stage2_triggered": 0,
+    "num_threads": 64,
+    "sample_num_shots": 20480,
+    "sample_seed": 42,
+    "shots_per_cpu_second": 66.43417839954644,
+    "shots_per_second": 2126.90189218456,
+    "stage1_bp_converged_shots": 9268,
+    "stage1_osd_shots": 11212,
+    "stage1_time_seconds": 308.2750550000001,
+    "stage2_time_seconds": 0.0,
+    "stage3_time_seconds": 0.0,
+    "t_bp": 122.629624771,
+    "t_construct": 4.49335064,
+    "t_deinterleave": 1.014332089,
+    "t_post": 184.06047843699994,
+    "total_time_seconds": 308.2750550000001,
+    "wall_time_seconds": 9.629029
+  }
+}

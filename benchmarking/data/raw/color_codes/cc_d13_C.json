@@ -1,0 +1,41 @@
+{
+  "command_line": "./bazel-bin/src/bp --circuit testdata/colorcodes/r=13,d=13,p=0.001,noise=si1000,c=superdense_color_code_Z,q=253,gates=cz.stim --sample-num-shots 20000 --sample-seed 42 --threads 64 --stats-out - --multipass --num-passes 2 --random-schedule --max-iter 20 --normalization-factor 0.75 --osd-order 10 --osd-weight 2 --tesseract-fallback",
+  "stats": {
+    "circuit_path": "testdata/colorcodes/r=13,d=13,p=0.001,noise=si1000,c=superdense_color_code_Z,q=253,gates=cz.stim",
+    "cpu_time_seconds": 534.263877,
+    "decoder": "multipass-batched-random-serial-bp+osd+tesseract-fallback",
+    "dem_path": "",
+    "max_errors": 18446744073709551615,
+    "num_discards": 0,
+    "num_errors": 0,
+    "num_fallback_substituted": 4,
+    "num_fallback_triggered": 5,
+    "num_shots": 20000,
+    "num_stage2_by_reason": [
+      0,
+      9,
+      0,
+      4965,
+      0,
+      0
+    ],
+    "num_stage2_from_bp_converged": 0,
+    "num_stage2_triggered": 4974,
+    "num_threads": 64,
+    "sample_num_shots": 20000,
+    "sample_seed": 42,
+    "shots_per_cpu_second": 37.434685107861036,
+    "shots_per_second": 894.811707233179,
+    "stage1_bp_converged_shots": 8630,
+    "stage1_osd_shots": 11370,
+    "stage1_time_seconds": 268.501878,
+    "stage2_time_seconds": 248.04760800000005,
+    "stage3_time_seconds": 17.714391,
+    "t_bp": 170.39547062000003,
+    "t_construct": 6.875228830999999,
+    "t_deinterleave": 1.465501927,
+    "t_post": 95.381649409,
+    "total_time_seconds": 534.263877,
+    "wall_time_seconds": 22.351071
+  }
+}

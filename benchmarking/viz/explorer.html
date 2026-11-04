@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tesseract Unified Interactive Visualizer &amp; Benchmark Explorer</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="shortcut icon" type="image/png" href="favicon.png">
+  <style>
+    :root {
+      --bg: #0f172a;
+      --bg-card: #1e293b;
+      --border: #334155;
+      --text-main: #f8fafc;
+      --text-secondary: #cbd5e1;
+      --text-muted: #94a3b8;
+      --blue: #38bdf8;
+      --green: #34d399;
+      --amber: #f59e0b;
+      --red: #f87171;
+      --purple: #a78bfa;
+      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text-main);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding: 16px 22px;
+      gap: 12px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    h1 {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: #f8fafc;
+      letter-spacing: -0.02em;
+    }
+    .subtitle {
+      font-size: 0.80rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .top-nav-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      background: rgba(15, 23, 42, 0.75);
+      padding: 6px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+    .nav-tab-btn {
+      padding: 8px 14px;
+      border-radius: 7px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .nav-tab-btn:hover {
+      border-color: var(--border);
+      color: #fff;
+      background: rgba(30, 41, 59, 0.7);
+    }
+    .nav-tab-btn.active {
+      border-color: var(--blue);
+      background: rgba(56, 189, 248, 0.16);
+      color: var(--blue);
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.18);
+    }
+    .sub-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 6px 12px;
+      background: rgba(30, 41, 59, 0.55);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .sub-bar-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .preset-tabs {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .preset-btn {
+      padding: 5px 11px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      font-size: 0.74rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .preset-btn:hover {
+      border-color: var(--blue);
+      color: #fff;
+    }
+    .preset-btn.active {
+      border-color: var(--green);
+      background: rgba(52, 211, 153, 0.15);
+      color: var(--green);
+    }
+    #main-mount {
+      flex: 1;
+      min-height: 660px;
+      background: rgba(15, 23, 42, 0.55);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+    }
+    footer {
+      font-size: 0.73rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding-top: 6px;
+      border-top: 1px solid rgba(51, 65, 85, 0.5);
+    }
+    code {
+      font-family: var(--font-mono);
+      color: var(--blue);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Tesseract Unified Interactive Visualizer Suite</h1>
+      <div class="subtitle">Single Canonical Home (<code>benchmarking/viz/</code>) — Synchronized with Static Paper Figures &amp; Presentation Deck</div>
+    </div>
+    <nav class="top-nav-tabs" id="top-nav-tabs">
+      <button class="nav-tab-btn active" data-viz="viz_plot">1. Benchmark Plots (<code>viz_plot</code>)</button>
+      <button class="nav-tab-btn" data-viz="stim3d_shattering">2. 3D DEM: Monolithic [B] vs Gari [G] vs Shattering [M] (<code>stim3d_shattering</code>)</button>
+      <button class="nav-tab-btn" data-viz="bp_osd_isd_pipeline">3. BP-OSD Engine Explorer (<code>bp_osd_isd_pipeline</code>)</button>
+      <button class="nav-tab-btn" data-viz="cascade_funnel_explorer">4. 3-Stage Hybrid Funnel (<code>cascade_funnel_explorer</code>)</button>
+    </nav>
+  </header>
+
+  <div class="sub-bar" id="sub-bar">
+    <span class="sub-bar-label" id="sub-bar-label">Benchmark Plot Presets:</span>
+    <div class="preset-tabs" id="preset-tabs"></div>
+  </div>
+
+  <main id="main-mount"></main>
+
+  <footer>
+    <span>Canonical Data &amp; Modules: <code>benchmarking/viz/{datasets,plot_widget,stim3d_shattering,bp_osd_isd_pipeline,cascade_funnel_explorer}.js</code></span>
+    <span>Static PDF/PNG Exporter: <code>python3 benchmarking/viz/export_static.py</code></span>
+  </footer>
+
+  <script src="datasets.js"></script>
+  <script src="plot_widget.js"></script>
+  <script src="stim3d_shattering.js"></script>
+  <script src="bp_osd_isd_pipeline.js"></script>
+  <script src="cascade_funnel_explorer.js"></script>
+  <script>
+    (function () {
+      var PLOT_PRESETS = [
+        {
+          label: "Color Codes Tradeoff (d=5,7,9,11)",
+          props: {
+            view: "tradeoff",
+            preset: "color_codes",
+            distances: [5, 7, 9, 11]
+          }
+        },
+        {
+          label: "Color Code Distance Scaling (d=3..23)",
+          props: {
+            view: "cc_scaling"
+          }
+        },
+        {
+          label: "Bivariate Bicycle & Gross (d=6,12)",
+          props: {
+            view: "tradeoff",
+            preset: "bivariate_bicycle",
+            codes: ["bb_d6", "bb_d12_gross"]
+          }
+        },
+        {
+          label: "BB [[72,12,6]] Noise Sweep (p)",
+          props: {
+            view: "bb_psweep",
+            code: "bb_d6"
+          }
+        },
+        {
+          label: "Gross [[144,12,12]] Noise Sweep (p)",
+          props: {
+            view: "bb_psweep",
+            code: "bb_d12_gross"
+          }
+        },
+        {
+          label: "High-Rate Mitten [[150,30,10]]",
+          props: {
+            view: "tradeoff",
+            preset: "mitten",
+            code: "mitten_d10"
+          }
+        },
+        {
+          label: "Hyperbolic Octagon vs AlphaQubit",
+          props: {
+            view: "hyperbolic",
+            preset: "hyperbolic",
+            norm: "per_logical"
+          }
+        },
+        {
+          label: "Stage Breakdown (Color Codes)",
+          props: {
+            view: "stage_breakdown",
+            preset: "cc_d5_7_9_11",
+            distances: [5, 7, 9, 11]
+          }
+        },
+        {
+          label: "Stage Breakdown (All Families)",
+          props: {
+            view: "stage_breakdown",
+            preset: "all_families",
+            code: "all_families"
+          }
+        }
+      ];
+
+      var STIM3D_PRESETS = [
+        {
+          label: "[B] Monolithic DEM (Coupled X/Z)",
+          props: { mode: "monolithic", pivotStep: 6 }
+        },
+        {
+          label: "[G] Gari Gauge Elimination (Pivots + Fill-In)",
+          props: { mode: "gari", pivotStep: 6 }
+        },
+        {
+          label: "[M] / [O] Multi-Pass DEM Shattering (Zero Fill-In)",
+          props: { mode: "shattered", pivotStep: 6 }
+        }
+      ];
+
+      var BP_OSD_PRESETS = [
+        {
+          label: "Interactive BP-OSD-CS + ISD Pipeline",
+          props: {}
+        }
+      ];
+
+      var CASCADE_PRESETS = [
+        {
+          label: "3-Stage Hybrid Routing Funnel (p = 0.001 default)",
+          props: {}
+        }
+      ];
+
+      var mountEl = document.getElementById("main-mount");
+      var topNavEl = document.getElementById("top-nav-tabs");
+      var subBarLabelEl = document.getElementById("sub-bar-label");
+      var presetTabsEl = document.getElementById("preset-tabs");
+
+      var activeViz = "viz_plot";
+      var activeCtrl = null;
+
+      function cleanupCurrent() {
+        if (activeCtrl && typeof activeCtrl.cleanup === "function") {
+          try { activeCtrl.cleanup(); } catch (e) {}
+        }
+        activeCtrl = null;
+        mountEl.innerHTML = "";
+      }
+
+      function mountModule(vizName, props) {
+        cleanupCurrent();
+        var registry = window.TesseractViz || {};
+        var mountFn = registry[vizName];
+        if (!mountFn && vizName === "viz_plot" && window.TesseractPlotWidget) {
+          mountFn = window.TesseractPlotWidget.mount;
+        }
+        if (typeof mountFn === "function") {
+          activeCtrl = mountFn(mountEl, props || {});
+        } else {
+          mountEl.innerHTML = '<div style="padding:24px;color:#f87171;">Visualizer <code>' + vizName + '</code> not found in <code>window.TesseractViz</code>.</div>';
+        }
+      }
+
+      function renderSubPresets(vizName) {
+        presetTabsEl.innerHTML = "";
+        var list = [];
+        if (vizName === "viz_plot") {
+          subBarLabelEl.textContent = "Benchmark Plot Presets:";
+          list = PLOT_PRESETS;
+        } else if (vizName === "stim3d_shattering") {
+          subBarLabelEl.textContent = "3D DEM Mode Presets:";
+          list = STIM3D_PRESETS;
+        } else if (vizName === "bp_osd_isd_pipeline") {
+          subBarLabelEl.textContent = "BP-OSD Engine View:";
+          list = BP_OSD_PRESETS;
+        } else if (vizName === "cascade_funnel_explorer") {
+          subBarLabelEl.textContent = "Cascade Funnel View:";
+          list = CASCADE_PRESETS;
+        }
+
+        list.forEach(function (item, idx) {
+          var btn = document.createElement("button");
+          btn.className = "preset-btn" + (idx === 0 ? " active" : "");
+          btn.textContent = item.label;
+          btn.addEventListener("click", function () {
+            Array.from(presetTabsEl.children).forEach(function (c) { c.classList.remove("active"); });
+            btn.classList.add("active");
+            mountModule(vizName, item.props);
+          });
+          presetTabsEl.appendChild(btn);
+        });
+
+        if (list.length > 0) {
+          mountModule(vizName, list[0].props);
+        } else {
+          mountModule(vizName, {});
+        }
+      }
+
+      Array.from(topNavEl.querySelectorAll(".nav-tab-btn")).forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          Array.from(topNavEl.querySelectorAll(".nav-tab-btn")).forEach(function (b) { b.classList.remove("active"); });
+          btn.classList.add("active");
+          activeViz = btn.getAttribute("data-viz");
+          renderSubPresets(activeViz);
+        });
+      });
+
+      renderSubPresets("viz_plot");
+    })();
+  </script>
+</body>
+</html>

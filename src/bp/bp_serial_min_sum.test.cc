@@ -310,4 +310,67 @@ TEST(BpSerialMinSumTest, WavefrontBpMatchesFullBpOnSingleAndDisconnectedClusters
   EXPECT_EQ(actual, expected);
 }
 
+TEST(BpSerialMinSumTest, AblationFlagsSimdCompactionAndFlooding) {
+  stim::DetectorErrorModel dem(R"DEM(
+    error(0.01) D0
+    error(0.01) D0 D1 L0
+    error(0.01) D1 D2
+    error(0.01) D2 D3
+    error(0.01) D3 D4
+    error(0.01) D4 D5
+    error(0.01) D5 D6
+    error(0.01) D6 D7 L0
+    error(0.01) D7
+    detector D0
+    detector D1
+    detector D2
+    detector D3
+    detector D4
+    detector D5
+    detector D6
+    detector D7
+    logical_observable L0
+  )DEM");
+
+  std::vector<std::vector<uint64_t>> batch(24);
+  for (size_t i = 0; i < 24; ++i) {
+    if (i % 4 == 0) batch[i] = {0, 1};
+    else if (i % 4 == 1) batch[i] = {2, 5};
+    else if (i % 4 == 2) batch[i] = {0, 7};
+    else batch[i] = {};
+  }
+
+  // A1: scalar, no compaction
+  BPParams p_a1 = BPParams::Osd(15, 10, 2);
+  p_a1.bp_simd_batch = false;
+  p_a1.bp_compaction = false;
+  TesseractBpDecoder dec_a1(dem, p_a1);
+  auto res_a1 = dec_a1.decode_batch(batch, dec_a1.create_post_processor());
+
+  // A2: 16-lane SIMD, no compaction
+  BPParams p_a2 = BPParams::Osd(15, 10, 2);
+  p_a2.bp_simd_batch = true;
+  p_a2.bp_compaction = false;
+  TesseractBpDecoder dec_a2(dem, p_a2);
+  auto res_a2 = dec_a2.decode_batch(batch, dec_a2.create_post_processor());
+
+  // A3: 16-lane SIMD, with compaction
+  BPParams p_a3 = BPParams::Osd(15, 10, 2);
+  p_a3.bp_simd_batch = true;
+  p_a3.bp_compaction = true;
+  TesseractBpDecoder dec_a3(dem, p_a3);
+  auto res_a3 = dec_a3.decode_batch(batch, dec_a3.create_post_processor());
+
+  EXPECT_EQ(res_a1, res_a2);
+  EXPECT_EQ(res_a2, res_a3);
+
+  // Flooding schedule (--no-bp-serial)
+  BPParams p_flood = BPParams::Osd(20, 10, 2);
+  p_flood.bp_serial_schedule = false;
+  p_flood.random_schedule = false;
+  TesseractBpDecoder dec_flood(dem, p_flood);
+  auto res_flood = dec_flood.decode_batch(batch, dec_flood.create_post_processor());
+  EXPECT_EQ(res_flood.size(), batch.size());
+}
+
 }  // namespace bp

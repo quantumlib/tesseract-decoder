@@ -24,6 +24,7 @@ struct BpDecodeProfile {
   uint64_t num_decode_calls = 0;
   uint64_t num_shots = 0;
   uint64_t num_converged = 0;
+  uint64_t num_primary_bp_converged = 0;
   uint64_t sum_iters = 0;
   uint64_t sum_active_checks = 0;
 
@@ -48,6 +49,7 @@ struct BpDecodeProfile {
     num_decode_calls += other.num_decode_calls;
     num_shots += other.num_shots;
     num_converged += other.num_converged;
+    num_primary_bp_converged += other.num_primary_bp_converged;
     sum_iters += other.sum_iters;
     sum_active_checks += other.sum_active_checks;
     for (size_t i = 0; i < kNumIterBuckets; ++i) {

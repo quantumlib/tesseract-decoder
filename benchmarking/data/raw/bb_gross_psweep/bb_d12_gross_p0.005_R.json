@@ -1,0 +1,11 @@
+{
+  "command_line": "relay_bp.RelayDecoderF32(gamma0=0.1, pre_iter=80, num_sets=5, set_max_iter=60) --circuit \"testdata/bivariatebicyclecodes/r=12,d=12,p=0.005,noise=si1000,c=bivariate_bicycle_Z,nkd=[[144,12,12]],q=288,iscolored=True,A_poly=x^3+y+y^2,B_poly=y^3+x+x^2.stim\" --sample-num-shots 128 --sample-seed 42",
+  "stats": {
+    "num_shots": 128,
+    "num_errors": 128,
+    "num_low_confidence": 0,
+    "total_time_seconds": 293.929709817,
+    "wall_time_seconds": 5.274754788028076,
+    "sample_seed": 42
+  }
+}

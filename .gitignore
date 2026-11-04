@@ -73,3 +73,7 @@ build/
 *.toc
 *.nav
 *.snm
+
+# External large circuit datasets (mirrored on x20; see benchmarking/README.md)
+/cat-flagged-circuits-octagon-L2-aug13-2026/
+/testdata/mittencodes/

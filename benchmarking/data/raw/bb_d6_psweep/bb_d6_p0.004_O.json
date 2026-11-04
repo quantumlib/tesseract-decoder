@@ -1,0 +1,41 @@
+{
+  "command_line": "./bazel-bin/src/bp --circuit testdata/bivariatebicyclecodes/r=6,d=6,p=0.004,noise=si1000,c=bivariate_bicycle_Z,nkd=[[72,12,6]],q=144,iscolored=True,A_poly=x^3+y+y^2,B_poly=y^3+x+x^2.stim --sample-num-shots 20000 --sample-seed 42 --threads 64 --stats-out - --multipass --num-passes 2 --random-schedule --max-iter 20 --normalization-factor 0.75 --osd-order 10 --osd-weight 2",
+  "stats": {
+    "circuit_path": "testdata/bivariatebicyclecodes/r=6,d=6,p=0.004,noise=si1000,c=bivariate_bicycle_Z,nkd=[[72,12,6]],q=144,iscolored=True,A_poly=x^3+y+y^2,B_poly=y^3+x+x^2.stim",
+    "cpu_time_seconds": 482.969529,
+    "decoder": "multipass-batched-random-serial-bp+osd",
+    "dem_path": "",
+    "max_errors": 18446744073709551615,
+    "num_discards": 0,
+    "num_errors": 3654,
+    "num_fallback_substituted": 0,
+    "num_fallback_triggered": 0,
+    "num_shots": 20000,
+    "num_stage2_by_reason": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "num_stage2_from_bp_converged": 0,
+    "num_stage2_triggered": 0,
+    "num_threads": 64,
+    "sample_num_shots": 20000,
+    "sample_seed": 42,
+    "shots_per_cpu_second": 41.41047995597254,
+    "shots_per_second": 1415.0823581470147,
+    "stage1_bp_converged_shots": 3247,
+    "stage1_osd_shots": 16753,
+    "stage1_time_seconds": 482.969529,
+    "stage2_time_seconds": 0.0,
+    "stage3_time_seconds": 0.0,
+    "t_bp": 49.124724840000006,
+    "t_construct": 1.634229427,
+    "t_deinterleave": 0.29711608899999986,
+    "t_post": 433.1127740560001,
+    "total_time_seconds": 482.969529,
+    "wall_time_seconds": 14.133453
+  }
+}

@@ -32,12 +32,15 @@ inline bool is_residual_syndrome_satisfied(const stim::simd_bits<64>& S_res,
 
 OsdPostProcessor::OsdPostProcessor(const TannerGraph& graph, size_t osd_order,
                                    size_t osd_weight, float osd_truncation_factor,
-                                   bool osd_early_exit)
+                                   bool osd_early_exit, bool osd_col_truncation,
+                                   bool osd_partial_sort)
     : graph_(graph),
       osd_order_(osd_order),
       osd_weight_(osd_weight),
       osd_truncation_factor_(osd_truncation_factor),
-      osd_early_exit_(osd_early_exit) {
+      osd_early_exit_(osd_early_exit),
+      osd_col_truncation_(osd_col_truncation),
+      osd_partial_sort_(osd_partial_sort) {
   const size_t num_errors = graph_.num_vars;
   base_var_cost_.assign(num_errors, 1.0);
   for (size_t v = 0; v < num_errors; ++v) {
@@ -133,7 +136,7 @@ std::vector<uint8_t> OsdPostProcessor::process(
     }
   }
 
-  const bool use_interior_pullin = osd_early_exit_ && (osd_weight_ > 0) && (osd_order_ > 0);
+  const bool use_interior_pullin = (osd_weight_ > 0) && (osd_order_ > 0);
   size_t v_interior_size = 0;
   if (use_interior_pullin && !unsat_dets.empty()) {
     for (size_t d0 : unsat_dets) {
@@ -195,17 +198,22 @@ std::vector<uint8_t> OsdPostProcessor::process(
   }
   profile_.t_residual += seconds_since(t_phase);
 
-  size_t max_osd_cols =
+  const size_t trunc_cols =
       (osd_truncation_factor_ > 0.0f)
           ? std::min(num_errors, static_cast<size_t>(num_detectors * osd_truncation_factor_))
           : num_errors;
+  const size_t max_osd_cols = osd_col_truncation_ ? trunc_cols : num_errors;
   profile_.sum_max_osd_cols += max_osd_cols;
 
   t_phase = ProfileClock::now();
   std::vector<size_t> sorted_cols(num_errors);
   std::iota(sorted_cols.begin(), sorted_cols.end(), 0);
-  auto cmp = [&](size_t a, size_t b) { return std::abs(posteriors[a]) < std::abs(posteriors[b]); };
-  if (max_osd_cols < num_errors) {
+  auto cmp = [&](size_t a, size_t b) {
+    const LLR_UINT ma = static_cast<LLR_UINT>(std::abs(posteriors[a]));
+    const LLR_UINT mb = static_cast<LLR_UINT>(std::abs(posteriors[b]));
+    return (ma != mb) ? (ma < mb) : (a < b);
+  };
+  if (osd_partial_sort_ && max_osd_cols < num_errors) {
     std::nth_element(sorted_cols.begin(), sorted_cols.begin() + max_osd_cols, sorted_cols.end(), cmp);
     std::sort(sorted_cols.begin(), sorted_cols.begin() + max_osd_cols, cmp);
   } else {
@@ -214,9 +222,9 @@ std::vector<uint8_t> OsdPostProcessor::process(
 
   std::vector<size_t> working_cols;
   working_cols.reserve(max_osd_cols + v_interior_size);
-  if (use_interior_pullin && max_osd_cols < num_errors) {
+  if (use_interior_pullin && trunc_cols < num_errors) {
     std::vector<uint8_t> in_working(num_errors, 0);
-    for (size_t i = 0; i < max_osd_cols; ++i) {
+    for (size_t i = 0; i < trunc_cols; ++i) {
       size_t v = sorted_cols[i];
       working_cols.push_back(v);
       in_working[v] = 1;
@@ -230,19 +238,41 @@ std::vector<uint8_t> OsdPostProcessor::process(
     }
     std::sort(extra_int.begin(), extra_int.end(), cmp);
     for (size_t v : extra_int) working_cols.push_back(v);
+    if (!osd_col_truncation_) {
+      for (size_t i = trunc_cols; i < num_errors; ++i) {
+        size_t v = sorted_cols[i];
+        if (!in_working[v]) {
+          working_cols.push_back(v);
+        }
+      }
+    }
   } else {
     working_cols.assign(sorted_cols.begin(), sorted_cols.begin() + max_osd_cols);
   }
+  const size_t W_active =
+      (use_interior_pullin && trunc_cols < num_errors)
+          ? std::min(working_cols.size(), trunc_cols + v_interior_size)
+          : std::min(working_cols.size(), trunc_cols);
   profile_.t_sort += seconds_since(t_phase);
 
   t_phase = ProfileClock::now();
   const size_t W = working_cols.size();
   const size_t eff_order =
-      (osd_early_exit_ && osd_weight_ >= 2 && osd_order_ >= 30) ? (osd_order_ * 2) : osd_order_;
+      (osd_weight_ >= 2 && osd_order_ >= 30) ? (osd_order_ * 2) : osd_order_;
   const size_t max_wide_order = std::max<size_t>(eff_order, 120);
 
   stim::simd_bits<64> unpivoted_mask(det_bits);
   for (size_t d = 0; d < num_detectors; ++d) unpivoted_mask[d] = true;
+  std::vector<stim::simd_bits<64>> prebuilt_cols;
+  if (!osd_col_truncation_) {
+    prebuilt_cols.resize(W, stim::simd_bits<64>(det_bits));
+    for (size_t i = 0; i < W; ++i) {
+      size_t c = working_cols[i];
+      for (size_t e = graph_.var_edge_offsets[c]; e < graph_.var_edge_offsets[c + 1]; ++e) {
+        prebuilt_cols[i][graph_.var_edges[e]] = true;
+      }
+    }
+  }
   profile_.t_matrix_build += seconds_since(t_phase);
 
   t_phase = ProfileClock::now();
@@ -264,13 +294,17 @@ std::vector<uint8_t> OsdPostProcessor::process(
 
   stim::simd_bits<64> v(det_bits);
 
-  auto eliminate_col = [&](size_t i) {
+  auto eliminate_col = [&](size_t i, bool record_free = true) {
     col_eliminated[i] = 1;
     cols_processed++;
     size_t c = working_cols[i];
-    v.clear();
-    for (size_t e = graph_.var_edge_offsets[c]; e < graph_.var_edge_offsets[c + 1]; ++e) {
-      v[graph_.var_edges[e]] = true;
+    if (!osd_col_truncation_) {
+      v = prebuilt_cols[i];
+    } else {
+      v.clear();
+      for (size_t e = graph_.var_edge_offsets[c]; e < graph_.var_edge_offsets[c + 1]; ++e) {
+        v[graph_.var_edges[e]] = true;
+      }
     }
     for (size_t q = 0; q < num_solved; ++q) {
       if (v[pivot_det[q]]) {
@@ -295,7 +329,7 @@ std::vector<uint8_t> OsdPostProcessor::process(
         S_res ^= v;
       }
       pivot_elim_vec.push_back(v);
-    } else if (osd_weight_ > 0) {
+    } else if (record_free && osd_weight_ > 0) {
       std::vector<size_t> rows;
       for (size_t q = 0; q < num_solved; ++q) {
         if (v[pivot_det[q]]) rows.push_back(q);
@@ -305,56 +339,58 @@ std::vector<uint8_t> OsdPostProcessor::process(
   };
 
   size_t active_free_cap = eff_order;
+  size_t i_sat = 0;
+  for (size_t i = 0; i < W_active && num_solved < num_detectors &&
+                     !is_residual_syndrome_satisfied(S_res, unpivoted_mask, det_words);
+       ++i) {
+    eliminate_col(i, true);
+    i_sat = i + 1;
+  }
+  if (osd_weight_ > 0) {
+    if (use_interior_pullin) {
+      for (size_t i = i_sat; i < W_active; ++i) {
+        if (in_V_interior[working_cols[i]]) {
+          eliminate_col(i, true);
+        }
+      }
+    }
+    size_t local_osd0_faults = 0;
+    double local_osd0_weight = 0.0;
+    for (size_t c = 0; c < num_errors; ++c) {
+      if (e_hard[c] && (!use_interior_pullin || in_V_interior[c])) {
+        local_osd0_faults++;
+        local_osd0_weight += var_cost(c);
+      }
+    }
+    for (size_t r = 0; r < num_solved; ++r) {
+      if (S_res[pivot_det[r]]) {
+        size_t bc = row_to_basis_col[r];
+        if (e_hard[bc] && (!use_interior_pullin || in_V_interior[bc])) {
+          if (local_osd0_faults > 0) local_osd0_faults--;
+          local_osd0_weight -= var_cost(bc);
+        } else if (!e_hard[bc]) {
+          local_osd0_faults++;
+          local_osd0_weight += var_cost(bc);
+        }
+      }
+    }
+    if (local_osd0_faults >= 3 || local_osd0_weight >= 15.0) {
+      active_free_cap = std::max<size_t>(eff_order, std::min<size_t>(eff_order * 2, 120));
+    }
+    const size_t elim_free_limit =
+        (active_free_cap > eff_order) ? std::min<size_t>(active_free_cap * 2, max_wide_order)
+                                      : eff_order;
+    for (size_t i = i_sat; i < W_active; ++i) {
+      if (col_eliminated[i]) continue;
+      if ((cols_processed - num_solved) >= elim_free_limit) break;
+      eliminate_col(i, true);
+    }
+  }
+  const size_t num_solved_active = num_solved;
   if (!osd_early_exit_) {
     for (size_t i = 0; i < W; ++i) {
-      eliminate_col(i);
-    }
-  } else {
-    size_t i_sat = 0;
-    for (size_t i = 0; i < W && num_solved < num_detectors &&
-                       !is_residual_syndrome_satisfied(S_res, unpivoted_mask, det_words);
-         ++i) {
-      eliminate_col(i);
-      i_sat = i + 1;
-    }
-    if (osd_weight_ > 0) {
-      if (use_interior_pullin) {
-        for (size_t i = i_sat; i < W; ++i) {
-          if (in_V_interior[working_cols[i]]) {
-            eliminate_col(i);
-          }
-        }
-      }
-      size_t local_osd0_faults = 0;
-      double local_osd0_weight = 0.0;
-      for (size_t c = 0; c < num_errors; ++c) {
-        if (e_hard[c] && (!use_interior_pullin || in_V_interior[c])) {
-          local_osd0_faults++;
-          local_osd0_weight += var_cost(c);
-        }
-      }
-      for (size_t r = 0; r < num_solved; ++r) {
-        if (S_res[pivot_det[r]]) {
-          size_t bc = row_to_basis_col[r];
-          if (e_hard[bc] && (!use_interior_pullin || in_V_interior[bc])) {
-            if (local_osd0_faults > 0) local_osd0_faults--;
-            local_osd0_weight -= var_cost(bc);
-          } else if (!e_hard[bc]) {
-            local_osd0_faults++;
-            local_osd0_weight += var_cost(bc);
-          }
-        }
-      }
-      if (local_osd0_faults >= 3 || local_osd0_weight >= 15.0) {
-        active_free_cap = std::max<size_t>(eff_order, std::min<size_t>(eff_order * 2, 120));
-      }
-      const size_t elim_free_limit =
-          (active_free_cap > eff_order) ? std::min<size_t>(active_free_cap * 2, max_wide_order)
-                                        : eff_order;
-      for (size_t i = i_sat; i < W; ++i) {
-        if (col_eliminated[i]) continue;
-        if ((cols_processed - num_solved) >= elim_free_limit) break;
-        eliminate_col(i);
+      if (!col_eliminated[i]) {
+        eliminate_col(i, false);
       }
     }
   }
@@ -362,6 +398,7 @@ std::vector<uint8_t> OsdPostProcessor::process(
   profile_.t_elimination += seconds_since(t_phase);
   profile_.sum_pivots_found += num_solved;
   profile_.sum_cols_processed += cols_processed;
+  num_solved = num_solved_active;
 
   t_phase = ProfileClock::now();
   double base_hard_cost = 0.0;
@@ -411,19 +448,19 @@ std::vector<uint8_t> OsdPostProcessor::process(
       size_t c = working_cols[i];
       const bool is_int_ehard = e_hard[c] && (!use_interior_pullin || in_V_interior[c]);
       if (free_cols.size() >= active_free_cap && !is_int_ehard) continue;
-      if (osd_early_exit_) {
-        bool touches = is_int_ehard;
-        for (size_t r : fc.piv_rows) {
-          if (active_pivot[r]) {
-            touches = true;
-            break;
-          }
+      bool touches = is_int_ehard;
+      for (size_t r : fc.piv_rows) {
+        if (r < num_solved && active_pivot[r]) {
+          touches = true;
+          break;
         }
-        if (!touches) continue;
       }
+      if (!touches) continue;
       free_cols.push_back(i);
       stim::simd_bits<64> f_col(solved_bits);
-      for (size_t r : fc.piv_rows) f_col[r] = true;
+      for (size_t r : fc.piv_rows) {
+        if (r < num_solved) f_col[r] = true;
+      }
       F_columns.push_back(std::move(f_col));
       F_costs.push_back(flip_delta(c));
     }

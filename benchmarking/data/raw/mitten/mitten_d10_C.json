@@ -1,0 +1,41 @@
+{
+  "command_line": "./bazel-bin/src/bp --dem testdata/mittencodes/mitten_mp.dem --in /tmp/tesseract_bench_shots/mitten_dets_n100000_s12345.b8 --in-format b8 --obs_in /tmp/tesseract_bench_shots/mitten_obs_n100000_s12345.b8 --obs-in-format b8 --threads 64 --stats-out - --multipass --num-passes 2 --random-schedule --max-iter 20 --normalization-factor 0.75 --osd-order 10 --osd-weight 2 --tesseract-fallback",
+  "stats": {
+    "circuit_path": "",
+    "cpu_time_seconds": 619.5432989999998,
+    "decoder": "multipass-batched-random-serial-bp+osd+tesseract-fallback",
+    "dem_path": "testdata/mittencodes/mitten_mp.dem",
+    "max_errors": 18446744073709551615,
+    "num_discards": 0,
+    "num_errors": 1,
+    "num_fallback_substituted": 302,
+    "num_fallback_triggered": 302,
+    "num_shots": 100000,
+    "num_stage2_by_reason": [
+      0,
+      77,
+      20,
+      231,
+      0,
+      0
+    ],
+    "num_stage2_from_bp_converged": 0,
+    "num_stage2_triggered": 328,
+    "num_threads": 64,
+    "sample_num_shots": 0,
+    "sample_seed": 12345,
+    "shots_per_cpu_second": 161.40921895436404,
+    "shots_per_second": 2582.007595078621,
+    "stage1_bp_converged_shots": 95282,
+    "stage1_osd_shots": 4718,
+    "stage1_time_seconds": 517.6453269999996,
+    "stage2_time_seconds": 18.52092,
+    "stage3_time_seconds": 83.377052,
+    "t_bp": 381.36967554699993,
+    "t_construct": 15.643535526,
+    "t_deinterleave": 2.725981278999999,
+    "t_post": 130.77613490999997,
+    "total_time_seconds": 619.5432989999998,
+    "wall_time_seconds": 38.729553
+  }
+}

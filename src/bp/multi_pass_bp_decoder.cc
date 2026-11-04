@@ -173,16 +173,25 @@ std::vector<int> classify_detector_components(const stim::DetectorErrorModel& de
 MultiPassBpDecoder::MultiPassBpDecoder(const stim::DetectorErrorModel& dem,
                                        const MultiPassBpConfig& config)
     : num_passes_(config.num_passes),
-      soft_reweight_(config.soft_reweight && config.params.use_soft_reweighting) {
+      soft_reweight_(config.soft_reweight && config.params.use_soft_reweighting),
+      reweight_mode_(config.params.bp_reweight_mode) {
   if (num_passes_ < 1) throw std::invalid_argument("num_passes must be at least 1.");
+  if (!soft_reweight_ && reweight_mode_ == BpReweightMode::kSoft) {
+    reweight_mode_ = BpReweightMode::kHard;
+  }
   initialize(dem, config.detector_components, config.params);
 }
 
 MultiPassBpDecoder::MultiPassBpDecoder(const stim::DetectorErrorModel& dem,
                                        const BPParams& params, size_t num_passes,
                                        const std::vector<int>& detector_components)
-    : num_passes_(num_passes), soft_reweight_(params.use_soft_reweighting) {
+    : num_passes_(num_passes),
+      soft_reweight_(params.use_soft_reweighting),
+      reweight_mode_(params.bp_reweight_mode) {
   if (num_passes_ < 1) throw std::invalid_argument("num_passes must be at least 1.");
+  if (!soft_reweight_ && reweight_mode_ == BpReweightMode::kSoft) {
+    reweight_mode_ = BpReweightMode::kHard;
+  }
   initialize(dem, detector_components, params);
 }
 
@@ -401,7 +410,6 @@ std::vector<std::vector<uint8_t>> MultiPassBpDecoder::decode_batch(
   std::array<std::vector<uint8_t>, 2> comp_lc_saved;
   comp_lc_saved[0].assign(num_shots, 0);
   comp_lc_saved[1].assign(num_shots, 0);
-  const bool want_diag = (std::getenv("MP_DIAG") != nullptr);
 
   for (size_t pass = 0; pass < pass_schedule_.size(); ++pass) {
     const bool is_final_pass = (pass + 1 == pass_schedule_.size());
@@ -412,12 +420,12 @@ std::vector<std::vector<uint8_t>> MultiPassBpDecoder::decode_batch(
           /*custom_priors_per_shot=*/nullptr,
           &comp_predicted_errors[comp],
           (pass == 0) ? nullptr : &sparse_custom_priors_per_shot[comp],
-          (low_confidence_shots != nullptr || want_diag) ? &comp_low_conf : nullptr);
+          &comp_low_conf);
       if (!comp_low_conf.empty()) {
         comp_lc_saved[comp] = comp_low_conf;
       }
     }
-    if (!is_final_pass) {
+    if (!is_final_pass && reweight_mode_ != BpReweightMode::kNone) {
       if (pass > 0 && pass + 1 < pass_schedule_.size()) {
         for (size_t next_comp : pass_schedule_[pass + 1]) {
           for (size_t s = 0; s < num_shots; ++s) {
@@ -450,13 +458,34 @@ std::vector<std::vector<uint8_t>> MultiPassBpDecoder::decode_batch(
                 cur_p_ptr = &shot_sp.back().second;
               }
               *cur_p_ptr =
-                  soft_reweight_
+                  (reweight_mode_ == BpReweightMode::kSoft)
                       ? std::min(*cur_p_ptr,
                                  static_cast<LLR_INT>((*cur_p_ptr + 3 * rule.reweight_llr) / 4))
                       : std::min(*cur_p_ptr, rule.reweight_llr);
             }
           }
         }
+      }
+    }
+  }
+
+  if (!pass_schedule_.empty()) {
+    const size_t dst_c = pass_schedule_.back().front();
+    const size_t src_c = (pass_schedule_.size() >= 2)
+                             ? pass_schedule_[pass_schedule_.size() - 2].front()
+                             : dst_c;
+    const auto& src_iters = component_decoders_[src_c].decoder->last_shot_iters();
+    const auto& dst_iters = component_decoders_[dst_c].decoder->last_shot_iters();
+    for (size_t s = 0; s < num_shots; ++s) {
+      if (comp_lc_saved[src_c][s] == 0 && comp_lc_saved[dst_c][s] == 0) {
+        stage1_bp_converged_shots_++;
+      } else {
+        stage1_osd_shots_++;
+      }
+      const int it0 = (s < src_iters.size()) ? src_iters[s] : 0;
+      const int it1 = (s < dst_iters.size()) ? dst_iters[s] : 0;
+      if (it0 < 100 && it1 < 100) {
+        primary_bp_converged_shots_++;
       }
     }
   }
@@ -518,13 +547,18 @@ std::vector<std::vector<uint8_t>> MultiPassBpDecoder::decode_batch(
           (predicted_costs_batch != nullptr && s < predicted_costs_batch->size())
               ? (*predicted_costs_batch)[s]
               : 1e9;
-      if (lc1 == 1 || (tot_dets > 1500 && lc0 == 1)) {
+      if (lc1 == 1 || (tot_dets > 1500 && num_obs > 1 && lc0 == 1)) {
         (*low_confidence_shots)[s] = 1;
-      } else if (tot_dets > 1500 && tot_dets <= 6000 && (lc0 > 0 || lc1 > 0)) {
+      } else if (num_obs > 1 && tot_dets > 1500 && tot_dets <= 6000 && (lc0 > 0 || lc1 > 0)) {
         (*low_confidence_shots)[s] = 2;
-      } else if (lc0 > 0 && lc1 > 0 && tot_dets <= 6000) {
+      } else if (lc0 > 0 && lc1 > 0 && (tot_dets <= 1500 || (num_obs > 1 && tot_dets <= 6000))) {
         (*low_confidence_shots)[s] = 2;
-      } else if (lc1 > 0 && num_obs == 1 && tot_dets > 50 &&
+      } else if (lc1 > 0 && num_obs == 1 && tot_dets > 1500 &&
+                 (lc0 == 1 ||
+                  s1_cost >= (0.068 * static_cast<double>(tot_dets) +
+                              1.15 * std::sqrt(static_cast<double>(tot_dets))))) {
+        (*low_confidence_shots)[s] = 3;
+      } else if (lc1 > 0 && num_obs == 1 && tot_dets > 50 && tot_dets <= 1500 &&
                  s1_cost >= (tot_dets > 350 ? 95.0 : (tot_dets > 200 ? 65.0 : 35.0))) {
         (*low_confidence_shots)[s] = 3;
       } else if (num_obs > 1 && tot_dets <= 1500 && lc1 > 0) {
@@ -585,6 +619,7 @@ BpDecodeProfile MultiPassBpDecoder::profile() const {
   const auto& fp = component_decoders_[final_comp].decoder->profile();
   agg.num_shots = fp.num_shots;
   agg.num_converged = fp.num_converged;
+  agg.num_primary_bp_converged = fp.num_primary_bp_converged;
   agg.conv_iter_hist = fp.conv_iter_hist;
   return agg;
 }
@@ -600,6 +635,9 @@ OsdProfile MultiPassBpDecoder::osd_profile() const {
 }
 
 void MultiPassBpDecoder::reset_profile() {
+  stage1_bp_converged_shots_ = 0;
+  primary_bp_converged_shots_ = 0;
+  stage1_osd_shots_ = 0;
   for (size_t c = 0; c < 2; ++c) {
     component_decoders_[c].decoder->reset_profile();
     if (component_decoders_[c].post_processor) {

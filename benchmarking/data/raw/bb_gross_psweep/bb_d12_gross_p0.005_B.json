@@ -1,0 +1,32 @@
+{
+  "command_line": "./bazel-bin/src/tesseract --circuit testdata/bivariatebicyclecodes/r=12,d=12,p=0.005,noise=si1000,c=bivariate_bicycle_Z,nkd=[[144,12,12]],q=288,iscolored=True,A_poly=x^3+y+y^2,B_poly=y^3+x+x^2.stim --sample-num-shots 64 --sample-seed 42 --threads 64 --stats-out - --beam 20 --beam-climbing --no-revisit-dets --num-det-orders 16 --pqlimit 200000",
+  "stats": {
+    "beam_climbing": true,
+    "circuit_path": "/home/ariash_google_com/bb_gross_psweep/circuits/gross_p0.005.stim",
+    "dem_path": "",
+    "det_beam": 20,
+    "det_order_seed": 518278944,
+    "det_penalty": 0.0,
+    "detector_orders_paths": [],
+    "max_errors": 18446744073709551615,
+    "multipass": false,
+    "multipass_num_passes": 2,
+    "multipass_strategy": "causal",
+    "no_revisit_dets": true,
+    "num_det_orders": 16,
+    "num_det_orders_per_generated_source": 16,
+    "num_errors": 57,
+    "num_low_confidence": 0,
+    "num_shots": 64,
+    "num_threads": 64,
+    "pqlimit": 200000,
+    "sample_num_shots": 64,
+    "sample_seed": 42,
+    "sparsify_base_degree": -1,
+    "sparsify_errors": false,
+    "sparsify_max_degree": -1,
+    "sparsify_reactivate_limit": -1,
+    "total_time_seconds": 18720.232642,
+    "wall_time_seconds": 322.515063741
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "command_line": "./bazel-bin/src/tesseract --dem testdata/mittencodes/mitten_mp.dem --in /tmp/tesseract_bench_shots/mitten_dets_n20000_s12345.b8 --in-format b8 --obs_in /tmp/tesseract_bench_shots/mitten_obs_n20000_s12345.b8 --obs-in-format b8 --threads 64 --stats-out - --multipass --num-passes 2 --beam 8 --beam-climbing --no-revisit-dets --pqlimit 100000",
+  "stats": {
+    "beam_climbing": true,
+    "circuit_path": "",
+    "dem_path": "testdata/mittencodes/mitten_mp.dem",
+    "det_beam": 8,
+    "det_order_seed": 518278944,
+    "det_penalty": 0.0,
+    "detector_orders_paths": [],
+    "max_errors": 18446744073709551615,
+    "multipass": true,
+    "multipass_num_passes": 2,
+    "multipass_strategy": "causal",
+    "no_revisit_dets": true,
+    "num_det_orders": 1,
+    "num_det_orders_per_generated_source": 1,
+    "num_errors": 0,
+    "num_low_confidence": 0,
+    "num_shots": 20000,
+    "num_threads": 64,
+    "pqlimit": 100000,
+    "sample_num_shots": 0,
+    "sample_seed": 3151629494,
+    "sparsify_base_degree": -1,
+    "sparsify_errors": false,
+    "sparsify_max_degree": -1,
+    "sparsify_reactivate_limit": -1,
+    "total_time_seconds": 1885.5751560000128
+  }
+}

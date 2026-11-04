@@ -50,6 +50,10 @@ class MultiPassBpDecoder {
   OsdProfile osd_profile() const;
   void reset_profile();
 
+  size_t stage1_bp_converged_shots() const { return stage1_bp_converged_shots_; }
+  size_t primary_bp_converged_shots() const { return primary_bp_converged_shots_; }
+  size_t stage1_osd_shots() const { return stage1_osd_shots_; }
+
   const std::vector<std::vector<size_t>>& pass_schedule() const { return pass_schedule_; }
   const std::vector<int>& global_det_to_comp_id() const { return global_det_to_comp_id_; }
 
@@ -60,6 +64,10 @@ class MultiPassBpDecoder {
 
   size_t num_passes_;
   bool soft_reweight_ = true;
+  BpReweightMode reweight_mode_ = BpReweightMode::kSoft;
+  size_t stage1_bp_converged_shots_ = 0;
+  size_t primary_bp_converged_shots_ = 0;
+  size_t stage1_osd_shots_ = 0;
   // Maps a global detector id to its index within its own component decoder.
   std::vector<uint32_t> global_to_local_det_;
 

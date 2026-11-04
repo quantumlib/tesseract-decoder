@@ -1,0 +1,11 @@
+{
+  "command_line": "relay_bp.RelayDecoderF32(gamma0=0.1, pre_iter=80, num_sets=5, set_max_iter=60) --circuit \"testdata/colorcodes/r=19,d=19,p=0.001,noise=si1000,c=superdense_color_code_Z,q=541,gates=cz.stim\" --sample-num-shots 200 --sample-seed 42",
+  "stats": {
+    "num_shots": 200,
+    "num_errors": 56,
+    "num_low_confidence": 0,
+    "total_time_seconds": 1772.4528710129998,
+    "wall_time_seconds": 31.50026995805092,
+    "sample_seed": 42
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "command_line": "TelescopingDecoder(TelescopeConfig.preset_balanced(num_threads=64)) --circuit \"testdata/colorcodes/r=23,d=23,p=0.001,noise=si1000,c=superdense_color_code_Z,q=793,gates=cz.stim\" --sample-num-shots 300 --sample-seed 12345",
+  "stats": {
+    "num_shots": 300,
+    "num_errors": 0,
+    "num_low_confidence": 0,
+    "total_time_seconds": 9195.562913,
+    "wall_time_seconds": 343.17583687351726,
+    "sample_seed": 12345
+  }
+}

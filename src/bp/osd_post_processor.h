@@ -81,7 +81,8 @@ struct OsdProfile {
 class OsdPostProcessor {
  public:
   OsdPostProcessor(const TannerGraph& graph, size_t osd_order = 0, size_t osd_weight = 0,
-                   float osd_truncation_factor = 0.0f, bool osd_early_exit = true);
+                   float osd_truncation_factor = 0.0f, bool osd_early_exit = true,
+                   bool osd_col_truncation = true, bool osd_partial_sort = true);
 
   std::vector<uint8_t> process(
       const BPResult& bp_result, const std::vector<LLR_INT>& posteriors,
@@ -99,6 +100,8 @@ class OsdPostProcessor {
   size_t osd_weight_;
   float osd_truncation_factor_;
   bool osd_early_exit_;
+  bool osd_col_truncation_;
+  bool osd_partial_sort_;
   OsdProfile profile_;
 
   std::vector<double> base_var_cost_;

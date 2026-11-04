@@ -1,0 +1,11 @@
+{
+  "command_line": "./bazel-bin/src/tesseract --dem <mp.dem> --multipass --num-passes 2 --pqlimit 1000000 --det-beam 5 --beam-climbing --no-revisit-dets --circuit \"testdata/colorcodes/r=23,d=23,p=0.001,noise=si1000,c=superdense_color_code_Z,q=793,gates=cz.stim\" --sample-num-shots 16000 --sample-seed 12345",
+  "stats": {
+    "num_shots": 16000,
+    "num_errors": 62,
+    "num_low_confidence": 0,
+    "total_time_seconds": 5027.183359999993,
+    "wall_time_seconds": 274.70563766453415,
+    "sample_seed": 12345
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "command_line": "./bazel-bin/src/tesseract --circuit testdata/colorcodes/r=3,d=3,p=0.001,noise=si1000,c=superdense_color_code_Z,q=13,gates=cz.stim --sample-num-shots 100000 --sample-seed 42 --threads 64 --stats-out - --dem /tmp/tesseract_bench_dems/cc_d3_mp.dem --multipass --num-passes 2 --beam 8 --beam-climbing --no-revisit-dets --pqlimit 100000",
+  "stats": {
+    "beam_climbing": true,
+    "circuit_path": "testdata/colorcodes/r=3,d=3,p=0.001,noise=si1000,c=superdense_color_code_Z,q=13,gates=cz.stim",
+    "dem_path": "/tmp/tesseract_bench_dems/cc_d3_mp.dem",
+    "det_beam": 8,
+    "det_order_seed": 518278944,
+    "det_penalty": 0.0,
+    "detector_orders_paths": [],
+    "max_errors": 18446744073709551615,
+    "multipass": true,
+    "multipass_num_passes": 2,
+    "multipass_strategy": "causal",
+    "no_revisit_dets": true,
+    "num_det_orders": 1,
+    "num_det_orders_per_generated_source": 1,
+    "num_errors": 620,
+    "num_low_confidence": 0,
+    "num_shots": 100000,
+    "num_threads": 64,
+    "pqlimit": 100000,
+    "sample_num_shots": 100000,
+    "sample_seed": 42,
+    "sparsify_base_degree": -1,
+    "sparsify_errors": false,
+    "sparsify_max_degree": -1,
+    "sparsify_reactivate_limit": -1,
+    "total_time_seconds": 0.9214999999999937
+  }
+}

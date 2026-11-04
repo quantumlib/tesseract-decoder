@@ -143,7 +143,7 @@ target_link_libraries(bp_lib PUBLIC common dem_decomposition error_correlations 
 # === Executables ===
 add_executable(tesseract ${TESSERACT_SRC_DIR}/tesseract_main.cc)
 target_compile_options(tesseract PRIVATE ${OPT_COPTS})
-target_link_libraries(tesseract PRIVATE tesseract_lib argparse::argparse nlohmann_json::nlohmann_json)
+target_link_libraries(tesseract PRIVATE bp_lib tesseract_lib argparse::argparse nlohmann_json::nlohmann_json)
 
 add_executable(bp ${TESSERACT_SRC_DIR}/bp_main.cc)
 target_compile_options(bp PRIVATE ${OPT_COPTS})

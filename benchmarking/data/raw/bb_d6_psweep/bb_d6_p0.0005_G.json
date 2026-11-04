@@ -1,0 +1,33 @@
+{
+  "command_line": "./bazel-bin/src/tesseract --circuit testdata/bivariatebicyclecodes/r=6,d=6,p=0.0005,noise=si1000,c=bivariate_bicycle_Z,nkd=[[72,12,6]],q=144,iscolored=True,A_poly=x^3+y+y^2,B_poly=y^3+x+x^2.stim --sample-num-shots 100000 --sample-seed 42 --threads 64 --stats-out - --dem /tmp/tesseract_bench_dems/bb_d6_psweep/bb_d6_p0.0005_gari.dem --detector-orders /tmp/tesseract_bench_dems/bb_d6_psweep/bb_d6_p0.0005_gari_ord.json --beam 5 --beam-climbing --no-revisit-dets --pqlimit 1000000",
+  "stats": {
+    "beam_climbing": true,
+    "circuit_path": "testdata/bivariatebicyclecodes/r=6,d=6,p=0.0005,noise=si1000,c=bivariate_bicycle_Z,nkd=[[72,12,6]],q=144,iscolored=True,A_poly=x^3+y+y^2,B_poly=y^3+x+x^2.stim",
+    "dem_path": "/tmp/tesseract_bench_dems/bb_d6_psweep/bb_d6_p0.0005_gari.dem",
+    "det_beam": 5,
+    "det_order_seed": 518278944,
+    "det_penalty": 0.0,
+    "detector_orders_paths": [
+      "/tmp/tesseract_bench_dems/bb_d6_psweep/bb_d6_p0.0005_gari_ord.json"
+    ],
+    "max_errors": 18446744073709551615,
+    "multipass": false,
+    "multipass_num_passes": 2,
+    "multipass_strategy": "causal",
+    "no_revisit_dets": true,
+    "num_det_orders": 1,
+    "num_det_orders_per_generated_source": 1,
+    "num_errors": 7,
+    "num_low_confidence": 0,
+    "num_shots": 100000,
+    "num_threads": 64,
+    "pqlimit": 1000000,
+    "sample_num_shots": 100000,
+    "sample_seed": 42,
+    "sparsify_base_degree": -1,
+    "sparsify_errors": false,
+    "sparsify_max_degree": -1,
+    "sparsify_reactivate_limit": -1,
+    "total_time_seconds": 582.417236999997
+  }
+}

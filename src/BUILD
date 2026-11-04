@@ -298,6 +298,7 @@ cc_binary(
     copts = OPT_COPTS,
     linkopts = OPT_LINKOPTS,
     deps = [
+        ":libbp",
         ":libtesseract",
         "@argparse",
         "@nlohmann_json//:json",
@@ -453,6 +454,11 @@ cc_test(
         "@gtest//:gtest_main",
         "@stim//:stim_lib",
     ],
+)
+
+test_suite(
+    name = "bp_test",
+    tests = [":bp_tests"],
 )
 
 cc_binary(

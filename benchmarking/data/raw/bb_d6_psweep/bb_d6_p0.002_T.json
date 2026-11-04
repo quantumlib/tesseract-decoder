@@ -1,0 +1,12 @@
+{
+  "command_line": "python3 -c \"from telescoping_decoder import TelescopingDecoder, TelescopeConfig; TelescopingDecoder(TelescopeConfig(use_gari=True), n_procs=64)\" # circuit=testdata/bivariatebicyclecodes/r=6,d=6,p=0.002,noise=si1000,c=bivariate_bicycle_Z,nkd=[[72,12,6]],q=144,iscolored=True,A_poly=x^3+y+y^2,B_poly=y^3+x+x^2.stim shots=10000 seed=42 threads=64",
+  "stats": {
+    "num_shots": 10000,
+    "num_errors": 86,
+    "num_low_confidence": 0,
+    "num_non_converged_diagnostics": 0,
+    "total_time_seconds": 106.01935500000003,
+    "wall_time_seconds": 4.388320172904059,
+    "sample_seed": 42
+  }
+}

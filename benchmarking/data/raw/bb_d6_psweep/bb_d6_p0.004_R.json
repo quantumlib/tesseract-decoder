@@ -1,0 +1,11 @@
+{
+  "command_line": "python3 -c \"import relay_bp; ... RelayDecoderF32(gamma0=0.1, pre_iter=80, num_sets=5, set_max_iter=60, gamma_dist_interval=(-0.24, 0.66), stop_nconv=1)\" # circuit=testdata/bivariatebicyclecodes/r=6,d=6,p=0.004,noise=si1000,c=bivariate_bicycle_Z,nkd=[[72,12,6]],q=144,iscolored=True,A_poly=x^3+y+y^2,B_poly=y^3+x+x^2.stim shots=5000 seed=42 threads=64",
+  "stats": {
+    "num_shots": 5000,
+    "num_errors": 1783,
+    "num_low_confidence": 0,
+    "total_time_seconds": 827.7602670439996,
+    "wall_time_seconds": 13.096042132936418,
+    "sample_seed": 42
+  }
+}

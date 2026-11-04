@@ -1,0 +1,23 @@
+{
+  "command_line": "./bazel-bin/src/bp --circuit testdata/bivariatebicyclecodes/r=12,d=12,p=0.005,noise=si1000,c=bivariate_bicycle_Z,nkd=[[144,12,12]],q=288,iscolored=True,A_poly=x^3+y+y^2,B_poly=y^3+x+x^2.stim --sample-num-shots 1024 --sample-seed 42 --threads 64 --stats-out - --multipass --num-passes 2 --random-schedule --max-iter 20 --normalization-factor 0.75 --osd-order 10 --osd-weight 2",
+  "stats": {
+    "circuit_path": "/home/ariash_google_com/bb_gross_psweep/circuits/gross_p0.005.stim",
+    "cpu_time_seconds": 636.195046,
+    "decoder": "multipass-batched-random-serial-bp+osd",
+    "dem_path": "",
+    "max_errors": 18446744073709551615,
+    "num_discards": 0,
+    "num_errors": 616,
+    "num_fallback_substituted": 0,
+    "num_fallback_triggered": 0,
+    "num_shots": 1024,
+    "num_stage2_triggered": 0,
+    "num_threads": 64,
+    "sample_num_shots": 1024,
+    "sample_seed": 42,
+    "shots_per_cpu_second": 1.609569276652305,
+    "shots_per_second": 3.1995139338425633,
+    "total_time_seconds": 636.195046,
+    "wall_time_seconds": 320.048614
+  }
+}

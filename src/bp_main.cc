@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <argparse/argparse.hpp>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <fstream>
@@ -53,21 +54,34 @@ struct Args {
 
   size_t max_iter = 20;
   size_t num_threads = 1;
-  double normalization_factor = 0.625;
-  int osd_order = -1;
-  int osd_weight = 0;
+  double normalization_factor = 0.75;
+  int osd_order = 10;
+  int osd_weight = 2;
   bool fast = false;
   bool use_batched_bp = true;
-  bool random_schedule = false;
+  bool random_schedule = true;
   double osd_truncation_factor = 1.2;
   bool profile = false;
-  bool multipass = false;
+  bool multipass = true;
   size_t num_passes = 2;
   bool multipass_soft_reweight = true;
   std::string bp_mode_str = "full";
   bool tesseract_fallback = false;
   int fallback_det_beam = 20;
   double fallback_margin = 1.0;
+
+  // Explicit BP-OSD ablation flags (all enabled by default)
+  bool bp_simd_batch = true;
+  bool bp_compaction = true;
+  bool bp_merge_duplicates = true;
+  bool bp_serial_schedule = true;
+  BpReweightMode bp_reweight_mode = BpReweightMode::kSoft;
+  bool osd_early_exit = true;
+  bool osd_col_truncation = true;
+  bool osd_partial_sort = true;
+  bool osd_min_syndrome_snapshot = true;
+  bool osd_relay_legs = true;
+  bool osd_alpha_isd = true;
 
   std::string stats_out_fname;
   std::string sinter_csv_out;
@@ -127,22 +141,69 @@ struct Args {
     params.osd_truncation_factor = static_cast<float>(osd_truncation_factor);
     params.osd_order = osd_order;
     params.osd_weight = osd_weight;
-    params.use_soft_reweighting = multipass_soft_reweight;
+    params.use_soft_reweighting = (bp_reweight_mode == BpReweightMode::kSoft);
     params.bp_mode = (bp_mode_str == "wavefront" && !random_schedule) ? BpMode::kWavefront
                                                                       : BpMode::kFull;
     params.fallback_margin = fallback_margin;
 
+    params.bp_simd_batch = bp_simd_batch;
+    params.bp_compaction = bp_compaction;
+    params.bp_merge_duplicates = bp_merge_duplicates;
+    params.bp_serial_schedule = bp_serial_schedule;
+    params.bp_reweight_mode = bp_reweight_mode;
+    params.osd_early_exit = osd_early_exit;
+    params.osd_col_truncation = osd_col_truncation;
+    params.osd_partial_sort = osd_partial_sort;
+    params.osd_min_syndrome_snapshot = osd_min_syndrome_snapshot;
+    params.osd_relay_legs = osd_relay_legs;
+    params.osd_alpha_isd = osd_alpha_isd;
+
     if (sample_num_shots > 0) {
       std::mt19937_64 rng(sample_seed);
-      size_t num_detectors = circuit.count_detectors();
-      const auto [dets, obs] =
-          stim::sample_batch_detection_events<64>(circuit, sample_num_shots, rng);
-      stim::simd_bit_table<64> obs_T = obs.transposed();
-      shots.resize(sample_num_shots);
-      for (size_t k = 0; k < sample_num_shots; k++) {
-        shots[k].obs_mask = obs_T[k];
-        for (size_t d = 0; d < num_detectors; d++) {
-          if (dets[d][k]) shots[k].hits.push_back(d);
+      if (!circuit_path.empty()) {
+        size_t num_detectors = circuit.count_detectors();
+        const auto [dets, obs] =
+            stim::sample_batch_detection_events<64>(circuit, sample_num_shots, rng);
+        stim::simd_bit_table<64> obs_T = obs.transposed();
+        shots.resize(sample_num_shots);
+        for (size_t k = 0; k < sample_num_shots; k++) {
+          shots[k].obs_mask = obs_T[k];
+          for (size_t d = 0; d < num_detectors; d++) {
+            if (dets[d][k]) shots[k].hits.push_back(d);
+          }
+        }
+      } else {
+        stim::DetectorErrorModel flat = dem.flattened();
+        size_t num_detectors = flat.count_detectors();
+        size_t num_obs = flat.count_observables();
+        stim::simd_bit_table<64> dets(num_detectors, sample_num_shots);
+        stim::simd_bit_table<64> obs_T(sample_num_shots, std::max<size_t>(1, num_obs));
+        std::vector<uint32_t> det_targets;
+        std::vector<uint32_t> obs_targets;
+        for (const auto& inst : flat.instructions) {
+          if (inst.type != stim::DemInstructionType::DEM_ERROR) continue;
+          double p = inst.arg_data.empty() ? 0.0 : inst.arg_data[0];
+          if (p <= 0.0) continue;
+          det_targets.clear();
+          obs_targets.clear();
+          for (const auto& t : inst.target_data) {
+            if (t.is_relative_detector_id()) det_targets.push_back(t.val());
+            else if (t.is_observable_id()) obs_targets.push_back(t.val());
+          }
+          std::geometric_distribution<size_t> geom(p);
+          size_t k = geom(rng);
+          while (k < sample_num_shots) {
+            for (uint32_t d : det_targets) dets[d][k] ^= 1;
+            for (uint32_t o : obs_targets) obs_T[k][o] ^= 1;
+            k += 1 + geom(rng);
+          }
+        }
+        shots.resize(sample_num_shots);
+        for (size_t k = 0; k < sample_num_shots; k++) {
+          shots[k].obs_mask = obs_T[k];
+          for (size_t d = 0; d < num_detectors; d++) {
+            if (dets[d][k]) shots[k].hits.push_back(d);
+          }
         }
       }
     }
@@ -214,10 +275,10 @@ int main(int argc, char* argv[]) {
 
   program.add_argument("--max-iter").default_value(size_t(20)).store_into(args.max_iter);
   program.add_argument("--normalization-factor")
-      .default_value(0.625)
+      .default_value(0.75)
       .store_into(args.normalization_factor);
-  program.add_argument("--osd-order").default_value(-1).store_into(args.osd_order);
-  program.add_argument("--osd-weight").default_value(0).store_into(args.osd_weight);
+  program.add_argument("--osd-order").default_value(10).store_into(args.osd_order);
+  program.add_argument("--osd-weight").default_value(2).store_into(args.osd_weight);
   program.add_argument("--osd-truncation-factor")
       .help(
           "Multiplier defining the maximum number of free columns for the dense OSD Gaussian "
@@ -227,7 +288,8 @@ int main(int argc, char* argv[]) {
       .store_into(args.osd_truncation_factor);
   program.add_argument("--disable-osd-early-exit")
       .help("Disable residual syndrome early stopping in OSD elimination")
-      .flag();
+      .flag()
+      .action([&args](const std::string&) { args.osd_early_exit = false; });
   program.add_argument("--fast")
       .help("Use fast BP-OSD preset (max_iter=10, osd_order=10, osd_weight=0, batched)")
       .flag()
@@ -237,26 +299,168 @@ int main(int argc, char* argv[]) {
       .flag()
       .store_into(args.profile);
   program.add_argument("--batched")
-      .help("Use 64-shot SIMD batching across shots (enabled by default)")
-      .flag();
+      .help("Use SIMD batching across shots (enabled by default)")
+      .flag()
+      .action([&args](const std::string&) { args.bp_simd_batch = true; });
+  program.add_argument("--bp-simd-batch")
+      .help("Enable 16-lane AVX2 SIMD batching across shots in BP (default: enabled)")
+      .flag()
+      .action([&args](const std::string&) { args.bp_simd_batch = true; });
+  program.add_argument("--no-bp-simd-batch")
+      .help("Disable 16-lane SIMD batching in BP (force scalar single-shot batch size 1)")
+      .flag()
+      .action([&args](const std::string&) { args.bp_simd_batch = false; });
+  program.add_argument("--bp-compaction")
+      .help("Enable 2-stage screening and unconverged survivor compaction in BP (default: enabled)")
+      .flag()
+      .action([&args](const std::string&) { args.bp_compaction = true; });
+  program.add_argument("--no-bp-compaction")
+      .help("Disable 2-stage survivor compaction in BP (run all max_iter on uncompacted batch)")
+      .flag()
+      .action([&args](const std::string&) { args.bp_compaction = false; });
+  program.add_argument("--multipass")
+      .help("Enable Multi-Pass Shattered BP decoding (default: enabled)")
+      .flag()
+      .action([&args](const std::string&) { args.multipass = true; });
+  program.add_argument("--no-multipass")
+      .help("Disable Multi-Pass Shattered BP decoding (use monolithic Tanner graph)")
+      .flag()
+      .action([&args](const std::string&) { args.multipass = false; });
+  program.add_argument("--bp-merge-duplicates")
+      .help("Merge DEM error mechanisms with identical detector symptoms (default: enabled)")
+      .flag()
+      .action([&args](const std::string&) { args.bp_merge_duplicates = true; });
+  program.add_argument("--no-bp-merge-duplicates")
+      .help("Disable merging of duplicate-symptom DEM columns")
+      .flag()
+      .action([&args](const std::string&) { args.bp_merge_duplicates = false; });
+  program.add_argument("--bp-serial")
+      .help("Use layered serial check updates in BP (default: enabled)")
+      .flag()
+      .action([&args](const std::string&) { args.bp_serial_schedule = true; });
+  program.add_argument("--no-bp-serial")
+      .help("Use parallel flooding check updates in BP instead of layered serial updates")
+      .flag()
+      .action([&args](const std::string&) { args.bp_serial_schedule = false; });
+  program.add_argument("--bp-schedule")
+      .help("BP message-passing schedule: serial or flooding (default: serial)")
+      .action([&args](const std::string& val) {
+        if (val == "serial") {
+          args.bp_serial_schedule = true;
+        } else if (val == "flooding" || val == "parallel") {
+          args.bp_serial_schedule = false;
+        } else {
+          throw std::invalid_argument("--bp-schedule must be 'serial' or 'flooding'");
+        }
+      });
+  program.add_argument("--bp-random-order")
+      .help("Enable per-iteration randomized check permutation in BP (default: enabled)")
+      .flag()
+      .action([&args](const std::string&) { args.random_schedule = true; });
+  program.add_argument("--no-bp-random-order")
+      .help("Disable per-iteration randomized check permutation (use fixed order 0..M-1)")
+      .flag()
+      .action([&args](const std::string&) { args.random_schedule = false; });
   program.add_argument("--random-schedule")
       .help("Use randomized check node permutation in serial BP to prevent trapping sets")
       .flag()
-      .store_into(args.random_schedule);
-  program.add_argument("--multipass")
-      .help("Enable Multi-Pass Shattered BP decoding")
-      .flag()
-      .store_into(args.multipass);
+      .action([&args](const std::string&) { args.random_schedule = true; });
   program.add_argument("--num-passes")
       .help("Number of passes in Multi-Pass BP (default: 2)")
       .default_value(size_t(2))
       .store_into(args.num_passes);
+  program.add_argument("--bp-reweight")
+      .help("Cross-pass LLR reweighting mode: soft (75/25 blend), hard (100%), or none (default: soft)")
+      .action([&args](const std::string& val) {
+        if (val == "soft") {
+          args.bp_reweight_mode = BpReweightMode::kSoft;
+          args.multipass_soft_reweight = true;
+        } else if (val == "hard") {
+          args.bp_reweight_mode = BpReweightMode::kHard;
+          args.multipass_soft_reweight = false;
+        } else if (val == "none") {
+          args.bp_reweight_mode = BpReweightMode::kNone;
+          args.multipass_soft_reweight = false;
+        } else {
+          throw std::invalid_argument("--bp-reweight must be 'soft', 'hard', or 'none'");
+        }
+      });
+  program.add_argument("--bp-soft-reweight")
+      .help("Enable soft (75% conditional / 25% prior) cross-pass LLR reweighting (default: enabled)")
+      .flag()
+      .action([&args](const std::string&) {
+        args.bp_reweight_mode = BpReweightMode::kSoft;
+        args.multipass_soft_reweight = true;
+      });
+  program.add_argument("--no-bp-soft-reweight")
+      .help("Disable soft cross-pass LLR reweighting (use hard replacement)")
+      .flag()
+      .action([&args](const std::string&) {
+        args.bp_reweight_mode = BpReweightMode::kHard;
+        args.multipass_soft_reweight = false;
+      });
   program.add_argument("--multipass-soft-reweight")
       .help("Use soft LLR reweighting across passes (enabled by default)")
-      .flag();
+      .flag()
+      .action([&args](const std::string&) {
+        args.bp_reweight_mode = BpReweightMode::kSoft;
+        args.multipass_soft_reweight = true;
+      });
   program.add_argument("--disable-multipass-soft-reweight")
       .help("Disable soft LLR reweighting across passes")
-      .flag();
+      .flag()
+      .action([&args](const std::string&) {
+        args.bp_reweight_mode = BpReweightMode::kHard;
+        args.multipass_soft_reweight = false;
+      });
+  program.add_argument("--osd-early-exit")
+      .help("Enable residual-syndrome early exit during OSD Gauss-Jordan RREF (default: enabled)")
+      .flag()
+      .action([&args](const std::string&) { args.osd_early_exit = true; });
+  program.add_argument("--no-osd-early-exit")
+      .help("Disable residual-syndrome early exit in OSD RREF (reduce all rank(H) pivots)")
+      .flag()
+      .action([&args](const std::string&) { args.osd_early_exit = false; });
+  program.add_argument("--osd-col-truncation")
+      .help("Enable K=1.2*M column truncation in OSD matrix construction/RREF (default: enabled)")
+      .flag()
+      .action([&args](const std::string&) { args.osd_col_truncation = true; });
+  program.add_argument("--no-osd-col-truncation")
+      .help("Disable K=1.2*M column truncation in OSD (reduce across all N columns)")
+      .flag()
+      .action([&args](const std::string&) { args.osd_col_truncation = false; });
+  program.add_argument("--osd-partial-sort")
+      .help("Use O(N + K log K) std::nth_element partial sort in OSD (default: enabled)")
+      .flag()
+      .action([&args](const std::string&) { args.osd_partial_sort = true; });
+  program.add_argument("--no-osd-partial-sort")
+      .help("Disable partial sort in OSD (use full std::sort over all N variables)")
+      .flag()
+      .action([&args](const std::string&) { args.osd_partial_sort = false; });
+  program.add_argument("--osd-min-syndrome")
+      .help("Seed OSD from the minimum-syndrome BP snapshot L^(t*) (default: enabled)")
+      .flag()
+      .action([&args](const std::string&) { args.osd_min_syndrome_snapshot = true; });
+  program.add_argument("--no-osd-min-syndrome")
+      .help("Seed OSD only from the final BP iteration L^(T) instead of L^(t*)")
+      .flag()
+      .action([&args](const std::string&) { args.osd_min_syndrome_snapshot = false; });
+  program.add_argument("--osd-relay")
+      .help("Enable 2 damped BP relay legs (R1, R2) on unconverged shots (default: enabled)")
+      .flag()
+      .action([&args](const std::string&) { args.osd_relay_legs = true; });
+  program.add_argument("--no-osd-relay")
+      .help("Disable damped BP relay legs (R1, R2)")
+      .flag()
+      .action([&args](const std::string&) { args.osd_relay_legs = false; });
+  program.add_argument("--osd-alpha-isd")
+      .help("Enable prior-blended alpha-ISD seeds and higher-order OSD search (default: enabled)")
+      .flag()
+      .action([&args](const std::string&) { args.osd_alpha_isd = true; });
+  program.add_argument("--no-osd-alpha-isd")
+      .help("Disable prior-blended alpha-ISD seeds and force OSD-0")
+      .flag()
+      .action([&args](const std::string&) { args.osd_alpha_isd = false; });
   program.add_argument("--bp-mode")
       .help("BP execution mode: full or wavefront (default: full)")
       .default_value(std::string("full"))
@@ -286,8 +490,23 @@ int main(int argc, char* argv[]) {
       .store_into(args.sinter_csv_out);
   program.add_argument("--print-stats").flag().store_into(args.print_stats);
 
+  std::vector<std::string> normalized_args;
+  normalized_args.reserve(argc);
+  for (int i = 0; i < argc; ++i) {
+    std::string a(argv[i]);
+    if (a.rfind("--", 0) == 0) {
+      auto eq_pos = a.find('=');
+      if (eq_pos != std::string::npos) {
+        normalized_args.push_back(a.substr(0, eq_pos));
+        normalized_args.push_back(a.substr(eq_pos + 1));
+        continue;
+      }
+    }
+    normalized_args.push_back(std::move(a));
+  }
+
   try {
-    program.parse_args(argc, argv);
+    program.parse_args(normalized_args);
   } catch (const std::exception& err) {
     std::cerr << err.what() << std::endl;
     std::cerr << program;
@@ -305,13 +524,7 @@ int main(int argc, char* argv[]) {
   stim::DetectorErrorModel dem;
   std::vector<stim::SparseShot> shots;
   std::unique_ptr<stim::MeasureRecordWriter> writer;
-  if (program.is_used("--disable-multipass-soft-reweight")) {
-    args.multipass_soft_reweight = false;
-  }
   args.extract(params, dem, shots, writer);
-  if (program.is_used("--disable-osd-early-exit")) {
-    params.osd_early_exit = false;
-  }
 
   std::vector<std::unique_ptr<TesseractBpDecoder>> decoders(args.num_threads);
   std::vector<std::unique_ptr<MultiPassBpDecoder>> mp_decoders(args.num_threads);
@@ -330,9 +543,20 @@ int main(int argc, char* argv[]) {
   std::atomic<size_t> num_stage2_triggered(0);
   std::atomic<size_t> num_fallback_triggered(0);
   std::atomic<size_t> num_fallback_substituted(0);
+  // Stage-2 trigger counts indexed by the low-confidence reason code (1..5)
+  // emitted by MultiPassBpDecoder. Reason 5 is the only one raised on shots
+  // where both BP passes converged without OSD (lc0 == 0 && lc1 == 0).
+  std::array<size_t, 6> num_stage2_by_reason{};
+  double stage1_time_seconds = 0.0;
+  double stage2_time_seconds = 0.0;
+  double stage3_time_seconds = 0.0;
 
   const auto start_global_time = std::chrono::high_resolution_clock::now();
-  const size_t batch_size = args.use_batched_bp ? 512 : 1;
+  const size_t target_batches = std::max<size_t>(1, args.num_threads * 4);
+  const size_t dynamic_chunk =
+      ((total_shots + target_batches - 1) / target_batches + 15) & ~size_t(15);
+  const size_t batch_size =
+      args.use_batched_bp ? std::clamp<size_t>(dynamic_chunk, 16, 256) : 1;
   const size_t num_batches = (total_shots + batch_size - 1) / batch_size;
   const size_t print_stride = args.use_batched_bp ? 1024 : 100;
   std::vector<std::vector<std::vector<uint8_t>>> all_predictions(num_batches);
@@ -353,9 +577,7 @@ int main(int argc, char* argv[]) {
           if (!decoders[thread_idx]) {
             decoders[thread_idx] = std::make_unique<TesseractBpDecoder>(dem, params);
             if (args.osd_order >= 0) {
-              pps[thread_idx] = decoders[thread_idx]->create_osd_post_processor(
-                  static_cast<size_t>(args.osd_order),
-                  static_cast<size_t>(std::max(0, args.osd_weight)));
+              pps[thread_idx] = decoders[thread_idx]->create_post_processor();
             }
           }
           if (args.tesseract_fallback && !fallback_decoders[thread_idx]) {
@@ -429,6 +651,7 @@ int main(int argc, char* argv[]) {
       },
       [&](size_t batch_idx) {
         total_time_seconds = total_time_seconds + batch_time_seconds[batch_idx];
+        stage1_time_seconds += batch_time_seconds[batch_idx];
         if (deferred_cascade) {
           return true;
         }
@@ -479,6 +702,9 @@ int main(int argc, char* argv[]) {
       }
     }
     num_stage2_triggered = suspect_refs.size();
+    for (const auto& ref : suspect_refs) {
+      num_stage2_by_reason[std::min<size_t>(ref.lc, num_stage2_by_reason.size() - 1)]++;
+    }
 
     struct Stage3Ref {
       size_t batch_idx;
@@ -495,7 +721,8 @@ int main(int argc, char* argv[]) {
     if (!suspect_refs.empty()) {
       const bool is_large_qldpc = (dem.count_detectors() > 480 && num_observables > 1);
       std::vector<std::unique_ptr<MultiPassBpDecoder>> s2_mp_decoders(args.num_threads);
-      const size_t s2_batch_size = 512;
+      const size_t s2_batch_size = std::min<size_t>(
+          512, std::max<size_t>(1, (suspect_refs.size() + args.num_threads - 1) / args.num_threads));
       const size_t num_s2_batches = (suspect_refs.size() + s2_batch_size - 1) / s2_batch_size;
       std::vector<std::vector<Stage3Ref>> per_s2_stage3(num_s2_batches);
       std::vector<double> s2_time_seconds(num_s2_batches, 0.0);
@@ -511,12 +738,18 @@ int main(int argc, char* argv[]) {
               const size_t s = suspect_refs[k].shot_idx;
               s2_syndromes.emplace_back(shots[s].hits.begin(), shots[s].hits.end());
             }
-            if (is_large_qldpc &&
-                (dem.count_detectors() <= 1500 || dem.count_detectors() > 6000)) {
+            if ((is_large_qldpc &&
+                 (dem.count_detectors() <= 1500 || dem.count_detectors() > 6000)) ||
+                (num_observables == 1 && dem.count_detectors() > 1500)) {
               if (!s2_mp_decoders[thread_idx]) {
                 BPParams s2_params = params;
                 s2_params.random_schedule = true;
-                if (dem.count_detectors() > 6000) {
+                if (num_observables == 1 && dem.count_detectors() > 1500) {
+                  s2_params.random_seed = params.random_seed ^ 0x5555555555555555ULL;
+                  s2_params.max_iter = std::max<size_t>(params.max_iter, 36);
+                  s2_params.normalization_factor = 0.625f;
+                  s2_params.osd_order = std::max(params.osd_order, 20);
+                } else if (dem.count_detectors() > 6000) {
                   s2_params.random_seed = params.random_seed ^ 0x5555555555555555ULL;
                   s2_params.max_iter = std::max<size_t>(params.max_iter, 80);
                   s2_params.normalization_factor = 0.625f;
@@ -546,7 +779,12 @@ int main(int argc, char* argv[]) {
                     (ref.b < all_pred_costs[ref.batch_idx].size())
                         ? all_pred_costs[ref.batch_idx][ref.b]
                         : 1e9;
-                if (dem.count_detectors() > 6000) {
+                if (num_observables == 1 && dem.count_detectors() > 1500) {
+                  if (dis12 || (ref.lc == 1 && m_lc == 1)) {
+                    per_s2_stage3[s2_idx].push_back(
+                        {ref.batch_idx, ref.b, ref.shot_idx, ref.lc, m_lc, stage2_obs, m_cost, s1_cost});
+                  }
+                } else if (dem.count_detectors() > 6000) {
                   if (dis12 || ref.lc == 1 || m_lc == 1) {
                     per_s2_stage3[s2_idx].push_back(
                         {ref.batch_idx, ref.b, ref.shot_idx, ref.lc, m_lc, stage2_obs, m_cost, s1_cost});
@@ -616,6 +854,7 @@ int main(int argc, char* argv[]) {
           },
           [&](size_t s2_idx) {
             total_time_seconds = total_time_seconds + s2_time_seconds[s2_idx];
+            stage2_time_seconds += s2_time_seconds[s2_idx];
             for (auto& item : per_s2_stage3[s2_idx]) {
               stage3_refs.push_back(std::move(item));
             }
@@ -626,9 +865,10 @@ int main(int argc, char* argv[]) {
     if (!stage3_refs.empty()) {
       const bool is_large_qldpc = (dem.count_detectors() > 480 && num_observables > 1);
       num_fallback_triggered = stage3_refs.size();
-      if (is_large_qldpc && dem.count_detectors() > 6000) {
+      if (dem.count_detectors() > 6000) {
         std::vector<std::unique_ptr<MultiPassBpDecoder>> s3_bp_decoders(args.num_threads);
-        const size_t s3_batch_size = 512;
+        const size_t s3_batch_size = std::min<size_t>(
+            512, std::max<size_t>(1, (stage3_refs.size() + args.num_threads - 1) / args.num_threads));
         const size_t num_s3_batches = (stage3_refs.size() + s3_batch_size - 1) / s3_batch_size;
         std::vector<double> s3_time_seconds(num_s3_batches, 0.0);
         parallel_for_shots_in_order(
@@ -638,9 +878,15 @@ int main(int argc, char* argv[]) {
                 BPParams s3_params = params;
                 s3_params.random_schedule = true;
                 s3_params.random_seed = params.random_seed ^ 0xAAAAAAAAAAAAAAAAULL;
-                s3_params.max_iter = std::max<size_t>(params.max_iter, 100);
-                s3_params.normalization_factor = 0.75f;
-                s3_params.osd_order = std::max(params.osd_order, 80);
+                if (num_observables == 1) {
+                  s3_params.max_iter = std::max<size_t>(params.max_iter, 45);
+                  s3_params.normalization_factor = 0.75f;
+                  s3_params.osd_order = std::max(params.osd_order, 24);
+                } else {
+                  s3_params.max_iter = std::max<size_t>(params.max_iter, 100);
+                  s3_params.normalization_factor = 0.75f;
+                  s3_params.osd_order = std::max(params.osd_order, 80);
+                }
                 s3_params.osd_weight = std::max(params.osd_weight, 2);
                 MultiPassBpConfig s3_cfg{s3_params, args.num_passes, {}, args.multipass_soft_reweight};
                 s3_bp_decoders[thread_idx] = std::make_unique<MultiPassBpDecoder>(dem, s3_cfg);
@@ -687,6 +933,7 @@ int main(int argc, char* argv[]) {
             },
             [&](size_t s3_idx) {
               total_time_seconds = total_time_seconds + s3_time_seconds[s3_idx];
+              stage3_time_seconds += s3_time_seconds[s3_idx];
               return true;
             });
       } else {
@@ -854,6 +1101,7 @@ int main(int argc, char* argv[]) {
           },
           [&](size_t idx) {
             total_time_seconds = total_time_seconds + s3_time_seconds[idx];
+            stage3_time_seconds += s3_time_seconds[idx];
             return true;
           });
       }
@@ -905,6 +1153,42 @@ int main(int argc, char* argv[]) {
     decoder_name += "+tesseract-fallback";
   }
 
+  BpDecodeProfile dagg;
+  OsdProfile osd_agg;
+  size_t stage1_bp_converged_shots = 0;
+  size_t primary_bp_converged_shots = 0;
+  size_t stage1_osd_shots = 0;
+  if (args.multipass) {
+    for (const auto& d : mp_decoders) {
+      if (d) {
+        dagg.merge(d->profile());
+        osd_agg.merge(d->osd_profile());
+        stage1_bp_converged_shots += d->stage1_bp_converged_shots();
+        primary_bp_converged_shots += d->primary_bp_converged_shots();
+        stage1_osd_shots += d->stage1_osd_shots();
+      }
+    }
+  } else {
+    for (const auto& d : decoders) {
+      if (d) {
+        dagg.merge(d->profile());
+      }
+    }
+    for (const auto& pp : pps) {
+      if (pp) {
+        osd_agg.merge(pp->profile());
+      }
+    }
+    stage1_bp_converged_shots = dagg.num_converged;
+    primary_bp_converged_shots = dagg.num_primary_bp_converged;
+    stage1_osd_shots =
+        (dagg.num_shots >= dagg.num_converged) ? (dagg.num_shots - dagg.num_converged) : 0;
+  }
+
+  std::string reweight_str = "soft";
+  if (args.bp_reweight_mode == BpReweightMode::kHard) reweight_str = "hard";
+  else if (args.bp_reweight_mode == BpReweightMode::kNone) reweight_str = "none";
+
   if (!args.stats_out_fname.empty()) {
     nlohmann::json stats_json = {
         {"circuit_path", args.circuit_path},
@@ -916,9 +1200,46 @@ int main(int argc, char* argv[]) {
         {"num_shots", final_shots},
         {"num_errors", has_obs ? nlohmann::json(num_errors.load()) : nullptr},
         {"num_discards", num_discards.load()},
+        {"primary_bp_converged_shots", primary_bp_converged_shots},
+        {"final_comp_primary_bp_converged_shots", dagg.num_primary_bp_converged},
+        {"stage1_bp_converged_shots", stage1_bp_converged_shots},
+        {"stage1_osd_shots", stage1_osd_shots},
+        {"osd_calls", osd_agg.num_calls},
+        {"t_osd_total", osd_agg.t_total},
+        {"t_osd_sort", osd_agg.t_sort},
+        {"t_osd_matrix_build", osd_agg.t_matrix_build},
+        {"t_osd_elimination", osd_agg.t_elimination},
+        {"t_osd_solution", osd_agg.t_solution},
+        {"osd_cols_processed", osd_agg.sum_cols_processed},
+        {"osd_pivots_found", osd_agg.sum_pivots_found},
         {"num_stage2_triggered", num_stage2_triggered.load()},
+        {"num_stage2_by_reason", num_stage2_by_reason},
+        {"num_stage2_from_bp_converged", num_stage2_by_reason[5]},
         {"num_fallback_triggered", num_fallback_triggered.load()},
         {"num_fallback_substituted", num_fallback_substituted.load()},
+        {"stage1_time_seconds", stage1_time_seconds},
+        {"stage2_time_seconds", stage2_time_seconds},
+        {"stage3_time_seconds", stage3_time_seconds},
+        {"t_bp", dagg.t_bp},
+        {"t_post", dagg.t_post},
+        {"t_construct", dagg.t_construct},
+        {"t_deinterleave", dagg.t_deinterleave},
+        {"ablation_config",
+         {{"multipass", args.multipass},
+          {"bp_simd_batch", args.bp_simd_batch},
+          {"bp_compaction", args.bp_compaction},
+          {"bp_merge_duplicates", args.bp_merge_duplicates},
+          {"bp_serial_schedule", args.bp_serial_schedule},
+          {"bp_random_order", args.random_schedule},
+          {"bp_reweight_mode", reweight_str},
+          {"osd_early_exit", args.osd_early_exit},
+          {"osd_col_truncation", args.osd_col_truncation},
+          {"osd_partial_sort", args.osd_partial_sort},
+          {"osd_min_syndrome_snapshot", args.osd_min_syndrome_snapshot},
+          {"osd_relay_legs", args.osd_relay_legs},
+          {"osd_alpha_isd", args.osd_alpha_isd},
+          {"osd_order", args.osd_order},
+          {"osd_weight", args.osd_weight}}},
         {"decoder", decoder_name},
         {"total_time_seconds", cpu_time},
         {"cpu_time_seconds", cpu_time},
@@ -964,17 +1285,6 @@ int main(int argc, char* argv[]) {
   }
 
   if (args.profile) {
-    BpDecodeProfile dagg;
-    if (args.multipass) {
-      for (const auto& d : mp_decoders) {
-        if (d) dagg.merge(d->profile());
-      }
-    } else {
-      for (const auto& d : decoders) {
-        if (d) dagg.merge(d->profile());
-      }
-    }
-
     if (dagg.num_shots == 0) {
       std::cout << "\n[decode-profile] No shots were decoded.\n";
     } else {

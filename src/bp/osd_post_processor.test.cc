@@ -258,4 +258,41 @@ TEST(OsdPostProcessorTest, LowConfidenceShotsPropagation) {
   ASSERT_EQ(mp_costs.size(), 1u);
 }
 
+TEST(OsdPostProcessorTest, OsdComputationalAblationsPreserveCodeword) {
+  stim::DetectorErrorModel dem(R"DEM(
+    error(0.01) D0 D1 L0
+    error(0.01) D1 D2
+    error(0.01) D2 D3 L0
+    error(0.01) D3 D0
+    error(0.005) D0 D2
+    error(0.005) D1 D3 L0
+    detector D0
+    detector D1
+    detector D2
+    detector D3
+    logical_observable L0
+  )DEM");
+
+  std::vector<std::vector<uint64_t>> batch = {{0, 2}, {1, 3}, {0, 1, 2, 3}};
+
+  auto run_cfg = [&](bool early_exit, bool col_trunc, bool partial_sort) {
+    BPParams p = BPParams::Osd(10, 10, 2);
+    p.osd_early_exit = early_exit;
+    p.osd_col_truncation = col_trunc;
+    p.osd_partial_sort = partial_sort;
+    TesseractBpDecoder dec(dem, p);
+    auto pp = dec.create_post_processor();
+    return dec.decode_batch(batch, pp);
+  };
+
+  auto c1 = run_cfg(false, false, false);
+  auto c2 = run_cfg(true, false, false);
+  auto c3 = run_cfg(true, true, false);
+  auto c4 = run_cfg(true, true, true);
+
+  EXPECT_EQ(c1, c2);
+  EXPECT_EQ(c2, c3);
+  EXPECT_EQ(c3, c4);
+}
+
 }  // namespace bp

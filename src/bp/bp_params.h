@@ -45,6 +45,12 @@ enum class BpMode {
   kWavefront = 2,
 };
 
+enum class BpReweightMode {
+  kSoft = 0,
+  kHard = 1,
+  kNone = 2,
+};
+
 struct BPParams {
   size_t max_iter = DEFAULT_MAX_ITER;
   bool stop_at_convergence = DEFAULT_STOP_AT_CONVERGENCE;
@@ -58,6 +64,24 @@ struct BPParams {
   bool use_soft_reweighting = true;
   BpMode bp_mode = BpMode::kFull;
   double fallback_margin = 1.0;
+
+  // BP Computational ablation flags:
+  bool bp_simd_batch = true;
+  bool bp_compaction = true;
+  bool bp_merge_duplicates = true;
+
+  // BP Algorithmic ablation flags:
+  bool bp_serial_schedule = true;
+  BpReweightMode bp_reweight_mode = BpReweightMode::kSoft;
+
+  // OSD Computational ablation flags:
+  bool osd_col_truncation = true;
+  bool osd_partial_sort = true;
+
+  // OSD Algorithmic ablation flags:
+  bool osd_min_syndrome_snapshot = true;
+  bool osd_relay_legs = true;
+  bool osd_alpha_isd = true;
 
   static BPParams Osd(size_t max_iter = DEFAULT_MAX_ITER, int osd_order = 24, int osd_weight = 2) {
     BPParams p;
@@ -79,6 +103,8 @@ struct BPParams {
 
   bool operator==(const BPParams& other) const = default;
 };
+
+using BpDecoderConfig = BPParams;
 
 }  // namespace bp
 
