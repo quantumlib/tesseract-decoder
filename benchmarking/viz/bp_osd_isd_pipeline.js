@@ -28,8 +28,8 @@
     // Progression A: BP Computational (3 Steps A1..A3: Speedup vs A1 & BP ms/shot; A2 has 0.0% LER change)
     bp_comp: {
       steps: [
-        { key: "A1", name: "A1: Scalar Monolithic BP (1.00×)", flag: "--no-multipass --no-bp-simd-batch", color: "#64748B" },
-        { key: "A2", name: "A2: +16-Lane AVX2 SIMD Batching (0% LER Δ)", flag: "--bp-simd-batch", color: "#1967D2" },
+        { key: "A1", name: "A1: Scalar Monolithic BP", flag: "--no-multipass --no-bp-simd-batch", color: "#64748B" },
+        { key: "A2", name: "A2: +16-Lane AVX2 SIMD Batching", flag: "--bp-simd-batch", color: "#1967D2" },
         { key: "A3", name: "A3: +Multi-Pass DEM/Tanner Compression", flag: "--multipass (default)", color: "#1E8E3E" }
       ],
       byCircuit: {
@@ -88,9 +88,9 @@
     // Progression C: OSD Computational (3 Steps C1..C3: Isolated OSD Speedup vs C1 & ms/OSD-shot; 0.0% LER Change)
     osd_comp: {
       steps: [
-        { key: "C1", name: "C1: Full RREF + Full Sort (1.00×)", flag: "--no-osd-early-exit --no-osd-col-truncation --no-osd-partial-sort", color: "#64748B" },
-        { key: "C2", name: "C2: +Dynamic Zero-Remainder Early Exit (0% LER Δ)", flag: "--osd-early-exit", color: "#1967D2" },
-        { key: "C3", name: "C3: +Horizon-Bounded Partial Sort (K=1.2M, nth_element)", flag: "--osd-col-truncation --osd-partial-sort (default)", color: "#1E8E3E" }
+        { key: "C1", name: "C1: Full RREF + Full Sort", flag: "--no-osd-early-exit --no-osd-col-truncation --no-osd-partial-sort", color: "#64748B" },
+        { key: "C2", name: "C2: +Dynamic Zero-Remainder Early Exit", flag: "--osd-early-exit", color: "#1967D2" },
+        { key: "C3", name: "C3: +Horizon-Bounded Partial Sort", flag: "--osd-col-truncation --osd-partial-sort (default)", color: "#1E8E3E" }
       ],
       byCircuit: {
         cc_d11: [
@@ -409,31 +409,28 @@
               1. BP Computational Pipeline: Scalar Monolithic &rarr; 16-Lane AVX2 SIMD Batching &rarr; Multi-Pass DEM/Tanner Compression
             </span>
             <span class="ca-badge" style="background:var(--qai-badge-green); color:var(--qai-green);">
-              16-Lane SIMD: 0.0% LER Change &nbsp;&middot;&nbsp; Multi-Pass: Shrinks Graph &amp; Cuts LER
+              SIMD Batching + Multi-Pass Tanner Graph Decomposition
             </span>
           </div>
           <div class="ca-svg-wrap">
             <svg viewBox="0 0 860 154" style="max-height:158px;" xmlns="http://www.w3.org/2000/svg">
               <!-- Box 1: A1 Scalar Monolithic BP -->
               <rect x="8" y="4" width="262" height="145" rx="8" fill="#FAF8F5" stroke="#CBD5E1" stroke-width="1.4" />
-              <text x="139" y="23" text-anchor="middle" font-family="'Space Mono',monospace" font-size="10.2" font-weight="700" fill="#475569">
-                A1. SCALAR MONOLITHIC BP
+              <text x="139" y="24" text-anchor="middle" font-family="'Space Mono',monospace" font-size="10.2" font-weight="700" fill="#475569">
+                A1: Scalar Monolithic BP
               </text>
-              <rect x="20" y="31" width="238" height="24" rx="4" fill="#F1F5F9" stroke="#64748B" stroke-width="1.3" />
-              <text x="139" y="47" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.0" font-weight="700" fill="#334155">
+              <rect x="20" y="33" width="238" height="24" rx="4" fill="#F1F5F9" stroke="#64748B" stroke-width="1.3" />
+              <text x="139" y="49" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.0" font-weight="700" fill="#334155">
                 --no-multipass --no-bp-simd-batch
               </text>
-              <text x="139" y="73" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10.5" font-weight="600" fill="#1E2022">
-                Single-shot scalar min-sum on full DEM
+              <text x="139" y="79" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10.5" font-weight="700" fill="#1E2022">
+                1 shot per core &bull; Full raw DEM graph
               </text>
-              <text x="139" y="92" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" fill="#5F6368">
-                93.2 ms &ndash; 1,026.7 ms per shot across 4 codes
+              <text x="139" y="101" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" fill="#5F6368">
+                Sequential scalar min-sum message passing
               </text>
-              <text x="139" y="110" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" fill="#5F6368">
+              <text x="139" y="121" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" fill="#5F6368">
                 Uncompressed cross-basis Tanner graph
-              </text>
-              <text x="139" y="136" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.8" font-weight="700" fill="#475569">
-                1.00&times; Throughput Baseline Reference
               </text>
 
               <!-- Arrow 1 -> 2 -->
@@ -442,24 +439,21 @@
 
               <!-- Box 2: A2 16-Lane AVX2 SIMD Batching -->
               <rect x="299" y="4" width="262" height="145" rx="8" fill="#FAF8F5" stroke="#CBD5E1" stroke-width="1.4" />
-              <text x="430" y="23" text-anchor="middle" font-family="'Space Mono',monospace" font-size="10.2" font-weight="700" fill="#1967D2">
-                A2. +16-LANE AVX2 SIMD BATCHING
+              <text x="430" y="24" text-anchor="middle" font-family="'Space Mono',monospace" font-size="10.0" font-weight="700" fill="#1967D2">
+                A2: +16-Lane AVX2 SIMD Batching
               </text>
-              <rect x="317" y="31" width="226" height="24" rx="4" fill="#E8F0FE" stroke="#1967D2" stroke-width="1.3" />
-              <text x="430" y="47" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.5" font-weight="700" fill="#1967D2">
-                Flag: --bp-simd-batch (16 &times; int32 = 64B)
+              <rect x="317" y="33" width="226" height="24" rx="4" fill="#E8F0FE" stroke="#1967D2" stroke-width="1.3" />
+              <text x="430" y="49" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.5" font-weight="700" fill="#1967D2">
+                --bp-simd-batch
               </text>
-              <text x="430" y="73" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10.5" font-weight="600" fill="#1E2022">
+              <text x="430" y="79" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10.5" font-weight="700" fill="#1E2022">
+                256-bit __m256i &bull; 16 shots/instruction
+              </text>
+              <text x="430" y="101" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" fill="#5F6368">
                 Flat cache-aligned bidirectional CSR arrays
               </text>
-              <text x="430" y="92" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" fill="#5F6368">
-                12.2&times;&ndash;15.3&times; faster than scalar across all 4 codes
-              </text>
-              <text x="430" y="110" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" fill="#5F6368">
+              <text x="430" y="121" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" fill="#5F6368">
                 On-the-fly Q8 fixed-point min-sum updates
-              </text>
-              <text x="430" y="136" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.8" font-weight="700" fill="#1967D2">
-                0.0% LER Change (Pure Throughput)
               </text>
 
               <!-- Arrow 2 -> 3 -->
@@ -468,24 +462,21 @@
 
               <!-- Box 3: A3 Multi-Pass DEM/Tanner Compression -->
               <rect x="590" y="4" width="262" height="145" rx="8" fill="#FAF8F5" stroke="#CBD5E1" stroke-width="1.4" />
-              <text x="721" y="23" text-anchor="middle" font-family="'Space Mono',monospace" font-size="10.0" font-weight="700" fill="#1E8E3E">
-                A3. +MULTI-PASS GRAPH COMPRESSION
+              <text x="721" y="24" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.6" font-weight="700" fill="#1E8E3E">
+                A3: +Multi-Pass DEM/Tanner Compression
               </text>
-              <rect x="604" y="31" width="234" height="24" rx="4" fill="#E6F4EA" stroke="#1E8E3E" stroke-width="1.3" />
-              <text x="721" y="47" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.3" font-weight="700" fill="#14532D">
-                Flags: --multipass --bp-merge-duplicates
+              <rect x="604" y="33" width="234" height="24" rx="4" fill="#E6F4EA" stroke="#1E8E3E" stroke-width="1.3" />
+              <text x="721" y="49" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.3" font-weight="700" fill="#14532D">
+                --multipass --bp-merge-duplicates
               </text>
-              <text x="721" y="73" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10.5" font-weight="600" fill="#1E2022">
-                Single-basis projection merges duplicate cols
+              <text x="721" y="79" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10.5" font-weight="700" fill="#1E2022">
+                Duplicate-symptom merge + X/Z sector split
               </text>
-              <text x="721" y="92" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" fill="#5F6368">
-                77.9&times;&ndash;135.8&times; cumulative BP speedup vs. A1!
+              <text x="721" y="101" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" fill="#5F6368">
+                Coalesces parallel faults into merged columns
               </text>
-              <text x="721" y="110" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" fill="#5F6368">
-                5.7&times;&ndash;8.9&times; additional step speedup over A2
-              </text>
-              <text x="721" y="136" text-anchor="middle" font-family="'Space Mono',monospace" font-size="9.8" font-weight="700" fill="#1E8E3E">
-                Boosts Speed AND Breaks Cross-Basis 4-Cycles
+              <text x="721" y="121" text-anchor="middle" font-family="'DM Sans',sans-serif" font-size="10" fill="#5F6368">
+                Shatters coupled DEM into smaller subgraphs
               </text>
             </svg>
           </div>
@@ -787,27 +778,27 @@
               </text>
 
               <rect x="476" y="30" width="362" height="35" rx="5" fill="#F1F5F9" stroke="#64748B" stroke-width="1.2" />
-              <text x="486" y="45" font-family="'Space Mono',monospace" font-size="9.1" font-weight="700" fill="#334155">
-                C1. Full RREF + Full Sort (1.00&times; Baseline):
+              <text x="486" y="44" font-family="'Space Mono',monospace" font-size="8.9" font-weight="700" fill="#334155">
+                C1: Full RREF + Full Sort (--no-osd-early-exit --no-osd-partial-sort)
               </text>
-              <text x="486" y="58" font-family="'DM Sans',sans-serif" font-size="9.4" fill="#1E2022">
-                Full O(N log N) sort + all N columns (16.5&ndash;1,314 ms/OSD-shot)
+              <text x="486" y="58" font-family="'DM Sans',sans-serif" font-size="9.4" font-weight="600" fill="#1E2022">
+                Dense elimination + O(N log N) full sort across all N columns
               </text>
 
               <rect x="476" y="71" width="362" height="35" rx="5" fill="#E8F0FE" stroke="#1967D2" stroke-width="1.2" />
-              <text x="486" y="86" font-family="'Space Mono',monospace" font-size="9.1" font-weight="700" fill="#1967D2">
-                C2. +Dynamic Zero-Remainder Early Exit (--osd-early-exit):
+              <text x="486" y="85" font-family="'Space Mono',monospace" font-size="8.9" font-weight="700" fill="#1967D2">
+                C2: +Dynamic Zero-Remainder Early Exit (--osd-early-exit)
               </text>
-              <text x="486" y="99" font-family="'DM Sans',sans-serif" font-size="9.4" fill="#1E2022">
-                7.77&times; speedup on Color d=11 &amp; 16.01&times; on Hyperbolic iter=40 (0% LER &Delta;)
+              <text x="486" y="99" font-family="'DM Sans',sans-serif" font-size="9.4" font-weight="600" fill="#1E2022">
+                Halt pivot scan as soon as s_rem == 0 (exact zero-remainder cutoff)
               </text>
 
               <rect x="476" y="112" width="362" height="34" rx="5" fill="#E6F4EA" stroke="#1E8E3E" stroke-width="1.4" />
-              <text x="486" y="127" font-family="'Space Mono',monospace" font-size="8.9" font-weight="700" fill="#14532D">
-                C3. +Horizon-Bounded Partial Sort (K=1.2M, nth_element):
+              <text x="486" y="126" font-family="'Space Mono',monospace" font-size="8.8" font-weight="700" fill="#14532D">
+                C3: +Horizon-Bounded Partial Sort (--osd-col-truncation --osd-partial-sort)
               </text>
               <text x="486" y="140" font-family="'DM Sans',sans-serif" font-size="9.4" font-weight="600" fill="#14532D">
-                --osd-col-truncation --osd-partial-sort &rArr; up to 22.35&times; OSD speedup
+                K = 1.2M column cap + O(N) std::nth_element selection
               </text>
             </svg>
           </div>

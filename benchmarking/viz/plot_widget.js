@@ -382,6 +382,27 @@
     ) {
       return window.TesseractViz["bp_osd_isd_pipeline"](container, props);
     }
+    // Interactive QEC / BP primitives (qec_primitives.js): step-through Tanner graph animations
+    const QEC_PRIMITIVE_VIEWS = [
+      "bp_minsum_stepper",
+      "bp_4cycle_oscillation",
+      "bp_4cycle",
+      "gari_transform",
+      "multipass_funnel",
+      "qec_primitives"
+    ];
+    if (QEC_PRIMITIVE_VIEWS.includes(pView) && window.TesseractViz && typeof window.TesseractViz[pView] === "function") {
+      return window.TesseractViz[pView](container, props);
+    }
+    if (
+      pView &&
+      pView !== "viz_plot" &&
+      window.TesseractViz &&
+      typeof window.TesseractViz[pView] === "function" &&
+      window.TesseractViz[pView] !== mountVizPlot
+    ) {
+      return window.TesseractViz[pView](container, props);
+    }
     injectStylesOnce();
 
     const dataset = window.TESSERACT_VIZ_DATASETS;

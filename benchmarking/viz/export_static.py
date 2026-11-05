@@ -2057,6 +2057,1166 @@ def plot_dem_transforms(
     }
 
 
+def _draw_labeled_matrix(
+    ax: plt.Axes,
+    x0: float,
+    y0: float,
+    w: float,
+    h: float,
+    mat: List[List[int]],
+    row_labels: List[str],
+    col_labels: List[str],
+    cell_styles: Dict[Tuple[int, int], Tuple[str, str, str]],
+    default_one_style: Tuple[str, str, str] = ("#DBEAFE", "#1967D2", "#0F172A"),
+    default_zero_style: Tuple[str, str, str] = ("#F8FAFC", "#CBD5E1", "#94A3B8"),
+    title: str = "",
+    font_size: float = 8.8,
+) -> None:
+    """Draws a parity-check matrix grid with explicit 0/1 entries and row/column labels."""
+    rows = len(mat)
+    cols = len(mat[0]) if rows > 0 else 0
+    if title:
+        ax.text(
+            x0 + w / 2.0,
+            y0 + h + 4.6,
+            title,
+            ha="center",
+            va="center",
+            fontsize=font_size + 0.2,
+            fontweight="bold",
+            color="#0F172A",
+            zorder=5,
+        )
+    cw = w / max(1, cols)
+    ch = h / max(1, rows)
+    for c_idx, clbl in enumerate(col_labels):
+        ax.text(
+            x0 + (c_idx + 0.5) * cw,
+            y0 + h + 1.1,
+            clbl,
+            ha="center",
+            va="bottom",
+            fontsize=font_size - 0.8,
+            fontweight="bold",
+            color="#334155",
+            zorder=5,
+        )
+    for r_idx, rlbl in enumerate(row_labels):
+        cy = y0 + (rows - 1 - r_idx + 0.5) * ch
+        ax.text(
+            x0 - 1.2,
+            cy,
+            rlbl,
+            ha="right",
+            va="center",
+            fontsize=font_size - 0.6,
+            fontweight="bold",
+            color="#334155",
+            zorder=5,
+        )
+        for c_idx in range(cols):
+            val = mat[r_idx][c_idx]
+            if (r_idx, c_idx) in cell_styles:
+                fc, ec, tc = cell_styles[(r_idx, c_idx)]
+            elif val != 0:
+                fc, ec, tc = default_one_style
+            else:
+                fc, ec, tc = default_zero_style
+            rx = x0 + c_idx * cw + cw * 0.06
+            ry = y0 + (rows - 1 - r_idx) * ch + ch * 0.08
+            rw = cw * 0.88
+            rh = ch * 0.84
+            ax.add_patch(
+                FancyBboxPatch(
+                    (rx, ry),
+                    rw,
+                    rh,
+                    boxstyle="round,pad=0.05,rounding_size=0.4",
+                    facecolor=fc,
+                    edgecolor=ec,
+                    linewidth=1.1 if val != 0 or (r_idx, c_idx) in cell_styles else 0.7,
+                    zorder=4,
+                )
+            )
+            ax.text(
+                rx + rw / 2.0,
+                ry + rh / 2.0,
+                str(val),
+                ha="center",
+                va="center",
+                fontsize=font_size,
+                fontweight="bold",
+                color=tc,
+                zorder=5,
+            )
+
+
+def plot_bp_minsum_4cycle(
+    canonical_stem: str,
+    out_dirs: List[pathlib.Path],
+) -> Dict[str, Any]:
+    """2-panel pedagogical diagram for Section 2:
+    (a) Min-Sum C->V ('Min') and V->C ('Sum') message passing on a bipartite Tanner graph with separated equations.
+    (b) Symmetric 4-cycle oscillation across iterations t=0..4 under parallel flooding.
+    """
+    fig, (ax_a, ax_b) = plt.subplots(1, 2, figsize=(17.2, 7.8), dpi=220)
+    fig.suptitle(
+        "Min-Sum Belief Propagation on a Tanner Graph & Why Parallel Flooding Oscillates on a 4-Cycle",
+        fontsize=13.6,
+        fontweight="bold",
+        color="#0F172A",
+        y=0.985,
+    )
+
+    for ax, title, sub, bcol, bgcol in [
+        (
+            ax_a,
+            "(a) Min-Sum Message Passing on a Bipartite Tanner Graph",
+            "Separated Check-to-Variable (Min) & Variable-to-Check (Sum) Updates (α = 0.8)",
+            "#1967D2",
+            "#F8FAFC",
+        ),
+        (
+            ax_b,
+            "(b) Symmetric 4-Cycle Oscillation Across Iterations (t = 0..4)",
+            "Degenerate syndrome s = (1, 1) with symmetric priors L₀ = +2.0 flips ê^(t) between (0,0) and (1,1)",
+            "#D93025",
+            "#FEF2F2",
+        ),
+    ]:
+        ax.set_xlim(0, 100)
+        ax.set_ylim(0, 100)
+        ax.set_autoscale_on(False)
+        ax.axis("off")
+        ax.add_patch(
+            FancyBboxPatch(
+                (1.0, 1.0),
+                98.0,
+                97.5,
+                boxstyle="round,pad=0.4,rounding_size=1.6",
+                facecolor=bgcol,
+                edgecolor=bcol,
+                linewidth=2.0,
+                zorder=1,
+            )
+        )
+        ax.text(50.0, 96.0, title, ha="center", va="top", fontsize=10.8, fontweight="bold", color=bcol, zorder=3)
+        ax.text(50.0, 92.2, sub, ha="center", va="top", fontsize=8.3, fontstyle="italic", color="#334155", zorder=3)
+
+    # -------------------------------------------------------------------------
+    # PANEL (a): Tanner Graph + Separated C->V ("Min") and V->C ("Sum") Equations
+    # -------------------------------------------------------------------------
+    ax_a.add_patch(
+        FancyBboxPatch(
+            (4.0, 44.0),
+            92.0,
+            44.5,
+            boxstyle="round,pad=0.3,rounding_size=1.2",
+            facecolor="#FFFFFF",
+            edgecolor="#CBD5E1",
+            linewidth=1.3,
+            zorder=2,
+        )
+    )
+    ax_a.text(
+        50.0,
+        86.2,
+        "Bipartite Tanner Graph G = (V ∪ C, E): Unsatisfied Check c₁ Pulls Fault Variable v₁ Below Zero",
+        ha="center",
+        va="center",
+        fontsize=8.7,
+        fontweight="bold",
+        color="#0F172A",
+        zorder=4,
+    )
+
+    # Check nodes on left: c1 (x=17, y=72, s_c1=1 unsatisfied), c2 (x=17, y=54, s_c2=0 satisfied)
+    c_nodes = [
+        ("c₁", 17.0, 72.0, "s_c₁ = 1 (unsatisfied)", "#FEE2E2", "#D93025", "#991B1B"),
+        ("c₂", 17.0, 54.0, "s_c₂ = 0 (satisfied)", "#DCFCE7", "#1E8E3E", "#14532D"),
+    ]
+    for cname, cx, cy, csub, cfc, cec, ctc in c_nodes:
+        ax_a.add_patch(
+            FancyBboxPatch(
+                (cx - 4.5, cy - 3.9),
+                9.0,
+                7.8,
+                boxstyle="round,pad=0.1,rounding_size=0.6",
+                facecolor=cfc,
+                edgecolor=cec,
+                linewidth=2.0,
+                zorder=5,
+            )
+        )
+        ax_a.text(cx, cy + 0.4, cname, ha="center", va="center", fontsize=10.0, fontweight="bold", color=ctc, zorder=6)
+        ax_a.text(cx, cy - 5.8, csub, ha="center", va="top", fontsize=7.4, fontweight="bold", color=ctc, zorder=6)
+
+    # Variable nodes on right: v1 (x=66, y=76.5), v2 (x=66, y=62.5), v3 (x=66, y=49.0)
+    v_nodes = [
+        ("v₁", 66.0, 76.5, "L_v₁^(0) = +0.8", "L_v₁^(1) = -1.2 ⇒ ê₁ = 1", "#FEE2E2", "#D93025", "#991B1B"),
+        ("v₂", 66.0, 62.5, "L_v₂^(0) = +2.5", "L_v₂^(1) = +4.4 ⇒ ê₂ = 0", "#EFF6FF", "#1967D2", "#1E3A8A"),
+        ("v₃", 66.0, 49.0, "L_v₃^(0) = +3.2", "L_v₃^(1) = +5.2 ⇒ ê₃ = 0", "#EFF6FF", "#1967D2", "#1E3A8A"),
+    ]
+    for vname, vx, vy, vprior, vpost, vfc, vec, vtc in v_nodes:
+        circ = mpatches.Ellipse((vx, vy), width=8.6, height=7.4, facecolor=vfc, edgecolor=vec, linewidth=2.0, zorder=5)
+        ax_a.add_patch(circ)
+        ax_a.text(vx, vy, vname, ha="center", va="center", fontsize=10.0, fontweight="bold", color=vtc, zorder=6)
+        ax_a.text(vx, vy + 4.5, vprior, ha="center", va="bottom", fontsize=7.3, fontweight="bold", color="#334155", zorder=6)
+        ax_a.text(
+            vx + 5.2,
+            vy,
+            vpost,
+            ha="left",
+            va="center",
+            fontsize=7.4,
+            fontweight="bold",
+            color=vtc,
+            bbox=dict(boxstyle="round,pad=0.16", fc="#FFFFFF", ec=vec, lw=0.9),
+            zorder=6,
+        )
+
+    # Edges and message arrows between checks and variables
+    edges_a = [
+        # (cx, cy, vx, vy, label, color, lw, rad, lx, ly)
+        (21.8, 73.2, 61.2, 76.5, "μ_{c₁→v₁} = -0.8·min(2.5) = -2.0", "#D93025", 2.3, 0.07, 41.5, 78.2),
+        (21.8, 70.5, 61.2, 63.8, "μ_{c₁→v₂} = -0.8·min(0.8) = -0.64", "#D97706", 1.8, -0.05, 41.5, 68.2),
+        (21.8, 55.4, 61.2, 61.2, "μ_{c₂→v₂} = +0.8·min(3.2) = +2.56", "#1E8E3E", 1.8, 0.05, 41.5, 58.6),
+        (21.8, 52.5, 61.2, 49.0, "μ_{c₂→v₃} = +0.8·min(2.5) = +2.00", "#1E8E3E", 1.8, -0.07, 41.5, 47.6),
+    ]
+    for x0_e, y0_e, x1_e, y1_e, elbl, ecol, elw, erad, lx, ly in edges_a:
+        ax_a.add_patch(
+            FancyArrowPatch(
+                (x0_e, y0_e),
+                (x1_e, y1_e),
+                connectionstyle=f"arc3,rad={erad}",
+                arrowstyle="-|>",
+                mutation_scale=13,
+                linewidth=elw,
+                color=ecol,
+                zorder=4,
+            )
+        )
+        ax_a.text(
+            lx,
+            ly,
+            elbl,
+            ha="center",
+            va="center",
+            fontsize=7.5,
+            fontweight="bold",
+            color=ecol,
+            bbox=dict(boxstyle="round,pad=0.16", fc="#FFFFFF", ec=ecol, lw=0.8),
+            zorder=6,
+        )
+
+    # Separated Equation Box 1: Check-to-Variable (C -> V: The "Min" Step)
+    ax_a.add_patch(
+        FancyBboxPatch(
+            (4.0, 23.5),
+            92.0,
+            18.2,
+            boxstyle="round,pad=0.3,rounding_size=1.0",
+            facecolor="#EFF6FF",
+            edgecolor="#1967D2",
+            linewidth=1.5,
+            zorder=2,
+        )
+    )
+    ax_a.text(
+        6.5,
+        39.2,
+        "1. Check-to-Variable Update (C → V: The 'Min' Step)",
+        ha="left",
+        va="top",
+        fontsize=9.2,
+        fontweight="bold",
+        color="#1967D2",
+        zorder=4,
+    )
+    ax_a.text(
+        50.0,
+        32.5,
+        r"$\mu_{c \to v}^{(t)} = \alpha \, (-1)^{s_c} \prod_{v' \in \mathcal{N}(c)\setminus\{v\}} \mathrm{sgn}\!\left(m_{v' \to c}^{(t-1)}\right) \cdot \min_{v' \in \mathcal{N}(c)\setminus\{v\}} \left|m_{v' \to c}^{(t-1)}\right|$",
+        ha="center",
+        va="center",
+        fontsize=10.3,
+        color="#0F172A",
+        zorder=4,
+    )
+    ax_a.text(
+        6.0,
+        26.0,
+        "• Parity sign (-1)^s_c flips sign when check c is unsatisfied (s_c=1); magnitude set by weakest extrinsic neighbor v'≠v.",
+        ha="left",
+        va="center",
+        fontsize=7.4,
+        color="#334155",
+        zorder=4,
+    )
+
+    # Separated Equation Box 2: Variable-to-Check (V -> C: The "Sum" Step) & Posterior
+    ax_a.add_patch(
+        FancyBboxPatch(
+            (4.0, 3.2),
+            92.0,
+            18.2,
+            boxstyle="round,pad=0.3,rounding_size=1.0",
+            facecolor="#ECFDF5",
+            edgecolor="#1E8E3E",
+            linewidth=1.5,
+            zorder=2,
+        )
+    )
+    ax_a.text(
+        6.5,
+        18.9,
+        "2. Variable-to-Check Update (V → C: The 'Sum' Step) & Posterior Hard Decision",
+        ha="left",
+        va="top",
+        fontsize=9.2,
+        fontweight="bold",
+        color="#14532D",
+        zorder=4,
+    )
+    ax_a.text(
+        50.0,
+        12.2,
+        r"$m_{v \to c}^{(t)} = L_v^{(0)} + \sum_{c' \in \mathcal{N}(v)\setminus\{c\}} \mu_{c' \to v}^{(t)}, \qquad L_v^{(t)} = L_v^{(0)} + \sum_{c \in \mathcal{N}(v)} \mu_{c \to v}^{(t)}, \qquad \hat{e}_v^{(t)} = 1 \;\mathrm{if}\; L_v^{(t)} < 0$",
+        ha="center",
+        va="center",
+        fontsize=9.8,
+        color="#0F172A",
+        zorder=4,
+    )
+    ax_a.text(
+        6.0,
+        5.7,
+        "• Sums extrinsic check messages onto prior L_v^(0) = ln((1-p_v)/p_v); negative posterior L_v^(t) < 0 declares fault ê_v = 1.",
+        ha="left",
+        va="center",
+        fontsize=7.4,
+        color="#334155",
+        zorder=4,
+    )
+
+    # -------------------------------------------------------------------------
+    # PANEL (b): Symmetric 4-Cycle Oscillation (Upper Tanner 4-Cycle + Lower Trajectory)
+    # -------------------------------------------------------------------------
+    ax_b.add_patch(
+        FancyBboxPatch(
+            (4.0, 53.5),
+            92.0,
+            35.0,
+            boxstyle="round,pad=0.3,rounding_size=1.2",
+            facecolor="#FFFFFF",
+            edgecolor="#FCA5A5",
+            linewidth=1.4,
+            zorder=2,
+        )
+    )
+    ax_b.text(
+        50.0,
+        86.2,
+        "Length-4 Cycle Subgraph (v₁ – c₁ – v₂ – c₂ – v₁): Positive Feedback Echo Under Flooding",
+        ha="center",
+        va="center",
+        fontsize=8.7,
+        fontweight="bold",
+        color="#991B1B",
+        zorder=4,
+    )
+
+    # Draw 4-cycle on left half of upper box (x: 10..52, y: 56..82)
+    c1_pos, c2_pos = (16.0, 76.5), (16.0, 61.5)
+    v1_pos, v2_pos = (44.0, 76.5), (44.0, 61.5)
+    for (cx, cy) in (c1_pos, c2_pos):
+        for (vx, vy) in (v1_pos, v2_pos):
+            ax_b.plot([cx, vx], [cy, vy], color="#D93025", linewidth=2.2, linestyle="-", zorder=3)
+            ax_b.add_patch(
+                FancyArrowPatch(
+                    (cx + 3.8, cy + (vy - cy) * 0.15),
+                    (vx - 3.8, vy - (vy - cy) * 0.15),
+                    arrowstyle="-|>",
+                    mutation_scale=11,
+                    linewidth=1.6,
+                    color="#D93025",
+                    zorder=4,
+                )
+            )
+
+    for cname, (cx, cy) in [("c₁ (s=1)", c1_pos), ("c₂ (s=1)", c2_pos)]:
+        ax_b.add_patch(
+            FancyBboxPatch(
+                (cx - 5.2, cy - 3.6),
+                10.4,
+                7.2,
+                boxstyle="round,pad=0.1,rounding_size=0.5",
+                facecolor="#FEE2E2",
+                edgecolor="#D93025",
+                linewidth=1.8,
+                zorder=5,
+            )
+        )
+        ax_b.text(cx, cy, cname, ha="center", va="center", fontsize=8.3, fontweight="bold", color="#991B1B", zorder=6)
+
+    for vname, (vx, vy) in [("v₁ (L₀=+2)", v1_pos), ("v₂ (L₀=+2)", v2_pos)]:
+        ax_b.add_patch(
+            mpatches.Ellipse((vx, vy), width=11.5, height=7.2, facecolor="#FEF3C7", edgecolor="#D97706", linewidth=1.8, zorder=5)
+        )
+        ax_b.text(vx, vy, vname, ha="center", va="center", fontsize=8.1, fontweight="bold", color="#92400E", zorder=6)
+
+    ax_b.text(
+        30.0,
+        80.2,
+        "μ_{c→v}^(1) = -1.6 on all 4 edges!",
+        ha="center",
+        va="center",
+        fontsize=7.6,
+        fontweight="bold",
+        color="#D93025",
+        bbox=dict(boxstyle="round,pad=0.15", fc="#FFF1F2", ec="#D93025", lw=0.8),
+        zorder=6,
+    )
+
+    # Right half of upper box: Step-by-step oscillation explanation
+    osc_lines = [
+        "• True error: e = (1, 0) or (0, 1)  ⇒  s_c₁ = 1, s_c₂ = 1",
+        "• Iter t=0 (Init): L_v₁^(0) = L_v₂^(0) = +2.0 ⇒ ê^(0) = (0, 0)",
+        "• Iter t=1 (Overshoot): Both checks send μ^(1) = -1.6 to",
+        "  BOTH v₁, v₂ ⇒ L_v^(1) = +2.0 - 3.2 = -1.2 ⇒ ê^(1) = (1, 1)!",
+        "• Iter t=2 (Snap back): Extrinsic V→C shrinks to m^(1) = +0.4",
+        "  ⇒ μ^(2) = -0.32 ⇒ L_v^(2) = +1.36 > 0 ⇒ ê^(2) = (0, 0)!",
+        "• Result: Hê^(t) = (0, 0) ≠ (1, 1) at EVERY iteration t!",
+    ]
+    ax_b.text(
+        52.5,
+        69.0,
+        "\n".join(osc_lines),
+        ha="left",
+        va="center",
+        fontsize=7.55,
+        color="#1E293B",
+        linespacing=1.36,
+        zorder=5,
+    )
+
+    # Lower box: Trajectory Plot of L_v1^(t) = L_v2^(t) across iterations t = 0..4
+    ax_b.add_patch(
+        FancyBboxPatch(
+            (4.0, 3.2),
+            92.0,
+            47.5,
+            boxstyle="round,pad=0.3,rounding_size=1.2",
+            facecolor="#FFFFFF",
+            edgecolor="#CBD5E1",
+            linewidth=1.4,
+            zorder=2,
+        )
+    )
+    ax_b.text(
+        50.0,
+        48.2,
+        "Posterior LLR Trajectory L_v₁^(t) = L_v₂^(t) Across Iterations t = 0..4 (α = 0.8 Oscillation)",
+        ha="center",
+        va="center",
+        fontsize=8.7,
+        fontweight="bold",
+        color="#0F172A",
+        zorder=4,
+    )
+
+    # Plot coordinates inside lower box: x_plot in [14, 90], y_plot in [11, 43]
+    px0, px1 = 14.0, 90.0
+    py0, py1 = 11.0, 43.0
+    ymid = 25.5  # L = 0 threshold line
+
+    # Shaded regions above (ê=0) and below (ê=1) L=0
+    ax_b.add_patch(mpatches.Rectangle((px0, ymid), px1 - px0, py1 - ymid, facecolor="#EFF6FF", alpha=0.55, zorder=2))
+    ax_b.add_patch(mpatches.Rectangle((px0, py0), px1 - px0, ymid - py0, facecolor="#FEE2E2", alpha=0.55, zorder=2))
+    ax_b.plot([px0, px1], [ymid, ymid], color="#0F172A", linewidth=1.5, linestyle="--", zorder=3)
+    ax_b.text(px1 - 1.5, py1 - 1.2, "Blue zone (L > 0): ê = (0,0)",
+              ha="right", va="top", fontsize=7.1, fontweight="bold", color="#1967D2", zorder=4)
+    ax_b.text(px1 - 1.5, py0 + 1.2, "Red zone (L < 0): ê = (1,1)",
+              ha="right", va="bottom", fontsize=7.1, fontweight="bold", color="#D93025", zorder=4)
+
+    # Y-axis labels
+    for l_val, y_coord in [(+2.0, 40.0), (+1.0, 32.75), (0.0, ymid), (-1.0, 18.25), (-2.0, 11.0)]:
+        ax_b.plot([px0 - 0.8, px0], [y_coord, y_coord], color="#475569", linewidth=1.0, zorder=4)
+        ax_b.text(px0 - 1.5, y_coord, f"{l_val:+.1f}", ha="right", va="center", fontsize=7.5, color="#475569", zorder=4)
+
+    # Trajectory points (t, L_val, label)
+    traj = [
+        (0, +2.00, "t=0: L=+2.00\nê=(0,0)"),
+        (1, -1.20, "t=1: L=-1.20\nê=(1,1) Overshoot!"),
+        (2, +1.36, "t=2: L=+1.36\nê=(0,0) Snap back!"),
+        (3, -0.69, "t=3: L=-0.69\nê=(1,1) Overshoot!"),
+        (4, +0.95, "t=4: L=+0.95\nê=(0,0) Oscillates!"),
+    ]
+    tx_coords = [px0 + 6.0 + (px1 - px0 - 12.0) * (t / 4.0) for t, _, _ in traj]
+    ty_coords = [ymid + (l_val / 2.0) * (40.0 - ymid) for _, l_val, _ in traj]
+
+    ax_b.plot(tx_coords, ty_coords, color="#D93025", linewidth=2.4, zorder=4)
+    for (t_idx, l_val, t_lbl), tx, ty in zip(traj, tx_coords, ty_coords):
+        pt_col = "#1967D2" if l_val > 0 else "#D93025"
+        ax_b.scatter([tx], [ty], s=80, color=pt_col, edgecolors="#FFFFFF", linewidths=1.3, zorder=5)
+        dy_off = 3.6 if l_val > 0 else -4.2
+        ax_b.text(
+            tx,
+            ty + dy_off,
+            t_lbl,
+            ha="center",
+            va="center",
+            fontsize=7.3,
+            fontweight="bold",
+            color=pt_col,
+            bbox=dict(boxstyle="round,pad=0.15", fc="#FFFFFF", ec=pt_col, lw=0.8),
+            zorder=6,
+        )
+        ax_b.text(tx, py0 - 2.6, f"Iter t={t_idx}", ha="center", va="top", fontsize=7.6, fontweight="bold", color="#334155", zorder=4)
+
+    ax_b.plot([px0, px0], [py0, py1], color="#475569", linewidth=1.2, zorder=4)
+    ax_b.plot([px0, px1], [py0, py0], color="#475569", linewidth=1.2, zorder=4)
+
+    plt.tight_layout(rect=[0.0, 0.0, 1.0, 0.955])
+    save_figure_everywhere(fig, canonical_stem, out_dirs)
+    return {
+        "stem": canonical_stem,
+        "tags": ["cc_d11", "bb_d6", "mitten_d10", "hyp_iter40"],
+        "decoders": ["O"],
+        "json_sources": ["benchmarking/data/ablation_4circuits_results.json"],
+        "commands": ["./bazel-bin/src/tesseract --bp-serial --bp-reweight=soft"],
+        "export_cmd": f"python3 benchmarking/viz/export_static.py --figure {canonical_stem}",
+    }
+
+
+def plot_gari_biclique_hmatrix(
+    canonical_stem: str,
+    out_dirs: List[pathlib.Path],
+) -> Dict[str, Any]:
+    """2-panel side-by-side diagram showing BOTH the Tanner Graph AND Parity-Check Matrix H transformations:
+    (a) GARI GF(2) Row-XOR 4-Cycle Elimination (R_{c2} <- R_{c2} (+) R_{c1}, canceling '1 1 1' -> '0 0 0').
+    (b) Biclique K_{3,4} Factor Synthesis (z_k = v1 (+) v2 (+) v3 (+) v4, reducing 12 ones -> 7 edges & 18 -> 0 4-cycles).
+    """
+    fig, (ax_a, ax_b) = plt.subplots(1, 2, figsize=(17.4, 8.0), dpi=220)
+    fig.suptitle(
+        "Cycle Breaking in Tanner Graphs & Parity-Check Matrices H: (a) GARI Row-XOR vs. (b) Biclique K_{a,b} Factor Synthesis",
+        fontsize=13.4,
+        fontweight="bold",
+        color="#0F172A",
+        y=0.985,
+    )
+
+    for ax, title, sub, bcol, bgcol in [
+        (
+            ax_a,
+            "(a) GARI GF(2) Row-XOR Elimination (R_{c₂} ← R_{c₂} ⊕ R_{c₁})",
+            "Cancels shared fault columns ('1 1 1' → '0 0 0') in H, eliminating all 3 shared-fault 4-cycles",
+            "#1967D2",
+            "#F8FAFC",
+        ),
+        (
+            ax_b,
+            "(b) Biclique K_{3,4} Auxiliary Factor Synthesis (z_k = v₁ ⊕ v₂ ⊕ v₃ ⊕ v₄)",
+            "Replaces dense a×b all-ones block (12 ones, 18 4-cycles) with star factor z_k (7 star edges + 1 link = 8 ones, 0 4-cycles)",
+            "#1E8E3E",
+            "#F0FDF4",
+        ),
+    ]:
+        ax.set_xlim(0, 100)
+        ax.set_ylim(0, 100)
+        ax.set_autoscale_on(False)
+        ax.axis("off")
+        ax.add_patch(
+            FancyBboxPatch(
+                (1.0, 1.0),
+                98.0,
+                97.5,
+                boxstyle="round,pad=0.4,rounding_size=1.6",
+                facecolor=bgcol,
+                edgecolor=bcol,
+                linewidth=2.0,
+                zorder=1,
+            )
+        )
+        ax.text(50.0, 96.0, title, ha="center", va="top", fontsize=10.6, fontweight="bold", color=bcol, zorder=3)
+        ax.text(50.0, 92.2, sub, ha="center", va="top", fontsize=8.2, fontstyle="italic", color="#334155", zorder=3)
+
+    # -------------------------------------------------------------------------
+    # PANEL (a): GARI Row-XOR Transformation (Tanner Graph + Matrix H -> H')
+    # -------------------------------------------------------------------------
+    # Left Card: Before Row-XOR
+    ax_a.add_patch(
+        FancyBboxPatch(
+            (3.0, 22.0),
+            39.0,
+            66.5,
+            boxstyle="round,pad=0.3,rounding_size=1.1",
+            facecolor="#FFFFFF",
+            edgecolor="#FCA5A5",
+            linewidth=1.5,
+            zorder=2,
+        )
+    )
+    ax_a.text(22.5, 86.0, "BEFORE: Shared-Fault 4-Cycles", ha="center", va="center", fontsize=8.8, fontweight="bold", color="#D93025", zorder=4)
+
+    # Tanner graph Before (c1, c2 at y=75, 60; v1, v2, v3, v4 at x=34.5, y=81, 72.5, 64, 55.5)
+    c_pos_aL = [(10.0, 75.0, "c₁"), (10.0, 60.0, "c₂")]
+    v_pos_aL = [(34.5, 81.0, "v₁"), (34.5, 72.5, "v₂"), (34.5, 64.0, "v₃"), (34.5, 55.5, "v₄")]
+    for vi in range(3):
+        ax_a.plot([10.0, 34.5], [75.0, v_pos_aL[vi][1]], color="#1967D2", linewidth=1.8, zorder=3)
+        ax_a.plot([10.0, 34.5], [60.0, v_pos_aL[vi][1]], color="#D93025", linewidth=2.1, linestyle="--", zorder=3)
+    ax_a.plot([10.0, 34.5], [60.0, 55.5], color="#475569", linewidth=1.8, zorder=3)
+
+    for cx, cy, cl in c_pos_aL:
+        ax_a.add_patch(FancyBboxPatch((cx - 3.0, cy - 2.6), 6.0, 5.2, boxstyle="round,pad=0.08,rounding_size=0.4",
+                                      facecolor="#DBEAFE", edgecolor="#1967D2", linewidth=1.6, zorder=5))
+        ax_a.text(cx, cy, cl, ha="center", va="center", fontsize=8.5, fontweight="bold", color="#1E3A8A", zorder=6)
+    for vx, vy, vl in v_pos_aL:
+        ax_a.add_patch(mpatches.Ellipse((vx, vy), width=6.0, height=4.8, facecolor="#FEE2E2" if vl != "v₄" else "#F1F5F9",
+                                        edgecolor="#D93025" if vl != "v₄" else "#64748B", linewidth=1.5, zorder=5))
+        ax_a.text(vx, vy, vl, ha="center", va="center", fontsize=8.2, fontweight="bold", color="#0F172A", zorder=6)
+
+    # Matrix H Before
+    mat_h_before = [[1, 1, 1, 0], [1, 1, 1, 1]]
+    styles_before = {
+        (1, 0): ("#FEE2E2", "#D93025", "#991B1B"),
+        (1, 1): ("#FEE2E2", "#D93025", "#991B1B"),
+        (1, 2): ("#FEE2E2", "#D93025", "#991B1B"),
+    }
+    _draw_labeled_matrix(
+        ax_a,
+        8.5,
+        28.0,
+        29.0,
+        15.5,
+        mat_h_before,
+        ["c₁", "c₂"],
+        ["v₁", "v₂", "v₃", "v₄"],
+        styles_before,
+        title="Matrix H (7 ones, three 4-cycles)",
+        font_size=8.4,
+    )
+    ax_a.text(22.5, 24.3, "Row c₂ duplicates '1 1 1' on v₁, v₂, v₃", ha="center", va="center", fontsize=7.6, fontweight="bold", color="#D93025", zorder=5)
+
+    # Center Arrow
+    ax_a.add_patch(
+        FancyArrowPatch((43.0, 52.0), (57.0, 52.0), arrowstyle="-|>", mutation_scale=15, linewidth=2.5, color="#1967D2", zorder=5)
+    )
+    ax_a.text(
+        50.0,
+        61.5,
+        "GF(2) Row-XOR\nR_{c₂} ← R_{c₂}⊕R_{c₁}\ns'_{c₂} = s_{c₂}⊕s_{c₁}",
+        ha="center",
+        va="center",
+        fontsize=7.2,
+        fontweight="bold",
+        color="#1967D2",
+        bbox=dict(boxstyle="round,pad=0.18", fc="#EFF6FF", ec="#1967D2", lw=0.9),
+        zorder=6,
+    )
+
+    # Right Card: After Row-XOR
+    ax_a.add_patch(
+        FancyBboxPatch(
+            (58.0, 22.0),
+            39.0,
+            66.5,
+            boxstyle="round,pad=0.3,rounding_size=1.1",
+            facecolor="#FFFFFF",
+            edgecolor="#86EFAC",
+            linewidth=1.5,
+            zorder=2,
+        )
+    )
+    ax_a.text(77.5, 86.0, "AFTER: Tree-Like Graph & H'", ha="center", va="center", fontsize=8.8, fontweight="bold", color="#14532D", zorder=4)
+
+    c_pos_aR = [(65.0, 75.0, "c₁"), (65.0, 60.0, "c'₂")]
+    v_pos_aR = [(89.5, 81.0, "v₁"), (89.5, 72.5, "v₂"), (89.5, 64.0, "v₃"), (89.5, 55.5, "v₄")]
+    for vi in range(3):
+        ax_a.plot([65.0, 89.5], [75.0, v_pos_aR[vi][1]], color="#1967D2", linewidth=1.9, zorder=3)
+    ax_a.plot([65.0, 89.5], [60.0, 55.5], color="#1E8E3E", linewidth=2.2, zorder=3)
+
+    for cx, cy, cl in c_pos_aR:
+        ax_a.add_patch(FancyBboxPatch((cx - 3.0, cy - 2.6), 6.0, 5.2, boxstyle="round,pad=0.08,rounding_size=0.4",
+                                      facecolor="#DCFCE7" if cl == "c'₂" else "#DBEAFE",
+                                      edgecolor="#1E8E3E" if cl == "c'₂" else "#1967D2", linewidth=1.6, zorder=5))
+        ax_a.text(cx, cy, cl, ha="center", va="center", fontsize=8.5, fontweight="bold", color="#0F172A", zorder=6)
+    for vx, vy, vl in v_pos_aR:
+        ax_a.add_patch(mpatches.Ellipse((vx, vy), width=6.0, height=4.8, facecolor="#DCFCE7", edgecolor="#1E8E3E", linewidth=1.5, zorder=5))
+        ax_a.text(vx, vy, vl, ha="center", va="center", fontsize=8.2, fontweight="bold", color="#14532D", zorder=6)
+
+    mat_h_after = [[1, 1, 1, 0], [0, 0, 0, 1]]
+    styles_after = {
+        (1, 0): ("#DCFCE7", "#1E8E3E", "#14532D"),
+        (1, 1): ("#DCFCE7", "#1E8E3E", "#14532D"),
+        (1, 2): ("#DCFCE7", "#1E8E3E", "#14532D"),
+        (1, 3): ("#DBEAFE", "#1967D2", "#1E3A8A"),
+    }
+    _draw_labeled_matrix(
+        ax_a,
+        63.5,
+        28.0,
+        29.0,
+        15.5,
+        mat_h_after,
+        ["c₁", "c'₂"],
+        ["v₁", "v₂", "v₃", "v₄"],
+        styles_after,
+        title="Matrix H' (4 ones, ZERO 4-cycles!)",
+        font_size=8.4,
+    )
+    ax_a.text(77.5, 24.3, "'1 1 1' canceled to '0 0 0'; c'₂ isolates v₄!", ha="center", va="center", fontsize=7.6, fontweight="bold", color="#14532D", zorder=5)
+
+    # Bottom takeaway in Panel (a)
+    ax_a.add_patch(
+        FancyBboxPatch((3.0, 3.2), 94.0, 16.5, boxstyle="round,pad=0.3,rounding_size=1.0", facecolor="#EFF6FF", edgecolor="#1967D2", linewidth=1.3, zorder=2)
+    )
+    ax_a.text(
+        5.2,
+        11.4,
+        "• Exact Syndrome Equivalence: Because H' e = R H e = R s (mod 2), any error pattern e satisfies H e = s iff H' e = s'.\n"
+        "• When Row-XOR Is Ideal: Whenever two checks c₁, c₂ share k ≥ 2 fault columns with small non-overlapping support,\n"
+        "  replacing R_{c₂} ← R_{c₂} ⊕ R_{c₁} cancels the shared '1 1 ... 1' entries to '0 0 ... 0' with zero extra variables.",
+        ha="left",
+        va="center",
+        fontsize=7.65,
+        color="#0F172A",
+        linespacing=1.36,
+        zorder=4,
+    )
+
+    # -------------------------------------------------------------------------
+    # PANEL (b): Biclique K_{3,4} Factor Synthesis (Tanner Graph + Matrix H -> H_ext)
+    # -------------------------------------------------------------------------
+    # Left Card: Before K_{3,4}
+    ax_b.add_patch(
+        FancyBboxPatch(
+            (3.0, 22.0),
+            39.0,
+            66.5,
+            boxstyle="round,pad=0.3,rounding_size=1.1",
+            facecolor="#FFFFFF",
+            edgecolor="#FCA5A5",
+            linewidth=1.5,
+            zorder=2,
+        )
+    )
+    ax_b.text(22.5, 86.0, "BEFORE: Dense K_{3,4} Biclique", ha="center", va="center", fontsize=8.8, fontweight="bold", color="#D93025", zorder=4)
+
+    c_pos_bL = [(10.0, 79.0, "c₁"), (10.0, 69.0, "c₂"), (10.0, 59.0, "c₃")]
+    v_pos_bL = [(34.5, 82.0, "v₁"), (34.5, 73.3, "v₂"), (34.5, 64.6, "v₃"), (34.5, 56.0, "v₄")]
+    for cx, cy, _ in c_pos_bL:
+        for vx, vy, _ in v_pos_bL:
+            ax_b.plot([cx, vx], [cy, vy], color="#D93025", linewidth=1.3, alpha=0.75, zorder=3)
+    for cx, cy, cl in c_pos_bL:
+        ax_b.add_patch(FancyBboxPatch((cx - 2.8, cy - 2.4), 5.6, 4.8, boxstyle="round,pad=0.06,rounding_size=0.4",
+                                      facecolor="#FEE2E2", edgecolor="#D93025", linewidth=1.5, zorder=5))
+        ax_b.text(cx, cy, cl, ha="center", va="center", fontsize=8.2, fontweight="bold", color="#991B1B", zorder=6)
+    for vx, vy, vl in v_pos_bL:
+        ax_b.add_patch(mpatches.Ellipse((vx, vy), width=5.8, height=4.6, facecolor="#FEE2E2", edgecolor="#D93025", linewidth=1.5, zorder=5))
+        ax_b.text(vx, vy, vl, ha="center", va="center", fontsize=8.0, fontweight="bold", color="#991B1B", zorder=6)
+
+    mat_k34_before = [[1, 1, 1, 1], [1, 1, 1, 1], [1, 1, 1, 1]]
+    styles_k34_before = {(r, c): ("#FEE2E2", "#D93025", "#991B1B") for r in range(3) for c in range(4)}
+    _draw_labeled_matrix(
+        ax_b,
+        8.5,
+        27.5,
+        29.0,
+        19.0,
+        mat_k34_before,
+        ["c₁", "c₂", "c₃"],
+        ["v₁", "v₂", "v₃", "v₄"],
+        styles_k34_before,
+        title="H_{K3,4} (3×4 = 12 ones, 18 4-cycles)",
+        font_size=8.2,
+    )
+    ax_b.text(22.5, 24.3, "C(3,2)×C(4,2) = 18 tangled 4-cycles", ha="center", va="center", fontsize=7.6, fontweight="bold", color="#D93025", zorder=5)
+
+    # Center Arrow
+    ax_b.add_patch(
+        FancyArrowPatch((43.0, 52.0), (57.0, 52.0), arrowstyle="-|>", mutation_scale=15, linewidth=2.5, color="#1E8E3E", zorder=5)
+    )
+    ax_b.text(
+        50.0,
+        61.5,
+        "Factor Synthesis\nz_k = v₁⊕v₂⊕v₃⊕v₄\n12 → 8 ones (7+1)!",
+        ha="center",
+        va="center",
+        fontsize=7.2,
+        fontweight="bold",
+        color="#14532D",
+        bbox=dict(boxstyle="round,pad=0.18", fc="#DCFCE7", ec="#1E8E3E", lw=0.9),
+        zorder=6,
+    )
+
+    # Right Card: After K_{3,4} -> Star via z_k
+    ax_b.add_patch(
+        FancyBboxPatch(
+            (58.0, 22.0),
+            39.0,
+            66.5,
+            boxstyle="round,pad=0.3,rounding_size=1.1",
+            facecolor="#FFFFFF",
+            edgecolor="#86EFAC",
+            linewidth=1.5,
+            zorder=2,
+        )
+    )
+    ax_b.text(77.5, 86.0, "AFTER: Star Factor Graph & H_ext", ha="center", va="center", fontsize=8.8, fontweight="bold", color="#14532D", zorder=4)
+
+    c_pos_bR = [(63.5, 79.0, "c₁"), (63.5, 69.0, "c₂"), (63.5, 59.0, "c₃")]
+    zk_pos = (77.0, 69.0)
+    v_pos_bR = [(90.5, 82.0, "v₁"), (90.5, 73.3, "v₂"), (90.5, 64.6, "v₃"), (90.5, 56.0, "v₄")]
+    for cx, cy, _ in c_pos_bR:
+        ax_b.plot([cx, zk_pos[0]], [cy, zk_pos[1]], color="#1E8E3E", linewidth=2.1, zorder=3)
+    for vx, vy, _ in v_pos_bR:
+        ax_b.plot([zk_pos[0], vx], [zk_pos[1], vy], color="#1967D2", linewidth=2.0, zorder=3)
+
+    for cx, cy, cl in c_pos_bR:
+        ax_b.add_patch(FancyBboxPatch((cx - 2.7, cy - 2.3), 5.4, 4.6, boxstyle="round,pad=0.06,rounding_size=0.4",
+                                      facecolor="#DCFCE7", edgecolor="#1E8E3E", linewidth=1.5, zorder=5))
+        ax_b.text(cx, cy, cl, ha="center", va="center", fontsize=8.0, fontweight="bold", color="#14532D", zorder=6)
+
+    ax_b.add_patch(FancyBboxPatch((zk_pos[0] - 3.4, zk_pos[1] - 3.0), 6.8, 6.0, boxstyle="round,pad=0.08,rounding_size=0.6",
+                                  facecolor="#FEF3C7", edgecolor="#D97706", linewidth=2.0, zorder=6))
+    ax_b.text(zk_pos[0], zk_pos[1], "z_k", ha="center", va="center", fontsize=8.6, fontweight="bold", color="#92400E", zorder=7)
+
+    for vx, vy, vl in v_pos_bR:
+        ax_b.add_patch(mpatches.Ellipse((vx, vy), width=5.6, height=4.4, facecolor="#EFF6FF", edgecolor="#1967D2", linewidth=1.5, zorder=5))
+        ax_b.text(vx, vy, vl, ha="center", va="center", fontsize=7.9, fontweight="bold", color="#1E3A8A", zorder=6)
+
+    mat_k34_after = [
+        [0, 0, 0, 0, 1],
+        [0, 0, 0, 0, 1],
+        [0, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1],
+    ]
+    styles_k34_after = {}
+    for r in range(3):
+        for c in range(4):
+            styles_k34_after[(r, c)] = ("#DCFCE7", "#86EFAC", "#15803D")
+        styles_k34_after[(r, 4)] = ("#FEF3C7", "#D97706", "#92400E")
+    for c in range(4):
+        styles_k34_after[(3, c)] = ("#DBEAFE", "#1967D2", "#1E3A8A")
+    styles_k34_after[(3, 4)] = ("#FEF3C7", "#D97706", "#92400E")
+
+    _draw_labeled_matrix(
+        ax_b,
+        63.0,
+        27.5,
+        31.0,
+        19.5,
+        mat_k34_after,
+        ["c₁", "c₂", "c₃", "c_zk"],
+        ["v₁", "v₂", "v₃", "v₄", "z_k"],
+        styles_k34_after,
+        title="H_ext (3×4 block cleared → 0 4-cycles!)",
+        font_size=7.8,
+    )
+    ax_b.text(77.5, 24.3, "7 star edges + 1 z_k–c_z link (8 ones, 0 cycles)", ha="center", va="center", fontsize=7.6, fontweight="bold", color="#14532D", zorder=5)
+
+    # Bottom takeaway in Panel (b): Why K_{2,2} uses Row-XOR whereas K_{a,b} (ab > a+b) uses Factor Synthesis
+    ax_b.add_patch(
+        FancyBboxPatch((3.0, 3.2), 94.0, 16.5, boxstyle="round,pad=0.3,rounding_size=1.0", facecolor="#ECFDF5", edgecolor="#1E8E3E", linewidth=1.3, zorder=2)
+    )
+    ax_b.text(
+        5.2,
+        11.4,
+        "• Why 2×2 4-Cycles (K_{2,2}) Use Row-XOR While Larger Bicliques K_{a,b} Use Factor Synthesis:\n"
+        "  For a single 4-cycle (a=2, b=2), a·b = 4 = a+b (and 5 ones with the z_k–c_z link), so introducing z_k does not reduce weight.\n"
+        "  For dense bicliques with a·b > a+b+1 (such as K_{3,4}: 12 → 8 ones, 18 → 0 4-cycles), factor synthesis strictly sparsifies H.",
+        ha="left",
+        va="center",
+        fontsize=7.65,
+        color="#0F172A",
+        linespacing=1.36,
+        zorder=4,
+    )
+
+    plt.tight_layout(rect=[0.0, 0.0, 1.0, 0.955])
+    save_figure_everywhere(fig, canonical_stem, out_dirs)
+    return {
+        "stem": canonical_stem,
+        "tags": ["cc_d11", "bb_d6", "mitten_d10"],
+        "decoders": ["G", "O"],
+        "json_sources": ["benchmarking/data/color_codes.json", "benchmarking/data/bivariate_bicycle.json"],
+        "commands": ["./bazel-bin/src/tesseract --multipass --bp-merge-duplicates"],
+        "export_cmd": f"python3 benchmarking/viz/export_static.py --figure {canonical_stem}",
+    }
+
+
+def plot_multipass_tanner(
+    canonical_stem: str,
+    out_dirs: List[pathlib.Path],
+) -> Dict[str, Any]:
+    """4-panel progressive Tanner Graph & Parity-Check Matrix H transformation for Multi-Pass BP-OSD:
+    Stage 1: Raw Monolithic DEM -> Stage 2: Duplicate-Symptom Fault Merging ->
+    Stage 3: X/Z Connected-Component Shattering -> Stage 4: Soft (75%/25%) Cross-Pass Prior Injection.
+    """
+    fig, axes = plt.subplots(1, 4, figsize=(19.2, 7.2), dpi=220)
+    fig.suptitle(
+        "Four-Stage Multi-Pass DEM & Tanner Graph Transformation: From Coupled Monolithic DEM to Soft-Reweighted Sector Graphs",
+        fontsize=13.4,
+        fontweight="bold",
+        color="#0F172A",
+        y=0.985,
+    )
+
+    stage_specs = [
+        (
+            "(1) Raw Monolithic DEM",
+            "Duplicate fault columns & X/Z Y-bridges",
+            "#64748B",
+            "#F8FAFC",
+        ),
+        (
+            "(2) Duplicate-Symptom Merge",
+            "--bp-merge-duplicates (p* = p_a⊕p_b)",
+            "#1967D2",
+            "#EFF6FF",
+        ),
+        (
+            "(3) X/Z Sector Shattering",
+            "--multipass (Decoupled H_X ⊕ H_Z)",
+            "#00796B",
+            "#F0FDFA",
+        ),
+        (
+            "(4) Soft (75%/25%) Reweighting",
+            "--bp-reweight=soft (Cross-pass prior)",
+            "#1E8E3E",
+            "#F0FDF4",
+        ),
+    ]
+
+    for ax, (stitle, ssub, bcol, bgcol) in zip(axes, stage_specs):
+        ax.set_xlim(0, 100)
+        ax.set_ylim(0, 100)
+        ax.set_autoscale_on(False)
+        ax.axis("off")
+        ax.add_patch(
+            FancyBboxPatch(
+                (1.5, 1.5),
+                97.0,
+                96.5,
+                boxstyle="round,pad=0.35,rounding_size=1.5",
+                facecolor=bgcol,
+                edgecolor=bcol,
+                linewidth=2.0,
+                zorder=1,
+            )
+        )
+        ax.text(50.0, 95.5, stitle, ha="center", va="top", fontsize=10.2, fontweight="bold", color=bcol, zorder=3)
+        ax.text(50.0, 91.2, ssub, ha="center", va="top", fontsize=8.0, fontstyle="italic", color="#334155", zorder=3)
+        ax.add_patch(
+            FancyBboxPatch(
+                (5.0, 49.0),
+                90.0,
+                38.5,
+                boxstyle="round,pad=0.25,rounding_size=1.0",
+                facecolor="#FFFFFF",
+                edgecolor="#CBD5E1",
+                linewidth=1.2,
+                zorder=2,
+            )
+        )
+
+    # -------------------------------------------------------------------------
+    # STAGE 1: Raw Monolithic DEM
+    # -------------------------------------------------------------------------
+    ax0 = axes[0]
+    ax0.text(50.0, 84.8, "Tanner Graph: Parallel Clones & Y-Bridge", ha="center", va="center", fontsize=8.2, fontweight="bold", color="#334155", zorder=4)
+    c_s1 = [(18.0, 77.0, "c₁^X", "#DBEAFE", "#1967D2"), (18.0, 67.0, "c₂^X", "#DBEAFE", "#1967D2"),
+            (18.0, 58.0, "c₁^Z", "#FEF3C7", "#D97706"), (18.0, 51.5, "c₂^Z", "#FEF3C7", "#D97706")]
+    v_s1 = [(78.0, 80.5, "f₁a", "#FEE2E2", "#D93025"), (78.0, 72.5, "f₁b", "#FEE2E2", "#D93025"),
+            (78.0, 63.5, "f_Y", "#FCE7F3", "#DB2777"), (78.0, 54.0, "f₂a,b", "#FEE2E2", "#D93025")]
+    # Edges showing 2-variable 4-cycle on f1a, f1b and cross-basis Y bridge
+    for vy in (80.5, 72.5):
+        ax0.plot([24.0, 71.0], [77.0, vy], color="#D93025", linewidth=1.8, zorder=3)
+        ax0.plot([24.0, 71.0], [67.0, vy], color="#D93025", linewidth=1.8, linestyle="--", zorder=3)
+    ax0.plot([24.0, 71.0], [67.0, 63.5], color="#DB2777", linewidth=1.9, zorder=3)
+    ax0.plot([24.0, 71.0], [58.0, 63.5], color="#DB2777", linewidth=1.9, zorder=3)
+    ax0.plot([24.0, 71.0], [58.0, 54.0], color="#D97706", linewidth=1.7, zorder=3)
+    ax0.plot([24.0, 71.0], [51.5, 54.0], color="#D97706", linewidth=1.7, zorder=3)
+
+    for cx, cy, cl, fc, ec in c_s1:
+        ax0.add_patch(FancyBboxPatch((cx - 5.5, cy - 2.6), 11.0, 5.2, boxstyle="round,pad=0.05,rounding_size=0.4", facecolor=fc, edgecolor=ec, linewidth=1.4, zorder=5))
+        ax0.text(cx, cy, cl, ha="center", va="center", fontsize=7.8, fontweight="bold", color="#0F172A", zorder=6)
+    for vx, vy, vl, fc, ec in v_s1:
+        ax0.add_patch(mpatches.Ellipse((vx, vy), width=13.5, height=5.4, facecolor=fc, edgecolor=ec, linewidth=1.5, zorder=5))
+        ax0.text(vx, vy, vl, ha="center", va="center", fontsize=7.6, fontweight="bold", color="#0F172A", zorder=6)
+
+    mat_s1 = [
+        [1, 1, 0, 0, 0],
+        [1, 1, 1, 0, 0],
+        [0, 0, 1, 1, 1],
+        [0, 0, 0, 1, 1],
+    ]
+    styles_s1 = {
+        (0, 0): ("#FEE2E2", "#D93025", "#991B1B"), (0, 1): ("#FEE2E2", "#D93025", "#991B1B"),
+        (1, 0): ("#FEE2E2", "#D93025", "#991B1B"), (1, 1): ("#FEE2E2", "#D93025", "#991B1B"),
+        (1, 2): ("#FCE7F3", "#DB2777", "#9D174D"), (2, 2): ("#FCE7F3", "#DB2777", "#9D174D"),
+        (2, 3): ("#FEE2E2", "#D93025", "#991B1B"), (2, 4): ("#FEE2E2", "#D93025", "#991B1B"),
+        (3, 3): ("#FEE2E2", "#D93025", "#991B1B"), (3, 4): ("#FEE2E2", "#D93025", "#991B1B"),
+    }
+    _draw_labeled_matrix(
+        ax0, 14.0, 21.0, 74.0, 20.5, mat_s1,
+        ["c₁^X", "c₂^X", "c₁^Z", "c₂^Z"],
+        ["f₁a", "f₁b", "f_Y", "f₂a", "f₂b"],
+        styles_s1, title="H_raw (Duplicate Cols + Y-Coupling)", font_size=7.8,
+    )
+    ax0.text(50.0, 10.5, "• Identical columns f₁a, f₁b form trivial\n  length-4 cycles.\n• Color d=11: 2,852 raw fault columns.",
+             ha="center", va="center", fontsize=7.8, color="#1E293B", linespacing=1.32, zorder=5)
+
+    # -------------------------------------------------------------------------
+    # STAGE 2: Duplicate-Symptom Fault Merging
+    # -------------------------------------------------------------------------
+    ax1 = axes[1]
+    ax1.text(50.0, 84.8, "Coalesced Variables: f₁* = f₁a ⊕ f₁b", ha="center", va="center", fontsize=8.2, fontweight="bold", color="#1967D2", zorder=4)
+    v_s2 = [(78.0, 76.0, "f₁* (merged)", "#DBEAFE", "#1967D2"),
+            (78.0, 64.0, "f_Y", "#FCE7F3", "#DB2777"),
+            (78.0, 53.5, "f₂* (merged)", "#DBEAFE", "#1967D2")]
+    ax1.plot([24.0, 67.5], [77.0, 76.0], color="#1967D2", linewidth=2.2, zorder=3)
+    ax1.plot([24.0, 67.5], [67.0, 76.0], color="#1967D2", linewidth=2.2, zorder=3)
+    ax1.plot([24.0, 67.5], [67.0, 64.0], color="#DB2777", linewidth=1.9, zorder=3)
+    ax1.plot([24.0, 67.5], [58.0, 64.0], color="#DB2777", linewidth=1.9, zorder=3)
+    ax1.plot([24.0, 67.5], [58.0, 53.5], color="#1967D2", linewidth=2.2, zorder=3)
+    ax1.plot([24.0, 67.5], [51.5, 53.5], color="#1967D2", linewidth=2.2, zorder=3)
+
+    for cx, cy, cl, fc, ec in c_s1:
+        ax1.add_patch(FancyBboxPatch((cx - 5.5, cy - 2.6), 11.0, 5.2, boxstyle="round,pad=0.05,rounding_size=0.4", facecolor=fc, edgecolor=ec, linewidth=1.4, zorder=5))
+        ax1.text(cx, cy, cl, ha="center", va="center", fontsize=7.8, fontweight="bold", color="#0F172A", zorder=6)
+    for vx, vy, vl, fc, ec in v_s2:
+        ax1.add_patch(mpatches.Ellipse((vx, vy), width=21.0, height=5.8, facecolor=fc, edgecolor=ec, linewidth=1.7, zorder=5))
+        ax1.text(vx, vy, vl, ha="center", va="center", fontsize=7.4, fontweight="bold", color="#0F172A", zorder=6)
+
+    mat_s2 = [
+        [1, 0, 0],
+        [1, 1, 0],
+        [0, 1, 1],
+        [0, 0, 1],
+    ]
+    styles_s2 = {
+        (0, 0): ("#DBEAFE", "#1967D2", "#1E3A8A"), (1, 0): ("#DBEAFE", "#1967D2", "#1E3A8A"),
+        (1, 1): ("#FCE7F3", "#DB2777", "#9D174D"), (2, 1): ("#FCE7F3", "#DB2777", "#9D174D"),
+        (2, 2): ("#DBEAFE", "#1967D2", "#1E3A8A"), (3, 2): ("#DBEAFE", "#1967D2", "#1E3A8A"),
+    }
+    _draw_labeled_matrix(
+        ax1, 20.0, 21.0, 62.0, 20.5, mat_s2,
+        ["c₁^X", "c₂^X", "c₁^Z", "c₂^Z"],
+        ["f₁*", "f_Y", "f₂*"],
+        styles_s2, title="H_merged (Unique Columns Only)", font_size=7.8,
+    )
+    ax1.text(50.0, 10.5, "• Exact prior: p* = p_a(1-p_b) + p_b(1-p_a).\n• Collapses 2,852 → 1,599 cols (-44%)\n  on Color d=11; removes clone 4-cycles!",
+             ha="center", va="center", fontsize=7.8, color="#1E293B", linespacing=1.32, zorder=5)
+
+    # -------------------------------------------------------------------------
+    # STAGE 3: X/Z Connected-Component Shattering
+    # -------------------------------------------------------------------------
+    ax2 = axes[2]
+    ax2.text(50.0, 84.8, "Pass 1 (G_X) & Pass 2 (G_Z) Disjoint", ha="center", va="center", fontsize=8.2, fontweight="bold", color="#00796B", zorder=4)
+    # Disconnected X sector (top) and Z sector (bottom) with dashed divider
+    ax2.plot([8.0, 92.0], [64.2, 64.2], color="#00796B", linewidth=1.5, linestyle="--", zorder=4)
+    ax2.text(50.0, 64.2, "Zero Cross-Basis Edges", ha="center", va="center", fontsize=7.1, fontweight="bold",
+             color="#00796B", bbox=dict(boxstyle="round,pad=0.14", fc="#F0FDFA", ec="#00796B", lw=0.8), zorder=6)
+
+    ax2.plot([24.0, 70.0], [77.5, 73.5], color="#1967D2", linewidth=2.2, zorder=3)
+    ax2.plot([24.0, 70.0], [69.5, 73.5], color="#1967D2", linewidth=2.2, zorder=3)
+    ax2.plot([24.0, 70.0], [58.5, 54.5], color="#D97706", linewidth=2.2, zorder=3)
+    ax2.plot([24.0, 70.0], [51.5, 54.5], color="#D97706", linewidth=2.2, zorder=3)
+
+    for cx, cy, cl, fc, ec in [(18.0, 77.5, "c₁^X", "#DBEAFE", "#1967D2"), (18.0, 69.5, "c₂^X", "#DBEAFE", "#1967D2"),
+                               (18.0, 58.5, "c₁^Z", "#FEF3C7", "#D97706"), (18.0, 51.5, "c₂^Z", "#FEF3C7", "#D97706")]:
+        ax2.add_patch(FancyBboxPatch((cx - 5.5, cy - 2.4), 11.0, 4.8, boxstyle="round,pad=0.05,rounding_size=0.4", facecolor=fc, edgecolor=ec, linewidth=1.4, zorder=5))
+        ax2.text(cx, cy, cl, ha="center", va="center", fontsize=7.7, fontweight="bold", color="#0F172A", zorder=6)
+
+    ax2.add_patch(mpatches.Ellipse((78.0, 73.5), width=18.0, height=5.6, facecolor="#DBEAFE", edgecolor="#1967D2", linewidth=1.7, zorder=5))
+    ax2.text(78.0, 73.5, "Pass 1: f_X*", ha="center", va="center", fontsize=7.5, fontweight="bold", color="#1E3A8A", zorder=6)
+    ax2.add_patch(mpatches.Ellipse((78.0, 54.5), width=18.0, height=5.6, facecolor="#FEF3C7", edgecolor="#D97706", linewidth=1.7, zorder=5))
+    ax2.text(78.0, 54.5, "Pass 2: f_Z*", ha="center", va="center", fontsize=7.5, fontweight="bold", color="#92400E", zorder=6)
+
+    mat_s3 = [
+        [1, 1, 0, 0],
+        [1, 0, 0, 0],
+        [0, 0, 1, 1],
+        [0, 0, 0, 1],
+    ]
+    styles_s3 = {
+        (0, 0): ("#DBEAFE", "#1967D2", "#1E3A8A"), (0, 1): ("#DBEAFE", "#1967D2", "#1E3A8A"),
+        (1, 0): ("#DBEAFE", "#1967D2", "#1E3A8A"),
+        (2, 2): ("#FEF3C7", "#D97706", "#92400E"), (2, 3): ("#FEF3C7", "#D97706", "#92400E"),
+        (3, 3): ("#FEF3C7", "#D97706", "#92400E"),
+    }
+    _draw_labeled_matrix(
+        ax2, 17.0, 21.0, 68.0, 20.5, mat_s3,
+        ["c₁^X", "c₂^X", "c₁^Z", "c₂^Z"],
+        ["f₁^X", "f_Y^X", "f_Y^Z", "f₂^Z"],
+        styles_s3, title="Block-Diagonal H_X ⊕ H_Z", font_size=7.8,
+    )
+    ax2.text(50.0, 10.5, "• Single-basis projection decouples X & Z.\n• Breaks cross-basis 4-cycles; gives\n  77.9×–135.8× cumulative BP speedup!",
+             ha="center", va="center", fontsize=7.8, color="#1E293B", linespacing=1.32, zorder=5)
+
+    # -------------------------------------------------------------------------
+    # STAGE 4: Soft (75%/25%) Cross-Pass Prior Injection
+    # -------------------------------------------------------------------------
+    ax3 = axes[3]
+    ax3.text(50.0, 84.8, "Pass 3: Soft Prior L^eff = 0.75 L^post + 0.25 L^(0)", ha="center", va="center", fontsize=7.9, fontweight="bold", color="#14532D", zorder=4)
+    ax3.plot([24.0, 67.5], [77.0, 76.0], color="#1E8E3E", linewidth=2.2, zorder=3)
+    ax3.plot([24.0, 67.5], [67.0, 76.0], color="#1E8E3E", linewidth=2.2, zorder=3)
+    ax3.plot([24.0, 67.5], [67.0, 64.0], color="#1E8E3E", linewidth=2.5, zorder=4)
+    ax3.plot([24.0, 67.5], [58.0, 64.0], color="#1E8E3E", linewidth=2.5, zorder=4)
+    ax3.plot([24.0, 67.5], [58.0, 53.5], color="#1E8E3E", linewidth=2.2, zorder=3)
+    ax3.plot([24.0, 67.5], [51.5, 53.5], color="#1E8E3E", linewidth=2.2, zorder=3)
+
+    for cx, cy, cl, fc, ec in c_s1:
+        ax3.add_patch(FancyBboxPatch((cx - 5.5, cy - 2.6), 11.0, 5.2, boxstyle="round,pad=0.05,rounding_size=0.4", facecolor="#DCFCE7", edgecolor="#1E8E3E", linewidth=1.5, zorder=5))
+        ax3.text(cx, cy, cl, ha="center", va="center", fontsize=7.8, fontweight="bold", color="#14532D", zorder=6)
+    for vx, vy, vl in [(78.0, 76.0, "f₁* (0.75 L^post)"), (78.0, 64.0, "f_Y (Y-corr!)"), (78.0, 53.5, "f₂* (0.75 L^post)")]:
+        ax3.add_patch(mpatches.Ellipse((vx, vy), width=22.0, height=5.8, facecolor="#DCFCE7", edgecolor="#1E8E3E", linewidth=1.8, zorder=5))
+        ax3.text(vx, vy, vl, ha="center", va="center", fontsize=7.3, fontweight="bold", color="#14532D", zorder=6)
+
+    ax3.add_patch(
+        FancyBboxPatch((8.0, 20.5), 84.0, 23.0, boxstyle="round,pad=0.25,rounding_size=1.0", facecolor="#ECFDF5", edgecolor="#1E8E3E", linewidth=1.4, zorder=3)
+    )
+    ax3.text(50.0, 39.5, "Soft-Power Cross-Pass LLR Blending", ha="center", va="center", fontsize=8.4, fontweight="bold", color="#14532D", zorder=5)
+    ax3.text(
+        50.0,
+        31.8,
+        r"$L_v^{\mathrm{eff}} = 0.75 \, L_v^{\mathrm{post}} + 0.25 \, L_v^{(0)}$",
+        ha="center",
+        va="center",
+        fontsize=10.2,
+        fontweight="bold",
+        color="#0F172A",
+        zorder=5,
+    )
+    ax3.text(
+        50.0,
+        24.2,
+        "Propagates X↔Z Y-correlations without hard-pinning",
+        ha="center",
+        va="center",
+        fontsize=7.7,
+        fontweight="bold",
+        color="#14532D",
+        zorder=5,
+    )
+    ax3.text(50.0, 10.5, "• Resolves residual cross-sector faults.\n• Cuts end-to-end LER by 3.0×–14.5×\n  across all 4 quantum code families!",
+             ha="center", va="center", fontsize=7.8, color="#1E293B", linespacing=1.32, zorder=5)
+
+    plt.tight_layout(rect=[0.0, 0.0, 1.0, 0.955])
+    save_figure_everywhere(fig, canonical_stem, out_dirs)
+    return {
+        "stem": canonical_stem,
+        "tags": ["cc_d11", "bb_d6", "mitten_d10", "hyp_iter40"],
+        "decoders": ["O"],
+        "json_sources": ["benchmarking/data/ablation_4circuits_results.json"],
+        "commands": ["./bazel-bin/src/tesseract --multipass --bp-merge-duplicates --bp-serial --bp-reweight=soft"],
+        "export_cmd": f"python3 benchmarking/viz/export_static.py --figure {canonical_stem}",
+    }
+
+
 def _find_ablation_json() -> Optional[pathlib.Path]:
     candidates = [
         DATA_DIR / "ablation_4circuits_results.json",
@@ -2853,6 +4013,19 @@ def generate_all(target_figure: Optional[str] = None) -> List[Dict[str, Any]]:
         pathlib.Path("/usr/local/google/home/ariash/.gemini/jetski/brain/67c42a3b-49c1-44cb-a2ce-ec1851dd8f89"),
     ]
     provenance_entries.extend(plot_ablation_4circuits_suite(ablation_dirs, target_figure))
+
+    # 14. Pedagogical Paper Figures (Min-Sum & 4-Cycle, GARI/Biclique H-Matrix, 4-Stage Multi-Pass Tanner)
+    stem14 = "fig_bp_minsum_4cycle"
+    if should_run(stem14):
+        provenance_entries.append(plot_bp_minsum_4cycle(stem14, ablation_dirs))
+
+    stem15 = "fig_gari_biclique_hmatrix"
+    if should_run(stem15):
+        provenance_entries.append(plot_gari_biclique_hmatrix(stem15, ablation_dirs))
+
+    stem16 = "fig_multipass_tanner"
+    if should_run(stem16):
+        provenance_entries.append(plot_multipass_tanner(stem16, ablation_dirs))
 
     if target_figure is None:
         write_provenance_tex(provenance_entries, out_dirs)
