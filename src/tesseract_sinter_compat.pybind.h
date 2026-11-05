@@ -48,7 +48,7 @@ struct TesseractSinterCompiledDecoder {
       const py::array_t<uint8_t>& bit_packed_detection_event_data) {
     return decode_sinter_shots_bit_packed(*decoder, num_detectors, num_observables,
                                           bit_packed_detection_event_data,
-                                          SinterOutputFormat::Predictions);
+                                          SinterOutputFormat::PredictionsAndDiscard);
   }
 };
 
@@ -283,8 +283,10 @@ void pybind_sinter_compat(py::module& root) {
                     `(num_shots, ceil(num_detectors / 8))`. Each byte contains
                     8 bits of detection event data. A `1` in bit `k` of byte `j`
                     indicates that detector `8j + k` fired.
-                :return: A 2D numpy array of shape `(num_shots, ceil(num_observables / 8))`
-                    containing the predicted observable flips in a bit-packed format.
+                :return: A 2D numpy array of shape
+                    `(num_shots, ceil(num_observables / 8) + 1)`. The first bytes contain
+                    predicted observable flips in bit-packed format. The final byte is nonzero
+                    when Sinter should discard the shot because decoding had low confidence.
             )pbdoc")
       .def_readwrite("num_detectors", &TesseractSinterCompiledDecoder::num_detectors,
                      R"pbdoc(The number of detectors in the decoder's underlying DEM.)pbdoc")
