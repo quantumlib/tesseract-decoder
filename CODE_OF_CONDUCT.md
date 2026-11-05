@@ -3,7 +3,7 @@
 ## Our Pledge
 
 In the interest of fostering an open and welcoming environment, we as
-contributors and maintainers pledge to making participation in our project and
+contributors and maintainers pledge to make participation in our project and
 our community a harassment-free experience for everyone, regardless of age, body
 size, disability, ethnicity, gender identity and expression, level of
 experience, education, socio-economic status, nationality, personal appearance,
@@ -60,7 +60,7 @@ negative impact on the project or its community.
 
 We do not believe that all conflict is bad; healthy debate and disagreement
 often yield positive results. However, it is never okay to be disrespectful or
-to engage in behavior that violates the project’s Code of Conduct.
+to engage in behavior that violates the project's Code of Conduct.
 
 If you see someone violating the Code of Conduct, you are encouraged to address
 the behavior directly with those involved. Many issues can be resolved quickly

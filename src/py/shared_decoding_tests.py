@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http:#www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -239,7 +239,7 @@ def shared_test_decode_complex_dem(decoder_class, config_class):
 
 def shared_test_decode_batch_with_invalid_dimensions(decoder_class, config_class):
     """
-    Tests that the 'decode_batch' raises a RuntimeError when given a 1D array.
+    Tests that the 'decode_batch' method raises a RuntimeError when given a 1D array.
     """
     dem_string = """
         error(0.1) D0 D1 L0

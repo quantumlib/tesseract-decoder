@@ -354,7 +354,7 @@ for error in errors:
 ```
 
 ### `tesseract_decoder.common` Module
-The `tesseract_decoder.common` module provides fundamental data structures and utility functions used for decoding quantum circuit shots inside Tessereact. It exposes classes **`Symptom`** and **`Error`**, which represent error effects and complete error mechanisms, respectively. Additionally, it includes functions for manipulating `stim.DetectorErrorModel` objects, such as merging identical errors, removing zero-probability errors, and estimating error probabilities from shot counts.
+The `tesseract_decoder.common` module provides fundamental data structures and utility functions used for decoding quantum circuit shots inside Tesseract. It exposes classes **`Symptom`** and **`Error`**, which represent error effects and complete error mechanisms, respectively. Additionally, it includes functions for manipulating `stim.DetectorErrorModel` objects, such as merging identical errors, removing zero-probability errors, and estimating error probabilities from shot counts.
 
 #### Class `common.Symptom`
 A Python class representing the effect of an error mechanism.
@@ -471,12 +471,12 @@ original_dem = stim.DetectorErrorModel("""
 """)
 print("Original DEM:")
 print(original_dem)
-# This DEM has 3 error instructions, one of them has probability of zero.
+# This DEM has 3 error instructions, one of which has a probability of zero.
 
 cleaned_dem = common.remove_zero_probability_errors(original_dem)
-print("\Cleaned DEM:")
+print("\nCleaned DEM:")
 print(cleaned_dem)
-# This DEM has 2 error instructions, none of them have probability of zero.
+# This DEM has 2 error instructions, none of which has a probability of zero.
 ```
 
 * `common.dem_from_counts(orig_dem: stim.DetectorErrorModel, error_counts: list[int], num_shots: int) -> stim.DetectorErrorModel`

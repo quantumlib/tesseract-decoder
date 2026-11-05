@@ -91,7 +91,7 @@ common::Error::Error(const stim::DemInstruction& error) {
       }
     }
   }
-  // Detectors in the set are already sorted order, which we need so that there
+  // Detectors in the set are already in sorted order, which we need so that there
   // is a unique canonical representative for each set of detectors.
   std::vector<int> detectors(detectors_set.begin(), detectors_set.end());
   std::vector<int> observables(observables_set.begin(), observables_set.end());
@@ -191,7 +191,7 @@ stim::DetectorErrorModel common::merge_indistinguishable_errors(
         Error error(instruction);
         if (error.symptom.detectors.size() == 0) {
           // TODO: For errors without detectors, the observables should be included if p>0.5
-          std::cout << "Warning: the circuit has errors that do not flip any detectors \n";
+          std::cout << "Warning: the circuit has errors that do not flip any detectors\n";
         }
 
         auto it = merged_index_by_symptom.find(error.symptom);

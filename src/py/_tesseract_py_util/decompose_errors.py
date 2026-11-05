@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http:#www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -137,7 +137,7 @@ def get_component_obs_matching_undecomposed_obs(
         as the component. Note that if there is more than one choice for a given
         component (i.e. if `len(obs_options_by_component[i]) > 1`) then the dem
         must have distance at most 2. If the distance is more than 2, then this
-        function makes the trivial assignment of assigning the only possble
+        function makes the trivial assignment of assigning the only possible
         observables to each component.
     error_obs : tuple[int]
         The observables flipped by the undecomposed error.
@@ -335,7 +335,7 @@ def decompose_errors_using_detector_coordinate_assignment(
     dem : stim.DetectorErrorModel
         The detector error model to decompose
     coord_to_component_func : Callable[[list[float]], int]
-        A function that coordinates of a detector to an integer corresponding to
+        A function that maps the coordinates of a detector to an integer corresponding to
         the index of a component, to be used for the decomposition. The coordinates
         are provided as a list of floats.
     strip_undecomposable_errors : bool

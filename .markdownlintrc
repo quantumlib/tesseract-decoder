@@ -16,9 +16,9 @@
   // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Markdownlint linter configuration for this project.
   //
-  // Note: there are multiple programs programs named "markdownlint". We use
-  // https://github.com/igorshubovych/markdownlint-cli/, which is the one you
-  // get with "brew install markdownlint" on MacOS.
+  // Note: there are multiple programs named "markdownlint". We use
+  // https://github.com/igorshubovych/markdownlint-cli/, which is what
+  // "brew install markdownlint" provides on MacOS.
   //
   // These settings try to stay close to the Google Markdown Style as
   // described at https://google.github.io/styleguide/docguide/style.html
@@ -47,7 +47,7 @@
   // headings. The markdownlint default disallows exclamation points, which
   // seems likely to be more annoying than useful – I have definitely seen
   // people use exclamation points in headings in README files on GitHub.
-  // This setting removes exclamation point from the banned characters.
+  // This setting removes the exclamation point from the banned characters.
   "no-trailing-punctuation": {
     "punctuation": ".,;:。，；："
   },
@@ -89,12 +89,12 @@
 
   // Basic Markdown allows raw HTML. Both GitHub & PyPI support subsets of
   // HTML, though it's unclear what subset PyPI supports. Google's style guide
-  // recommends against using raw HTML, but does allow it. (C.f. the bottom of
+  // recommends against using raw HTML, but does allow it. (Cf. the bottom of
   // https://google.github.io/styleguide/docguide/style.html) Google's in-house
   // documentation system allows many inline and block-level tags, but strips
   // others that can pose security risks (e.g., <object> and standalone <svg>).
   // The list below tries to capture the intersection of what GitHub allows
-  // (c.f. https://github.com/github/markup/issues/245#issuecomment-682231577),
+  // (cf. https://github.com/github/markup/issues/245#issuecomment-682231577),
   // what PyPI seems to allow, what Google allows, and what seems likely to be
   // most useful in situations where someone needs to reach for HTML.
   "html": {

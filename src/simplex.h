@@ -56,8 +56,8 @@ struct SimplexDecoder : public Decoder {
   std::unique_ptr<Highs> highs;
   std::unique_ptr<HighsStatus> return_status;
 
-  // For consistency with Tesseract, we provide a low confidence flag on Simplex
-  // decoder which is always set to false
+  // For consistency with Tesseract, we provide a low confidence flag on the Simplex
+  // decoder which is always set to false.
   const bool low_confidence_flag = false;
 
   SimplexDecoder(SimplexConfig config);

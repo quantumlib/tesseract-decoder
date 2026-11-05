@@ -185,7 +185,7 @@ void assert_merged_probabilities_are_equal(double p1, double p2) {
   double merged_cost = common::merge_weights(cost1, cost2);
   double merged_p_via_costs = 1 / (1 + std::exp(merged_cost));
 
-  // The two methods should produce nearly same results.
+  // The two methods should produce nearly the same results.
   ASSERT_NEAR(merged_p_direct, merged_p_via_costs, 1e-12);
 }
 
