@@ -595,5 +595,84 @@ def test_decoder_compilation_validation():
         config.compile_decoder()
 
 
+def test_duplicate_detections_cancel_mod_2():
+    dem = stim.DetectorErrorModel("""
+        error(0.1) D0 L0
+        error(0.1) D1 D2 L1
+        error(0.1) D2
+        error(0.1) D3
+        error(0.1) D4
+        error(0.05) D0 D1 D2
+        error(0.01) D2 D3 D4 L1
+    """)
+    for sparsify in (False, True):
+        cfg = tesseract_decoder.tesseract.TesseractConfig(
+            dem,
+            merge_errors=False,
+            sparsify_errors=sparsify,
+            sparsify_base_degree=2,
+            sparsify_max_degree=4,
+            sparsify_reactivate_limit=1,
+        )
+        dec = cfg.compile_decoder()
+
+        # Duplicate pair [0, 0] cancels mod 2 to the trivial syndrome.
+        obs_mask = dec.decode_from_detection_events([0, 0])
+        assert not dec.low_confidence_flag
+        assert not np.any(obs_mask)
+        assert list(dec.predicted_errors_buffer) == []
+
+        # [1, 1, 2] cancels D1 mod 2, matching [2] rather than misactivating D1.
+        obs_dup = dec.decode_from_detection_events([1, 1, 2])
+        assert not dec.low_confidence_flag
+        errs_dup = list(dec.predicted_errors_buffer)
+        obs_single = dec.decode_from_detection_events([2])
+        assert np.array_equal(obs_dup, obs_single)
+        assert not np.any(obs_dup)
+        assert errs_dup == list(dec.predicted_errors_buffer) == [2]
+
+        # Under sparsify_errors=True with reactivate_limit=1, cancelling [0, 0, 1, 1] in
+        # [0, 0, 1, 1, 2, 3, 4] must rank optional degree-3 errors against {2, 3, 4} (reactivating
+        # error 6: D2 D3 D4 L1 with overlap 3), not against {0, 1, 2, 3, 4}.
+        obs_sparse = dec.decode_from_detection_events([0, 0, 1, 1, 2, 3, 4])
+        assert not dec.low_confidence_flag
+        assert list(dec.predicted_errors_buffer) == [6]
+        assert list(obs_sparse) == [False, True]
+
+
+def test_post_compile_det_orders_mutation_rebuilds_ranks():
+    dem = stim.DetectorErrorModel("""
+        error(0.1) D0 D1 D3 L0
+        error(0.1) D2 D3
+        error(0.1) D1
+        detector(0, 0, 0) D0
+        detector(1, 0, 0) D1
+        detector(2, 0, 0) D2
+        detector(3, 0, 0) D3
+    """)
+    dec = tesseract_decoder.tesseract.TesseractConfig(
+        dem, det_beam=0, merge_errors=False, det_orders=[[0, 1, 2, 3]]
+    ).compile_decoder()
+    shot = np.array([True, False, True, False], dtype=bool)
+    assert dec.decode_to_errors(shot) == []
+    assert dec.low_confidence_flag
+
+    # Grow det_orders after compilation (previously caused out-of-bounds rank access).
+    dec.config.det_orders = [[0, 1, 2, 3], [2, 0, 1, 3], [3, 2, 0, 1]]
+    assert sorted(dec.decode_to_errors(shot)) == [0, 1, 2]
+    assert not dec.low_confidence_flag
+
+    # Replace in-place with same order count and verify invalid permutations raise cleanly.
+    dec.config.det_orders = [[0, 1, 2, 3]]
+    assert dec.decode_to_errors(shot) == []
+    assert dec.low_confidence_flag
+    dec.config.det_orders = [[2, 0, 1, 3]]
+    assert sorted(dec.decode_to_errors(shot)) == [0, 1, 2]
+
+    dec.config.det_orders = [[0, 1, 2]]
+    with pytest.raises(ValueError, match="size"):
+        dec.decode_to_errors(shot)
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))
