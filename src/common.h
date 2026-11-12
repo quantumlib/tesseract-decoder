@@ -62,11 +62,12 @@ struct ErrorChainNode {
   size_t error_index;
   size_t min_detector;
   int64_t parent_idx = -1;
+  uint64_t det_hash = 0;
 };
 
 // Represents an error / weighted hyperedge
 struct Error {
-  double likelihood_cost;
+  double likelihood_cost = 0.0;
   Symptom symptom;
   Error() = default;
   Error(double likelihood_cost, std::vector<int>& detectors, std::vector<int> observables)
