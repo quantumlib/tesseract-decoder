@@ -15,12 +15,12 @@
 #ifndef TESSERACT_DECODER_H
 #define TESSERACT_DECODER_H
 
+#include <algorithm>
 #include <boost/dynamic_bitset.hpp>
 #include <cstdint>
 #include <queue>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -60,6 +60,84 @@ struct TesseractConfig {
   int sparsify_reactivate_limit = -1;
 
   std::string str();
+};
+
+// Flat open-addressed Zobrist hash set storing 64-bit syndrome hashes paired with 16-bit
+// generation tags, supporting sentinel-free lookup (including hash == 0) and O(1) resets between
+// detector-ordering trials via generation increment. Note: under no_revisit_dets=true, a 64-bit
+// hash collision (~choose(N, 2) / 2^64 <= 1e-9 for N <= 2e5 visited states) acts as a false
+// visited hit for that trial.
+struct VisitedTable {
+  std::vector<uint64_t> hashes;
+  std::vector<uint16_t> gens;
+  uint64_t mask = 0;
+  uint16_t gen = 1;
+  size_t count = 0;
+
+  void init(size_t min_cap = 1024) {
+    size_t cap = 16;
+    while (cap < min_cap) cap <<= 1;
+    hashes.assign(cap, 0ULL);
+    gens.assign(cap, 0);
+    mask = cap - 1;
+    gen = 1;
+    count = 0;
+  }
+
+  bool empty() const {
+    return hashes.empty();
+  }
+
+  void clear() {
+    count = 0;
+    if (++gen == 0) {
+      std::fill(gens.begin(), gens.end(), 0);
+      gen = 1;
+    }
+  }
+
+  bool contains(uint64_t hash) const {
+    if (hashes.empty()) return false;
+    size_t idx = static_cast<size_t>(hash) & mask;
+    while (gens[idx] == gen) {
+      if (hashes[idx] == hash) return true;
+      idx = (idx + 1) & mask;
+    }
+    return false;
+  }
+
+  bool insert(uint64_t hash) {
+    if (hashes.empty()) init(1024);
+    if ((count + 1) * 10 >= hashes.size() * 7) grow();
+    size_t idx = static_cast<size_t>(hash) & mask;
+    while (gens[idx] == gen) {
+      if (hashes[idx] == hash) return false;
+      idx = (idx + 1) & mask;
+    }
+    hashes[idx] = hash;
+    gens[idx] = gen;
+    ++count;
+    return true;
+  }
+
+  void grow() {
+    const size_t new_cap = hashes.size() << 1;
+    std::vector<uint64_t> new_hashes(new_cap, 0ULL);
+    std::vector<uint16_t> new_gens(new_cap, 0);
+    const uint64_t new_mask = new_cap - 1;
+    for (size_t i = 0; i < hashes.size(); ++i) {
+      if (gens[i] == gen) {
+        const uint64_t h = hashes[i];
+        size_t idx = static_cast<size_t>(h) & new_mask;
+        while (new_gens[idx] == gen) idx = (idx + 1) & new_mask;
+        new_hashes[idx] = h;
+        new_gens[idx] = gen;
+      }
+    }
+    hashes = std::move(new_hashes);
+    gens = std::move(new_gens);
+    mask = new_mask;
+  }
 };
 
 class Node {
@@ -141,8 +219,12 @@ struct TesseractDecoder : public Decoder {
   size_t num_detectors;
 
   std::vector<std::vector<int>>& get_eneighbors() {
+    for (size_t ei = 0; ei < num_errors; ++ei) {
+      ensure_eneighbors(ei);
+    }
     return eneighbors;
   }
+  void ensure_eneighbors(size_t ei);
 
   std::vector<std::vector<int>> d2e;
   std::vector<std::vector<int>> sparse_d2e;
@@ -181,9 +263,28 @@ struct TesseractDecoder : public Decoder {
   void update_internal_costs(const std::vector<size_t>& modified_error_indices,
                              const std::vector<size_t>& affected_detectors);
   void build_sparse_d2e(const std::vector<uint64_t>& detections);
+  const std::vector<size_t>& ensure_det_order_ranks(size_t detector_order_index);
   void decode_to_errors_with_graph(const std::vector<uint64_t>& detections,
                                    size_t detector_order_index, size_t detector_beam,
                                    const std::vector<std::vector<int>>& active_d2e);
+
+  std::vector<std::vector<size_t>> cached_detector_orders_;
+  std::vector<std::vector<size_t>> det_order_ranks_;
+  std::vector<uint64_t> zobrist_;
+  VisitedTable visited_;
+  std::vector<uint8_t> eneighbors_ready_;
+  std::vector<uint32_t> eneighbor_seen_;
+  uint32_t eneighbor_gen_ = 1;
+
+  boost::dynamic_bitset<> initial_detectors_;
+  boost::dynamic_bitset<> scratch_detectors_;
+  std::vector<DetectorCostTuple> initial_dct_;
+  std::vector<DetectorCostTuple> scratch_dct_;
+  std::vector<DetectorCostTuple> scratch_next_dct_;
+  std::vector<double> scratch_det_cost_cache_;
+  std::vector<uint32_t> scratch_det_cost_stamp_;
+  uint32_t scratch_det_cost_gen_ = 1;
+  std::vector<Node> pq_container_;
 };
 
 }  // namespace tesseract_decoder

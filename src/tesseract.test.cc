@@ -1172,5 +1172,136 @@ TEST(utils, GariSourcePrefixB8Decodes) {
   EXPECT_EQ(simplex.decode(shots[1].hits), (std::vector<int>{1}));
 }
 
+TEST(tesseract, VisitedTableFull64BitSentinelFreeAndGenerationWraparound) {
+  VisitedTable uninit_table;
+  EXPECT_TRUE(uninit_table.empty());
+  EXPECT_FALSE(uninit_table.contains(0ULL));
+  EXPECT_FALSE(uninit_table.contains(42ULL));
+  EXPECT_TRUE(uninit_table.insert(42ULL));
+  EXPECT_FALSE(uninit_table.empty());
+  EXPECT_TRUE(uninit_table.contains(42ULL));
+
+  VisitedTable table;
+  EXPECT_TRUE(table.empty());
+  table.init(16);
+  EXPECT_FALSE(table.empty());
+  EXPECT_EQ(table.hashes.size(), 16u);
+
+  // Zero hash works natively without any reserved sentinel value.
+  EXPECT_FALSE(table.contains(0ULL));
+  EXPECT_TRUE(table.insert(0ULL));
+  EXPECT_TRUE(table.contains(0ULL));
+  EXPECT_FALSE(table.insert(0ULL));
+
+  // Keys identical in the upper 48 bits and differing only in the low 16 bits must not collide.
+  const uint64_t h_a = 0xCAFEBABE12340000ULL;
+  const uint64_t h_b = 0xCAFEBABE12340001ULL;
+  const uint64_t h_c = 0xCAFEBABE1234FFFFULL;
+  EXPECT_TRUE(table.insert(h_a));
+  EXPECT_TRUE(table.insert(h_b));
+  EXPECT_TRUE(table.insert(h_c));
+  EXPECT_TRUE(table.contains(h_a));
+  EXPECT_TRUE(table.contains(h_b));
+  EXPECT_TRUE(table.contains(h_c));
+  EXPECT_FALSE(table.insert(h_b));
+
+  // Trigger rehash/grow and verify full 64-bit hashes (including 0ULL) remain intact.
+  for (uint64_t k = 1; k <= 40; ++k) {
+    EXPECT_TRUE(table.insert(0x9e3779b97f4a7c15ULL * k));
+  }
+  EXPECT_GT(table.hashes.size(), 16u);
+  EXPECT_TRUE(table.contains(0ULL));
+  EXPECT_TRUE(table.contains(h_a));
+  EXPECT_TRUE(table.contains(h_b));
+  EXPECT_TRUE(table.contains(h_c));
+  for (uint64_t k = 1; k <= 40; ++k) {
+    EXPECT_TRUE(table.contains(0x9e3779b97f4a7c15ULL * k));
+  }
+
+  // O(1) clear resets logical membership immediately and handles 16-bit generation wraparound
+  // without resurrecting stale entries from 65,535 clears ago.
+  table.clear();
+  EXPECT_FALSE(table.contains(0ULL));
+  EXPECT_FALSE(table.contains(h_a));
+  EXPECT_TRUE(table.insert(h_a));
+  for (uint32_t step = 0; step < 65540; ++step) {
+    table.clear();
+    EXPECT_FALSE(table.contains(h_a));
+    EXPECT_FALSE(table.contains(0ULL));
+  }
+  EXPECT_EQ(table.count, 0u);
+  EXPECT_TRUE(table.insert(0ULL));
+  EXPECT_TRUE(table.insert(h_a));
+  EXPECT_TRUE(table.contains(0ULL));
+  EXPECT_TRUE(table.contains(h_a));
+}
+
+TEST(tesseract, LazyEneighborsMatchesOnDemandExpansion) {
+  stim::DetectorErrorModel dem(R"DEM(
+    error(0.1) D0 D1 L0
+    error(0.1) D1 D2
+    error(0.1) D2 D3 L0
+    error(0.1) D4 D5
+  )DEM");
+  TesseractConfig config{dem};
+  config.merge_errors = false;
+  TesseractDecoder decoder(config);
+  // Before any decode or get_eneighbors() call, neighbor lists have not been materialized yet.
+  for (const auto& nbrs : decoder.eneighbors) {
+    EXPECT_TRUE(nbrs.empty());
+  }
+  // Decoding D0^D1 expands error 0 on demand without needing disconnected component {D4, D5}.
+  EXPECT_EQ(decoder.decode({0, 1}), (std::vector<int>{0}));
+  EXPECT_EQ(decoder.eneighbors[0], (std::vector<int>{2}));
+  EXPECT_TRUE(decoder.eneighbors[3].empty());
+  // Calling get_eneighbors() materializes any remaining unexpanded entries.
+  const auto& all = decoder.get_eneighbors();
+  EXPECT_EQ(all[0], (std::vector<int>{2}));
+  EXPECT_EQ(all[1], (std::vector<int>{0, 3}));
+  EXPECT_EQ(all[2], (std::vector<int>{1}));
+  EXPECT_TRUE(all[3].empty());
+}
+
+TEST(tesseract, PostCompileDetectorOrderMutationAndDuplicateDetections) {
+  // On shot {D0, D2} at beam 0, order [0, 1, 2, 3] expands D0 first via {D0, D1, D3} -> {D1, D2,
+  // D3} (3 > 2 + 0, pruned) and fails, whereas order [2, 0, 1, 3] expands D2 first via {D2, D3} ->
+  // {D0, D3} -> {D1} -> {} and succeeds. Mutating config.detector_orders after construction must
+  // refresh cached inverse ranks without crashing or reading stale ranks.
+  stim::DetectorErrorModel dem(R"DEM(
+    error(0.1) D0 D1 D3 L0
+    error(0.1) D2 D3
+    error(0.1) D1
+    detector(0, 0, 0) D0
+    detector(1, 0, 0) D1
+    detector(2, 0, 0) D2
+    detector(3, 0, 0) D3
+  )DEM");
+  TesseractConfig cfg{dem};
+  cfg.merge_errors = false;
+  cfg.det_beam = 0;
+  cfg.detector_orders = make_literal_detector_orders({{0, 1, 2, 3}});
+  TesseractDecoder dec(cfg);
+
+  dec.decode_to_errors({0, 2});
+  EXPECT_TRUE(dec.low_confidence_flag);
+  EXPECT_TRUE(dec.predicted_errors_buffer.empty());
+
+  // Grow detector_orders after construction from 1 order to 2 orders.
+  dec.config.detector_orders = make_literal_detector_orders({{0, 1, 2, 3}, {2, 0, 1, 3}});
+  EXPECT_EQ(dec.decode({0, 2}), (std::vector<int>{0}));
+  EXPECT_FALSE(dec.low_confidence_flag);
+
+  // Replace single order in-place with same count, and verify shrinking rejects out-of-range index.
+  dec.config.detector_orders = make_literal_detector_orders({{2, 0, 1, 3}});
+  EXPECT_EQ(dec.decode({0, 2}), (std::vector<int>{0}));
+  EXPECT_THROW(dec.decode_to_errors({0, 2}, /*detector_order_index=*/1, /*detector_beam=*/0),
+               std::out_of_range);
+
+  // Duplicate detections cancel mod 2 cleanly instead of underflowing or crashing.
+  EXPECT_TRUE(dec.decode({0, 0}).empty());
+  EXPECT_FALSE(dec.low_confidence_flag);
+  EXPECT_EQ(dec.decode({0, 0, 0, 2}), (std::vector<int>{0}));
+}
+
 }  // namespace
 }  // namespace tesseract_decoder
